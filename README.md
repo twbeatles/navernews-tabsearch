@@ -287,6 +287,4 @@ MIT License - 자유롭게 사용, 수정, 배포 가능
 - [네이버 검색 API 가이드](https://developers.naver.com/docs/serviceapi/search/news/news.md)
 - [PyQt6 공식 문서](https://www.riverbankcomputing.com/static/Docs/PyQt6/)
 
----
 
-**문의사항이나 제안이 있으시면 언제든지 연락주세요!**
