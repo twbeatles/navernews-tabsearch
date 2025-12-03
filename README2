@@ -1,0 +1,111 @@
+        <html>
+        <head>
+            <style>
+                body { font-family: '맑은 고딕', sans-serif; padding: 15px; line-height: 1.6; }
+                h2 { color: #007AFF; border-bottom: 2px solid #007AFF; padding-bottom: 5px; }
+                h3 { color: #333; margin-top: 20px; }
+                .section { margin-bottom: 25px; }
+                .tip { background-color: #FFF3CD; padding: 10px; border-left: 4px solid #FFC107; margin: 10px 0; }
+                .warning { background-color: #F8D7DA; padding: 10px; border-left: 4px solid #DC3545; margin: 10px 0; }
+                .info { background-color: #D1ECF1; padding: 10px; border-left: 4px solid #17A2B8; margin: 10px 0; }
+                code { background-color: #F5F5F5; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+                ul { margin-left: 20px; }
+                li { margin: 5px 0; }
+                a { color: #007AFF; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <h2>🎯 빠른 시작 가이드</h2>
+            
+            <div class="section">
+                <h3>1️⃣ API 키 설정</h3>
+                <ul>
+                    <li><a href="https://developers.naver.com/apps/#/register">네이버 개발자센터</a>에서 애플리케이션 등록</li>
+                    <li>검색 API 선택 (뉴스 검색)</li>
+                    <li>Client ID와 Client Secret을 설정 탭에 입력</li>
+                    <li>"✓ API 키 검증" 버튼으로 정상 작동 확인</li>
+                </ul>
+                <div class="tip">
+                    <strong>💡 팁:</strong> API 키는 안전하게 로컬 파일에만 저장됩니다.
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>2️⃣ 탭 추가 및 검색</h3>
+                <ul>
+                    <li><strong>기본 검색:</strong> <code>주식</code></li>
+                    <li><strong>제외 키워드:</strong> <code>주식 -코인</code> (코인 제외)</li>
+                    <li><strong>복합 검색:</strong> <code>인공지능 AI -광고 -채용</code></li>
+                </ul>
+                <div class="info">
+                    <strong>ℹ️ 정보:</strong> 제외 키워드는 '-' 기호로 시작하며, 여러 개 사용 가능합니다.
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>3️⃣ 기사 관리</h3>
+                <ul>
+                    <li><strong>읽음 표시:</strong> 제목 클릭 시 자동으로 읽음 처리</li>
+                    <li><strong>북마크:</strong> ⭐ 버튼으로 중요 기사 저장</li>
+                    <li><strong>메모:</strong> 📝 버튼으로 기사별 메모 작성</li>
+                    <li><strong>공유:</strong> 📋 버튼으로 제목+링크 클립보드 복사</li>
+                    <li><strong>미리보기:</strong> 제목에 마우스 올리면 내용 미리보기</li>
+                </ul>
+            </div>
+            
+            <div class="section">
+                <h3>4️⃣ 필터링 및 정렬</h3>
+                <ul>
+                    <li><strong>실시간 필터:</strong> 검색창에 입력하면 즉시 반영</li>
+                    <li><strong>안 읽은 것만:</strong> 읽지 않은 기사만 표시</li>
+                    <li><strong>중복 숨김:</strong> 유사한 기사 자동 숨김</li>
+                    <li><strong>정렬:</strong> 최신순 / 오래된순 선택</li>
+                </ul>
+                <div class="tip">
+                    <strong>💡 팁:</strong> Ctrl+F를 누르면 필터 검색창에 즉시 포커스됩니다.
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>5️⃣ 데이터 관리</h3>
+                <ul>
+                    <li><strong>내보내기:</strong> Ctrl+S로 현재 탭의 기사를 CSV로 저장</li>
+                    <li><strong>통계:</strong> 📊 버튼으로 전체 통계 확인</li>
+                    <li><strong>분석:</strong> 📈 버튼으로 언론사별 기사 수 분석</li>
+                    <li><strong>오래된 데이터 정리:</strong> 30일 이전 기사 삭제 (북마크 제외)</li>
+                </ul>
+                <div class="warning">
+                    <strong>⚠️ 주의:</strong> 북마크하지 않은 기사는 데이터 정리 시 삭제될 수 있습니다.
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>6️⃣ 자동 새로고침</h3>
+                <ul>
+                    <li>설정에서 간격 선택: 10분 / 30분 / 1시간 / 3시간 / 6시간</li>
+                    <li>백그라운드에서 자동으로 새 기사 수집</li>
+                    <li>새 기사 발견 시 토스트 알림 표시</li>
+                </ul>
+            </div>
+            
+            <div class="section">
+                <h3>7️⃣ 문제 해결</h3>
+                <ul>
+                    <li><strong>검색 결과가 없을 때:</strong> 키워드 철자 확인, 제외 키워드 줄이기</li>
+                    <li><strong>API 오류:</strong> 설정에서 "✓ API 키 검증" 실행</li>
+                    <li><strong>앱이 느릴 때:</strong> 오래된 데이터 정리 실행</li>
+                    <li><strong>중복 기사가 많을 때:</strong> "중복 숨김" 체크박스 활성화</li>
+                </ul>
+            </div>
+            
+            <div class="info" style="margin-top: 30px;">
+                <strong>📚 더 많은 정보:</strong> 단축키는 "⌨ 단축키" 탭을 참고하세요.
+            </div>
+        </body>
+        </html>
+
+
+
+
+              
