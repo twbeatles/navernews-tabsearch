@@ -46,7 +46,7 @@ pip install PyQt6 requests
 
 ### 실행
 ```bash
-python "251209 네이버 뉴스 자동검색 vfinal-디버깅.py"
+python "251211 네이버 뉴스 자동검색 vfinal-디버깅.py"
 ```
 
 ---
@@ -79,7 +79,7 @@ python "251209 네이버 뉴스 자동검색 vfinal-디버깅.py"
 
 ```
 📂 navernews-tabsearch/
-├── 📄 251209 네이버 뉴스 자동검색 vfinal-디버깅.py  # 메인 프로그램
+├── 📄 251211 네이버 뉴스 자동검색 vfinal-디버깅.py  # 메인 프로그램
 ├── 📄 news_scraper_config.json                      # 설정 파일
 ├── 📄 news_database.db                              # SQLite DB
 ├── 📄 news_scraper.log                              # 로그 파일
@@ -101,7 +101,7 @@ python "251209 네이버 뉴스 자동검색 vfinal-디버깅.py"
 
 ## 📝 버전 히스토리
 
-### v28.0 (2024-12)
+### v28.0 (2025-12)
 - 종합 디버깅 및 리팩토링
 - 예외 처리 개선 (로깅 강화)
 - 데스크톱 알림 기능
