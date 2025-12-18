@@ -1,4 +1,4 @@
-# 📰 네이버 뉴스 탭 검색 프로그램
+# 📰 뉴스 스크래퍼 Pro v30.0
 
 네이버 뉴스 API를 활용한 데스크톱 뉴스 수집 및 관리 프로그램입니다.
 
@@ -31,6 +31,13 @@
 - CSV 내보내기
 - JSON 설정 백업/복원
 
+### 🎨 UI/UX
+- 라이트/다크 테마 지원
+- 현대적인 카드 UI (그라디언트, 호버 효과)
+- 유형별 토스트 메시지 (성공/경고/오류)
+- 상태바 실시간 카운트다운 표시
+- 검색 히스토리 자동 저장
+
 ---
 
 ## 🚀 설치 방법
@@ -46,7 +53,13 @@ pip install PyQt6 requests
 
 ### 실행
 ```bash
-python "251211 네이버 뉴스 자동검색 vfinal-디버깅.py"
+python "네이버 뉴스 자동검색 vfinal.py"
+```
+
+### 빌드 (실행 파일 생성)
+```bash
+pip install pyinstaller
+pyinstaller news_scraper.spec
 ```
 
 ---
@@ -80,9 +93,10 @@ python "251211 네이버 뉴스 자동검색 vfinal-디버깅.py"
 ```
 📂 navernews-tabsearch/
 ├── 📄 251211 네이버 뉴스 자동검색 vfinal-디버깅.py  # 메인 프로그램
-├── 📄 news_scraper_config.json                      # 설정 파일
-├── 📄 news_database.db                              # SQLite DB
-├── 📄 news_scraper.log                              # 로그 파일
+├── 📄 news_scraper.spec                             # PyInstaller 빌드 설정
+├── 📄 news_scraper_config.json                      # 설정 파일 (자동 생성)
+├── 📄 news_database.db                              # SQLite DB (자동 생성)
+├── 📄 news_scraper.log                              # 로그 파일 (자동 생성)
 └── 📄 README.md                                     # 이 파일
 ```
 
@@ -101,18 +115,32 @@ python "251211 네이버 뉴스 자동검색 vfinal-디버깅.py"
 
 ## 📝 버전 히스토리
 
+### v30.0 (2025-12)
+- **UI/UX 전면 리팩토링**
+  - 뉴스 카드 현대화 (그라디언트 배경, 좌측 강조 테두리)
+  - 호버 효과 개선 (부드러운 전환 애니메이션)
+  - 메타 정보 레이아웃 최적화
+- **토스트 메시지 유형 다양화**
+  - INFO / SUCCESS / WARNING / ERROR 유형별 스타일
+- **디버깅 개선**
+  - 베어 `except:` 문 제거 (구체적 예외 타입으로 변경)
+  - 메모리 누수 방지 개선
+- **코드 품질 개선**
+  - `UIConstants`, `ToastType` 클래스 추가
+
+### v29.0 (2025-12)
+- UI/UX 전면 리팩토링 (모던 색상 팔레트, 호버 효과)
+- 상태바 카운트다운 타이머
+- 검색 히스토리 저장
+
 ### v28.0 (2025-12)
 - 종합 디버깅 및 리팩토링
-- 예외 처리 개선 (로깅 강화)
 - 데스크톱 알림 기능
-- 알림 키워드 설정
 - JSON 설정 백업/복원
-- 탭 순서 자동 저장
 
 ### v27.0
 - 순차 새로고침 구현
 - DB 연결 풀 안정성 개선
-- 워커 라이프사이클 개선
 
 ---
 
