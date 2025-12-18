@@ -54,7 +54,7 @@ DB_FILE = "news_database.db"
 ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
-VERSION = "30.0"  # UI/UX 전면 리팩토링 + 디버깅 개선
+VERSION = "30.2"  # UI/UX 전면 리팩토링 + 디버깅 개선 + 강제종료 방지 + 네트워크 안정성
 
 # --- 색상 상수 (중앙화) ---
 class Colors:
@@ -252,7 +252,7 @@ class ToastMessage(QLabel):
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
         
-        self.anim_in = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.anim_in = QPropertyAnimation(self.opacity_effect, b"opacity", self)
         self.anim_in.setDuration(UIConstants.ANIMATION_DURATION)
         self.anim_in.setStartValue(0.0)
         self.anim_in.setEndValue(1.0)
@@ -261,7 +261,7 @@ class ToastMessage(QLabel):
         
         self.show()
         
-        self.timer = QTimer()
+        self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.fade_out)
         self.timer.start(UIConstants.TOAST_DURATION)
@@ -277,7 +277,7 @@ class ToastMessage(QLabel):
 
     def fade_out(self):
         """페이드 아웃 애니메이션"""
-        self.anim_out = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.anim_out = QPropertyAnimation(self.opacity_effect, b"opacity", self)
         self.anim_out.setDuration(400)
         self.anim_out.setStartValue(1.0)
         self.anim_out.setEndValue(0.0)
@@ -1092,6 +1092,7 @@ class DatabaseManager:
                 query += " AND (title LIKE ? OR description LIKE ?)"
                 params.extend([f"%{filter_txt}%", f"%{filter_txt}%"])
             
+            # 정렬 방향 검증 (허용된 값만 사용)
             order = "DESC" if sort_mode == "최신순" else "ASC"
             query += f" ORDER BY pubDate_ts {order} LIMIT 1000"
 
@@ -1137,8 +1138,16 @@ class DatabaseManager:
         finally:
             self.return_connection(conn)
     
+    # 허용된 업데이트 필드 (SQL Injection 방지)
+    ALLOWED_UPDATE_FIELDS = {'is_read', 'is_bookmarked', 'notes', 'is_duplicate'}
+    
     def update_status(self, link: str, field: str, value) -> bool:
-        """뉴스 상태 업데이트"""
+        """뉴스 상태 업데이트 - SQL Injection 방지 버전"""
+        # 필드 화이트리스트 검증
+        if field not in self.ALLOWED_UPDATE_FIELDS:
+            logger.error(f"허용되지 않은 필드: {field}")
+            return False
+        
         conn = self.get_connection()
         try:
             with conn:
@@ -1246,6 +1255,14 @@ class DatabaseManager:
         """모든 연결 종료 - 안전한 버전"""
         self._closed = True
         closed_count = 0
+        
+        # 비상 연결 정리 (경고 로그만 남김 - 이미 반환해야 했지만 남아있는 연결)
+        with self._lock:
+            emergency_count = len(self._emergency_connections)
+            if emergency_count > 0:
+                logger.warning(f"비상 연결 {emergency_count}개가 정리되지 않고 남아있음")
+            self._emergency_connections.clear()
+        
         try:
             while not self.connection_pool.empty():
                 try:
@@ -1872,6 +1889,11 @@ class MainApp(QMainWindow):
         # 검색 히스토리 (최근 10개)
         self.search_history = []
         
+        # 네트워크 상태 추적
+        self._network_error_count = 0  # 연속 네트워크 오류 횟수
+        self._max_network_errors = 3   # 연속 오류 허용 횟수
+        self._network_available = True  # 네트워크 연결 상태
+        
         # 다음 새로고침 카운트다운 타이머
         self._countdown_timer = QTimer(self)
         self._countdown_timer.timeout.connect(self._update_countdown)
@@ -2330,15 +2352,28 @@ class MainApp(QMainWindow):
 
     def _safe_refresh_all(self):
         """안전한 자동 새로고침 래퍼 (타이머에서 호출)"""
+        # 네트워크 연속 오류 시 자동 새로고침 일시 중지
+        if self._network_error_count >= self._max_network_errors:
+            if self._network_available:  # 첫 번째 감지 시에만 로그
+                logger.warning(f"네트워크 연속 오류 {self._network_error_count}회. 자동 새로고침 일시 중지.")
+                self._network_available = False
+                self.statusBar().showMessage("⚠ 네트워크 오류로 자동 새로고침 일시 중지 (수동 새로고침으로 재개)")
+            return
+        
+        # 이미 새로고침 진행 중이면 건너뜀
         with QMutexLocker(self._refresh_mutex):
-            if self._refresh_in_progress:
+            if self._refresh_in_progress or self._sequential_refresh_active:
                 logger.warning("새로고침이 이미 진행 중입니다. 건너뜁니다.")
                 return
             self._refresh_in_progress = True
         
         try:
             self.refresh_all()
-        finally:
+            # 주의: refresh_all은 비동기 작업을 시작함
+            # _refresh_in_progress 플래그는 _finish_sequential_refresh에서 해제됨
+        except Exception as e:
+            logger.error(f"자동 새로고침 오류: {e}")
+            # 오류 발생 시에만 여기서 플래그 해제
             with QMutexLocker(self._refresh_mutex):
                 self._refresh_in_progress = False
 
@@ -2358,6 +2393,10 @@ class MainApp(QMainWindow):
                 logger.warning(f"API 자격증명 오류: {msg}")
                 return
 
+            # 수동 새로고침 시 네트워크 오류 카운터 리셋 (자동 새로고침 재개)
+            self._network_error_count = 0
+            self._network_available = True
+            
             # 북마크 탭 새로고침 (동기)
             try:
                 self.bm_tab.load_data_from_db()
@@ -2445,6 +2484,10 @@ class MainApp(QMainWindow):
         self._sequential_refresh_active = False
         self._pending_refresh_keywords = []
         self._last_refresh_time = datetime.now()
+        
+        # _safe_refresh_all에서 설정한 플래그도 해제
+        with QMutexLocker(self._refresh_mutex):
+            self._refresh_in_progress = False
         
         self.progress.setValue(self._total_refresh_count)
         self.progress.setVisible(False)
@@ -2584,6 +2627,10 @@ class MainApp(QMainWindow):
                 self._sequential_dup_count += dup_count
                 logger.info(f"순차 새로고침 완료: '{keyword}' ({added_count}건 추가)")
                 self._on_sequential_fetch_done(keyword)
+            
+            # 성공 시 네트워크 오류 카운터 리셋
+            self._network_error_count = 0
+            self._network_available = True
                 
         except Exception as e:
             logger.error(f"Fetch Done Error: {e}")
@@ -2623,12 +2670,39 @@ class MainApp(QMainWindow):
             # 순차 새로고침 중에는 오류 로그만 남기고 다음 탭으로 진행
             logger.warning(f"순차 새로고침 중 오류: '{keyword}' - {error_msg}")
             self._on_sequential_fetch_done(keyword)
+        
+        # 네트워크 관련 오류인 경우 카운터 증가
+        network_error_keywords = ['네트워크', 'timeout', '연결', 'connection', 'Timeout', 'Network']
+        is_network_error = any(kw in error_msg for kw in network_error_keywords)
+        if is_network_error:
+            self._network_error_count += 1
+            logger.warning(f"네트워크 오류 카운트: {self._network_error_count}/{self._max_network_errors}")
+        else:
+            # 네트워크가 아닌 오류는 카운터 리셋 (API 키 오류 등)
+            self._network_error_count = 0
 
     def cleanup_worker(self, keyword: str):
         """워커 정리 - 안정성 개선 버전"""
         try:
             if keyword in self.workers:
                 worker, thread = self.workers[keyword]
+                
+                # worker가 아직 유효한지 확인
+                try:
+                    # sip (PyQt 내부)로 객체 삭제 여부 확인
+                    if worker is None:
+                        del self.workers[keyword]
+                        if keyword in self.threads:
+                            del self.threads[keyword]
+                        return
+                except RuntimeError:
+                    # C++ 객체가 이미 삭제됨
+                    del self.workers[keyword]
+                    if keyword in self.threads:
+                        del self.threads[keyword]
+                    logger.info(f"워커 이미 삭제됨: {keyword}")
+                    return
+                
                 # 시그널 안전하게 disconnect (크래시 방지)
                 try:
                     worker.finished.disconnect()
@@ -2969,8 +3043,9 @@ class MainApp(QMainWindow):
         """종료 이벤트 - 안정성 개선 버전"""
         logger.info("프로그램 종료 시작...")
         try:
-            # 타이머 중지
+            # 모든 타이머 중지
             self.timer.stop()
+            self._countdown_timer.stop()
             logger.info("타이머 중지됨")
             
             # 모든 워커 정리 (시그널 disconnect 포함)
@@ -3576,11 +3651,29 @@ def main():
             with open("crash_log.txt", "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*50}\n")
                 f.write(f"시간: {datetime.now()}\n")
+                f.write(f"유형: Main Thread Exception\n")
                 traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
         except (IOError, OSError) as e:
             logger.error(f"크래시 로그 저장 실패: {e}")
     
+    # 스레드 예외 처리기 (Python 3.8+)
+    def thread_exception_hook(args):
+        logger.critical(f"스레드 예외 발생 ({args.thread.name if args.thread else 'Unknown'}):")
+        logger.critical("".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)))
+        try:
+            with open("crash_log.txt", "a", encoding="utf-8") as f:
+                f.write(f"\n{'='*50}\n")
+                f.write(f"시간: {datetime.now()}\n")
+                f.write(f"유형: Thread Exception ({args.thread.name if args.thread else 'Unknown'})\n")
+                traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback, file=f)
+        except (IOError, OSError) as e:
+            logger.error(f"크래시 로그 저장 실패: {e}")
+    
     sys.excepthook = exception_hook
+    
+    # Python 3.8+ 스레드 예외 훅
+    if hasattr(threading, 'excepthook'):
+        threading.excepthook = thread_exception_hook
     
     try:
         logger.info(f"{APP_NAME} v{VERSION} 시작 중...")
