@@ -14,6 +14,8 @@ import hashlib
 import re
 import time
 import logging
+import signal
+import inspect
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from collections import deque
@@ -54,7 +56,7 @@ DB_FILE = "news_database.db"
 ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
-VERSION = "30.2"  # UI/UX 전면 리팩토링 + 디버깅 개선 + 강제종료 방지 + 네트워크 안정성
+VERSION = "31.1"  # UI/UX 리팩토링 + 탭 배지 + 성능 최적화 (렌더링, DB 인덱스)
 
 # --- 색상 상수 (중앙화) ---
 class Colors:
@@ -141,6 +143,10 @@ class UIConstants:
     ANIMATION_DURATION = 300
     TOAST_DURATION = 2500
     MAX_PREVIEW_LENGTH = 200
+    # 새로 추가된 상수
+    TAB_BADGE_NEW = "🔵"      # 새 기사 있음
+    TAB_BADGE_UNREAD = "🟠"   # 안 읽은 기사 있음
+    FIRST_RUN_KEY = "first_run_completed"
 
 # --- 토스트 메시지 유형 ---
 class ToastType(Enum):
@@ -983,20 +989,26 @@ class DatabaseManager:
             except sqlite3.OperationalError:
                 pass
             
-            # 컬럼 추가 후 인덱스 생성
+            # 컬럼 추가 후 인덱스 생성 (성능 최적화)
             indexes = [
                 "CREATE INDEX IF NOT EXISTS idx_keyword ON news(keyword)",
                 "CREATE INDEX IF NOT EXISTS idx_bookmarked ON news(is_bookmarked)",
                 "CREATE INDEX IF NOT EXISTS idx_ts ON news(pubDate_ts)",
                 "CREATE INDEX IF NOT EXISTS idx_read ON news(is_read)",
                 "CREATE INDEX IF NOT EXISTS idx_title_hash ON news(title_hash)",
-                "CREATE INDEX IF NOT EXISTS idx_duplicate ON news(is_duplicate)"
+                "CREATE INDEX IF NOT EXISTS idx_duplicate ON news(is_duplicate)",
+                # 복합 인덱스 추가 (Phase 3 성능 최적화)
+                "CREATE INDEX IF NOT EXISTS idx_keyword_read ON news(keyword, is_read)",
+                "CREATE INDEX IF NOT EXISTS idx_keyword_ts ON news(keyword, pubDate_ts DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_keyword_dup ON news(keyword, is_duplicate)",
+                "CREATE INDEX IF NOT EXISTS idx_bookmarked_ts ON news(is_bookmarked, pubDate_ts DESC)"
             ]
             for idx in indexes:
                 try:
                     conn.execute(idx)
                 except sqlite3.OperationalError as e:
                     logger.debug(f"Index creation skipped: {e}")
+
             
             # 기존 데이터의 title_hash 업데이트 (마이그레이션)
             if columns_added:
@@ -1499,7 +1511,12 @@ class NoteDialog(QDialog):
 
 # --- 개별 뉴스 탭 위젯 (필터링 최적화) ---
 class NewsTab(QWidget):
-    """개별 뉴스 탭 (메모리 캐싱 및 필터링 최적화)"""
+    """개별 뉴스 탭 (메모리 캐싱 및 필터링 최적화) - Phase 3 성능 최적화"""
+    
+    # 렌더링 최적화 상수
+    INITIAL_RENDER_COUNT = 50   # 초기 렌더링 개수
+    LOAD_MORE_COUNT = 30        # 추가 로딩 개수
+    MAX_RENDER_COUNT = 500      # 최대 렌더링 개수
     
     def __init__(self, keyword: str, db_manager: DatabaseManager, theme_mode: int = 0, parent=None):
         super().__init__(parent)
@@ -1512,6 +1529,10 @@ class NewsTab(QWidget):
         self.filtered_data_cache = []
         self.total_api_count = 0
         self.last_update = None
+        
+        # 렌더링 최적화 변수 (Phase 3)
+        self._rendered_count = 0           # 현재 렌더링된 항목 수
+        self._is_loading_more = False      # 추가 로딩 중 여부
         
         self.setup_ui()
         self.load_data_from_db()
@@ -1601,6 +1622,8 @@ class NewsTab(QWidget):
         else:
             self.filtered_data_cache = self.news_data_cache
         
+        # Phase 3: 필터 변경 시 렌더링 카운트 초기화
+        self._rendered_count = 0
         self.render_html()
 
     def render_html(self):
@@ -1660,7 +1683,13 @@ class NewsTab(QWidget):
         else:
             filter_word = self.inp_filter.text().strip()
             
-            for item in self.filtered_data_cache:
+            # Phase 3: 렌더링 최적화 - 초기에는 제한된 수만 렌더링
+            total_items = len(self.filtered_data_cache)
+            render_limit = min(self._rendered_count + self.INITIAL_RENDER_COUNT, self.MAX_RENDER_COUNT)
+            items_to_render = self.filtered_data_cache[:render_limit]
+            self._rendered_count = len(items_to_render)
+            
+            for item in items_to_render:
                 is_read_cls = " read" if item['is_read'] else ""
                 is_dup_cls = " duplicate" if item.get('is_duplicate', 0) else ""
                 title_pfx = "⭐ " if item['is_bookmarked'] else ""
@@ -1719,6 +1748,24 @@ class NewsTab(QWidget):
                     <div class="description">{desc}</div>
                 </div>
                 """)
+            
+            # 더 많은 항목이 있으면 "더 보기" 링크 표시
+            remaining = total_items - self._rendered_count
+            if remaining > 0:
+                html_parts.append(f"""
+                <div class="load-more-container" style="text-align: center; padding: 20px;">
+                    <a href="app://load_more" style="
+                        display: inline-block;
+                        padding: 12px 30px;
+                        background: linear-gradient(135deg, #007AFF, #00C7BE);
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 25px;
+                        font-weight: bold;
+                        box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
+                    ">📄 {remaining}개 더 보기</a>
+                </div>
+                """)
         
         html_parts.append("</body></html>")
         
@@ -1729,9 +1776,11 @@ class NewsTab(QWidget):
         QTimer.singleShot(10, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
         self.update_status_label()
 
+
     def update_status_label(self):
         """상태 레이블 업데이트"""
-        displayed = len(self.filtered_data_cache)
+        total_filtered = len(self.filtered_data_cache)
+        rendered = self._rendered_count
         
         if not self.is_bookmark_tab:
             unread = self.db.get_unread_count(self.keyword)
@@ -1739,9 +1788,13 @@ class NewsTab(QWidget):
             
             filter_word = self.inp_filter.text().strip()
             if filter_word:
-                msg += f" | 필터링: {displayed}개 표시"
+                msg += f" | 필터링: {total_filtered}개"
             else:
-                msg += f" | {len(self.news_data_cache)}개 표시"
+                msg += f" | {len(self.news_data_cache)}개"
+            
+            # Phase 3: 렌더링된 항목 수 표시
+            if rendered < total_filtered:
+                msg += f" (표시: {rendered}개)"
             
             if unread > 0:
                 msg += f" | 안 읽음: {unread}개"
@@ -1751,9 +1804,16 @@ class NewsTab(QWidget):
         else:
             filter_word = self.inp_filter.text().strip()
             if filter_word:
-                self.lbl_status.setText(f"⭐ 북마크 {len(self.news_data_cache)}개 중 {displayed}개 표시")
+                status_text = f"⭐ 북마크 {len(self.news_data_cache)}개 중 {total_filtered}개"
             else:
-                self.lbl_status.setText(f"⭐ 북마크 {len(self.news_data_cache)}개")
+                status_text = f"⭐ 북마크 {len(self.news_data_cache)}개"
+            
+            # Phase 3: 렌더링된 항목 수 표시
+            if rendered < total_filtered:
+                status_text += f" (표시: {rendered}개)"
+            
+            self.lbl_status.setText(status_text)
+
 
     def on_link_clicked(self, url: QUrl):
         """링크 클릭 처리"""
@@ -1764,6 +1824,12 @@ class NewsTab(QWidget):
         action = url.host()
         link_hash = url.path().lstrip('/')
         
+        # Phase 3: 더 보기 액션 처리
+        if action == "load_more":
+            self._rendered_count += self.LOAD_MORE_COUNT
+            self.render_html()
+            return
+        
         target = next(
             (i for i in self.news_data_cache if hashlib.md5(i['link'].encode()).hexdigest() == link_hash), 
             None
@@ -1771,6 +1837,7 @@ class NewsTab(QWidget):
         
         if not target:
             return
+
 
         link = target['link']
 
@@ -1914,6 +1981,19 @@ class MainApp(QMainWindow):
         if self.client_id and self.tabs.count() > 1:
             QTimer.singleShot(1000, self._safe_refresh_all)
         
+        # 종료 원인 추적을 위한 플래그
+        self._system_shutdown = False       # Windows 시스템 종료
+        self._user_requested_close = False  # 사용자가 종료 요청
+        self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
+        
+        # 탭 배지 업데이트 타이머 (30초마다)
+        self._tab_badge_timer = QTimer(self)
+        self._tab_badge_timer.timeout.connect(self.update_all_tab_badges)
+        self._tab_badge_timer.start(30000)  # 30초
+        
+        # 첫 실행 가이드 표시
+        QTimer.singleShot(500, self._check_first_run)
+        
         logger.info("MainApp 초기화 완료")
     
     def _update_countdown(self):
@@ -2053,14 +2133,30 @@ class MainApp(QMainWindow):
         
         toolbar = QHBoxLayout()
         
+        # 툴바 버튼 생성 (단축키 힌트 포함)
         self.btn_refresh = QPushButton("🔄 새로고침")
+        self.btn_refresh.setToolTip("모든 탭의 뉴스를 새로고침합니다 (Ctrl+R, F5)")
+        
         self.btn_save = QPushButton("💾 내보내기")
+        self.btn_save.setToolTip("현재 탭의 뉴스를 CSV로 내보냅니다 (Ctrl+S)")
+        
         self.btn_setting = QPushButton("⚙ 설정")
+        self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
+        
         self.btn_stats = QPushButton("📊 통계")
+        self.btn_stats.setToolTip("전체 뉴스 통계 보기")
+        
         self.btn_analysis = QPushButton("📈 분석")
+        self.btn_analysis.setToolTip("언론사별 분석 보기")
+        
         self.btn_help = QPushButton("❓ 도움말")
+        self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
+        
         self.btn_folder = QPushButton("📁 폴더")
+        self.btn_folder.setToolTip("데이터 폴더 열기")
+        
         self.btn_add = QPushButton("➕ 새 탭")
+        self.btn_add.setToolTip("새로운 키워드 탭 추가 (Ctrl+T)")
         self.btn_add.setObjectName("AddTab")
         
         toolbar.addWidget(self.btn_refresh)
@@ -2107,7 +2203,14 @@ class MainApp(QMainWindow):
             if key and key != "북마크":
                 self.add_news_tab(key)
         
-        self.statusBar().showMessage("준비됨")
+        # 초기 탭 배지 업데이트
+        QTimer.singleShot(100, self.update_all_tab_badges)
+        
+        # 상태바 초기 메시지
+        if self.client_id:
+            self.statusBar().showMessage(f"✅ 준비됨 - {len(self.tabs_data)}개 탭")
+        else:
+            self.statusBar().showMessage("⚠️ API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요.")
         
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
@@ -2139,6 +2242,61 @@ class MainApp(QMainWindow):
             QShortcut(QKeySequence(f"Alt+{i}"), self, lambda idx=i-1: self.switch_to_tab(idx))
         
         QShortcut(QKeySequence("Ctrl+F"), self, self.focus_filter)
+
+    def _check_first_run(self):
+        """첫 실행 시 API 키 설정 가이드 표시"""
+        if not self.client_id or not self.client_secret:
+            reply = QMessageBox.question(
+                self,
+                "🚀 뉴스 스크래퍼 Pro에 오신 것을 환영합니다!",
+                "네이버 뉴스를 검색하려면 API 키가 필요합니다.\n\n"
+                "네이버 개발자 센터에서 무료로 발급받을 수 있습니다.\n"
+                "(https://developers.naver.com)\n\n"
+                "지금 API 키를 설정하시겠습니까?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.open_settings()
+    
+    def update_all_tab_badges(self):
+        """모든 탭의 배지(미읽음 수) 업데이트"""
+        try:
+            for i in range(1, self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if widget and hasattr(widget, 'keyword'):
+                    keyword = widget.keyword
+                    unread_count = self.db.get_unread_count(keyword)
+                    
+                    # 탭 이름 업데이트
+                    if unread_count > 0:
+                        if unread_count > 99:
+                            badge = f" ({99}+)"
+                        else:
+                            badge = f" ({unread_count})"
+                        self.tabs.setTabText(i, f"{keyword}{badge}")
+                    else:
+                        self.tabs.setTabText(i, keyword)
+        except Exception as e:
+            logger.warning(f"탭 배지 업데이트 오류: {e}")
+    
+    def update_tab_badge(self, keyword: str):
+        """특정 탭의 배지 업데이트"""
+        try:
+            for i in range(1, self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if widget and hasattr(widget, 'keyword') and widget.keyword == keyword:
+                    unread_count = self.db.get_unread_count(keyword)
+                    
+                    if unread_count > 0:
+                        badge = f" ({unread_count})" if unread_count <= 99 else " (99+)"
+                        self.tabs.setTabText(i, f"{keyword}{badge}")
+                    else:
+                        self.tabs.setTabText(i, keyword)
+                    break
+        except Exception as e:
+            logger.warning(f"탭 배지 업데이트 오류 ({keyword}): {e}")
 
     def switch_to_tab(self, index: int):
         """탭 전환"""
@@ -2631,6 +2789,9 @@ class MainApp(QMainWindow):
             # 성공 시 네트워크 오류 카운터 리셋
             self._network_error_count = 0
             self._network_available = True
+            
+            # 탭 배지 업데이트
+            self.update_tab_badge(keyword)
                 
         except Exception as e:
             logger.error(f"Fetch Done Error: {e}")
@@ -3040,12 +3201,39 @@ class MainApp(QMainWindow):
 
 
     def closeEvent(self, event):
-        """종료 이벤트 - 안정성 개선 버전"""
-        logger.info("프로그램 종료 시작...")
+        """종료 이벤트 - 종료 원인 추적 및 확인 다이얼로그 버전"""
+        # 종료 원인 분석을 위한 호출 스택 로깅
+        caller_info = self._get_close_caller_info()
+        logger.info(f"프로그램 종료 시작... (호출 원인: {caller_info})")
+        
+        # 시스템 종료가 아니고 사용자 요청도 아닌 경우 확인 다이얼로그 표시
+        if not self._system_shutdown and not self._force_close:
+            # 트레이에서 종료를 선택한 경우가 아니면 확인
+            if not self._user_requested_close:
+                reply = QMessageBox.question(
+                    self,
+                    "프로그램 종료",
+                    "정말로 프로그램을 종료하시겠습니까?\n\n"
+                    "종료하면 뉴스 자동 새로고침이 중지됩니다.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                
+                if reply != QMessageBox.StandardButton.Yes:
+                    logger.info("사용자가 종료를 취소함")
+                    event.ignore()
+                    return
+                    
+                self._user_requested_close = True
+                logger.info("사용자가 종료 확인함")
+        elif self._system_shutdown:
+            logger.warning("시스템 종료로 인한 프로그램 종료")
+        
         try:
             # 모든 타이머 중지
             self.timer.stop()
             self._countdown_timer.stop()
+            self._tab_badge_timer.stop()
             logger.info("타이머 중지됨")
             
             # 모든 워커 정리 (시그널 disconnect 포함)
@@ -3098,6 +3286,59 @@ class MainApp(QMainWindow):
             traceback.print_exc()
         finally:
             super().closeEvent(event)
+    
+    def _get_close_caller_info(self) -> str:
+        """종료 호출 원인을 분석하여 반환"""
+        try:
+            # 호출 스택 분석
+            stack = inspect.stack()
+            caller_info = []
+            
+            for frame_info in stack[2:8]:  # closeEvent 이후 최대 6개 프레임 분석
+                func_name = frame_info.function
+                filename = os.path.basename(frame_info.filename)
+                lineno = frame_info.lineno
+                
+                # 중요한 호출자 정보만 기록
+                if func_name not in ['closeEvent', '_get_close_caller_info']:
+                    caller_info.append(f"{func_name}@{filename}:{lineno}")
+            
+            if not caller_info:
+                return "Unknown"
+            
+            return " <- ".join(caller_info[:3])  # 최대 3개만 표시
+        except Exception as e:
+            return f"Error analyzing stack: {e}"
+    
+    def nativeEvent(self, eventType, message):
+        """Windows 네이티브 이벤트 처리 - 시스템 종료 감지"""
+        try:
+            # Windows WM_QUERYENDSESSION 또는 WM_ENDSESSION 감지
+            if eventType == b"windows_generic_MSG":
+                import ctypes
+                WM_QUERYENDSESSION = 0x0011
+                WM_ENDSESSION = 0x0016
+                
+                msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.c_ulong * 6)).contents
+                msg_id = msg[1]
+                
+                if msg_id in (WM_QUERYENDSESSION, WM_ENDSESSION):
+                    logger.warning(f"Windows 세션 종료 신호 감지 (MSG: {hex(msg_id)})")
+                    self._system_shutdown = True
+                    self._force_close = True
+                    
+        except Exception as e:
+            # nativeEvent 분석 실패는 무시
+            pass
+            
+        return super().nativeEvent(eventType, message)
+    
+    def request_close(self, confirmed: bool = False):
+        """트레이 메뉴 등에서 종료 요청 시 사용"""
+        if confirmed:
+            self._user_requested_close = True
+            self._force_close = True
+        self.close()
 
 
 # --- 설정 다이얼로그 ---
@@ -3641,7 +3882,7 @@ class SettingsDialog(QDialog):
 
 # --- 메인 실행 ---
 def main():
-    """메인 함수 - 안정성 개선 버전"""
+    """메인 함수 - 안정성 개선 버전 (종료 원인 추적 포함)"""
     # 전역 예외 처리기
     def exception_hook(exc_type, exc_value, exc_tb):
         logger.critical("처리되지 않은 예외 발생:")
@@ -3674,6 +3915,33 @@ def main():
     # Python 3.8+ 스레드 예외 훅
     if hasattr(threading, 'excepthook'):
         threading.excepthook = thread_exception_hook
+    
+    # 윈도우 참조 저장 (시그널 핸들러에서 사용)
+    window = None
+    
+    # SIGTERM/SIGINT 핸들러 (외부에서 프로세스 종료 시)
+    def signal_handler(signum, frame):
+        sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+        logger.warning(f"외부 종료 신호 수신: {sig_name}")
+        try:
+            with open("crash_log.txt", "a", encoding="utf-8") as f:
+                f.write(f"\n{'='*50}\n")
+                f.write(f"시간: {datetime.now()}\n")
+                f.write(f"유형: Signal Received - {sig_name}\n")
+        except (IOError, OSError):
+            pass
+        
+        if window:
+            window._system_shutdown = True
+            window._force_close = True
+            window.close()
+    
+    # Windows에서는 SIGTERM이 지원될 수 있음
+    try:
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+    except (ValueError, OSError) as e:
+        logger.warning(f"시그널 핸들러 등록 실패: {e}")
     
     try:
         logger.info(f"{APP_NAME} v{VERSION} 시작 중...")
