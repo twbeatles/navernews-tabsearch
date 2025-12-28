@@ -25,6 +25,10 @@ from queue import Queue
 from functools import partial
 from enum import Enum
 
+# --- HiDPI 지원 (반드시 PyQt6 임포트 전에 설정) ---
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QTextBrowser, QLabel, QMessageBox,
@@ -39,21 +43,41 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut, QIcon
 
-# --- 로깅 설정 ---
-LOG_FILE = "news_scraper.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
+# --- 로깅 설정 (PyInstaller frozen 환경 대응) ---
+def get_app_dir():
+    """실행 파일 또는 스크립트가 있는 디렉토리 반환"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller로 빌드된 경우
+        return os.path.dirname(sys.executable)
+    else:
+        # 일반 Python 실행
+        return os.path.dirname(os.path.abspath(__file__))
+
+APP_DIR = get_app_dir()
+LOG_FILE = os.path.join(APP_DIR, "news_scraper.log")
+
+# 로깅 핸들러 안전하게 설정
+try:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[
+            logging.FileHandler(LOG_FILE, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+except Exception:
+    # 파일 로깅 실패시 콘솔만 사용
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
 logger = logging.getLogger(__name__)
 
 # --- 상수 및 설정 ---
-CONFIG_FILE = "news_scraper_config.json"
-DB_FILE = "news_database.db"
+CONFIG_FILE = os.path.join(APP_DIR, "news_scraper_config.json")
+DB_FILE = os.path.join(APP_DIR, "news_database.db")
 ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
@@ -432,7 +456,8 @@ class AppStyle:
             padding: 8px 16px; 
             border-radius: 8px; 
             border: 1px solid {Colors.LIGHT_BORDER};
-            min-width: 60px;
+            min-width: 70px;
+            margin: 0 4px;
         }}
         QPushButton:hover {{ 
             background-color: #E8F4FF; 
@@ -584,7 +609,8 @@ class AppStyle:
             padding: 8px 16px; 
             border-radius: 8px; 
             border: 1px solid {Colors.DARK_BORDER};
-            min-width: 60px;
+            min-width: 70px;
+            margin: 0 4px;
         }}
         QPushButton:hover {{ 
             background-color: #3A3A3C; 
@@ -2709,82 +2735,94 @@ class MainApp(QMainWindow):
         super().__init__()
         logger.info("MainApp 초기화 시작")
         
-        self.db = DatabaseManager(DB_FILE)
-        self.workers = {}
-        self.threads = {}
-        self.toast_queue = ToastQueue(self)
+        # 안전한 초기화를 위해 기본 속성 미리 정의
+        self.client_id = ""
+        self.client_secret = ""
+        self.toast_queue = None
+        self.db = None
         
-        # 새로고침 상태 추적 (안정성 개선)
-        self._refresh_in_progress = False
-        self._refresh_queue = []
-        self._refresh_mutex = QMutex()
-        self._last_refresh_time = None
-        
-        # 순차 새로고침 관련 변수 (완전 구현)
-        self._pending_refresh_keywords = []
-        self._sequential_refresh_active = False
-        self._current_refresh_idx = 0
-        self._total_refresh_count = 0
-        self._sequential_added_count = 0  # 누적 추가 건수
-        self._sequential_dup_count = 0    # 누적 중복 건수
-        
-        # 알림 관련 설정
-        self.notification_enabled = True  # 데스크톱 알림 활성화
-        self.alert_keywords = []  # 알림 키워드 목록
-        self.sound_enabled = True  # 알림 소리 활성화
-        
-        # 키워드 그룹 관리자
-        self.keyword_group_manager = KeywordGroupManager()
-        
-        # 자동 백업 관리자
-        self.auto_backup = AutoBackup()
-        
-        # 검색 히스토리 (최근 10개)
-        self.search_history = []
-        
-        # 네트워크 상태 추적
-        self._network_error_count = 0  # 연속 네트워크 오류 횟수
-        self._max_network_errors = 3   # 연속 오류 허용 횟수
-        self._network_available = True  # 네트워크 연결 상태
-        
-        # 다음 새로고침 카운트다운 타이머
-        self._countdown_timer = QTimer(self)
-        self._countdown_timer.timeout.connect(self._update_countdown)
-        self._next_refresh_seconds = 0
-        
-        # 아이콘 설정
-        self.set_application_icon()
-        
-        self.load_config()
-        self.init_ui()
-        self.setup_shortcuts()
-        
-        # 타이머 설정 (안정성 개선)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._safe_refresh_all)
-        self.apply_refresh_interval()
-        
-        if self.client_id and self.tabs.count() > 1:
-            QTimer.singleShot(1000, self._safe_refresh_all)
-        
-        # 종료 원인 추적을 위한 플래그
-        self._system_shutdown = False       # Windows 시스템 종료
-        self._user_requested_close = False  # 사용자가 종료 요청
-        self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
-        
-        # 탭 배지 업데이트 타이머 (30초마다)
-        self._tab_badge_timer = QTimer(self)
-        self._tab_badge_timer.timeout.connect(self.update_all_tab_badges)
-        self._tab_badge_timer.start(30000)  # 30초
-        
-        # 첫 실행 가이드 표시
-        QTimer.singleShot(500, self._check_first_run)
-        
-        # 시작 시 자동 백업 (설정 파일이 있으면)
-        if os.path.exists(CONFIG_FILE):
-            QTimer.singleShot(2000, lambda: self.auto_backup.create_backup(include_db=False))
-        
-        logger.info("MainApp 초기화 완료")
+        try:
+            self.db = DatabaseManager(DB_FILE)
+            self.workers = {}
+            self.threads = {}
+            self.toast_queue = ToastQueue(self)
+            
+            # 새로고침 상태 추적 (안정성 개선)
+            self._refresh_in_progress = False
+            self._refresh_queue = []
+            self._refresh_mutex = QMutex()
+            self._last_refresh_time = None
+            
+            # 순차 새로고침 관련 변수 (완전 구현)
+            self._pending_refresh_keywords = []
+            self._sequential_refresh_active = False
+            self._current_refresh_idx = 0
+            self._total_refresh_count = 0
+            self._sequential_added_count = 0  # 누적 추가 건수
+            self._sequential_dup_count = 0    # 누적 중복 건수
+            
+            # 알림 관련 설정
+            self.notification_enabled = True  # 데스크톱 알림 활성화
+            self.alert_keywords = []  # 알림 키워드 목록
+            self.sound_enabled = True  # 알림 소리 활성화
+            
+            # 키워드 그룹 관리자
+            self.keyword_group_manager = KeywordGroupManager(os.path.join(APP_DIR, "keyword_groups.json"))
+            
+            # 자동 백업 관리자
+            self.auto_backup = AutoBackup()
+            
+            # 검색 히스토리 (최근 10개)
+            self.search_history = []
+            
+            # 네트워크 상태 추적
+            self._network_error_count = 0  # 연속 네트워크 오류 횟수
+            self._max_network_errors = 3   # 연속 오류 허용 횟수
+            self._network_available = True  # 네트워크 연결 상태
+            
+            # 다음 새로고침 카운트다운 타이머
+            self._countdown_timer = QTimer(self)
+            self._countdown_timer.timeout.connect(self._update_countdown)
+            self._next_refresh_seconds = 0
+            
+            # 아이콘 설정
+            self.set_application_icon()
+            
+            self.load_config()
+            self.init_ui()
+            self.setup_shortcuts()
+            
+            # 타이머 설정 (안정성 개선)
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self._safe_refresh_all)
+            self.apply_refresh_interval()
+            
+            if self.client_id and self.tabs.count() > 1:
+                QTimer.singleShot(1000, self._safe_refresh_all)
+            
+            # 종료 원인 추적을 위한 플래그
+            self._system_shutdown = False       # Windows 시스템 종료
+            self._user_requested_close = False  # 사용자가 종료 요청
+            self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
+            
+            # 탭 배지 업데이트 타이머 (30초마다)
+            self._tab_badge_timer = QTimer(self)
+            self._tab_badge_timer.timeout.connect(self.update_all_tab_badges)
+            self._tab_badge_timer.start(30000)  # 30초
+            
+            # 첫 실행 가이드 표시
+            QTimer.singleShot(500, self._check_first_run)
+            
+            # 시작 시 자동 백업 (설정 파일이 있으면)
+            if os.path.exists(CONFIG_FILE):
+                QTimer.singleShot(2000, lambda: self.auto_backup.create_backup(include_db=False))
+            
+            logger.info("MainApp 초기화 완료")
+        except Exception as e:
+            logger.critical(f"MainApp 초기화 중 치명적 오류: {e}")
+            traceback.print_exc()
+            QMessageBox.critical(None, "초기화 오류", f"프로그램 초기화 중 오류가 발생했습니다:\n{e}")
+
     
     def _update_countdown(self):
         """상태바 카운트다운 업데이트"""
@@ -2925,6 +2963,7 @@ class MainApp(QMainWindow):
         layout.setContentsMargins(15, 15, 15, 15)
         
         toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
         
         # 툴바 버튼 생성 (단축키 힌트 포함)
         self.btn_refresh = QPushButton("🔄 새로고침")
@@ -3197,7 +3236,7 @@ class MainApp(QMainWindow):
     def resizeEvent(self, event):
         """창 크기 변경 시 토스트 위치 업데이트"""
         super().resizeEvent(event)
-        if self.toast_queue.current_toast:
+        if hasattr(self, 'toast_queue') and self.toast_queue and self.toast_queue.current_toast:
             self.toast_queue.current_toast.update_position()
 
     def close_current_tab(self):
@@ -4143,28 +4182,9 @@ class MainApp(QMainWindow):
         except Exception as e:
             return f"Error analyzing stack: {e}"
     
-    def nativeEvent(self, eventType, message):
-        """Windows 네이티브 이벤트 처리 - 시스템 종료 감지"""
-        try:
-            # Windows WM_QUERYENDSESSION 또는 WM_ENDSESSION 감지
-            if eventType == b"windows_generic_MSG":
-                import ctypes
-                WM_QUERYENDSESSION = 0x0011
-                WM_ENDSESSION = 0x0016
-                
-                msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.c_ulong * 6)).contents
-                msg_id = msg[1]
-                
-                if msg_id in (WM_QUERYENDSESSION, WM_ENDSESSION):
-                    logger.warning(f"Windows 세션 종료 신호 감지 (MSG: {hex(msg_id)})")
-                    self._system_shutdown = True
-                    self._force_close = True
-                    
-        except Exception as e:
-            # nativeEvent 분석 실패는 무시
-            pass
-            
-        return super().nativeEvent(eventType, message)
+    # def nativeEvent(self, eventType, message):
+    #     """Windows 네이티브 이벤트 처리 - 시스템 종료 감지"""
+    #     return super().nativeEvent(eventType, message)
     
     def request_close(self, confirmed: bool = False):
         """트레이 메뉴 등에서 종료 요청 시 사용"""
@@ -4789,12 +4809,8 @@ def main():
     try:
         logger.info(f"{APP_NAME} v{VERSION} 시작 중...")
         
-        # HiDPI 지원 설정 (QApplication 생성 전에 설정해야 함)
-        os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
-        os.environ['QT_SCALE_FACTOR_ROUNDING_POLICY'] = 'PassThrough'
-        
         app = QApplication(sys.argv)
-        app.setStyle("Fusion")
+        # app.setStyle("Fusion")
         app.setApplicationName(APP_NAME)
         app.setApplicationVersion(VERSION)
         
