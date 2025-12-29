@@ -85,88 +85,88 @@ VERSION = "32.1"  # 리팩토링 + 자동 백업 + 로그 뷰어 + 키워드 그
 
 # --- 색상 상수 (중앙화) ---
 class Colors:
-    """앱 전체에서 사용되는 색상 상수"""
-    # 라이트 테마
-    LIGHT_PRIMARY = "#007AFF"
-    LIGHT_PRIMARY_HOVER = "#0056B3"
-    LIGHT_SECONDARY = "#6C757D"
-    LIGHT_SUCCESS = "#28A745"
-    LIGHT_WARNING = "#FFC107"
-    LIGHT_DANGER = "#DC3545"
-    LIGHT_INFO = "#17A2B8"
-    LIGHT_BG = "#F0F2F5"
-    LIGHT_CARD_BG = "#FFFFFF"
-    LIGHT_BORDER = "#DCDCDC"
-    LIGHT_TEXT = "#000000"
-    LIGHT_TEXT_MUTED = "#6C757D"
+    """앱 전체에서 사용되는 색상 상수 (Modern Premium Theme)"""
+    # 라이트 테마 (Apple-style Clean)
+    LIGHT_PRIMARY = "#007AFF"          # San Francisco Blue
+    LIGHT_PRIMARY_HOVER = "#0062CC"
+    LIGHT_SECONDARY = "#86868B"        # Cool Gray
+    LIGHT_SUCCESS = "#34C759"          # Success Green
+    LIGHT_WARNING = "#FF9500"          # Warning Orange
+    LIGHT_DANGER = "#FF3B30"           # Destructive Red
+    LIGHT_INFO = "#5AC8FA"             # Info Blue
+    LIGHT_BG = "#F5F5F7"               # Off-white background
+    LIGHT_CARD_BG = "#FFFFFF"          # Pure white card
+    LIGHT_BORDER = "#D1D1D6"           # Subtle border
+    LIGHT_TEXT = "#1D1D1F"             # Almost black
+    LIGHT_TEXT_MUTED = "#86868B"       
     
-    # 다크 테마
-    DARK_PRIMARY = "#0A84FF"
-    DARK_PRIMARY_HOVER = "#0060C0"
-    DARK_SECONDARY = "#8E8E93"
+    # 다크 테마 (Deep & Vivid)
+    DARK_PRIMARY = "#0A84FF"           # Vivid Blue
+    DARK_PRIMARY_HOVER = "#409CFF"
+    DARK_SECONDARY = "#98989D"
     DARK_SUCCESS = "#30D158"
     DARK_WARNING = "#FFD60A"
     DARK_DANGER = "#FF453A"
     DARK_INFO = "#64D2FF"
-    DARK_BG = "#1C1C1E"
-    DARK_CARD_BG = "#2C2C2E"
-    DARK_BORDER = "#3A3A3C"
-    DARK_TEXT = "#FFFFFF"
-    DARK_TEXT_MUTED = "#8E8E93"
+    DARK_BG = "#000000"                # Pure Black (OLED friendly)
+    DARK_CARD_BG = "#1C1C1E"           # Dark Gray Card
+    DARK_BORDER = "#38383A"
+    DARK_TEXT = "#F5F5F7"
+    DARK_TEXT_MUTED = "#86868B"
     
     # 공통 색상
-    HIGHLIGHT = "#FCD34D"
-    BOOKMARK = "#FFD700"
-    DUPLICATE = "#FFA500"
+    HIGHLIGHT = "#FFD60A"              # Vivid Yellow
+    BOOKMARK = "#FFD60A"
+    DUPLICATE = "#FF9F0A"
     
     @classmethod
     def get_html_colors(cls, is_dark: bool) -> Dict[str, str]:
         """HTML 렌더링용 테마별 색상 딕셔너리 반환"""
         if is_dark:
             return {
-                'text_color': "#F0F0F0",
-                'link_color': "#6EB5FF",
-                'link_hover': "#8BC8FF",
-                'border_color': "#505050",
-                'bg_color': "#3A3A3C",
+                'text_color': "#F5F5F7",
+                'link_color': "#409CFF",
+                'link_hover': "#70BDFD",
+                'border_color': "#38383A",
+                'bg_color': "#1C1C1E",
                 'bg_gradient': "#2C2C2E",
-                'bg_hover': "#4A4A4C",
-                'read_bg': "#2C2C2E",
+                'bg_hover': "#2C2C2E",
+                'read_bg': "#151516",
                 'title_color': "#FFFFFF",
-                'meta_color': "#A0A0A0",
+                'meta_color': "#98989D",
                 'desc_color': "#D0D0D0",
-                'tag_bg': "#0A84FF",
-                'tag_color': "#FFFFFF",
-                'action_bg': "rgba(255, 255, 255, 0.08)",
-                'action_hover': "rgba(255, 255, 255, 0.15)",
-                'bookmark_bg': "#17A2B8",
-                'bookmark_end': "#20C997",
-                'empty_bg': "rgba(255, 255, 255, 0.03)",
-                'scrollbar_track': "#2C2C2E",
-                'scrollbar_thumb': "#505050"
+                'tag_bg': "rgba(10, 132, 255, 0.2)",
+                'tag_color': "#409CFF",
+                'action_bg': "rgba(255, 255, 255, 0.1)",
+                'action_hover': "rgba(255, 255, 255, 0.2)",
+                'bookmark_bg': "#FFD60A",
+                'bookmark_end': "#FF9F0A",
+                'empty_bg': "rgba(255, 255, 255, 0.05)",
+                'scrollbar_track': "#1C1C1E",
+                'scrollbar_thumb': "#48484A"
             }
         else:
             return {
-                'text_color': "#1A1A1A",
+                'text_color': "#1D1D1F",
                 'link_color': "#007AFF",
-                'link_hover': "#0056b3",
-                'border_color': "#E5E7EB",
+                'link_hover': "#0051A8",
+                'border_color': "#E5E5EA",
                 'bg_color': "#FFFFFF",
-                'bg_gradient': "#F8FAFC",
-                'bg_hover': "#F0F9FF",
-                'read_bg': "#F3F4F6",
-                'title_color': "#111827",
-                'meta_color': "#6B7280",
-                'desc_color': "#4B5563",
-                'tag_bg': "#007AFF",
-                'tag_color': "#FFFFFF",
-                'action_bg': "rgba(0, 122, 255, 0.08)",
-                'action_hover': "rgba(0, 122, 255, 0.15)",
-                'bookmark_bg': "#007AFF",
-                'bookmark_end': "#00C7BE",
+                'bg_gradient': "#FFFFFF",
+                'bg_hover': "#F5F5F7",
+                'read_bg': "#F2F2F7",
+                'title_color': "#1D1D1F",
+                'meta_color': "#86868B",
+                'desc_color': "#3A3A3C",
+                'tag_bg': "rgba(0, 122, 255, 0.1)",
+                'tag_color': "#007AFF",
+                'action_bg': "rgba(0, 0, 0, 0.05)",
+                'action_hover': "rgba(0, 0, 0, 0.1)",
+                'bookmark_bg': "#FFCC00",
+                'bookmark_end': "#FF9500",
                 'empty_bg': "rgba(0, 0, 0, 0.02)",
-                'scrollbar_track': "#F3F4F6",
-                'scrollbar_thumb': "#D1D5DB"
+                'scrollbar_track': "#FFFFFF",
+                'scrollbar_thumb': "#C7C7CC"
             }
 
 
@@ -432,121 +432,62 @@ class NewsBrowser(QTextBrowser):
 class AppStyle:
     LIGHT = f"""
         QMainWindow, QDialog {{ background-color: {Colors.LIGHT_BG}; }}
+        
+        /* 공통 위젯 스타일 */
         QGroupBox {{ 
-            font-family: '맑은 고딕'; 
-            font-weight: bold; 
-            margin-top: 10px;
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
+            font-weight: 600; 
+            margin-top: 12px;
+            border-radius: 12px;
+            padding: 16px;
             border: 1px solid {Colors.LIGHT_BORDER};
-            border-radius: 8px;
-            padding: 15px;
             background-color: {Colors.LIGHT_CARD_BG};
         }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 5px;
-            color: {Colors.LIGHT_PRIMARY};
-        }}
-        QLabel, QDialog QLabel {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.LIGHT_TEXT}; }}
+        QGroupBox::title {{ color: {Colors.LIGHT_PRIMARY}; padding: 0 5px; }}
+        
+        QLabel {{ color: {Colors.LIGHT_TEXT}; }}
+        
+        /* 버튼 스타일 - Apple Style */
         QPushButton {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            color: #333; 
+            font-weight: 500;
             padding: 8px 16px; 
             border-radius: 8px; 
-            border: 1px solid {Colors.LIGHT_BORDER};
             min-width: 70px;
             margin: 0 4px;
-        }}
-        QPushButton:hover {{ 
-            background-color: #E8F4FF; 
-            border-color: {Colors.LIGHT_PRIMARY};
-            color: {Colors.LIGHT_PRIMARY};
-        }}
-        QPushButton:pressed {{
-            background-color: #D0E8FF;
-        }}
-        QPushButton:disabled {{ background-color: #F5F5F5; color: #999; }}
-        QPushButton#AddTab {{ 
-            font-weight: bold; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #00A3FF);
-            color: white; 
-            border: none; 
-            padding: 10px 20px;
-        }}
-        QPushButton#AddTab:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #0080CC);
-        }}
-        QPushButton#RefreshBtn {{ 
-            background-color: {Colors.LIGHT_SUCCESS}; 
-            color: white; 
-            border: none; 
-        }}
-        QPushButton#RefreshBtn:hover {{ 
-            background-color: #218838; 
-        }}
-        QComboBox {{ 
-            font-family: '맑은 고딕'; 
-            font-size: 10pt; 
-            padding: 6px 10px; 
-            border-radius: 8px; 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            color: {Colors.LIGHT_TEXT};
-            min-width: 80px;
-        }}
-        QComboBox:hover {{ border-color: {Colors.LIGHT_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 20px; }}
-        QComboBox::down-arrow {{ image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #666; }}
-        QComboBox QAbstractItemView {{ 
             background-color: {Colors.LIGHT_CARD_BG}; 
             color: {Colors.LIGHT_TEXT}; 
-            selection-background-color: {Colors.LIGHT_PRIMARY}; 
-            selection-color: white; 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 4px;
+            border: 1px solid {Colors.LIGHT_BORDER};
         }}
-        QComboBox QAbstractItemView::item {{ padding: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ background-color: #E8F4FF; }}
-        QTextBrowser, QTextEdit, QListWidget {{ 
-            font-family: '맑은 고딕'; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 10px; 
-            color: {Colors.LIGHT_TEXT};
-            padding: 8px;
-        }}
-        QListWidget::item:selected {{ background-color: {Colors.LIGHT_PRIMARY}; color: white; border-radius: 4px; }}
-        QTabWidget::pane {{ 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 8px;
-            background-color: {Colors.LIGHT_CARD_BG};
-            margin-top: -1px;
-        }}
-        QTabBar::tab {{ 
-            font-family: '맑은 고딕'; 
-            font-size: 10pt; 
-            color: {Colors.LIGHT_TEXT_MUTED}; 
-            padding: 10px 18px; 
-            border: 1px solid transparent; 
-            border-bottom: none; 
-            background-color: transparent;
-            margin-right: 2px;
-        }}
-        QTabBar::tab:selected {{ 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            border-color: {Colors.LIGHT_BORDER}; 
-            border-bottom: 1px solid {Colors.LIGHT_CARD_BG};
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
+        QPushButton:hover {{ 
+            background-color: #F2F2F7; 
             color: {Colors.LIGHT_PRIMARY}; 
-            font-weight: bold; 
+            border-color: {Colors.LIGHT_PRIMARY};
         }}
-        QTabBar::tab:!selected {{ color: {Colors.LIGHT_TEXT_MUTED}; }}
-        QTabBar::tab:!selected:hover {{ color: {Colors.LIGHT_TEXT}; background-color: rgba(0, 122, 255, 0.1); border-top-left-radius: 8px; border-top-right-radius: 8px; }}
+        QPushButton:pressed {{ background-color: #E5E5EA; }}
+        QPushButton:disabled {{ background-color: #F5F5F7; color: {Colors.LIGHT_TEXT_MUTED}; }}
+        
+        QPushButton#AddTab {{ 
+            font-weight: 700; 
+            border: none; 
+            padding: 10px 20px;
+            background: {Colors.LIGHT_PRIMARY};
+            color: white; 
+        }}
+        QPushButton#AddTab:hover {{ background: {Colors.LIGHT_PRIMARY_HOVER}; }}
+        
+        QPushButton#RefreshBtn {{ 
+            border: none; 
+            font-weight: 600;
+            background-color: {Colors.LIGHT_SUCCESS}; 
+            color: white; 
+        }}
+        QPushButton#RefreshBtn:hover {{ background-color: #248A3D; }}
+        
+        /* 입력 필드 */
         QLineEdit {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
             padding: 8px 12px; 
             border-radius: 8px; 
@@ -555,151 +496,143 @@ class AppStyle:
             color: {Colors.LIGHT_TEXT};
         }}
         QLineEdit:focus {{ border: 2px solid {Colors.LIGHT_PRIMARY}; padding: 7px 11px; }}
-        QLineEdit#FilterActive {{ border: 2px solid {Colors.LIGHT_PRIMARY}; background-color: #F0F8FF; }}
-        QLineEdit::placeholder {{ color: #999999; }}
+        
+        QComboBox {{ 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
+            font-size: 10pt; 
+            padding: 6px 12px; 
+            border-radius: 8px; 
+            min-width: 80px;
+            border: 1px solid {Colors.LIGHT_BORDER}; 
+            background-color: {Colors.LIGHT_CARD_BG}; 
+            color: {Colors.LIGHT_TEXT};
+        }}
+        QComboBox:hover {{ border-color: {Colors.LIGHT_PRIMARY}; }}
+        QComboBox::drop-down {{ border: none; width: 24px; }}
+        QComboBox QAbstractItemView {{ 
+            background-color: {Colors.LIGHT_CARD_BG}; 
+            color: {Colors.LIGHT_TEXT}; 
+            selection-background-color: {Colors.LIGHT_PRIMARY}; 
+            selection-color: white; 
+            border: 1px solid {Colors.LIGHT_BORDER}; 
+        }}
+        
+        QTextBrowser, QTextEdit, QListWidget {{ 
+            background-color: {Colors.LIGHT_CARD_BG}; 
+            border: 1px solid {Colors.LIGHT_BORDER}; 
+            border-radius: 12px; 
+            color: {Colors.LIGHT_TEXT};
+            padding: 12px;
+        }}
+        
+        /* 탭 위젯 */
+        QTabWidget::pane {{ 
+            border-radius: 12px;
+            margin-top: -1px;
+            border: 1px solid {Colors.LIGHT_BORDER}; 
+            background-color: {Colors.LIGHT_CARD_BG};
+        }}
+        
+        QTabBar::tab {{ 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
+            font-size: 10pt; 
+            font-weight: 500;
+            padding: 10px 20px; 
+            margin-right: 4px;
+            border-top-left-radius: 8px; 
+            border-top-right-radius: 8px; 
+            color: {Colors.LIGHT_TEXT_MUTED}; 
+            background: transparent; 
+        }}
+        QTabBar::tab:selected {{ 
+            background-color: {Colors.LIGHT_CARD_BG}; 
+            border: 1px solid {Colors.LIGHT_BORDER}; 
+            border-bottom: 1px solid {Colors.LIGHT_CARD_BG};
+            color: {Colors.LIGHT_PRIMARY}; 
+            font-weight: 700;
+        }}
+        QTabBar::tab:!selected:hover {{ background-color: rgba(0,0,0,0.03); color: {Colors.LIGHT_TEXT}; }}
+        
         QProgressBar {{ 
             border: none; 
-            border-radius: 6px; 
-            text-align: center; 
-            background-color: #E0E0E0; 
+            background-color: #E5E5EA; 
             color: {Colors.LIGHT_TEXT};
+            border-radius: 6px;
+            text-align: center;
             height: 8px;
         }}
         QProgressBar::chunk {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.LIGHT_PRIMARY}, stop:1 {Colors.LIGHT_INFO});
+            background: {Colors.LIGHT_PRIMARY};
             border-radius: 6px;
         }}
-        QCheckBox {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.LIGHT_TEXT}; }}
-        QCheckBox::indicator {{ width: 20px; height: 20px; }}
-        QCheckBox::indicator:unchecked {{ border: 2px solid {Colors.LIGHT_BORDER}; background-color: {Colors.LIGHT_CARD_BG}; border-radius: 4px; }}
-        QCheckBox::indicator:checked {{ border: none; background-color: {Colors.LIGHT_PRIMARY}; border-radius: 4px; }}
-        QCheckBox::indicator:checked:hover {{ background-color: {Colors.LIGHT_PRIMARY_HOVER}; }}
-        QStatusBar {{ background-color: {Colors.LIGHT_CARD_BG}; border-top: 1px solid {Colors.LIGHT_BORDER}; }}
-        QScrollBar:vertical {{ background: {Colors.LIGHT_BG}; width: 10px; border-radius: 5px; }}
-        QScrollBar::handle:vertical {{ background: {Colors.LIGHT_BORDER}; border-radius: 5px; min-height: 30px; }}
-        QScrollBar::handle:vertical:hover {{ background: {Colors.LIGHT_TEXT_MUTED}; }}
+        
+        QScrollBar:vertical {{ background: {Colors.LIGHT_BG}; width: 12px; border-radius: 6px; margin: 0px; }}
+        QScrollBar::handle:vertical {{ background: #C7C7CC; border-radius: 6px; min-height: 40px; }}
+        QScrollBar::handle:vertical:hover {{ background: #AEAEB2; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        
+        QStatusBar {{ background: {Colors.LIGHT_BG}; color: {Colors.LIGHT_TEXT_MUTED}; }}
     """
 
     
     DARK = f"""
         QMainWindow, QDialog {{ background-color: {Colors.DARK_BG}; }}
+        
+        /* 공통 위젯 스타일 */
         QGroupBox {{ 
-            font-family: '맑은 고딕'; 
-            color: {Colors.DARK_TEXT}; 
-            font-weight: bold; 
-            margin-top: 10px;
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
+            font-weight: 600; 
+            margin-top: 12px;
+            border-radius: 12px;
+            padding: 16px;
             border: 1px solid {Colors.DARK_BORDER};
-            border-radius: 8px;
-            padding: 15px;
             background-color: {Colors.DARK_CARD_BG};
         }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 5px;
-            color: {Colors.DARK_PRIMARY};
-        }}
-        QLabel, QDialog QLabel {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.DARK_TEXT}; }}
+        QGroupBox::title {{ color: {Colors.DARK_PRIMARY}; padding: 0 5px; }}
+        
+        QLabel {{ color: {Colors.DARK_TEXT}; }}
+        
+        /* 버튼 스타일 - Apple Style */
         QPushButton {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
-            background-color: {Colors.DARK_CARD_BG}; 
-            color: {Colors.DARK_TEXT}; 
+            font-weight: 500;
             padding: 8px 16px; 
             border-radius: 8px; 
-            border: 1px solid {Colors.DARK_BORDER};
             min-width: 70px;
             margin: 0 4px;
+            background-color: {Colors.DARK_CARD_BG}; 
+            color: {Colors.DARK_TEXT}; 
+            border: 1px solid {Colors.DARK_BORDER};
         }}
         QPushButton:hover {{ 
             background-color: #3A3A3C; 
+            color: {Colors.DARK_PRIMARY}; 
             border-color: {Colors.DARK_PRIMARY};
-            color: {Colors.DARK_PRIMARY};
         }}
-        QPushButton:pressed {{
-            background-color: #4A4A4C;
-        }}
-        QPushButton:disabled {{ background-color: #1C1C1E; color: #555; }}
+        QPushButton:pressed {{ background-color: #2C2C2E; }}
+        QPushButton:disabled {{ background-color: #1C1C1E; color: {Colors.DARK_TEXT_MUTED}; }}
+        
         QPushButton#AddTab {{ 
-            font-weight: bold; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.DARK_PRIMARY}, stop:1 {Colors.DARK_INFO});
-            color: white; 
+            font-weight: 700; 
             border: none; 
             padding: 10px 20px;
+            background: {Colors.DARK_PRIMARY};
+            color: white; 
         }}
-        QPushButton#AddTab:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #0080CC);
-        }}
+        QPushButton#AddTab:hover {{ background: {Colors.DARK_PRIMARY_HOVER}; }}
+        
         QPushButton#RefreshBtn {{ 
+            border: none; 
+            font-weight: 600;
             background-color: {Colors.DARK_SUCCESS}; 
             color: white; 
-            border: none; 
         }}
-        QPushButton#RefreshBtn:hover {{ 
-            background-color: #28C050; 
-        }}
-        QComboBox {{ 
-            font-family: '맑은 고딕'; 
-            font-size: 10pt; 
-            padding: 6px 10px; 
-            border-radius: 8px; 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            background-color: {Colors.DARK_CARD_BG}; 
-            color: {Colors.DARK_TEXT};
-            min-width: 80px;
-        }}
-        QComboBox:hover {{ border-color: {Colors.DARK_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 20px; }}
-        QComboBox::down-arrow {{ image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #AAA; }}
-        QComboBox QAbstractItemView {{ 
-            background-color: {Colors.DARK_CARD_BG}; 
-            color: {Colors.DARK_TEXT}; 
-            selection-background-color: {Colors.DARK_PRIMARY}; 
-            selection-color: white; 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 4px;
-        }}
-        QComboBox QAbstractItemView::item {{ padding: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ background-color: #3A3A3C; }}
-        QTextBrowser, QTextEdit, QListWidget {{ 
-            font-family: '맑은 고딕'; 
-            background-color: {Colors.DARK_CARD_BG}; 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 10px; 
-            color: {Colors.DARK_TEXT};
-            padding: 8px;
-        }}
-        QListWidget::item:selected {{ background-color: {Colors.DARK_PRIMARY}; color: white; border-radius: 4px; }}
-        QTabWidget::pane {{ 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 8px;
-            background-color: {Colors.DARK_CARD_BG};
-            margin-top: -1px;
-        }}
-        QTabBar::tab {{ 
-            font-family: '맑은 고딕'; 
-            font-size: 10pt; 
-            color: {Colors.DARK_TEXT_MUTED}; 
-            padding: 10px 18px; 
-            border: 1px solid transparent; 
-            border-bottom: none; 
-            background-color: transparent;
-            margin-right: 2px;
-        }}
-        QTabBar::tab:selected {{ 
-            background-color: {Colors.DARK_CARD_BG}; 
-            border-color: {Colors.DARK_BORDER}; 
-            border-bottom: 1px solid {Colors.DARK_CARD_BG};
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
-            color: {Colors.DARK_PRIMARY}; 
-            font-weight: bold; 
-        }}
-        QTabBar::tab:!selected {{ color: {Colors.DARK_TEXT_MUTED}; }}
-        QTabBar::tab:!selected:hover {{ color: {Colors.DARK_TEXT}; background-color: rgba(10, 132, 255, 0.15); border-top-left-radius: 8px; border-top-right-radius: 8px; }}
+        QPushButton#RefreshBtn:hover {{ background-color: #28C050; }}
+        
+        /* 입력 필드 */
         QLineEdit {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
             padding: 8px 12px; 
             border-radius: 8px; 
@@ -708,231 +641,211 @@ class AppStyle:
             color: {Colors.DARK_TEXT};
         }}
         QLineEdit:focus {{ border: 2px solid {Colors.DARK_PRIMARY}; padding: 7px 11px; }}
-        QLineEdit#FilterActive {{ border: 2px solid {Colors.DARK_PRIMARY}; background-color: #1A2A3A; }}
-        QLineEdit::placeholder {{ color: #666666; }}
+        
+        QComboBox {{ 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
+            font-size: 10pt; 
+            padding: 6px 12px; 
+            border-radius: 8px; 
+            min-width: 80px;
+            border: 1px solid {Colors.DARK_BORDER}; 
+            background-color: {Colors.DARK_CARD_BG}; 
+            color: {Colors.DARK_TEXT};
+        }}
+        QComboBox:hover {{ border-color: {Colors.DARK_PRIMARY}; }}
+        QComboBox::drop-down {{ border: none; width: 24px; }}
+        QComboBox QAbstractItemView {{ 
+            background-color: {Colors.DARK_CARD_BG}; 
+            color: {Colors.DARK_TEXT}; 
+            selection-background-color: {Colors.DARK_PRIMARY}; 
+            selection-color: white; 
+            border: 1px solid {Colors.DARK_BORDER}; 
+        }}
+        
+        QTextBrowser, QTextEdit, QListWidget {{ 
+            background-color: {Colors.DARK_CARD_BG}; 
+            border: 1px solid {Colors.DARK_BORDER}; 
+            border-radius: 12px; 
+            color: {Colors.DARK_TEXT};
+            padding: 12px;
+        }}
+        
+        /* 탭 위젯 */
+        QTabWidget::pane {{ 
+            border-radius: 12px;
+            margin-top: -1px;
+            border: 1px solid {Colors.DARK_BORDER}; 
+            background-color: {Colors.DARK_CARD_BG};
+        }}
+        
+        QTabBar::tab {{ 
+            font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
+            font-size: 10pt; 
+            font-weight: 500;
+            padding: 10px 20px; 
+            margin-right: 4px;
+            border-top-left-radius: 8px; 
+            border-top-right-radius: 8px; 
+            color: {Colors.DARK_TEXT_MUTED}; 
+            background: transparent; 
+        }}
+        QTabBar::tab:selected {{ 
+            background-color: {Colors.DARK_CARD_BG}; 
+            border: 1px solid {Colors.DARK_BORDER}; 
+            border-bottom: 1px solid {Colors.DARK_CARD_BG};
+            color: {Colors.DARK_PRIMARY}; 
+            font-weight: 700;
+        }}
+        QTabBar::tab:!selected:hover {{ background-color: rgba(255,255,255,0.05); color: {Colors.DARK_TEXT}; }}
+        
         QProgressBar {{ 
             border: none; 
-            border-radius: 6px; 
-            text-align: center; 
             background-color: {Colors.DARK_BORDER}; 
             color: {Colors.DARK_TEXT};
+            border-radius: 6px;
+            text-align: center;
             height: 8px;
         }}
         QProgressBar::chunk {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.DARK_PRIMARY}, stop:1 {Colors.DARK_INFO});
+            background: {Colors.DARK_PRIMARY};
             border-radius: 6px;
         }}
-        QCheckBox {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.DARK_TEXT}; }}
-        QCheckBox::indicator {{ width: 20px; height: 20px; }}
-        QCheckBox::indicator:unchecked {{ border: 2px solid {Colors.DARK_BORDER}; background-color: {Colors.DARK_BG}; border-radius: 4px; }}
-        QCheckBox::indicator:checked {{ border: none; background-color: {Colors.DARK_PRIMARY}; border-radius: 4px; }}
-        QCheckBox::indicator:checked:hover {{ background-color: {Colors.DARK_PRIMARY_HOVER}; }}
-        QStatusBar {{ background-color: {Colors.DARK_CARD_BG}; border-top: 1px solid {Colors.DARK_BORDER}; color: {Colors.DARK_TEXT}; }}
-        QScrollBar:vertical {{ background: {Colors.DARK_BG}; width: 10px; border-radius: 5px; }}
-        QScrollBar::handle:vertical {{ background: {Colors.DARK_BORDER}; border-radius: 5px; min-height: 30px; }}
-        QScrollBar::handle:vertical:hover {{ background: {Colors.DARK_TEXT_MUTED}; }}
+        
+        QScrollBar:vertical {{ background: {Colors.DARK_BG}; width: 12px; border-radius: 6px; margin: 0px; }}
+        QScrollBar::handle:vertical {{ background: #48484A; border-radius: 6px; min-height: 40px; }}
+        QScrollBar::handle:vertical:hover {{ background: #636366; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        
+        QStatusBar {{ background: {Colors.DARK_BG}; color: {Colors.DARK_TEXT_MUTED}; }}
     """
 
 
     HTML_TEMPLATE = """
     <style>
-        body {{ 
-            font-family: '맑은 고딕', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+        body { 
+            font-family: '맑은 고딕', 'Segoe UI', -apple-system, sans-serif; 
             margin: 10px; 
             color: {text_color};
             line-height: 1.6;
-        }}
-        a {{ text-decoration: none; color: {link_color}; transition: all 0.2s ease; }}
-        a:hover {{ color: {link_hover}; }}
+            background-color: {bg_color};
+            overflow-x: hidden;
+        }
+        a { text-decoration: none; color: {link_color}; transition: all 0.2s ease; }
+        a:hover { color: {link_hover}; text-decoration: underline; }
         
-        /* 뉴스 카드 - 현대화 */
-        .news-item {{ 
-            border: 1px solid transparent;
+        /* Modern Card Design */
+        .news-item { 
+            border: 1px solid {border_color};
             border-left: 4px solid {link_color}; 
             border-radius: 12px; 
             padding: 16px 20px; 
-            margin-bottom: 10px; 
-            background: linear-gradient(145deg, {bg_color} 0%, {bg_gradient} 100%);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-        }}
-        .news-item:hover {{ 
-            box-shadow: 0 12px 32px rgba(0,0,0,0.12); 
-            transform: translateY(-3px);
-            border-left-width: 6px;
-            background: linear-gradient(145deg, {bg_hover} 0%, {bg_color} 100%);
-        }}
-        .news-item.read {{ 
+            margin-bottom: 12px; 
+            background-color: {bg_hover};
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .news-item:hover { 
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12); 
+            transform: translateY(-2px);
+            background-color: {bg_gradient};
+            z-index: 10;
+        }
+        .news-item.read { 
             background: {read_bg}; 
-            opacity: 0.6;
+            opacity: 0.7;
             border-left-color: {border_color};
-        }}
-        .news-item.read:hover {{
-            opacity: 0.85;
+            box-shadow: none;
+        }
+        .news-item.read:hover {
+            opacity: 0.95;
             border-left-color: {link_color};
-        }}
-        .news-item.duplicate {{ 
-            border-left-color: #FFA500; 
-        }}
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
         
-        /* 제목 링크 */
-        .title-link {{ 
-            font-size: 12.5pt; 
-            font-weight: 600; 
+        .title-link { 
+            font-size: 13pt; 
+            font-weight: 700; 
             color: {title_color}; 
-            line-height: 1.45; 
             display: block; 
             margin-bottom: 8px;
-            transition: color 0.2s ease;
-        }}
-        .title-link:hover {{
-            color: {link_color};
-            text-decoration: none;
-        }}
+            letter-spacing: -0.02em;
+        }
         
-        /* 메타 정보 */
-        .meta-info {{ 
-            font-size: 9pt; 
+        .meta-info { 
+            font-size: 9.5pt; 
             color: {meta_color}; 
-            margin-top: 4px; 
+            margin-bottom: 12px; 
+            padding-bottom: 12px;
             border-bottom: 1px solid {border_color}; 
-            padding-bottom: 8px; 
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 4px;
-        }}
-        .meta-left {{
             display: flex;
             align-items: center;
-            gap: 6px;
             flex-wrap: wrap;
-        }}
+            gap: 10px;
+        }
         
-        /* 본문 */
-        .description {{ 
-            margin-top: 0; 
-            line-height: 1.7; 
+        .publisher { font-weight: 600; color: {link_color}; }
+        .date { color: {meta_color}; }
+        
+        .description { 
+            font-size: 10.5pt; 
             color: {desc_color}; 
-            font-size: 10.5pt;
-        }}
+            line-height: 1.6; 
+            margin-bottom: 12px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         
-        /* 액션 버튼 */
-        .actions {{ 
-            font-size: 9pt; 
-            white-space: nowrap;
+        .actions { 
             display: flex;
-            gap: 4px;
-            align-items: center;
-        }}
-        .actions a {{ 
-            padding: 5px 10px;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .actions a { 
+            padding: 6px 12px;
             border-radius: 6px;
-            font-weight: 500;
+            font-weight: 600;
+            font-size: 9pt;
             background-color: {action_bg};
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 3px;
-        }}
-        .actions a:hover {{
-            background-color: {action_hover};
-            transform: scale(1.05);
-            text-decoration: none;
-        }}
-        .actions a.bookmark {{
-            background: linear-gradient(135deg, {bookmark_bg} 0%, {bookmark_end} 100%);
-            color: white;
-        }}
-        .actions a.bookmark:hover {{
-            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.4);
-        }}
-        .actions a.unbookmark {{
-            background: linear-gradient(135deg, #DC3545 0%, #FF6B6B 100%);
-            color: white;
-        }}
-        
-        /* 빈 상태 */
-        .empty-state {{ 
-            text-align: center; 
-            padding: 80px 40px; 
-            color: {meta_color}; 
-            font-size: 13pt;
-            background: {empty_bg};
-            border-radius: 16px;
-            margin: 20px 0;
-        }}
-        .empty-state-title {{
-            font-size: 12pt;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: {title_color};
-        }}
-        
-        /* 하이라이트 */
-        .highlight {{ 
-            background: linear-gradient(120deg, #FCD34D 0%, #FBBF24 100%); 
-            color: #000000; 
-            padding: 2px 6px; 
-            border-radius: 4px; 
-            font-weight: 600;
-            box-shadow: 0 1px 3px rgba(252, 211, 77, 0.4);
-        }}
-        
-        /* 키워드 태그 */
-        .keyword-tag {{ 
-            display: inline-flex;
-            align-items: center;
-            background: linear-gradient(135deg, {tag_bg} 0%, {link_color} 100%);
-            color: {tag_color}; 
-            padding: 4px 12px; 
-            border-radius: 14px; 
-            font-size: 8.5pt; 
-            margin-right: 6px;
-            font-weight: 600;
-            box-shadow: 0 1px 4px rgba(0, 122, 255, 0.2);
-        }}
-        
-        /* 중복 배지 */
-        .duplicate-badge {{ 
-            display: inline-flex;
-            align-items: center;
-            background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
-            color: #FFFFFF; 
-            padding: 4px 12px; 
-            border-radius: 14px; 
-            font-size: 8.5pt; 
-            margin-right: 6px;
-            font-weight: 600;
-            box-shadow: 0 1px 4px rgba(255, 165, 0, 0.3);
-        }}
-        
-        /* 메모 아이콘 */
-        .note-icon {{
             color: {link_color};
-            font-weight: bold;
-        }}
+        }
+        .actions a:hover {
+            background-color: {action_hover};
+            text-decoration: none;
+        }
         
-        /* 스크롤바 스타일 */
-        ::-webkit-scrollbar {{
-            width: 8px;
-            height: 8px;
-        }}
-        ::-webkit-scrollbar-track {{
-            background: {scrollbar_track};
-            border-radius: 4px;
-        }}
-        ::-webkit-scrollbar-thumb {{
-            background: {scrollbar_thumb};
-            border-radius: 4px;
-        }}
-        ::-webkit-scrollbar-thumb:hover {{
-            background: {link_color};
-        }}
+        /* Tags & Badges */
+        .keyword-tag { 
+            background-color: {tag_bg};
+            color: {tag_color}; 
+            padding: 2px 8px; 
+            border-radius: 4px; 
+            font-size: 8.5pt; 
+            font-weight: 600;
+        }
+        
+        .duplicate-badge { 
+            background-color: #FF9F0A;
+            color: #FFFFFF; 
+            padding: 2px 8px; 
+            border-radius: 4px; 
+            font-size: 8.5pt; 
+            font-weight: 600;
+        }
+        
+        .highlight { 
+            background-color: {bookmark_bg}; 
+            color: #000; 
+            padding: 0 4px; 
+            border-radius: 2px; 
+        }
+        
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: {scrollbar_track}; }
+        ::-webkit-scrollbar-thumb { background: {scrollbar_thumb}; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: {link_color}; }
     </style>
     """
 
@@ -2463,20 +2376,14 @@ class NewsTab(QWidget):
         self.render_html()
 
     def render_html(self):
-        """HTML 렌더링 - Colors 헬퍼 사용 버전"""
+        """HTML 렌더링 - Colors 헬퍼 사용 버전 (Optimized & Styled)"""
         scroll_pos = self.browser.verticalScrollBar().value()
-        
         is_dark = (self.theme == 1)
-        
-        # Colors 헬퍼를 사용하여 테마별 색상 가져오기
         colors = Colors.get_html_colors(is_dark)
-
         css = AppStyle.HTML_TEMPLATE.format(**colors)
-        
         html_parts = [f"<html><head><meta charset='utf-8'>{css}</head><body>"]
-        
         preview_data = {}
-        
+
         if not self.filtered_data_cache:
             if self.is_bookmark_tab:
                 msg = "<div class='empty-state-title'>⭐ 북마크</div>북마크된 기사가 없습니다.<br><br>기사 카드의 [북마크] 버튼을 눌러<br>중요한 기사를 저장하세요."
@@ -2487,21 +2394,18 @@ class NewsTab(QWidget):
             html_parts.append(f"<div class='empty-state'>{msg}</div>")
         else:
             filter_word = self.inp_filter.text().strip()
-            
-            # Phase 3: 렌더링 최적화 - 초기에는 제한된 수만 렌더링
             total_items = len(self.filtered_data_cache)
             render_limit = min(self._rendered_count + self.INITIAL_RENDER_COUNT, self.MAX_RENDER_COUNT)
             items_to_render = self.filtered_data_cache[:render_limit]
             self._rendered_count = len(items_to_render)
-            
+
             for item in items_to_render:
                 is_read_cls = " read" if item['is_read'] else ""
                 is_dup_cls = " duplicate" if item.get('is_duplicate', 0) else ""
                 title_pfx = "⭐ " if item['is_bookmarked'] else ""
                 link_hash = hashlib.md5(item['link'].encode()).hexdigest()
-                
                 preview_data[link_hash] = item['description']
-                
+
                 if filter_word:
                     title = TextUtils.highlight_text(item['title'], filter_word)
                     desc = TextUtils.highlight_text(item['description'], filter_word)
@@ -2509,9 +2413,8 @@ class NewsTab(QWidget):
                     title = html.escape(item['title'])
                     desc = html.escape(item['description'])
 
-                # 북마크 버튼 텍스트
+                bk_cls = "unbookmark" if item['is_bookmarked'] else "bookmark"
                 bk_txt = "북마크 해제" if item['is_bookmarked'] else "북마크"
-                bk_col = "#DC3545" if item['is_bookmarked'] else "#17A2B8"
                 
                 date_str = item.get('pubDate', '')
                 try:
@@ -2521,9 +2424,8 @@ class NewsTab(QWidget):
                     pass
 
                 has_note = item.get('notes') and item['notes'].strip()
-                note_indicator = " 📝" if has_note else ""
+                note_indicator = " <span class='note-icon'>📝</span>" if has_note else ""
 
-                # 액션 버튼 (텍스트 형태)
                 actions = f"""
                     <a href='app://share/{link_hash}'>공유</a>
                     <a href='app://ext/{link_hash}'>외부</a>
@@ -2531,7 +2433,7 @@ class NewsTab(QWidget):
                 """
                 if item['is_read']:
                     actions += f"<a href='app://unread/{link_hash}'>안읽음</a>"
-                actions += f"<a href='app://bm/{link_hash}' style='color:{bk_col}'>{bk_txt}</a>"
+                actions += f"<a href='app://bm/{link_hash}' class='{bk_cls}'>{bk_txt}</a>"
 
                 badges = ""
                 if not self.is_bookmark_tab and self.keyword:
@@ -2547,14 +2449,17 @@ class NewsTab(QWidget):
                 <div class="news-item{is_read_cls}{is_dup_cls}">
                     <a href="app://open/{link_hash}" class="title-link">{title_pfx}{title}</a>
                     <div class="meta-info">
-                        <span class="meta-left">📰 {item['publisher']} · {date_str} {badges}</span>
-                        <span class="actions">{actions}</span>
+                        <div class="meta-left">
+                            <span class="publisher">📰 {item['publisher']}</span>
+                            <span class="date">· {date_str}</span>
+                            {badges}
+                        </div>
+                        <div class="actions">{actions}</div>
                     </div>
                     <div class="description">{desc}</div>
                 </div>
                 """)
-            
-            # 더 많은 항목이 있으면 "더 보기" 링크 표시
+
             remaining = total_items - self._rendered_count
             if remaining > 0:
                 html_parts.append(f"""
@@ -2571,13 +2476,10 @@ class NewsTab(QWidget):
                     ">📄 {remaining}개 더 보기</a>
                 </div>
                 """)
-        
+
         html_parts.append("</body></html>")
-        
         self.browser.set_preview_data(preview_data)
-        
         self.browser.setHtml("".join(html_parts))
-        
         QTimer.singleShot(10, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
         self.update_status_label()
 
@@ -2955,6 +2857,8 @@ class MainApp(QMainWindow):
         """UI 초기화"""
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
         self.resize(1100, 850)
+        self.setMinimumSize(900, 700)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
         
         central = QWidget()
