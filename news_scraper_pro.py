@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QInputDialog, QComboBox, QFileDialog, QSystemTrayIcon,
     QMenu, QStyle, QTabBar, QDialog, QDialogButtonBox, QGroupBox,
     QGridLayout, QProgressBar, QCheckBox, QTextEdit, QListWidget,
-    QGraphicsOpacityEffect, QToolTip
+    QGraphicsOpacityEffect, QToolTip, QSizePolicy
 )
 from PyQt6.QtCore import (
     QThread, QObject, pyqtSignal, Qt, QTimer, QUrl, 
@@ -143,7 +143,9 @@ class Colors:
                 'bookmark_end': "#FF9F0A",
                 'empty_bg': "rgba(255, 255, 255, 0.05)",
                 'scrollbar_track': "#1C1C1E",
-                'scrollbar_thumb': "#48484A"
+                'scrollbar_thumb': "#48484A",
+                'success_color': "#30D158",
+                'danger_color': "#FF453A"
             }
         else:
             return {
@@ -166,7 +168,9 @@ class Colors:
                 'bookmark_end': "#FF9500",
                 'empty_bg': "rgba(0, 0, 0, 0.02)",
                 'scrollbar_track': "#FFFFFF",
-                'scrollbar_thumb': "#C7C7CC"
+                'scrollbar_thumb': "#C7C7CC",
+                'success_color': "#34C759",
+                'danger_color': "#FF3B30"
             }
 
 
@@ -452,10 +456,10 @@ class AppStyle:
             font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
             font-weight: 500;
-            padding: 8px 16px; 
+            padding: 8px 14px; 
             border-radius: 8px; 
-            min-width: 70px;
-            margin: 0 4px;
+            min-width: 60px;
+            margin: 0 2px;
             background-color: {Colors.LIGHT_CARD_BG}; 
             color: {Colors.LIGHT_TEXT}; 
             border: 1px solid {Colors.LIGHT_BORDER};
@@ -464,6 +468,7 @@ class AppStyle:
             background-color: #F2F2F7; 
             color: {Colors.LIGHT_PRIMARY}; 
             border-color: {Colors.LIGHT_PRIMARY};
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.15);
         }}
         QPushButton:pressed {{ background-color: #E5E5EA; }}
         QPushButton:disabled {{ background-color: #F5F5F7; color: {Colors.LIGHT_TEXT_MUTED}; }}
@@ -495,7 +500,11 @@ class AppStyle:
             background-color: {Colors.LIGHT_CARD_BG}; 
             color: {Colors.LIGHT_TEXT};
         }}
-        QLineEdit:focus {{ border: 2px solid {Colors.LIGHT_PRIMARY}; padding: 7px 11px; }}
+        QLineEdit:focus {{ 
+            border: 2px solid {Colors.LIGHT_PRIMARY}; 
+            padding: 7px 11px;
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        }}
         
         QComboBox {{ 
             font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
@@ -525,7 +534,7 @@ class AppStyle:
             padding: 12px;
         }}
         
-        /* 탭 위젯 */
+        /* 탭 위젯 (Clean Folder Style) */
         QTabWidget::pane {{ 
             border-radius: 12px;
             margin-top: -1px;
@@ -537,10 +546,10 @@ class AppStyle:
             font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
             font-weight: 500;
-            padding: 10px 20px; 
+            padding: 10px 30px 10px 22px; 
             margin-right: 4px;
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
+            border-top-left-radius: 10px; 
+            border-top-right-radius: 10px; 
             color: {Colors.LIGHT_TEXT_MUTED}; 
             background: transparent; 
         }}
@@ -551,7 +560,15 @@ class AppStyle:
             color: {Colors.LIGHT_PRIMARY}; 
             font-weight: 700;
         }}
-        QTabBar::tab:!selected:hover {{ background-color: rgba(0,0,0,0.03); color: {Colors.LIGHT_TEXT}; }}
+        QTabBar::tab:!selected:hover {{ 
+            background-color: rgba(0,0,0,0.03); 
+            color: {Colors.LIGHT_TEXT}; 
+        }}
+        
+        QTabBar::close-button {{
+            subcontrol-position: right;
+            margin-right: 8px;
+        }}
         
         QProgressBar {{ 
             border: none; 
@@ -572,6 +589,13 @@ class AppStyle:
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         
         QStatusBar {{ background: {Colors.LIGHT_BG}; color: {Colors.LIGHT_TEXT_MUTED}; }}
+        
+        QCheckBox {{ 
+            color: {Colors.LIGHT_TEXT}; 
+            spacing: 5px; 
+            font-size: 10pt;
+        }}
+        QCheckBox::indicator {{ width: 18px; height: 18px; }}
     """
 
     
@@ -597,10 +621,10 @@ class AppStyle:
             font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
             font-weight: 500;
-            padding: 8px 16px; 
+            padding: 8px 14px; 
             border-radius: 8px; 
-            min-width: 70px;
-            margin: 0 4px;
+            min-width: 60px;
+            margin: 0 2px;
             background-color: {Colors.DARK_CARD_BG}; 
             color: {Colors.DARK_TEXT}; 
             border: 1px solid {Colors.DARK_BORDER};
@@ -609,6 +633,7 @@ class AppStyle:
             background-color: #3A3A3C; 
             color: {Colors.DARK_PRIMARY}; 
             border-color: {Colors.DARK_PRIMARY};
+            box-shadow: 0 2px 8px rgba(10, 132, 255, 0.2);
         }}
         QPushButton:pressed {{ background-color: #2C2C2E; }}
         QPushButton:disabled {{ background-color: #1C1C1E; color: {Colors.DARK_TEXT_MUTED}; }}
@@ -670,7 +695,7 @@ class AppStyle:
             padding: 12px;
         }}
         
-        /* 탭 위젯 */
+        /* 탭 위젯 (Clean Folder Style) */
         QTabWidget::pane {{ 
             border-radius: 12px;
             margin-top: -1px;
@@ -682,10 +707,10 @@ class AppStyle:
             font-family: '맑은 고딕', 'Segoe UI', sans-serif; 
             font-size: 10pt; 
             font-weight: 500;
-            padding: 10px 20px; 
+            padding: 10px 30px 10px 22px; 
             margin-right: 4px;
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
+            border-top-left-radius: 10px; 
+            border-top-right-radius: 10px;
             color: {Colors.DARK_TEXT_MUTED}; 
             background: transparent; 
         }}
@@ -696,7 +721,15 @@ class AppStyle:
             color: {Colors.DARK_PRIMARY}; 
             font-weight: 700;
         }}
-        QTabBar::tab:!selected:hover {{ background-color: rgba(255,255,255,0.05); color: {Colors.DARK_TEXT}; }}
+        QTabBar::tab:!selected:hover {{ 
+            background-color: rgba(255,255,255,0.05); 
+            color: {Colors.DARK_TEXT}; 
+        }}
+        
+        QTabBar::close-button {{
+            subcontrol-position: right;
+            margin-right: 8px;
+        }}
         
         QProgressBar {{ 
             border: none; 
@@ -717,24 +750,31 @@ class AppStyle:
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         
         QStatusBar {{ background: {Colors.DARK_BG}; color: {Colors.DARK_TEXT_MUTED}; }}
+        
+        QCheckBox {{ 
+            color: {Colors.DARK_TEXT}; 
+            spacing: 5px; 
+            font-size: 10pt;
+        }}
+        QCheckBox::indicator {{ width: 18px; height: 18px; }}
     """
 
 
     HTML_TEMPLATE = """
     <style>
-        body { 
+        body {{ 
             font-family: '맑은 고딕', 'Segoe UI', -apple-system, sans-serif; 
             margin: 10px; 
             color: {text_color};
             line-height: 1.6;
             background-color: {bg_color};
             overflow-x: hidden;
-        }
-        a { text-decoration: none; color: {link_color}; transition: all 0.2s ease; }
-        a:hover { color: {link_hover}; text-decoration: underline; }
+        }}
+        a {{ text-decoration: none; color: {link_color}; transition: all 0.2s ease; }}
+        a:hover {{ color: {link_hover}; text-decoration: underline; }}
         
         /* Modern Card Design */
-        .news-item { 
+        .news-item {{ 
             border: 1px solid {border_color};
             border-left: 4px solid {link_color}; 
             border-radius: 12px; 
@@ -743,35 +783,36 @@ class AppStyle:
             background-color: {bg_hover};
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .news-item:hover { 
+        }}
+        .news-item:hover {{ 
             box-shadow: 0 8px 24px rgba(0,0,0,0.12); 
             transform: translateY(-2px);
             background-color: {bg_gradient};
             z-index: 10;
-        }
-        .news-item.read { 
+        }}
+        .news-item.read {{ 
             background: {read_bg}; 
-            opacity: 0.7;
+            opacity: 0.75;
+            filter: grayscale(100%);
             border-left-color: {border_color};
             box-shadow: none;
-        }
-        .news-item.read:hover {
+        }}
+        .news-item.read:hover {{
             opacity: 0.95;
             border-left-color: {link_color};
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        }
+        }}
         
-        .title-link { 
+        .title-link {{ 
             font-size: 13pt; 
             font-weight: 700; 
             color: {title_color}; 
             display: block; 
             margin-bottom: 8px;
             letter-spacing: -0.02em;
-        }
+        }}
         
-        .meta-info { 
+        .meta-info {{ 
             font-size: 9.5pt; 
             color: {meta_color}; 
             margin-bottom: 12px; 
@@ -781,12 +822,12 @@ class AppStyle:
             align-items: center;
             flex-wrap: wrap;
             gap: 10px;
-        }
+        }}
         
-        .publisher { font-weight: 600; color: {link_color}; }
-        .date { color: {meta_color}; }
+        .publisher {{ font-weight: 600; color: {link_color}; }}
+        .date {{ color: {meta_color}; }}
         
-        .description { 
+        .description {{ 
             font-size: 10.5pt; 
             color: {desc_color}; 
             line-height: 1.6; 
@@ -796,56 +837,78 @@ class AppStyle:
             -webkit-box-orient: vertical;
             overflow: hidden;
             text-overflow: ellipsis;
-        }
+        }}
         
-        .actions { 
+        .actions {{ 
             display: flex;
-            gap: 8px;
-            margin-top: 8px;
-        }
-        .actions a { 
-            padding: 6px 12px;
+            gap: 6px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }}
+        .actions a {{ 
+            padding: 5px 10px;
             border-radius: 6px;
             font-weight: 600;
-            font-size: 9pt;
+            font-size: 8.5pt;
             background-color: {action_bg};
             color: {link_color};
-        }
-        .actions a:hover {
+            transition: all 0.15s ease;
+        }}
+        .actions a:hover {{
             background-color: {action_hover};
             text-decoration: none;
-        }
+            transform: translateY(-1px);
+        }}
+        .actions a.bookmark {{ color: {success_color}; }}
+        .actions a.unbookmark {{ color: {danger_color}; }}
         
         /* Tags & Badges */
-        .keyword-tag { 
+        .keyword-tag {{ 
             background-color: {tag_bg};
             color: {tag_color}; 
             padding: 2px 8px; 
             border-radius: 4px; 
             font-size: 8.5pt; 
             font-weight: 600;
-        }
+        }}
         
-        .duplicate-badge { 
+        .duplicate-badge {{ 
             background-color: #FF9F0A;
             color: #FFFFFF; 
             padding: 2px 8px; 
             border-radius: 4px; 
             font-size: 8.5pt; 
             font-weight: 600;
-        }
+        }}
         
-        .highlight { 
+        .highlight {{ 
             background-color: {bookmark_bg}; 
             color: #000; 
             padding: 0 4px; 
             border-radius: 2px; 
-        }
+        }}
         
-        ::-webkit-scrollbar { width: 10px; }
-        ::-webkit-scrollbar-track { background: {scrollbar_track}; }
-        ::-webkit-scrollbar-thumb { background: {scrollbar_thumb}; border-radius: 5px; }
-        ::-webkit-scrollbar-thumb:hover { background: {link_color}; }
+        ::-webkit-scrollbar {{ width: 10px; }}
+        ::-webkit-scrollbar-track {{ background: {scrollbar_track}; }}
+        ::-webkit-scrollbar-thumb {{ background: {scrollbar_thumb}; border-radius: 5px; }}
+        ::-webkit-scrollbar-thumb:hover {{ background: {link_color}; }}
+        
+        /* Empty State */
+        .empty-state {{
+            text-align: center;
+            padding: 60px 30px;
+            color: {meta_color};
+            background: linear-gradient(135deg, {bg_hover} 0%, {bg_gradient} 100%);
+            border-radius: 16px;
+            margin: 20px;
+            border: 1px dashed {border_color};
+        }}
+        .empty-state-title {{
+            font-size: 20pt;
+            font-weight: 700;
+            color: {title_color};
+            margin-bottom: 16px;
+        }}
     </style>
     """
 
@@ -1362,6 +1425,19 @@ class ApiWorker(QObject):
                         return
                 
                 if resp.status_code != 200:
+                    # API 오류 코드별 사용자 친화적 메시지
+                    error_messages = {
+                        401: "🔑 API 키가 유효하지 않습니다. 설정에서 확인해주세요.",
+                        403: "🚫 API 접근이 거부되었습니다. API 키 권한을 확인해주세요.",
+                        404: "❓ 요청한 리소스를 찾을 수 없습니다.",
+                        500: "🔧 네이버 서버 오류입니다. 잠시 후 다시 시도해주세요.",
+                        503: "🔧 네이버 서비스가 일시적으로 불가합니다."
+                    }
+                    
+                    if resp.status_code in error_messages:
+                        self._safe_emit(self.error, error_messages[resp.status_code])
+                        return
+                    
                     try:
                         error_data = resp.json()
                         error_msg = error_data.get('errorMessage', '알 수 없는 오류')
@@ -1369,7 +1445,7 @@ class ApiWorker(QObject):
                     except (json.JSONDecodeError, KeyError, ValueError):
                         error_msg = f"HTTP {resp.status_code}"
                         error_code = ""
-                    self._safe_emit(self.error, f"API 오류 {resp.status_code} ({error_code}): {error_msg}")
+                    self._safe_emit(self.error, f"⚠ API 오류 {resp.status_code} ({error_code}): {error_msg}")
                     return
                 
                 data = resp.json()
@@ -1443,7 +1519,17 @@ class ApiWorker(QObject):
                     time.sleep(1)
                     continue
                 else:
-                    self._safe_emit(self.error, "요청 시간이 초과되었습니다. 네트워크 연결을 확인해주세요.")
+                    self._safe_emit(self.error, "⏱ 요청 시간이 초과되었습니다. 네트워크 연결을 확인해주세요.")
+                    return
+            
+            except requests.ConnectionError:
+                logger.warning(f"연결 오류: {self.keyword} (시도 {attempt + 1})")
+                if attempt < self.max_retries - 1:
+                    self._safe_emit(self.progress, f"연결 실패. 재시도 중...")
+                    time.sleep(2)
+                    continue
+                else:
+                    self._safe_emit(self.error, "🔌 인터넷 연결을 확인해주세요. 네이버 API 서버에 연결할 수 없습니다.")
                     return
             
             except requests.RequestException as e:
@@ -1453,13 +1539,13 @@ class ApiWorker(QObject):
                     time.sleep(1)
                     continue
                 else:
-                    self._safe_emit(self.error, f"네트워크 오류: {str(e)}")
+                    self._safe_emit(self.error, f"🌐 네트워크 오류: {str(e)}")
                     return
             
             except Exception as e:
                 logger.error(f"ApiWorker 예외: {self.keyword} - {e}")
                 traceback.print_exc()
-                self._safe_emit(self.error, f"오류 발생: {str(e)}")
+                self._safe_emit(self.error, f"❌ 오류 발생: {str(e)}")
                 return
 
     def stop(self):
@@ -2293,10 +2379,10 @@ class NewsTab(QWidget):
         self.combo_sort.addItems(["최신순", "오래된순"])
         self.combo_sort.currentIndexChanged.connect(self.load_data_from_db)
         
-        self.chk_unread = QCheckBox("안 읽은 것만")
+        self.chk_unread = QCheckBox("📌 안 읽은 것만")
         self.chk_unread.stateChanged.connect(self.load_data_from_db)
         
-        self.chk_hide_dup = QCheckBox("중복 숨김")
+        self.chk_hide_dup = QCheckBox("🔄 중복 숨김")
         self.chk_hide_dup.stateChanged.connect(self.load_data_from_db)
         
         top_layout.addWidget(self.inp_filter, 3)
@@ -2386,7 +2472,7 @@ class NewsTab(QWidget):
 
         if not self.filtered_data_cache:
             if self.is_bookmark_tab:
-                msg = "<div class='empty-state-title'>⭐ 북마크</div>북마크된 기사가 없습니다.<br><br>기사 카드의 [북마크] 버튼을 눌러<br>중요한 기사를 저장하세요."
+                msg = "<div class='empty-state-title' style='font-size: 20pt;'>⭐ 북마크</div><div style='font-size: 12pt;'>북마크된 기사가 없습니다.<br><br>기사 카드의 [북마크] 버튼을 눌러<br>중요한 기사를 저장하세요.</div>"
             elif self.chk_unread.isChecked():
                 msg = "<div class='empty-state-title'>✓ 완료!</div>모든 기사를 읽었습니다."
             else:
@@ -2643,6 +2729,16 @@ class MainApp(QMainWindow):
         self.toast_queue = None
         self.db = None
         
+        # 종료 원인 추적을 위한 플래그 (closeEvent 이전에 반드시 초기화)
+        self._system_shutdown = False       # Windows 시스템 종료
+        self._user_requested_close = False  # 사용자가 종료 요청
+        self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
+        
+        # 타이머 기본값 초기화 (closeEvent에서 접근할 수 있음)
+        self.timer = None
+        self._countdown_timer = None
+        self._tab_badge_timer = None
+        
         try:
             self.db = DatabaseManager(DB_FILE)
             self.workers = {}
@@ -2701,11 +2797,6 @@ class MainApp(QMainWindow):
             
             if self.client_id and self.tabs.count() > 1:
                 QTimer.singleShot(1000, self._safe_refresh_all)
-            
-            # 종료 원인 추적을 위한 플래그
-            self._system_shutdown = False       # Windows 시스템 종료
-            self._user_requested_close = False  # 사용자가 종료 요청
-            self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
             
             # 탭 배지 업데이트 타이머 (30초마다)
             self._tab_badge_timer = QTimer(self)
@@ -2867,7 +2958,8 @@ class MainApp(QMainWindow):
         layout.setContentsMargins(15, 15, 15, 15)
         
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        toolbar.setSpacing(6)
+        toolbar.setContentsMargins(0, 0, 0, 8)
         
         # 툴바 버튼 생성 (단축키 힌트 포함)
         self.btn_refresh = QPushButton("🔄 새로고침")
@@ -2888,32 +2980,35 @@ class MainApp(QMainWindow):
         self.btn_help = QPushButton("❓ 도움말")
         self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
         
-        self.btn_folder = QPushButton("📁 폴더")
-        self.btn_folder.setToolTip("데이터 폴더 열기")
-        
-        self.btn_log = QPushButton("📋 로그")
-        self.btn_log.setToolTip("애플리케이션 로그 보기")
+
         
         self.btn_groups = QPushButton("🗂 그룹")
         self.btn_groups.setToolTip("키워드 그룹 관리")
         
-        self.btn_backup = QPushButton("💾 백업")
-        self.btn_backup.setToolTip("설정 백업 및 복원")
+
         
         self.btn_add = QPushButton("➕ 새 탭")
         self.btn_add.setToolTip("새로운 키워드 탭 추가 (Ctrl+T)")
         self.btn_add.setObjectName("AddTab")
         
-        toolbar.addWidget(self.btn_refresh)
-        toolbar.addWidget(self.btn_save)
-        toolbar.addWidget(self.btn_stats)
-        toolbar.addWidget(self.btn_analysis)
-        toolbar.addWidget(self.btn_setting)
-        toolbar.addWidget(self.btn_help)
-        toolbar.addWidget(self.btn_log)
-        toolbar.addWidget(self.btn_folder)
-        toolbar.addWidget(self.btn_groups)
-        toolbar.addWidget(self.btn_backup)
+        
+        # 버튼들을 위한 동적 크기 정책 설정 함수
+        def set_dynamic_policy(btn):
+            policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+            policy.setHorizontalStretch(1)  # 1의 비율로 공간 분배
+            btn.setSizePolicy(policy)
+            btn.setMinimumWidth(50)  # 최소 너비 설정
+
+        widgets = [
+            self.btn_refresh, self.btn_save, self.btn_stats, 
+            self.btn_analysis, self.btn_setting, self.btn_help,
+            self.btn_groups
+        ]
+
+        for w in widgets:
+            set_dynamic_policy(w)
+            toolbar.addWidget(w)
+        
         toolbar.addStretch()
         toolbar.addWidget(self.btn_add)
         layout.addLayout(toolbar)
@@ -2937,12 +3032,8 @@ class MainApp(QMainWindow):
         self.btn_stats.clicked.connect(self.show_statistics)
         self.btn_analysis.clicked.connect(self.show_analysis)
         self.btn_help.clicked.connect(self.show_help)
-        self.btn_log.clicked.connect(self.show_log_viewer)
         self.btn_groups.clicked.connect(self.show_keyword_groups)
-        self.btn_backup.clicked.connect(self.show_backup_dialog)
-        self.btn_folder.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl.fromLocalFile(os.path.dirname(os.path.abspath(CONFIG_FILE)))
-        ))
+        # self.btn_backup, self.btn_folder, self.btn_log Moved to Settings
         self.btn_add.clicked.connect(self.add_tab_dialog)
         self.btn_save.clicked.connect(self.export_data)
         
@@ -4006,10 +4097,13 @@ class MainApp(QMainWindow):
             logger.warning("시스템 종료로 인한 프로그램 종료")
         
         try:
-            # 모든 타이머 중지
-            self.timer.stop()
-            self._countdown_timer.stop()
-            self._tab_badge_timer.stop()
+            # 모든 타이머 중지 (안전한 버전)
+            if self.timer:
+                self.timer.stop()
+            if self._countdown_timer:
+                self._countdown_timer.stop()
+            if self._tab_badge_timer:
+                self._tab_badge_timer.stop()
             logger.info("타이머 중지됨")
             
             # 모든 워커 정리 (시그널 disconnect 포함)
@@ -4180,6 +4274,28 @@ class SettingsDialog(QDialog):
         gp_app.setLayout(form2)
         settings_layout.addWidget(gp_app)
         
+        gp_tools = QGroupBox("🛠 도구")
+        tools_layout = QHBoxLayout()
+        
+        btn_log_viewer = QPushButton("📜 로그 뷰어")
+        # parent(MainApp)의 show_log_viewer 호출
+        btn_log_viewer.clicked.connect(lambda: self.parent().show_log_viewer() if hasattr(self.parent(), 'show_log_viewer') else None)
+        
+        btn_open_folder = QPushButton("📂 폴더 열기")
+        btn_open_folder.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl.fromLocalFile(os.path.dirname(os.path.abspath(CONFIG_FILE)))
+        ))
+        
+        btn_backup_mgr = QPushButton("💾 백업 관리")
+        # parent(MainApp)의 show_backup_dialog 호출
+        btn_backup_mgr.clicked.connect(lambda: self.parent().show_backup_dialog() if hasattr(self.parent(), 'show_backup_dialog') else None)
+        
+        tools_layout.addWidget(btn_log_viewer)
+        tools_layout.addWidget(btn_open_folder)
+        tools_layout.addWidget(btn_backup_mgr)
+        gp_tools.setLayout(tools_layout)
+        settings_layout.addWidget(gp_tools)
+
         gp_data = QGroupBox("🗂 데이터 관리")
         vbox = QVBoxLayout()
         
