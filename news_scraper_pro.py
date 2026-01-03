@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QInputDialog, QComboBox, QFileDialog, QSystemTrayIcon,
     QMenu, QStyle, QTabBar, QDialog, QDialogButtonBox, QGroupBox,
     QGridLayout, QProgressBar, QCheckBox, QTextEdit, QListWidget,
-    QGraphicsOpacityEffect, QToolTip
+    QGraphicsOpacityEffect, QToolTip, QScrollArea
 )
 from PyQt6.QtCore import (
     QThread, QObject, pyqtSignal, Qt, QTimer, QUrl, 
@@ -3013,25 +3013,22 @@ class MainApp(QMainWindow):
         toolbar.setSpacing(8)
         
         # 툴바 버튼 생성 (단축키 힌트 포함)
-        self.btn_refresh = QPushButton("🔄")
+        self.btn_refresh = QPushButton("🔄 새로고침")
         self.btn_refresh.setToolTip("모든 탭의 뉴스를 새로고침합니다 (Ctrl+R, F5)")
         
-        self.btn_save = QPushButton("💾")
+        self.btn_save = QPushButton("💾 내보내기")
         self.btn_save.setToolTip("현재 탭의 뉴스를 CSV로 내보냅니다 (Ctrl+S)")
         
-        self.btn_setting = QPushButton("⚙")
+        self.btn_setting = QPushButton("⚙ 설정")
         self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
         
-        self.btn_stats = QPushButton("📊")
-        self.btn_stats.setToolTip("전체 뉴스 통계 보기")
+        self.btn_stats = QPushButton("📊 통계/분석")
+        self.btn_stats.setToolTip("전체 뉴스 통계 및 언론사별 분석 보기")
         
-        self.btn_analysis = QPushButton("📈")
-        self.btn_analysis.setToolTip("언론사별 분석 보기")
-        
-        self.btn_help = QPushButton("❓")
+        self.btn_help = QPushButton("❓ 도움말")
         self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
         
-        self.btn_backup = QPushButton("🗂")
+        self.btn_backup = QPushButton("🗂 백업")
         self.btn_backup.setToolTip("설정 백업 및 복원")
         
         self.btn_add = QPushButton("➕ 새 탭")
@@ -3041,7 +3038,6 @@ class MainApp(QMainWindow):
         toolbar.addWidget(self.btn_refresh)
         toolbar.addWidget(self.btn_save)
         toolbar.addWidget(self.btn_stats)
-        toolbar.addWidget(self.btn_analysis)
         toolbar.addWidget(self.btn_setting)
         toolbar.addWidget(self.btn_help)
         toolbar.addWidget(self.btn_backup)
@@ -3065,8 +3061,7 @@ class MainApp(QMainWindow):
         
         self.btn_refresh.clicked.connect(self.refresh_all)
         self.btn_setting.clicked.connect(self.open_settings)
-        self.btn_stats.clicked.connect(self.show_statistics)
-        self.btn_analysis.clicked.connect(self.show_analysis)
+        self.btn_stats.clicked.connect(self.show_stats_analysis)
         self.btn_help.clicked.connect(self.show_help)
         self.btn_backup.clicked.connect(self.show_backup_dialog)
         self.btn_add.clicked.connect(self.add_tab_dialog)
@@ -3969,16 +3964,59 @@ class MainApp(QMainWindow):
         
         dialog.exec()
 
-    def show_analysis(self):
-        """언론사별 분석"""
+    def show_stats_analysis(self):
+        """통계 및 분석 통합 다이얼로그"""
         dialog = QDialog(self)
-        dialog.setWindowTitle("뉴스 분석")
-        dialog.resize(600, 500)
+        dialog.setWindowTitle("📊 통계 및 분석")
+        dialog.resize(550, 500)
         
-        layout = QVBoxLayout(dialog)
+        main_layout = QVBoxLayout(dialog)
+        
+        # 탭 위젯
+        tab_widget = QTabWidget()
+        
+        # === 통계 탭 ===
+        stats_widget = QWidget()
+        stats_layout = QVBoxLayout(stats_widget)
+        
+        stats = self.db.get_statistics()
+        if stats['total'] > 0:
+            read_percent = ((stats['total'] - stats['unread']) / stats['total']) * 100
+        else:
+            read_percent = 0
+        
+        group = QGroupBox("📊 데이터베이스 통계")
+        grid = QGridLayout()
+        
+        items = [
+            ("총 기사 수:", f"{stats['total']:,}개"),
+            ("안 읽은 기사:", f"{stats['unread']:,}개"),
+            ("읽은 기사:", f"{stats['total'] - stats['unread']:,}개"),
+            ("북마크:", f"{stats['bookmarked']:,}개"),
+            ("메모 작성:", f"{stats['with_notes']:,}개"),
+            ("중복 기사:", f"{stats['duplicates']:,}개"),
+            ("읽은 비율:", f"{read_percent:.1f}%"),
+            ("탭 개수:", f"{self.tabs.count() - 1}개"),
+        ]
+        
+        for i, (label, value) in enumerate(items):
+            lbl = QLabel(label)
+            lbl.setStyleSheet("font-weight: bold;")
+            val = QLabel(value)
+            val.setStyleSheet("color: #007AFF;" if self.theme_idx == 0 else "color: #0A84FF;")
+            grid.addWidget(lbl, i, 0, Qt.AlignmentFlag.AlignRight)
+            grid.addWidget(val, i, 1, Qt.AlignmentFlag.AlignLeft)
+        
+        group.setLayout(grid)
+        stats_layout.addWidget(group)
+        stats_layout.addStretch()
+        
+        # === 분석 탭 ===
+        analysis_widget = QWidget()
+        analysis_layout = QVBoxLayout(analysis_widget)
         
         tab_label = QLabel("분석할 탭을 선택하세요:")
-        layout.addWidget(tab_label)
+        analysis_layout.addWidget(tab_label)
         
         tab_combo = QComboBox()
         tab_combo.addItem("전체", None)
@@ -3986,14 +4024,14 @@ class MainApp(QMainWindow):
             w = self.tabs.widget(i)
             if w and hasattr(w, 'keyword'):
                 tab_combo.addItem(w.keyword, w.keyword)
-        layout.addWidget(tab_combo)
+        analysis_layout.addWidget(tab_combo)
         
         result_label = QLabel("📈 언론사별 기사 수:")
         result_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(result_label)
+        analysis_layout.addWidget(result_label)
         
         result_list = QListWidget()
-        layout.addWidget(result_list)
+        analysis_layout.addWidget(result_list)
         
         def update_analysis():
             result_list.clear()
@@ -4009,11 +4047,21 @@ class MainApp(QMainWindow):
         tab_combo.currentIndexChanged.connect(update_analysis)
         update_analysis()
         
+        # 탭 추가
+        tab_widget.addTab(stats_widget, "📊 통계")
+        tab_widget.addTab(analysis_widget, "📈 언론사 분석")
+        
+        main_layout.addWidget(tab_widget)
+        
         btn_close = QPushButton("닫기")
         btn_close.clicked.connect(dialog.accept)
-        layout.addWidget(btn_close)
+        main_layout.addWidget(btn_close)
         
         dialog.exec()
+
+    def show_analysis(self):
+        """언론사별 분석 (호환성 유지)"""
+        self.show_stats_analysis()
 
     def show_help(self):
         """도움말 표시 (설정 창의 도움말 탭으로 열기)"""
@@ -4234,17 +4282,34 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("설정 및 도움말")
         self.resize(600, 550)
         self.config = config
+        # 테마 설정 (부모에서 가져오기)
+        self.is_dark = False
+        if parent and hasattr(parent, 'theme_idx'):
+            self.is_dark = parent.theme_idx == 1
         self.setup_ui()
 
     def setup_ui(self):
-        """UI 설정"""
+        """테마 적용 UI 설정"""
         layout = QVBoxLayout(self)
         
+        # 테마별 색상
+        if self.is_dark:
+            bg_color = "#1A1A1D"
+            text_color = "#FFFFFF"
+        else:
+            bg_color = "#FFFFFF"
+            text_color = "#000000"
         # 탭 위젯 생성
         tab_widget = QTabWidget()
         
-        # === 설정 탭 ===
+        # === 설정 탭 (스크롤 가능) ===
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet(f"QScrollArea {{ background-color: {bg_color}; border: none; }}")
+        
         settings_widget = QWidget()
+        settings_widget.setStyleSheet(f"QWidget {{ background-color: {bg_color}; color: {text_color}; }}")
         settings_layout = QVBoxLayout(settings_widget)
         
         gp_api = QGroupBox("📡 네이버 API 설정")
@@ -4382,24 +4447,31 @@ class SettingsDialog(QDialog):
         
         # === 도움말 탭 ===
         help_widget = QWidget()
+        help_widget.setStyleSheet(f"QWidget {{ background-color: {bg_color}; color: {text_color}; }}")
         help_layout = QVBoxLayout(help_widget)
         
         help_browser = QTextBrowser()
         help_browser.setOpenExternalLinks(True)
+        help_browser.setStyleSheet(f"QTextBrowser {{ background-color: {bg_color}; color: {text_color}; border: none; }}")
         help_browser.setHtml(self.get_help_html())
         help_layout.addWidget(help_browser)
         
         # === 단축키 탭 ===
         shortcuts_widget = QWidget()
+        shortcuts_widget.setStyleSheet(f"QWidget {{ background-color: {bg_color}; color: {text_color}; }}")
         shortcuts_layout = QVBoxLayout(shortcuts_widget)
         
         shortcuts_browser = QTextBrowser()
         shortcuts_browser.setOpenExternalLinks(False)
+        shortcuts_browser.setStyleSheet(f"QTextBrowser {{ background-color: {bg_color}; color: {text_color}; border: none; }}")
         shortcuts_browser.setHtml(self.get_shortcuts_html())
         shortcuts_layout.addWidget(shortcuts_browser)
         
+        # 스크롤 영역에 설정 위젯 추가
+        scroll_area.setWidget(settings_widget)
+        
         # 탭에 추가
-        tab_widget.addTab(settings_widget, "⚙ 설정")
+        tab_widget.addTab(scroll_area, "⚙ 설정")
         tab_widget.addTab(help_widget, "📖 도움말")
         tab_widget.addTab(shortcuts_widget, "⌨ 단축키")
         
