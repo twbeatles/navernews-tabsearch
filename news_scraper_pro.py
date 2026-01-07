@@ -25,6 +25,13 @@ from queue import Queue
 from functools import partial
 from enum import Enum
 
+# Windows 전용 레지스트리 모듈 (자동 시작 기능용)
+try:
+    import winreg
+    WINREG_AVAILABLE = True
+except ImportError:
+    WINREG_AVAILABLE = False
+
 # --- HiDPI 지원 (반드시 PyQt6 임포트 전에 설정) ---
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
@@ -171,6 +178,52 @@ class Colors:
 
 
 
+# --- 프리컴파일된 정규식 패턴 (성능 최적화) ---
+RE_HTML_TAGS = re.compile(r'<[^>]+>')
+RE_WHITESPACE = re.compile(r'\s+')
+RE_BOLD_TAGS = re.compile(r'</?b>')
+
+# --- 날짜 포맷 상수 ---
+DATE_FORMATS = (
+    '%Y-%m-%dT%H:%M:%S',
+    '%Y-%m-%d %H:%M:%S',
+    '%Y-%m-%d'
+)
+DATE_OUTPUT_FORMAT = '%Y.%m.%d %H:%M'
+
+def parse_date_string(date_str: str) -> str:
+    """날짜 문자열 파싱 헬퍼 함수 (RFC 2822 및 여러 포맷 지원)"""
+    if not date_str:
+        return ""
+    try:
+        # RFC 2822 형식 먼저 시도 (네이버 API 기본 형식)
+        dt = parsedate_to_datetime(date_str)
+        return dt.strftime(DATE_OUTPUT_FORMAT)
+    except (ValueError, TypeError):
+        # 대체 포맷들 시도
+        for fmt in DATE_FORMATS:
+            try:
+                dt = datetime.strptime(date_str[:19], fmt)
+                return dt.strftime(DATE_OUTPUT_FORMAT)
+            except (ValueError, TypeError):
+                continue
+    return date_str  # 파싱 실패 시 원본 반환
+
+# --- 하이라이트 패턴 캐시 ---
+_highlight_pattern_cache: Dict[str, re.Pattern] = {}
+
+def get_highlight_pattern(keyword: str) -> re.Pattern:
+    """하이라이트 패턴 캐시 반환 (성능 최적화)"""
+    if keyword not in _highlight_pattern_cache:
+        # 캐시 크기 제한 (메모리 관리)
+        if len(_highlight_pattern_cache) > 100:
+            _highlight_pattern_cache.clear()
+        _highlight_pattern_cache[keyword] = re.compile(
+            f'({re.escape(keyword)})', re.IGNORECASE
+        )
+    return _highlight_pattern_cache[keyword]
+
+
 # --- 유틸리티 함수 ---
 class ValidationUtils:
     """입력 검증 유틸리티"""
@@ -198,17 +251,95 @@ class TextUtils:
     
     @staticmethod
     def highlight_text(text: str, keyword: str) -> str:
-        """텍스트에서 키워드 하이라이팅 (성능 개선)"""
+        """텍스트에서 키워드 하이라이팅 (캐시된 패턴 사용)"""
         if not keyword:
             return html.escape(text)
         
         escaped_text = html.escape(text)
         escaped_keyword = html.escape(keyword)
         
-        pattern = re.compile(f'({re.escape(escaped_keyword)})', re.IGNORECASE)
+        # 캐시된 패턴 사용 (성능 최적화)
+        pattern = get_highlight_pattern(escaped_keyword)
         highlighted = pattern.sub(r"<span class='highlight'>\1</span>", escaped_text)
         
         return highlighted
+
+
+# --- Windows 시작프로그램 관리 ---
+class StartupManager:
+    """Windows 시작프로그램 레지스트리 관리"""
+    REGISTRY_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+    APP_NAME = "NaverNewsScraperPro"
+    
+    @classmethod
+    def is_available(cls) -> bool:
+        """Windows 레지스트리 사용 가능 여부"""
+        return WINREG_AVAILABLE and sys.platform == 'win32'
+    
+    @classmethod
+    def is_startup_enabled(cls) -> bool:
+        """시작프로그램 등록 여부 확인"""
+        if not cls.is_available():
+            return False
+        
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_READ) as key:
+                try:
+                    winreg.QueryValueEx(key, cls.APP_NAME)
+                    return True
+                except FileNotFoundError:
+                    return False
+        except Exception as e:
+            logger.warning(f"레지스트리 읽기 오류: {e}")
+            return False
+    
+    @classmethod
+    def enable_startup(cls, start_minimized: bool = False) -> bool:
+        """시작프로그램에 등록"""
+        if not cls.is_available():
+            return False
+        
+        try:
+            # 실행 파일 경로 가져오기
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 경우
+                exe_path = sys.executable
+            else:
+                # 일반 Python 실행
+                exe_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+            
+            # 최소화 옵션 추가
+            if start_minimized:
+                exe_path += ' --minimized'
+            
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, exe_path)
+            
+            logger.info(f"시작프로그램 등록 완료: {exe_path}")
+            return True
+        except Exception as e:
+            logger.error(f"시작프로그램 등록 오류: {e}")
+            return False
+    
+    @classmethod
+    def disable_startup(cls) -> bool:
+        """시작프로그램에서 제거"""
+        if not cls.is_available():
+            return False
+        
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                try:
+                    winreg.DeleteValue(key, cls.APP_NAME)
+                    logger.info("시작프로그램 등록 해제 완료")
+                    return True
+                except FileNotFoundError:
+                    # 이미 등록되어 있지 않음
+                    return True
+        except Exception as e:
+            logger.error(f"시작프로그램 해제 오류: {e}")
+            return False
+
 
 # --- UI 상수 ---
 class UIConstants:
@@ -385,6 +516,14 @@ class ToastMessage(QLabel):
             self.deleteLater()
             if queue:
                 queue.on_toast_finished()
+
+# --- 휠 스크롤 방지 콤보박스 ---
+class NoScrollComboBox(QComboBox):
+    """마우스 휠로 값이 변경되지 않는 콤보박스 (설정창 UX 개선)"""
+    
+    def wheelEvent(self, event):
+        """휠 이벤트 무시 - 부모 위젯으로 전달"""
+        event.ignore()
 
 # --- 커스텀 브라우저 (미리보기 기능) ---
 class NewsBrowser(QTextBrowser):
@@ -1125,8 +1264,8 @@ class DatabaseManager:
         conn.close()
     
     def _calculate_title_hash(self, title: str) -> str:
-        """제목의 해시 계산 (중복 감지용)"""
-        normalized = re.sub(r'\s+', '', title.lower())
+        """제목의 해시 계산 (중복 감지용) - 프리컴파일된 정규식 사용"""
+        normalized = RE_WHITESPACE.sub('', title.lower())
         return hashlib.md5(normalized.encode()).hexdigest()
     
     def upsert_news(self, items: List[Dict], keyword: str) -> Tuple[int, int]:
@@ -1502,8 +1641,9 @@ class ApiWorker(QObject):
                         break
                     
                     try:
-                        title = html.unescape(item.get('title', '')).replace('<b>', '').replace('</b>', '')
-                        desc = html.unescape(item.get('description', '')).replace('<b>', '').replace('</b>', '')
+                        # 프리컴파일된 정규식 사용 (성능 최적화)
+                        title = html.unescape(RE_BOLD_TAGS.sub('', item.get('title', '')))
+                        desc = html.unescape(RE_BOLD_TAGS.sub('', item.get('description', '')))
                         
                         if self.exclude_words:
                             should_exclude = False
@@ -2811,6 +2951,7 @@ class MainApp(QMainWindow):
             self.notification_enabled = True  # 데스크톱 알림 활성화
             self.alert_keywords = []  # 알림 키워드 목록
             self.sound_enabled = True  # 알림 소리 활성화
+            self.notify_on_refresh = False  # 자동 새로고침 완료 알림 (기본 비활성화)
             
             # 키워드 그룹 관리자
             self.keyword_group_manager = KeywordGroupManager(os.path.join(APP_DIR, "keyword_groups.json"))
@@ -2862,6 +3003,13 @@ class MainApp(QMainWindow):
             # 시작 시 자동 백업 (설정 파일이 있으면)
             if os.path.exists(CONFIG_FILE):
                 QTimer.singleShot(2000, lambda: self.auto_backup.create_backup(include_db=False))
+            
+            # 시스템 트레이 설정
+            self.setup_system_tray()
+            
+            # 최소화 상태로 시작 옵션 처리
+            if '--minimized' in sys.argv or self.config.get('start_minimized', False):
+                QTimer.singleShot(100, self.hide)
             
             logger.info("MainApp 초기화 완료")
         except Exception as e:
@@ -2915,6 +3063,143 @@ class MainApp(QMainWindow):
             logger.warning(f"아이콘 파일을 찾을 수 없습니다: {ICON_FILE} 또는 {ICON_PNG}")
             logger.warning(f"실행 파일과 같은 폴더에 아이콘 파일을 배치하세요.")
 
+    def setup_system_tray(self):
+        """시스템 트레이 아이콘 설정"""
+        try:
+            # 트레이 아이콘 지원 확인
+            if not QSystemTrayIcon.isSystemTrayAvailable():
+                logger.warning("시스템 트레이를 사용할 수 없습니다.")
+                self.tray_icon = None
+                return
+            
+            self.tray_icon = QSystemTrayIcon(self)
+            
+            # 아이콘 설정
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            icon_path = os.path.join(script_dir, ICON_FILE)
+            if not os.path.exists(icon_path):
+                icon_path = os.path.join(script_dir, ICON_PNG)
+            
+            if os.path.exists(icon_path):
+                self.tray_icon.setIcon(QIcon(icon_path))
+            else:
+                # 기본 아이콘 사용
+                self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+            
+            # 트레이 컨텍스트 메뉴 생성
+            tray_menu = QMenu(self)
+            
+            # 열기 액션
+            action_show = tray_menu.addAction("📰 열기")
+            action_show.triggered.connect(self.show_window)
+            
+            # 새로고침 액션
+            action_refresh = tray_menu.addAction("🔄 새로고침")
+            action_refresh.triggered.connect(self._safe_refresh_all)
+            
+            tray_menu.addSeparator()
+            
+            # 설정 액션
+            action_settings = tray_menu.addAction("⚙ 설정")
+            action_settings.triggered.connect(self.open_settings)
+            
+            tray_menu.addSeparator()
+            
+            # 종료 액션
+            action_quit = tray_menu.addAction("❌ 종료")
+            action_quit.triggered.connect(self.real_quit)
+            
+            self.tray_icon.setContextMenu(tray_menu)
+            
+            # 더블클릭 시 창 보이기
+            self.tray_icon.activated.connect(self.on_tray_activated)
+            
+            # 초기 툴팁 설정
+            self.update_tray_tooltip()
+            
+            # 트레이 아이콘 표시
+            self.tray_icon.show()
+            
+            logger.info("시스템 트레이 아이콘 설정 완료")
+        except Exception as e:
+            logger.error(f"시스템 트레이 설정 오류: {e}")
+            self.tray_icon = None
+    
+    def on_tray_activated(self, reason):
+        """트레이 아이콘 활성화 이벤트 처리"""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.show_window()
+        elif reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # 싱글 클릭 시 툴팁 업데이트
+            self.update_tray_tooltip()
+    
+    def update_tray_tooltip(self):
+        """트레이 아이콘 툴팁 업데이트 (읽지 않은 기사 수 표시)"""
+        if not hasattr(self, 'tray_icon') or not self.tray_icon:
+            return
+        
+        try:
+            unread_count = 0
+            for i in range(1, self.tabs.count()):
+                tab_widget = self.tabs.widget(i)
+                if tab_widget and hasattr(tab_widget, 'news_data_cache'):
+                    for news_item in tab_widget.news_data_cache:
+                        if not news_item.get('is_read', False):
+                            unread_count += 1
+            
+            if unread_count > 0:
+                tooltip = f"{APP_NAME}\n📬 읽지 않은 기사: {unread_count:,}개"
+            else:
+                tooltip = f"{APP_NAME}\n✅ 모든 기사를 읽었습니다"
+            
+            self.tray_icon.setToolTip(tooltip)
+        except Exception as e:
+            logger.warning(f"트레이 툴팁 업데이트 오류: {e}")
+            self.tray_icon.setToolTip(APP_NAME)
+    
+    def show_window(self):
+        """창 표시 (트레이에서 복원)"""
+        self.showNormal()
+        self.activateWindow()
+        self.raise_()
+        self.update_tray_tooltip()
+    
+    def real_quit(self):
+        """프로그램 완전 종료 (트레이 메뉴에서 호출)"""
+        logger.info("사용자가 트레이 메뉴에서 종료 요청")
+        self._user_requested_close = True
+        self._force_close = True
+        
+        # 설정 저장
+        try:
+            self.save_config()
+        except Exception as e:
+            logger.error(f"종료 전 설정 저장 오류: {e}")
+        
+        # 트레이 아이콘 숨기기
+        if hasattr(self, 'tray_icon') and self.tray_icon:
+            self.tray_icon.hide()
+        
+        self.close()
+    
+    def show_tray_notification(self, title: str, message: str, icon_type=None):
+        """시스템 트레이 알림 표시 (새 뉴스 도착 등)"""
+        if not hasattr(self, 'tray_icon') or not self.tray_icon:
+            return
+        
+        try:
+            if icon_type is None:
+                icon_type = QSystemTrayIcon.MessageIcon.Information
+            
+            self.tray_icon.showMessage(
+                title,
+                message,
+                icon_type,
+                5000  # 5초간 표시
+            )
+        except Exception as e:
+            logger.warning(f"트레이 알림 표시 오류: {e}")
+
     def load_config(self):
         """설정 로드"""
         self.config = {
@@ -2962,6 +3247,14 @@ class MainApp(QMainWindow):
         self.notification_enabled = self.config.get('notification_enabled', True)
         self.alert_keywords = self.config.get('alert_keywords', [])
         self.sound_enabled = self.config.get('sound_enabled', True)
+        
+        # 새 설정: 트레이/자동시작/창 상태
+        self.minimize_to_tray = self.config.get('minimize_to_tray', True)  # 트레이로 최소화
+        self.close_to_tray = self.config.get('close_to_tray', True)  # 닫기 시 트레이로
+        self.start_minimized = self.config.get('start_minimized', False)  # 최소화 상태로 시작
+        self.auto_start_enabled = self.config.get('auto_start_enabled', False)  # 윈도우 시작 시 자동 실행
+        self._saved_geometry = self.config.get('window_geometry', None)  # 창 위치/크기
+        self.notify_on_refresh = self.config.get('notify_on_refresh', False)  # 새로고침 완료 알림 (기본 비활성화)
 
     def save_config(self):
         """설정 저장"""
@@ -2979,7 +3272,18 @@ class MainApp(QMainWindow):
                 'refresh_interval_index': self.interval_idx,
                 'notification_enabled': self.notification_enabled,
                 'alert_keywords': self.alert_keywords,
-                'sound_enabled': self.sound_enabled
+                'sound_enabled': self.sound_enabled,
+                'minimize_to_tray': self.minimize_to_tray,
+                'close_to_tray': self.close_to_tray,
+                'start_minimized': self.start_minimized,
+                'auto_start_enabled': self.auto_start_enabled,
+                'notify_on_refresh': self.notify_on_refresh,
+                'window_geometry': {
+                    'x': self.x(),
+                    'y': self.y(),
+                    'width': self.width(),
+                    'height': self.height()
+                }
             },
             'tabs': tab_names
         }
@@ -3000,7 +3304,22 @@ class MainApp(QMainWindow):
     def init_ui(self):
         """UI 초기화"""
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
-        self.resize(1100, 850)
+        
+        # 저장된 창 상태 복원
+        if self._saved_geometry:
+            try:
+                self.setGeometry(
+                    self._saved_geometry.get('x', 100),
+                    self._saved_geometry.get('y', 100),
+                    self._saved_geometry.get('width', 1100),
+                    self._saved_geometry.get('height', 850)
+                )
+            except Exception as e:
+                logger.warning(f"창 상태 복원 실패: {e}")
+                self.resize(1100, 850)
+        else:
+            self.resize(1100, 850)
+        
         self.setMinimumSize(600, 400)  # 최소 창 크기 설정
         self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
         
@@ -3562,6 +3881,13 @@ class MainApp(QMainWindow):
         self.statusBar().showMessage(toast_msg, 5000)
         self.show_toast(toast_msg)
         
+        # 자동 새로고침 완료 윈도우 알림 (설정 시)
+        if self.notify_on_refresh and added > 0:
+            self.show_tray_notification(
+                "📰 자동 새로고침 완료",
+                f"{added}건의 새 뉴스가 업데이트되었습니다."
+            )
+        
         # 카운트다운 타이머 재시작
         self.apply_refresh_interval()
 
@@ -3667,12 +3993,20 @@ class MainApp(QMainWindow):
                             f"📰 {keyword}",
                             f"{added_count}건의 새 뉴스가 있습니다."
                         )
+                        # 창이 숨겨져 있으면 트레이 알림도 표시
+                        if not self.isVisible():
+                            self.show_tray_notification(
+                                f"📰 {keyword}",
+                                f"{added_count}건의 새 뉴스가 도착했습니다."
+                            )
+                        # 트레이 툴팁 업데이트
+                        self.update_tray_tooltip()
                     
                     # 알림 키워드 체크
                     matched = self.check_alert_keywords(result['items'])
                     if matched:
                         for item, kw in matched[:3]:  # 최대 3개
-                            title = html.unescape(re.sub(r'<[^>]+>', '', item.get('title', '')))
+                            title = html.unescape(RE_HTML_TAGS.sub('', item.get('title', '')))
                             self.show_desktop_notification(
                                 f"🔔 알림 키워드: {kw}",
                                 title[:50]
@@ -3851,7 +4185,10 @@ class MainApp(QMainWindow):
                     'theme_index': self.theme_idx,
                     'refresh_interval_index': self.interval_idx,
                     'notification_enabled': self.notification_enabled,
-                    'alert_keywords': self.alert_keywords
+                    'alert_keywords': self.alert_keywords,
+                    'close_to_tray': self.close_to_tray,
+                    'start_minimized': self.start_minimized,
+                    'notify_on_refresh': self.notify_on_refresh
                 },
                 'tabs': [self.tabs.widget(i).keyword for i in range(1, self.tabs.count()) 
                         if hasattr(self.tabs.widget(i), 'keyword')]
@@ -4089,7 +4426,11 @@ class MainApp(QMainWindow):
             'interval': self.interval_idx,
             'theme': self.theme_idx,
             'notification_enabled': self.notification_enabled,
-            'alert_keywords': self.alert_keywords
+            'alert_keywords': self.alert_keywords,
+            'close_to_tray': self.close_to_tray,
+            'start_minimized': self.start_minimized,
+            'auto_start_enabled': self.auto_start_enabled,
+            'notify_on_refresh': self.notify_on_refresh
         }
         
         dlg = SettingsDialog(current_config, self)
@@ -4103,6 +4444,24 @@ class MainApp(QMainWindow):
             # 알림 설정 적용
             self.notification_enabled = data.get('notification_enabled', True)
             self.alert_keywords = data.get('alert_keywords', [])
+            
+            # 트레이 설정 적용
+            self.close_to_tray = data.get('close_to_tray', True)
+            self.start_minimized = data.get('start_minimized', False)
+            self.notify_on_refresh = data.get('notify_on_refresh', False)
+            
+            # 자동 시작 설정 적용 (Windows 레지스트리)
+            new_auto_start = data.get('auto_start_enabled', False)
+            if new_auto_start != self.auto_start_enabled:
+                if new_auto_start:
+                    if StartupManager.enable_startup(self.start_minimized):
+                        self.show_success_toast("✓ 윈도우 시작 시 자동 실행이 설정되었습니다.")
+                    else:
+                        self.show_error_toast("자동 시작 설정에 실패했습니다.")
+                else:
+                    if StartupManager.disable_startup():
+                        self.show_success_toast("✓ 자동 실행이 해제되었습니다.")
+                self.auto_start_enabled = new_auto_start
             
             if self.theme_idx != data['theme']:
                 self.theme_idx = data['theme']
@@ -4152,33 +4511,62 @@ class MainApp(QMainWindow):
 
 
     def closeEvent(self, event):
-        """종료 이벤트 - 종료 원인 추적 및 확인 다이얼로그 버전"""
+        """종료 이벤트 - 트레이 최소화 지원 버전"""
         # 종료 원인 분석을 위한 호출 스택 로깅
         caller_info = self._get_close_caller_info()
-        logger.info(f"프로그램 종료 시작... (호출 원인: {caller_info})")
+        logger.info(f"closeEvent 호출됨 (호출 원인: {caller_info})")
         
-        # 시스템 종료가 아니고 사용자 요청도 아닌 경우 확인 다이얼로그 표시
-        if not self._system_shutdown and not self._force_close:
-            # 트레이에서 종료를 선택한 경우가 아니면 확인
-            if not self._user_requested_close:
-                reply = QMessageBox.question(
-                    self,
-                    "프로그램 종료",
-                    "정말로 프로그램을 종료하시겠습니까?\n\n"
-                    "종료하면 뉴스 자동 새로고침이 중지됩니다.",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
+        # 시스템 종료거나 강제 종료 요청인 경우 → 실제 종료
+        if self._system_shutdown or self._force_close:
+            if self._system_shutdown:
+                logger.warning("시스템 종료로 인한 프로그램 종료")
+            # 실제 종료 처리로 진행
+            self._perform_real_close(event)
+            return
+        
+        # 트레이 아이콘이 있고, 트레이로 최소화 설정이 켜져 있으면 → 트레이로 숨기기
+        if hasattr(self, 'tray_icon') and self.tray_icon and self.close_to_tray:
+            logger.info("창을 트레이로 최소화")
+            event.ignore()
+            self.hide()
+            
+            # 처음 트레이로 숨길 때 알림 표시
+            if not hasattr(self, '_tray_hide_notified') or not self._tray_hide_notified:
+                self.show_tray_notification(
+                    APP_NAME,
+                    "프로그램이 시스템 트레이에서 계속 실행됩니다.\n트레이 아이콘을 더블클릭하여 창을 열 수 있습니다."
                 )
-                
-                if reply != QMessageBox.StandardButton.Yes:
-                    logger.info("사용자가 종료를 취소함")
-                    event.ignore()
-                    return
-                    
-                self._user_requested_close = True
-                logger.info("사용자가 종료 확인함")
-        elif self._system_shutdown:
-            logger.warning("시스템 종료로 인한 프로그램 종료")
+                self._tray_hide_notified = True
+            
+            # 트레이 툴팁 업데이트
+            self.update_tray_tooltip()
+            return
+        
+        # 트레이 최소화가 비활성화된 경우 → 종료 확인 다이얼로그
+        if not self._user_requested_close:
+            reply = QMessageBox.question(
+                self,
+                "프로그램 종료",
+                "정말로 프로그램을 종료하시겠습니까?\n\n"
+                "종료하면 뉴스 자동 새로고침이 중지됩니다.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                logger.info("사용자가 종료를 취소함")
+                event.ignore()
+                return
+            
+            self._user_requested_close = True
+            logger.info("사용자가 종료 확인함")
+        
+        # 실제 종료 처리
+        self._perform_real_close(event)
+    
+    def _perform_real_close(self, event):
+        """프로그램 실제 종료 처리"""
+        logger.info("프로그램 실제 종료 시작...")
         
         try:
             # 모든 타이머 중지
@@ -4352,7 +4740,7 @@ class SettingsDialog(QDialog):
         gp_app = QGroupBox("⚙ 일반 설정")
         form2 = QGridLayout()
         
-        self.cb_time = QComboBox()
+        self.cb_time = NoScrollComboBox()
         self.cb_time.addItems(["10분", "30분", "1시간", "3시간", "6시간", "자동 새로고침 안함"])
         idx = self.config.get('interval', 2)
         if isinstance(idx, int) and 0 <= idx <= 5:
@@ -4360,7 +4748,7 @@ class SettingsDialog(QDialog):
         else:
             self.cb_time.setCurrentIndex(2)
         
-        self.cb_theme = QComboBox()
+        self.cb_theme = NoScrollComboBox()
         self.cb_theme.addItems(["☀ 라이트 모드", "🌙 다크 모드"])
         self.cb_theme.setCurrentIndex(self.config.get('theme', 0))
         
@@ -4371,6 +4759,42 @@ class SettingsDialog(QDialog):
         
         gp_app.setLayout(form2)
         settings_layout.addWidget(gp_app)
+        
+        # 시스템 트레이 및 자동 시작 설정
+        gp_tray = QGroupBox("🖥️ 시스템 트레이 및 시작 설정")
+        tray_layout = QVBoxLayout()
+        
+        # 트레이로 최소화 옵션
+        self.chk_close_to_tray = QCheckBox("X 버튼 클릭 시 트레이로 최소화 (종료하지 않음)")
+        self.chk_close_to_tray.setChecked(self.config.get('close_to_tray', True))
+        tray_layout.addWidget(self.chk_close_to_tray)
+        
+        # 자동 시작 옵션 (Windows만)
+        self.chk_auto_start = QCheckBox("윈도우 시작 시 자동 실행")
+        if StartupManager.is_available():
+            self.chk_auto_start.setChecked(StartupManager.is_startup_enabled())
+        else:
+            self.chk_auto_start.setEnabled(False)
+            self.chk_auto_start.setToolTip("Windows에서만 사용 가능합니다.")
+        tray_layout.addWidget(self.chk_auto_start)
+        
+        # 최소화 상태로 시작 옵션
+        self.chk_start_minimized = QCheckBox("시작 시 최소화 상태로 시작 (트레이로)")
+        self.chk_start_minimized.setChecked(self.config.get('start_minimized', False))
+        tray_layout.addWidget(self.chk_start_minimized)
+        
+        # 자동 새로고침 완료 알림 옵션
+        self.chk_notify_on_refresh = QCheckBox("자동 새로고침 완료 시 알림 표시")
+        self.chk_notify_on_refresh.setChecked(self.config.get('notify_on_refresh', False))
+        tray_layout.addWidget(self.chk_notify_on_refresh)
+        
+        # 안내 메시지
+        tray_info = QLabel("💡 트레이로 최소화하면 백그라운드에서 뉴스를 계속 수집합니다.")
+        tray_info.setStyleSheet("color: #666; font-size: 9pt;")
+        tray_layout.addWidget(tray_info)
+        
+        gp_tray.setLayout(tray_layout)
+        settings_layout.addWidget(gp_tray)
         
         gp_data = QGroupBox("🗂 데이터 관리")
         vbox = QVBoxLayout()
@@ -4870,7 +5294,11 @@ class SettingsDialog(QDialog):
             'interval': self.cb_time.currentIndex(),
             'theme': self.cb_theme.currentIndex(),
             'notification_enabled': self.chk_notification.isChecked(),
-            'alert_keywords': alert_keywords
+            'alert_keywords': alert_keywords,
+            'close_to_tray': self.chk_close_to_tray.isChecked(),
+            'auto_start_enabled': self.chk_auto_start.isChecked(),
+            'start_minimized': self.chk_start_minimized.isChecked(),
+            'notify_on_refresh': self.chk_notify_on_refresh.isChecked()
         }
 
 # --- 메인 실행 ---
