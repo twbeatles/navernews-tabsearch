@@ -92,88 +92,95 @@ VERSION = "32.1"  # 리팩토링 + 자동 백업 + 로그 뷰어 + 키워드 그
 
 # --- 색상 상수 (중앙화) ---
 class Colors:
-    """앱 전체에서 사용되는 색상 상수"""
-    # 라이트 테마
-    LIGHT_PRIMARY = "#007AFF"
-    LIGHT_PRIMARY_HOVER = "#0056B3"
-    LIGHT_SECONDARY = "#6C757D"
-    LIGHT_SUCCESS = "#28A745"
-    LIGHT_WARNING = "#FFC107"
-    LIGHT_DANGER = "#DC3545"
-    LIGHT_INFO = "#17A2B8"
-    LIGHT_BG = "#F0F2F5"
+    """앱 전체에서 사용되는 색상 상수 - 현대화된 팔레트"""
+    # 라이트 테마 - Tailwind CSS 인디고 기반
+    LIGHT_PRIMARY = "#6366F1"          # 인디고 500
+    LIGHT_PRIMARY_HOVER = "#4F46E5"    # 인디고 600
+    LIGHT_PRIMARY_LIGHT = "#E0E7FF"    # 인디고 100
+    LIGHT_SECONDARY = "#64748B"        # 슬레이트 500
+    LIGHT_SUCCESS = "#10B981"          # 에메랄드 500
+    LIGHT_SUCCESS_LIGHT = "#D1FAE5"    # 에메랄드 100
+    LIGHT_WARNING = "#F59E0B"          # 앰버 500
+    LIGHT_DANGER = "#EF4444"           # 레드 500
+    LIGHT_INFO = "#06B6D4"             # 시안 500
+    LIGHT_BG = "#F8FAFC"               # 슬레이트 50
     LIGHT_CARD_BG = "#FFFFFF"
-    LIGHT_BORDER = "#DCDCDC"
-    LIGHT_TEXT = "#000000"
-    LIGHT_TEXT_MUTED = "#6C757D"
+    LIGHT_BORDER = "#E2E8F0"           # 슬레이트 200
+    LIGHT_TEXT = "#1E293B"             # 슬레이트 800
+    LIGHT_TEXT_MUTED = "#94A3B8"       # 슬레이트 400
     
-    # 다크 테마 (개선된 깊은 다크)
-    DARK_PRIMARY = "#0A84FF"
-    DARK_PRIMARY_HOVER = "#0060C0"
-    DARK_SECONDARY = "#8E8E93"
-    DARK_SUCCESS = "#30D158"
-    DARK_WARNING = "#FFD60A"
-    DARK_DANGER = "#FF453A"
-    DARK_INFO = "#64D2FF"
-    DARK_BG = "#0D0D0F"  # 더 깊은 다크
-    DARK_CARD_BG = "#1A1A1D"  # 글래스모피즘 효과를 위한 배경
-    DARK_BORDER = "#2D2D30"
-    DARK_TEXT = "#FFFFFF"
-    DARK_TEXT_MUTED = "#8E8E93"
+    # 다크 테마 - 깊은 슬레이트 기반
+    DARK_PRIMARY = "#818CF8"           # 인디고 400
+    DARK_PRIMARY_HOVER = "#A5B4FC"     # 인디고 300
+    DARK_PRIMARY_LIGHT = "#312E81"     # 인디고 900
+    DARK_SECONDARY = "#64748B"         # 슬레이트 500
+    DARK_SUCCESS = "#34D399"           # 에메랄드 400
+    DARK_WARNING = "#FBBF24"           # 앰버 400
+    DARK_DANGER = "#F87171"            # 레드 400
+    DARK_INFO = "#22D3EE"              # 시안 400
+    DARK_BG = "#0F172A"                # 슬레이트 900
+    DARK_CARD_BG = "#1E293B"           # 슬레이트 800
+    DARK_BORDER = "#334155"            # 슬레이트 700
+    DARK_TEXT = "#F1F5F9"              # 슬레이트 100
+    DARK_TEXT_MUTED = "#94A3B8"        # 슬레이트 400
     
     # 공통 색상
-    HIGHLIGHT = "#FCD34D"
-    BOOKMARK = "#FFD700"
-    DUPLICATE = "#FFA500"
+    HIGHLIGHT = "#FCD34D"              # 앰버 300
+    BOOKMARK = "#FBBF24"               # 앰버 400
+    DUPLICATE = "#FB923C"              # 오렌지 400
     
     @classmethod
     def get_html_colors(cls, is_dark: bool) -> Dict[str, str]:
-        """HTML 렌더링용 테마별 색상 딕셔너리 반환"""
+        """HTML 렌더링용 테마별 색상 딕셔너리 반환 - 현대화된 팔레트"""
         if is_dark:
             return {
-                'text_color': "#F0F0F0",
-                'link_color': "#6EB5FF",
-                'link_hover': "#8BC8FF",
-                'border_color': "#505050",
-                'bg_color': "#3A3A3C",
-                'bg_gradient': "#2C2C2E",
-                'bg_hover': "#4A4A4C",
-                'read_bg': "#2C2C2E",
-                'title_color': "#FFFFFF",
-                'meta_color': "#A0A0A0",
-                'desc_color': "#D0D0D0",
-                'tag_bg': "#0A84FF",
+                'text_color': "#F1F5F9",        # 슬레이트 100
+                'link_color': "#818CF8",        # 인디고 400
+                'link_hover': "#A5B4FC",        # 인디고 300
+                'accent_color': "#34D399",      # 에메랄드 400
+                'border_color': "#475569",      # 슬레이트 600
+                'bg_color': "#1E293B",          # 슬레이트 800
+                'bg_gradient': "#0F172A",       # 슬레이트 900
+                'bg_hover': "#334155",          # 슬레이트 700
+                'read_bg': "#0F172A",           # 슬레이트 900
+                'title_color': "#F1F5F9",       # 슬레이트 100
+                'meta_color': "#94A3B8",        # 슬레이트 400
+                'desc_color': "#CBD5E1",        # 슬레이트 300
+                'tag_bg': "#6366F1",            # 인디고 500
                 'tag_color': "#FFFFFF",
-                'action_bg': "rgba(255, 255, 255, 0.08)",
-                'action_hover': "rgba(255, 255, 255, 0.15)",
-                'bookmark_bg': "#17A2B8",
-                'bookmark_end': "#20C997",
+                'action_bg': "rgba(129, 140, 248, 0.12)",
+                'action_bg_end': "rgba(129, 140, 248, 0.08)",
+                'action_hover': "rgba(129, 140, 248, 0.25)",
+                'bookmark_bg': "#6366F1",       # 인디고 500
+                'bookmark_end': "#34D399",      # 에메랄드 400
                 'empty_bg': "rgba(255, 255, 255, 0.03)",
-                'scrollbar_track': "#2C2C2E",
-                'scrollbar_thumb': "#505050"
+                'scrollbar_track': "#1E293B",   # 슬레이트 800
+                'scrollbar_thumb': "#475569"    # 슬레이트 600
             }
         else:
             return {
-                'text_color': "#1A1A1A",
-                'link_color': "#007AFF",
-                'link_hover': "#0056b3",
-                'border_color': "#E5E7EB",
+                'text_color': "#1E293B",        # 슬레이트 800
+                'link_color': "#6366F1",        # 인디고 500
+                'link_hover': "#4F46E5",        # 인디고 600
+                'accent_color': "#10B981",      # 에메랄드 500
+                'border_color': "#E2E8F0",      # 슬레이트 200
                 'bg_color': "#FFFFFF",
-                'bg_gradient': "#F8FAFC",
-                'bg_hover': "#F0F9FF",
-                'read_bg': "#F3F4F6",
-                'title_color': "#111827",
-                'meta_color': "#6B7280",
-                'desc_color': "#4B5563",
-                'tag_bg': "#007AFF",
+                'bg_gradient': "#F8FAFC",       # 슬레이트 50
+                'bg_hover': "#EEF2FF",          # 인디고 50
+                'read_bg': "#F1F5F9",           # 슬레이트 100
+                'title_color': "#0F172A",       # 슬레이트 900
+                'meta_color': "#64748B",        # 슬레이트 500
+                'desc_color': "#475569",        # 슬레이트 600
+                'tag_bg': "#6366F1",            # 인디고 500
                 'tag_color': "#FFFFFF",
-                'action_bg': "rgba(0, 122, 255, 0.08)",
-                'action_hover': "rgba(0, 122, 255, 0.15)",
-                'bookmark_bg': "#007AFF",
-                'bookmark_end': "#00C7BE",
+                'action_bg': "rgba(99, 102, 241, 0.08)",
+                'action_bg_end': "rgba(99, 102, 241, 0.04)",
+                'action_hover': "rgba(99, 102, 241, 0.18)",
+                'bookmark_bg': "#6366F1",       # 인디고 500
+                'bookmark_end': "#10B981",      # 에메랄드 500
                 'empty_bg': "rgba(0, 0, 0, 0.02)",
-                'scrollbar_track': "#F3F4F6",
-                'scrollbar_thumb': "#D1D5DB"
+                'scrollbar_track': "#F1F5F9",   # 슬레이트 100
+                'scrollbar_thumb': "#CBD5E1"    # 슬레이트 300
             }
 
 
@@ -394,29 +401,29 @@ class ToastQueue:
 class ToastMessage(QLabel):
     """화면에 잠시 나타났다 사라지는 알림 메시지 - 유형별 스타일 지원"""
     
-    # 유형별 스타일 정의
+    # 유형별 스타일 정의 - 현대화된 디자인
     STYLES = {
         ToastType.INFO: """
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 rgba(45, 45, 48, 240), stop:1 rgba(60, 60, 65, 240));
-            color: #FFFFFF;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+                stop:0 rgba(30, 41, 59, 245), stop:1 rgba(51, 65, 85, 245));
+            color: #F1F5F9;
+            border: 1px solid rgba(148, 163, 184, 0.2);
         """,
         ToastType.SUCCESS: """
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 rgba(40, 167, 69, 240), stop:1 rgba(32, 201, 151, 240));
+                stop:0 rgba(5, 150, 105, 245), stop:1 rgba(16, 185, 129, 245));
             color: #FFFFFF;
             border: 1px solid rgba(255, 255, 255, 0.2);
         """,
         ToastType.WARNING: """
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 rgba(255, 193, 7, 240), stop:1 rgba(255, 159, 64, 240));
-            color: #1A1A1A;
-            border: 1px solid rgba(0, 0, 0, 0.1);
+                stop:0 rgba(217, 119, 6, 245), stop:1 rgba(245, 158, 11, 245));
+            color: #FFFFFF;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         """,
         ToastType.ERROR: """
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 rgba(220, 53, 69, 240), stop:1 rgba(255, 69, 58, 240));
+                stop:0 rgba(185, 28, 28, 245), stop:1 rgba(239, 68, 68, 245));
             color: #FFFFFF;
             border: 1px solid rgba(255, 255, 255, 0.2);
         """,
@@ -506,8 +513,13 @@ class ToastMessage(QLabel):
             # 애니메이션 정리
             if hasattr(self, 'anim_out'):
                 self.anim_out.stop()
+                self.anim_out.deleteLater()
             if hasattr(self, 'anim_in'):
                 self.anim_in.stop()
+                self.anim_in.deleteLater()
+            # opacity_effect 정리
+            if hasattr(self, 'opacity_effect') and self.opacity_effect:
+                self.opacity_effect.deleteLater()
         except RuntimeError:
             pass  # 이미 삭제된 경우
         finally:
@@ -572,156 +584,227 @@ class AppStyle:
     LIGHT = f"""
         QMainWindow, QDialog {{ background-color: {Colors.LIGHT_BG}; }}
         QGroupBox {{ 
-            font-family: '맑은 고딕'; 
-            font-weight: bold; 
-            margin-top: 10px;
-            border: 1px solid {Colors.LIGHT_BORDER};
-            border-radius: 8px;
-            padding: 15px;
-            background-color: {Colors.LIGHT_CARD_BG};
+            font-family: '맑은 고딕', -apple-system, sans-serif;
+            font-size: 11pt;
+            font-weight: 600;
+            margin-top: 16px;
+            padding: 20px 16px 16px 16px;
+            border: none;
+            border-radius: 12px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 {Colors.LIGHT_CARD_BG}, stop:1 {Colors.LIGHT_BG});
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 5px;
-            color: {Colors.LIGHT_PRIMARY};
+            left: 16px;
+            top: 4px;
+            padding: 4px 12px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
+            color: white;
+            border-radius: 8px;
         }}
-        QLabel, QDialog QLabel {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.LIGHT_TEXT}; }}
-        QPushButton {{ 
-            font-family: '맑은 고딕'; 
+        QLabel, QDialog QLabel {{ 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            color: #333; 
-            padding: 8px 16px; 
-            border-radius: 8px; 
+            color: {Colors.LIGHT_TEXT}; 
+        }}
+        QPushButton {{ 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
+            font-size: 10pt; 
+            font-weight: 500;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 #FFFFFF, stop:1 {Colors.LIGHT_BG});
+            color: {Colors.LIGHT_TEXT}; 
+            padding: 10px 18px; 
+            border-radius: 10px; 
             border: 1px solid {Colors.LIGHT_BORDER};
             min-width: 70px;
             margin: 0 4px;
         }}
         QPushButton:hover {{ 
-            background-color: #E8F4FF; 
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 {Colors.LIGHT_PRIMARY_LIGHT}, stop:1 #FFFFFF);
             border-color: {Colors.LIGHT_PRIMARY};
             color: {Colors.LIGHT_PRIMARY};
         }}
         QPushButton:pressed {{
-            background-color: #D0E8FF;
+            background: {Colors.LIGHT_PRIMARY_LIGHT};
+            border-color: {Colors.LIGHT_PRIMARY};
         }}
-        QPushButton:disabled {{ background-color: #F5F5F5; color: #999; }}
+        QPushButton:disabled {{ 
+            background-color: {Colors.LIGHT_BG}; 
+            color: {Colors.LIGHT_TEXT_MUTED}; 
+            border-color: {Colors.LIGHT_BORDER};
+        }}
         QPushButton#AddTab {{ 
             font-weight: bold; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #00A3FF);
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
             color: white; 
             border: none; 
-            padding: 10px 20px;
+            padding: 12px 24px;
         }}
         QPushButton#AddTab:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #0080CC);
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #7C3AED);
         }}
         QPushButton#RefreshBtn {{ 
-            background-color: {Colors.LIGHT_SUCCESS}; 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.LIGHT_SUCCESS}, stop:1 #34D399);
             color: white; 
             border: none; 
         }}
         QPushButton#RefreshBtn:hover {{ 
-            background-color: #218838; 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 #059669, stop:1 #10B981);
         }}
         QComboBox {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
-            padding: 6px 10px; 
-            border-radius: 8px; 
+            padding: 8px 12px; 
+            border-radius: 10px; 
             border: 1px solid {Colors.LIGHT_BORDER}; 
             background-color: {Colors.LIGHT_CARD_BG}; 
             color: {Colors.LIGHT_TEXT};
-            min-width: 80px;
+            min-width: 90px;
         }}
         QComboBox:hover {{ border-color: {Colors.LIGHT_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 20px; }}
-        QComboBox::down-arrow {{ image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #666; }}
+        QComboBox::drop-down {{ border: none; width: 24px; }}
+        QComboBox::down-arrow {{ 
+            image: none; 
+            border-left: 5px solid transparent; 
+            border-right: 5px solid transparent; 
+            border-top: 5px solid {Colors.LIGHT_TEXT_MUTED}; 
+        }}
         QComboBox QAbstractItemView {{ 
             background-color: {Colors.LIGHT_CARD_BG}; 
             color: {Colors.LIGHT_TEXT}; 
             selection-background-color: {Colors.LIGHT_PRIMARY}; 
             selection-color: white; 
             border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 4px;
+            border-radius: 8px;
+            padding: 4px;
         }}
-        QComboBox QAbstractItemView::item {{ padding: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ background-color: #E8F4FF; }}
+        QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
+        QComboBox QAbstractItemView::item:hover {{ background-color: {Colors.LIGHT_PRIMARY_LIGHT}; }}
         QTextBrowser, QTextEdit, QListWidget {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             background-color: {Colors.LIGHT_CARD_BG}; 
             border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 10px; 
+            border-radius: 12px; 
             color: {Colors.LIGHT_TEXT};
-            padding: 8px;
+            padding: 12px;
         }}
-        QListWidget::item:selected {{ background-color: {Colors.LIGHT_PRIMARY}; color: white; border-radius: 4px; }}
+        QListWidget::item:selected {{ 
+            background-color: {Colors.LIGHT_PRIMARY}; 
+            color: white; 
+            border-radius: 6px; 
+        }}
         QTabWidget::pane {{ 
             border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 8px;
+            border-radius: 12px;
             background-color: {Colors.LIGHT_CARD_BG};
             margin-top: -1px;
         }}
         QTabBar::tab {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
             color: {Colors.LIGHT_TEXT_MUTED}; 
-            padding: 10px 18px; 
+            padding: 12px 20px; 
             border: 1px solid transparent; 
             border-bottom: none; 
             background-color: transparent;
-            margin-right: 2px;
+            margin-right: 4px;
         }}
         QTabBar::tab:selected {{ 
             background-color: {Colors.LIGHT_CARD_BG}; 
             border-color: {Colors.LIGHT_BORDER}; 
             border-bottom: 3px solid {Colors.LIGHT_PRIMARY};
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
+            border-top-left-radius: 10px; 
+            border-top-right-radius: 10px; 
             color: {Colors.LIGHT_PRIMARY}; 
-            font-weight: bold; 
+            font-weight: 600; 
         }}
         QTabBar::tab:!selected {{ color: {Colors.LIGHT_TEXT_MUTED}; }}
         QTabBar::tab:!selected:hover {{ 
             color: {Colors.LIGHT_TEXT}; 
-            background-color: rgba(0, 122, 255, 0.1); 
-            border-bottom: 2px solid rgba(0, 122, 255, 0.3);
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
+            background-color: {Colors.LIGHT_PRIMARY_LIGHT}; 
+            border-bottom: 2px solid rgba(99, 102, 241, 0.4);
+            border-top-left-radius: 10px; 
+            border-top-right-radius: 10px; 
         }}
         QLineEdit {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
-            padding: 8px 12px; 
-            border-radius: 8px; 
+            padding: 10px 14px; 
+            border-radius: 10px; 
             border: 1px solid {Colors.LIGHT_BORDER}; 
             background-color: {Colors.LIGHT_CARD_BG}; 
             color: {Colors.LIGHT_TEXT};
         }}
-        QLineEdit:focus {{ border: 2px solid {Colors.LIGHT_PRIMARY}; padding: 7px 11px; }}
-        QLineEdit#FilterActive {{ border: 2px solid {Colors.LIGHT_PRIMARY}; background-color: #F0F8FF; }}
-        QLineEdit::placeholder {{ color: #999999; }}
+        QLineEdit:focus {{ 
+            border: 2px solid {Colors.LIGHT_PRIMARY}; 
+            padding: 9px 13px; 
+            background-color: #FEFFFE;
+        }}
+        QLineEdit#FilterActive {{ 
+            border: 2px solid {Colors.LIGHT_PRIMARY}; 
+            background-color: {Colors.LIGHT_PRIMARY_LIGHT}; 
+        }}
+        QLineEdit::placeholder {{ color: {Colors.LIGHT_TEXT_MUTED}; }}
         QProgressBar {{ 
             border: none; 
             border-radius: 6px; 
             text-align: center; 
-            background-color: #E0E0E0; 
+            background-color: {Colors.LIGHT_BORDER}; 
             color: {Colors.LIGHT_TEXT};
             height: 8px;
         }}
         QProgressBar::chunk {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.LIGHT_PRIMARY}, stop:1 {Colors.LIGHT_INFO});
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 {Colors.LIGHT_INFO});
             border-radius: 6px;
         }}
-        QCheckBox {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.LIGHT_TEXT}; }}
-        QCheckBox::indicator {{ width: 20px; height: 20px; }}
-        QCheckBox::indicator:unchecked {{ border: 2px solid {Colors.LIGHT_BORDER}; background-color: {Colors.LIGHT_CARD_BG}; border-radius: 4px; }}
-        QCheckBox::indicator:checked {{ border: none; background-color: {Colors.LIGHT_PRIMARY}; border-radius: 4px; }}
-        QCheckBox::indicator:checked:hover {{ background-color: {Colors.LIGHT_PRIMARY_HOVER}; }}
-        QStatusBar {{ background-color: {Colors.LIGHT_CARD_BG}; border-top: 1px solid {Colors.LIGHT_BORDER}; }}
-        QScrollBar:vertical {{ background: {Colors.LIGHT_BG}; width: 10px; border-radius: 5px; }}
-        QScrollBar::handle:vertical {{ background: {Colors.LIGHT_BORDER}; border-radius: 5px; min-height: 30px; }}
+        QCheckBox {{ 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
+            font-size: 10pt; 
+            color: {Colors.LIGHT_TEXT}; 
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{ width: 22px; height: 22px; }}
+        QCheckBox::indicator:unchecked {{ 
+            border: 2px solid {Colors.LIGHT_BORDER}; 
+            background-color: {Colors.LIGHT_CARD_BG}; 
+            border-radius: 6px; 
+        }}
+        QCheckBox::indicator:checked {{ 
+            border: none; 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
+            border-radius: 6px; 
+        }}
+        QCheckBox::indicator:checked:hover {{ 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #7C3AED);
+        }}
+        QStatusBar {{ 
+            background-color: {Colors.LIGHT_CARD_BG}; 
+            border-top: 1px solid {Colors.LIGHT_BORDER}; 
+            padding: 4px;
+        }}
+        QScrollBar:vertical {{ 
+            background: {Colors.LIGHT_BG}; 
+            width: 10px; 
+            border-radius: 5px; 
+            margin: 2px;
+        }}
+        QScrollBar::handle:vertical {{ 
+            background: {Colors.LIGHT_BORDER}; 
+            border-radius: 5px; 
+            min-height: 30px; 
+        }}
         QScrollBar::handle:vertical:hover {{ background: {Colors.LIGHT_TEXT_MUTED}; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
     """
@@ -730,137 +813,176 @@ class AppStyle:
     DARK = f"""
         QMainWindow, QDialog {{ background-color: {Colors.DARK_BG}; }}
         QGroupBox {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif;
             color: {Colors.DARK_TEXT}; 
-            font-weight: bold; 
-            margin-top: 10px;
-            border: 1px solid {Colors.DARK_BORDER};
-            border-radius: 8px;
-            padding: 15px;
-            background-color: {Colors.DARK_CARD_BG};
+            font-size: 11pt;
+            font-weight: 600; 
+            margin-top: 16px;
+            padding: 20px 16px 16px 16px;
+            border: none;
+            border-radius: 12px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 {Colors.DARK_CARD_BG}, stop:1 {Colors.DARK_BG});
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 5px;
-            color: {Colors.DARK_PRIMARY};
+            left: 16px;
+            top: 4px;
+            padding: 4px 12px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
+            color: white;
+            border-radius: 8px;
         }}
-        QLabel, QDialog QLabel {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.DARK_TEXT}; }}
-        QPushButton {{ 
-            font-family: '맑은 고딕'; 
+        QLabel, QDialog QLabel {{ 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
-            background-color: {Colors.DARK_CARD_BG}; 
             color: {Colors.DARK_TEXT}; 
-            padding: 8px 16px; 
-            border-radius: 8px; 
+        }}
+        QPushButton {{ 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
+            font-size: 10pt;
+            font-weight: 500;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 {Colors.DARK_CARD_BG}, stop:1 {Colors.DARK_BG});
+            color: {Colors.DARK_TEXT}; 
+            padding: 10px 18px; 
+            border-radius: 10px; 
             border: 1px solid {Colors.DARK_BORDER};
             min-width: 70px;
             margin: 0 4px;
         }}
         QPushButton:hover {{ 
-            background-color: #3A3A3C; 
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 {Colors.DARK_BORDER}, stop:1 {Colors.DARK_CARD_BG});
             border-color: {Colors.DARK_PRIMARY};
             color: {Colors.DARK_PRIMARY};
         }}
         QPushButton:pressed {{
-            background-color: #4A4A4C;
+            background: {Colors.DARK_BORDER};
+            border-color: {Colors.DARK_PRIMARY};
         }}
-        QPushButton:disabled {{ background-color: #1C1C1E; color: #555; }}
+        QPushButton:disabled {{ 
+            background-color: {Colors.DARK_BG}; 
+            color: {Colors.DARK_TEXT_MUTED}; 
+            border-color: {Colors.DARK_BORDER};
+        }}
         QPushButton#AddTab {{ 
             font-weight: bold; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.DARK_PRIMARY}, stop:1 {Colors.DARK_INFO});
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
             color: white; 
             border: none; 
-            padding: 10px 20px;
+            padding: 12px 24px;
         }}
         QPushButton#AddTab:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #0080CC);
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #C4B5FD);
         }}
         QPushButton#RefreshBtn {{ 
-            background-color: {Colors.DARK_SUCCESS}; 
-            color: white; 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.DARK_SUCCESS}, stop:1 #6EE7B7);
+            color: #064E3B; 
             border: none; 
         }}
         QPushButton#RefreshBtn:hover {{ 
-            background-color: #28C050; 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 #6EE7B7, stop:1 {Colors.DARK_SUCCESS});
         }}
         QComboBox {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
-            padding: 6px 10px; 
-            border-radius: 8px; 
+            padding: 8px 12px; 
+            border-radius: 10px; 
             border: 1px solid {Colors.DARK_BORDER}; 
             background-color: {Colors.DARK_CARD_BG}; 
             color: {Colors.DARK_TEXT};
-            min-width: 80px;
+            min-width: 90px;
         }}
         QComboBox:hover {{ border-color: {Colors.DARK_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 20px; }}
-        QComboBox::down-arrow {{ image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #AAA; }}
+        QComboBox::drop-down {{ border: none; width: 24px; }}
+        QComboBox::down-arrow {{ 
+            image: none; 
+            border-left: 5px solid transparent; 
+            border-right: 5px solid transparent; 
+            border-top: 5px solid {Colors.DARK_TEXT_MUTED}; 
+        }}
         QComboBox QAbstractItemView {{ 
             background-color: {Colors.DARK_CARD_BG}; 
             color: {Colors.DARK_TEXT}; 
             selection-background-color: {Colors.DARK_PRIMARY}; 
             selection-color: white; 
             border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 4px;
+            border-radius: 8px;
+            padding: 4px;
         }}
-        QComboBox QAbstractItemView::item {{ padding: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ background-color: #3A3A3C; }}
+        QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
+        QComboBox QAbstractItemView::item:hover {{ background-color: {Colors.DARK_BORDER}; }}
         QTextBrowser, QTextEdit, QListWidget {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             background-color: {Colors.DARK_CARD_BG}; 
             border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 10px; 
+            border-radius: 12px; 
             color: {Colors.DARK_TEXT};
-            padding: 8px;
+            padding: 12px;
         }}
-        QListWidget::item:selected {{ background-color: {Colors.DARK_PRIMARY}; color: white; border-radius: 4px; }}
+        QListWidget::item:selected {{ 
+            background-color: {Colors.DARK_PRIMARY}; 
+            color: white; 
+            border-radius: 6px; 
+        }}
         QTabWidget::pane {{ 
             border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 8px;
+            border-radius: 12px;
             background-color: {Colors.DARK_CARD_BG};
             margin-top: -1px;
         }}
         QTabBar::tab {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
             color: {Colors.DARK_TEXT_MUTED}; 
-            padding: 10px 18px; 
+            padding: 12px 20px; 
             border: 1px solid transparent; 
             border-bottom: none; 
             background-color: transparent;
-            margin-right: 2px;
+            margin-right: 4px;
         }}
         QTabBar::tab:selected {{ 
             background-color: {Colors.DARK_CARD_BG}; 
             border-color: {Colors.DARK_BORDER}; 
             border-bottom: 3px solid {Colors.DARK_PRIMARY};
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
+            border-top-left-radius: 10px; 
+            border-top-right-radius: 10px; 
             color: {Colors.DARK_PRIMARY}; 
-            font-weight: bold; 
+            font-weight: 600; 
         }}
         QTabBar::tab:!selected {{ color: {Colors.DARK_TEXT_MUTED}; }}
         QTabBar::tab:!selected:hover {{ 
             color: {Colors.DARK_TEXT}; 
-            background-color: rgba(10, 132, 255, 0.15); 
-            border-bottom: 2px solid rgba(10, 132, 255, 0.3);
-            border-top-left-radius: 8px; 
-            border-top-right-radius: 8px; 
+            background-color: {Colors.DARK_PRIMARY_LIGHT}; 
+            border-bottom: 2px solid rgba(129, 140, 248, 0.4);
+            border-top-left-radius: 10px; 
+            border-top-right-radius: 10px; 
         }}
         QLineEdit {{ 
-            font-family: '맑은 고딕'; 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
             font-size: 10pt; 
-            padding: 8px 12px; 
-            border-radius: 8px; 
+            padding: 10px 14px; 
+            border-radius: 10px; 
             border: 1px solid {Colors.DARK_BORDER}; 
             background-color: {Colors.DARK_CARD_BG}; 
             color: {Colors.DARK_TEXT};
         }}
-        QLineEdit:focus {{ border: 2px solid {Colors.DARK_PRIMARY}; padding: 7px 11px; }}
-        QLineEdit#FilterActive {{ border: 2px solid {Colors.DARK_PRIMARY}; background-color: #1A2A3A; }}
-        QLineEdit::placeholder {{ color: #666666; }}
+        QLineEdit:focus {{ 
+            border: 2px solid {Colors.DARK_PRIMARY}; 
+            padding: 9px 13px; 
+            background-color: {Colors.DARK_BORDER};
+        }}
+        QLineEdit#FilterActive {{ 
+            border: 2px solid {Colors.DARK_PRIMARY}; 
+            background-color: {Colors.DARK_PRIMARY_LIGHT}; 
+        }}
+        QLineEdit::placeholder {{ color: {Colors.DARK_TEXT_MUTED}; }}
         QProgressBar {{ 
             border: none; 
             border-radius: 6px; 
@@ -870,17 +992,49 @@ class AppStyle:
             height: 8px;
         }}
         QProgressBar::chunk {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {Colors.DARK_PRIMARY}, stop:1 {Colors.DARK_INFO});
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                stop:0 {Colors.DARK_PRIMARY}, stop:1 {Colors.DARK_INFO});
             border-radius: 6px;
         }}
-        QCheckBox {{ font-family: '맑은 고딕'; font-size: 10pt; color: {Colors.DARK_TEXT}; }}
-        QCheckBox::indicator {{ width: 20px; height: 20px; }}
-        QCheckBox::indicator:unchecked {{ border: 2px solid {Colors.DARK_BORDER}; background-color: {Colors.DARK_BG}; border-radius: 4px; }}
-        QCheckBox::indicator:checked {{ border: none; background-color: {Colors.DARK_PRIMARY}; border-radius: 4px; }}
-        QCheckBox::indicator:checked:hover {{ background-color: {Colors.DARK_PRIMARY_HOVER}; }}
-        QStatusBar {{ background-color: {Colors.DARK_CARD_BG}; border-top: 1px solid {Colors.DARK_BORDER}; color: {Colors.DARK_TEXT}; }}
-        QScrollBar:vertical {{ background: {Colors.DARK_BG}; width: 10px; border-radius: 5px; }}
-        QScrollBar::handle:vertical {{ background: {Colors.DARK_BORDER}; border-radius: 5px; min-height: 30px; }}
+        QCheckBox {{ 
+            font-family: '맑은 고딕', -apple-system, sans-serif; 
+            font-size: 10pt; 
+            color: {Colors.DARK_TEXT}; 
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{ width: 22px; height: 22px; }}
+        QCheckBox::indicator:unchecked {{ 
+            border: 2px solid {Colors.DARK_BORDER}; 
+            background-color: {Colors.DARK_BG}; 
+            border-radius: 6px; 
+        }}
+        QCheckBox::indicator:checked {{ 
+            border: none; 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
+            border-radius: 6px; 
+        }}
+        QCheckBox::indicator:checked:hover {{ 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #C4B5FD);
+        }}
+        QStatusBar {{ 
+            background-color: {Colors.DARK_CARD_BG}; 
+            border-top: 1px solid {Colors.DARK_BORDER}; 
+            color: {Colors.DARK_TEXT}; 
+            padding: 4px;
+        }}
+        QScrollBar:vertical {{ 
+            background: {Colors.DARK_BG}; 
+            width: 10px; 
+            border-radius: 5px; 
+            margin: 2px;
+        }}
+        QScrollBar::handle:vertical {{ 
+            background: {Colors.DARK_BORDER}; 
+            border-radius: 5px; 
+            min-height: 30px; 
+        }}
         QScrollBar::handle:vertical:hover {{ background: {Colors.DARK_TEXT_MUTED}; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
     """
@@ -890,42 +1044,61 @@ class AppStyle:
     <style>
         body {{ 
             font-family: '맑은 고딕', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-            margin: 10px; 
+            margin: 12px; 
             color: {text_color};
             line-height: 1.6;
         }}
         a {{ text-decoration: none; color: {link_color}; transition: all 0.2s ease; }}
         a:hover {{ color: {link_hover}; }}
         
-        /* 뉴스 카드 - 현대화 */
+        /* 뉴스 카드 - 현대화된 디자인 */
         .news-item {{ 
-            border: 1px solid transparent;
-            border-left: 4px solid {link_color}; 
-            border-radius: 12px; 
-            padding: 16px 20px; 
-            margin-bottom: 10px; 
-            background: linear-gradient(145deg, {bg_color} 0%, {bg_gradient} 100%);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            border-radius: 16px; 
+            padding: 20px 24px; 
+            margin-bottom: 12px; 
+            background: {bg_color};
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
+            overflow: hidden;
+        }}
+        .news-item::before {{
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, {link_color} 0%, {accent_color} 100%);
+            border-radius: 4px 0 0 4px;
         }}
         .news-item:hover {{ 
-            box-shadow: 0 16px 40px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.1); 
-            transform: translateY(-3px);
-            border-left-width: 6px;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+            transform: translateY(-4px);
             background: linear-gradient(145deg, {bg_hover} 0%, {bg_color} 100%);
+        }}
+        .news-item:hover::before {{
+            width: 6px;
         }}
         .news-item.read {{ 
             background: {read_bg}; 
-            opacity: 0.6;
-            border-left-color: {border_color};
+            opacity: 0.65;
+        }}
+        .news-item.read::before {{
+            background: {border_color};
         }}
         .news-item.read:hover {{
             opacity: 0.85;
-            border-left-color: {link_color};
+        }}
+        .news-item.read:hover::before {{
+            background: linear-gradient(180deg, {link_color} 0%, {accent_color} 100%);
         }}
         .news-item.duplicate {{ 
-            border-left-color: #FFA500; 
+            border-left-color: #FB923C; 
+        }}
+        .news-item.duplicate::before {{
+            background: linear-gradient(180deg, #FB923C 0%, #F97316 100%);
         }}
         
         /* 제목 링크 */
@@ -972,26 +1145,27 @@ class AppStyle:
             font-size: 10.5pt;
         }}
         
-        /* 액션 버튼 */
+        /* 액션 버튼 - pill 스타일 */
         .actions {{ 
             font-size: 9pt; 
             white-space: nowrap;
             display: flex;
-            gap: 4px;
+            gap: 6px;
             align-items: center;
         }}
         .actions a {{ 
-            padding: 5px 10px;
-            border-radius: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
             font-weight: 500;
-            background-color: {action_bg};
+            font-size: 8.5pt;
+            background: linear-gradient(135deg, {action_bg} 0%, {action_bg_end} 100%);
             transition: all 0.2s ease;
             display: inline-flex;
             align-items: center;
-            gap: 3px;
+            gap: 4px;
         }}
         .actions a:hover {{
-            background-color: {action_hover};
+            background: {action_hover};
             transform: scale(1.05);
             text-decoration: none;
         }}
@@ -1000,11 +1174,14 @@ class AppStyle:
             color: white;
         }}
         .actions a.bookmark:hover {{
-            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.4);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
         }}
         .actions a.unbookmark {{
-            background: linear-gradient(135deg, #DC3545 0%, #FF6B6B 100%);
+            background: linear-gradient(135deg, #EF4444 0%, #F87171 100%);
             color: white;
+        }}
+        .actions a.unbookmark:hover {{
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
         }}
         
         /* 빈 상태 - 향상된 디자인 */
@@ -1269,7 +1446,7 @@ class DatabaseManager:
         return hashlib.md5(normalized.encode()).hexdigest()
     
     def upsert_news(self, items: List[Dict], keyword: str) -> Tuple[int, int]:
-        """뉴스 삽입 및 중복 감지"""
+        """뉴스 삽입 및 중복 감지 (배치 처리 최적화)"""
         if not items:
             return 0, 0
         
@@ -1278,52 +1455,85 @@ class DatabaseManager:
         duplicate_count = 0
         
         try:
-            with conn:
-                for item in items:
-                    ts = 0.0
-                    try:
-                        ts = parsedate_to_datetime(item['pubDate']).timestamp()
-                    except (ValueError, TypeError, KeyError) as e:
-                        logger.debug(f"날짜 파싱 오류: {e}")
-                    
-                    title_hash = self._calculate_title_hash(item['title'])
-                    
-                    cursor = conn.execute(
-                        "SELECT COUNT(*) FROM news WHERE title_hash = ? AND keyword = ?",
-                        (title_hash, keyword)
-                    )
-                    is_duplicate = cursor.fetchone()[0] > 0
-                    
-                    try:
-                        # ON CONFLICT DO UPDATE: 기존 데이터도 최신 상태로 갱신
-                        cur = conn.execute("""
-                            INSERT INTO news 
-                            (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash, is_duplicate)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(link) DO UPDATE SET
-                                title = excluded.title,
-                                description = excluded.description,
-                                pubDate = excluded.pubDate,
-                                publisher = excluded.publisher,
-                                pubDate_ts = CASE WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts ELSE pubDate_ts END,
-                                title_hash = excluded.title_hash,
-                                is_duplicate = excluded.is_duplicate
-                        """, (item['link'], keyword, item['title'], item['description'], 
-                              item['pubDate'], item['publisher'], ts, title_hash, 1 if is_duplicate else 0))
-                        
-                        # rowcount: 1 = INSERT, 2 = UPDATE (SQLite 3.35+)
-                        if cur.rowcount == 1:
-                            if is_duplicate:
-                                duplicate_count += 1
-                            else:
-                                added_count += 1
-                        # UPDATE 시에는 added_count 증가 안 함 (기존 데이터 갱신)
-                    except sqlite3.Error as e:
-                        logger.error(f"DB Insert/Update Error: {e}")
-                        continue
+            # 1. 데이더 전처리 (해시 계산 및 날짜 파싱)
+            prepared_items = []
+            hashes = []
             
+            for item in items:
+                ts = 0.0
+                try:
+                    ts = parsedate_to_datetime(item['pubDate']).timestamp()
+                except (ValueError, TypeError, KeyError):
+                    ts = 0.0
+                
+                title_hash = self._calculate_title_hash(item['title'])
+                hashes.append(title_hash)
+                
+                prepared_items.append({
+                    'link': item['link'],
+                    'keyword': keyword,
+                    'title': item['title'],
+                    'description': item['description'],
+                    'pubDate': item['pubDate'],
+                    'publisher': item['publisher'],
+                    'pubDate_ts': ts,
+                    'title_hash': title_hash
+                })
+
+            with conn:
+                # 2. 중복 여부 일괄 확인 (기존 DB에 있는 해시 목록 조회)
+                # SQLite 변수 제한(999)을 고려하여 청크 단위로 조회 할 수도 있으나, 
+                # items가 보통 100개 단위이므로 직접 조회
+                placeholders = ','.join(['?'] * len(hashes))
+                cursor = conn.execute(
+                    f"SELECT title_hash FROM news WHERE keyword = ? AND title_hash IN ({placeholders})",
+                    [keyword] + hashes
+                )
+                existing_hashes = {row[0] for row in cursor.fetchall()}
+                
+                # 3. 데이터 분류 (신규 vs 중복) 및 삽입 데이터 준비
+                insert_data = []
+                for item in prepared_items:
+                    is_dup = item['title_hash'] in existing_hashes
+                    if is_dup:
+                        duplicate_count += 1
+                    else:
+                        added_count += 1
+                    
+                    # (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash, is_duplicate)
+                    insert_data.append((
+                        item['link'], 
+                        item['keyword'], 
+                        item['title'], 
+                        item['description'], 
+                        item['pubDate'], 
+                        item['publisher'], 
+                        item['pubDate_ts'], 
+                        item['title_hash'], 
+                        1 if is_dup else 0
+                    ))
+                
+                # 4. 일괄 삽입/갱신 (executemany 사용)
+                # ON CONFLICT DO UPDATE: 기존 데이터 상태(읽음, 북마크, 메모) 보존하며 내용 갱신
+                conn.executemany("""
+                    INSERT INTO news 
+                    (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash, is_duplicate)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(link) DO UPDATE SET
+                        title = excluded.title,
+                        description = excluded.description,
+                        pubDate = excluded.pubDate,
+                        publisher = excluded.publisher,
+                        pubDate_ts = CASE WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts ELSE pubDate_ts END,
+                        title_hash = excluded.title_hash,
+                        is_duplicate = excluded.is_duplicate
+                """, insert_data)
+                
             return added_count, duplicate_count
         
+        except sqlite3.Error as e:
+            logger.error(f"DB Batch Upsert Error: {e}")
+            return 0, 0
         finally:
             self.return_connection(conn)
     
@@ -1540,23 +1750,26 @@ class DatabaseManager:
 
 # --- 개선된 API 워커 (재시도 로직) ---
 class ApiWorker(QObject):
-    """API 호출 워커 (재시도 로직 포함) - 안정성 개선 버전"""
+    """API 호출 워커 (재시도 로직 및 백그라운드 DB 저장 포함) - 안정성 개선 버전"""
     
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
     def __init__(self, client_id: str, client_secret: str, keyword: str, 
-                 exclude_words: List[str], start_idx: int = 1, max_retries: int = 3):
+                 exclude_words: List[str], db_manager: DatabaseManager, 
+                 start_idx: int = 1, max_retries: int = 3, timeout: int = 15):
         super().__init__()
         self.cid = client_id
         self.csec = client_secret
         self.keyword = keyword
         self.exclude_words = exclude_words
+        self.db = db_manager
         self.start = start_idx
+        self.max_retries = max_retries
+        self.timeout = timeout
         self._is_running = True
         self._lock = threading.Lock()
-        self.max_retries = max_retries
         self._destroyed = False
 
     @property
@@ -1580,7 +1793,7 @@ class ApiWorker(QObject):
             logger.error(f"시그널 발신 오류: {e}")
 
     def run(self):
-        """API 호출 실행 - 안정성 개선 버전"""
+        """API 호출 및 DB 저장 실행 - 안정성 개선 버전"""
         logger.info(f"ApiWorker 시작: {self.keyword}")
         
         if not self.is_running:
@@ -1606,7 +1819,7 @@ class ApiWorker(QObject):
                     "sort": "date"
                 }
                 
-                resp = requests.get(url, headers=headers, params=params, timeout=15)
+                resp = requests.get(url, headers=headers, params=params, timeout=self.timeout)
                 
                 if resp.status_code == 429:
                     if attempt < self.max_retries - 1:
@@ -1686,14 +1899,21 @@ class ApiWorker(QObject):
                         logger.warning(f"아이템 처리 오류: {item_error}")
                         continue
                 
+                # 백그라운드 DB 저장 (UI 프리징 방지)
+                self._safe_emit(self.progress, f"'{self.keyword}' 저장 중...")
+                search_keyword_only = self.keyword.split()[0] if self.keyword.split() else self.keyword
+                added_count, dup_count = self.db.upsert_news(items, search_keyword_only)
+                
                 result = {
                     'items': items,
                     'total': data.get('total', 0),
-                    'filtered': filtered_count
+                    'filtered': filtered_count,
+                    'added_count': added_count,
+                    'dup_count': dup_count
                 }
                 
-                logger.info(f"ApiWorker 완료: {self.keyword} ({len(items)}개)")
-                self._safe_emit(self.progress, f"'{self.keyword}' 검색 완료 (필터링: {filtered_count}개)")
+                logger.info(f"ApiWorker 완료: {self.keyword} ({len(items)}개, 추가 {added_count}, 중복 {dup_count})")
+                self._safe_emit(self.progress, f"'{self.keyword}' 완료 (추가: {added_count}개)")
                 self._safe_emit(self.finished, result)
                 return
 
@@ -1837,14 +2057,23 @@ class LogViewerDialog(QDialog):
         self.load_logs()
     
     def load_logs(self):
-        """로그 파일 로드"""
+        """로그 파일 로드 - 최근 로그만 최적화하여 로드"""
         try:
             if not os.path.exists(LOG_FILE):
                 self.log_browser.setPlainText("로그 파일이 없습니다.")
                 self.lbl_status.setText("로그 파일 없음")
                 return
             
-            with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            # 대용량 로그 파일 처리 최적화 - 마지막 50KB만 읽기
+            file_size = os.path.getsize(LOG_FILE)
+            read_size = 50 * 1024  # 50KB
+            
+            lines = []
+            with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
+                if file_size > read_size:
+                    f.seek(file_size - read_size)
+                    # 첫 줄은 잘릴 수 있으므로 버림
+                    f.readline()
                 lines = f.readlines()
             
             # 필터 적용
@@ -1866,7 +2095,7 @@ class LogViewerDialog(QDialog):
             
             # 색상 코딩된 HTML 생성
             html_lines = []
-            for line in filtered_lines[-500:]:  # 최근 500줄만 표시
+            for line in filtered_lines:
                 if "[ERROR]" in line or "[CRITICAL]" in line:
                     color = "#FF6B6B"
                 elif "[WARNING]" in line:
@@ -1880,6 +2109,9 @@ class LogViewerDialog(QDialog):
                 html_lines.append(f"<span style='color: {color};'>{escaped}</span>")
             
             html_content = "<pre style='margin: 0;'>" + "<br>".join(html_lines) + "</pre>"
+            if file_size > read_size:
+                html_content = f"<div style='color: #888; margin-bottom: 10px;'>... 이전 로그 생략됨 (전체 크기: {file_size/1024:.1f}KB) ...</div>" + html_content
+                
             self.log_browser.setHtml(html_content)
             
             # 자동 스크롤
@@ -1888,7 +2120,7 @@ class LogViewerDialog(QDialog):
                     self.log_browser.verticalScrollBar().maximum()
                 )
             
-            self.lbl_status.setText(f"총 {len(lines)}줄, 필터링 {len(filtered_lines)}줄 표시")
+            self.lbl_status.setText(f"총 {len(lines)}줄 중 {len(filtered_lines)}줄 표시")
             
         except Exception as e:
             self.log_browser.setPlainText(f"로그 로드 오류: {str(e)}")
@@ -2550,7 +2782,7 @@ class NewsTab(QWidget):
         self.filter_timer.timeout.connect(self._apply_filter_debounced)
         self.inp_filter.textChanged.connect(self._on_filter_changed)
         
-        self.combo_sort = QComboBox()
+        self.combo_sort = NoScrollComboBox()
         self.combo_sort.addItems(["최신순", "오래된순"])
         self.combo_sort.currentIndexChanged.connect(self.load_data_from_db)
         
@@ -2919,7 +3151,19 @@ class MainApp(QMainWindow):
     
     def __init__(self):
         super().__init__()
+        if not os.path.exists(LOG_FILE):
+            try:
+                with open(LOG_FILE, "w", encoding="utf-8") as f:
+                    pass
+            except Exception:
+                pass
+        
         logger.info("MainApp 초기화 시작")
+        
+        # 종료 원인 추적을 위한 플래그 (가장 먼저 초기화)
+        self._system_shutdown = False       # Windows 시스템 종료
+        self._user_requested_close = False  # 사용자가 종료 요청
+        self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
         
         # 안전한 초기화를 위해 기본 속성 미리 정의
         self.client_id = ""
@@ -2930,7 +3174,6 @@ class MainApp(QMainWindow):
         try:
             self.db = DatabaseManager(DB_FILE)
             self.workers = {}
-            self.threads = {}
             self.toast_queue = ToastQueue(self)
             
             # 새로고침 상태 추적 (안정성 개선)
@@ -2987,10 +3230,8 @@ class MainApp(QMainWindow):
             if self.client_id and self.tabs.count() > 1:
                 QTimer.singleShot(1000, self._safe_refresh_all)
             
-            # 종료 원인 추적을 위한 플래그
-            self._system_shutdown = False       # Windows 시스템 종료
-            self._user_requested_close = False  # 사용자가 종료 요청
-            self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
+            
+            # 종료 원인 추적 플래그 (상단으로 이동됨)
             
             # 탭 배지 업데이트 타이머 (30초마다)
             self._tab_badge_timer = QTimer(self)
@@ -3230,7 +3471,10 @@ class MainApp(QMainWindow):
                     self.config['client_secret'] = loaded.get('secret', '')
                     self.config['theme'] = loaded.get('theme', 0)
                     self.config['interval'] = loaded.get('interval', 2)
+                    self.config['interval'] = loaded.get('interval', 2)
                     self.config['tabs'] = loaded.get('tabs', [])
+                    self.config['search_history'] = loaded.get('search_history', []) # 검색 히스토리 로드
+                    self.config['api_timeout'] = loaded.get('api_timeout', 15) # API 타임아웃 로드
             except Exception as e:
                 logger.error(f"Config Load Error: {e}")
                 QMessageBox.warning(
@@ -3255,6 +3499,8 @@ class MainApp(QMainWindow):
         self.auto_start_enabled = self.config.get('auto_start_enabled', False)  # 윈도우 시작 시 자동 실행
         self._saved_geometry = self.config.get('window_geometry', None)  # 창 위치/크기
         self.notify_on_refresh = self.config.get('notify_on_refresh', False)  # 새로고침 완료 알림 (기본 비활성화)
+        self.search_history = self.config.get('search_history', [])  # 검색 히스토리 초기화 (저장된 값 사용)
+        self.api_timeout = self.config.get('api_timeout', 15) # 타임아웃 설정
 
     def save_config(self):
         """설정 저장"""
@@ -3278,6 +3524,7 @@ class MainApp(QMainWindow):
                 'start_minimized': self.start_minimized,
                 'auto_start_enabled': self.auto_start_enabled,
                 'notify_on_refresh': self.notify_on_refresh,
+                'api_timeout': self.api_timeout, # 타임아웃 저장
                 'window_geometry': {
                     'x': self.x(),
                     'y': self.y(),
@@ -3285,7 +3532,8 @@ class MainApp(QMainWindow):
                     'height': self.height()
                 }
             },
-            'tabs': tab_names
+            'tabs': tab_names,
+            'search_history': self.search_history  # 검색 히스토리 저장
         }
         
         try:
@@ -3601,6 +3849,9 @@ class MainApp(QMainWindow):
         tab.btn_load.clicked.connect(lambda: self.fetch_news(keyword, is_more=True))
         icon_text = "📰" if not keyword.startswith("-") else "🚫"
         self.tabs.addTab(tab, f"{icon_text} {keyword}")
+        
+        # 탭 추가 직후 캐시 로드 (오프라인 모드 지원 및 즉각적인 UI 표시)
+        QTimer.singleShot(50, tab.load_data_from_db)
 
     def add_tab_dialog(self):
         """새 탭 추가 다이얼로그 - 검색 히스토리 지원"""
@@ -3661,8 +3912,37 @@ class MainApp(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         
-        if dialog.exec() and input_field.text().strip():
-            keyword = ValidationUtils.sanitize_keyword(input_field.text())
+        if dialog.exec():
+            raw_keyword = input_field.text().strip()
+            
+            # 키워드 입력 검증
+            if not raw_keyword:
+                QMessageBox.warning(self, "입력 오류", "키워드를 입력해 주세요.")
+                return
+            
+            if len(raw_keyword) > 100:
+                QMessageBox.warning(
+                    self, 
+                    "입력 오류", 
+                    f"키워드가 너무 깁니다. ({len(raw_keyword)}자)\n"
+                    "최대 100자까지 입력 가능합니다."
+                )
+                return
+            
+            keyword = ValidationUtils.sanitize_keyword(raw_keyword)
+            
+            # 중복 탭 체크
+            for i in range(1, self.tabs.count()):
+                w = self.tabs.widget(i)
+                if w and hasattr(w, 'keyword') and w.keyword == keyword:
+                    QMessageBox.information(
+                        self, 
+                        "중복 태브", 
+                        f"'{keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다."
+                    )
+                    self.tabs.setCurrentIndex(i)
+                    return
+            
             self.add_news_tab(keyword)
             self.fetch_news(keyword)
             
@@ -3670,6 +3950,9 @@ class MainApp(QMainWindow):
             if keyword not in self.search_history:
                 self.search_history.insert(0, keyword)
                 self.search_history = self.search_history[:10]  # 최대 10개 유지
+            
+            # 설정 저장 (히스토리 업데이트)
+            self.save_config()
 
     def close_tab(self, idx: int):
         """탭 닫기"""
@@ -3913,8 +4196,17 @@ class MainApp(QMainWindow):
 
         # 기존 워커가 있으면 완전히 정리
         if keyword in self.workers:
+            old_worker, old_thread = self.workers[keyword]
+            try:
+                old_worker.stop()
+                old_thread.quit()
+                if not old_thread.wait(1000):  # 최대 1초 대기
+                    logger.warning(f"기존 스레드 강제 종료: {keyword}")
+                    old_thread.terminate()
+                    old_thread.wait(500)
+            except (RuntimeError, AttributeError):
+                pass
             self.cleanup_worker(keyword)
-            QThread.msleep(100)  # 정리 완료 대기
 
         for i in range(1, self.tabs.count()):
             w = self.tabs.widget(i)
@@ -3923,12 +4215,20 @@ class MainApp(QMainWindow):
                 w.btn_load.setText("⏳ 로딩 중...")
                 break
 
-        worker = ApiWorker(self.client_id, self.client_secret, search_keyword, exclude_words, start_idx)
+        worker = ApiWorker(
+            self.client_id, 
+            self.client_secret, 
+            search_keyword, 
+            exclude_words, 
+            self.db,  # DB 매니저 전달
+            start_idx,
+            timeout=self.api_timeout # 타임아웃 전달
+        )
         thread = QThread()
         worker.moveToThread(thread)
         
         self.workers[keyword] = (worker, thread)
-        self.threads[keyword] = thread
+        # Note: self.threads는 workers와 중복되므로 제거됨
         
         worker.finished.connect(lambda res: self.on_fetch_done(res, keyword, is_more, is_sequential))
         worker.error.connect(lambda err: self.on_fetch_error(err, keyword, is_sequential))
@@ -3951,7 +4251,9 @@ class MainApp(QMainWindow):
         try:
             search_keyword = keyword.split()[0] if keyword.split() else keyword
             
-            added_count, dup_count = self.db.upsert_news(result['items'], search_keyword)
+            # DB 저장은 Worker에서 이미 수행됨
+            added_count = result.get('added_count', 0)
+            dup_count = result.get('dup_count', 0)
             
             for i in range(1, self.tabs.count()):
                 w = self.tabs.widget(i)
@@ -4085,14 +4387,10 @@ class MainApp(QMainWindow):
                     # sip (PyQt 내부)로 객체 삭제 여부 확인
                     if worker is None:
                         del self.workers[keyword]
-                        if keyword in self.threads:
-                            del self.threads[keyword]
                         return
                 except RuntimeError:
                     # C++ 객체가 이미 삭제됨
                     del self.workers[keyword]
-                    if keyword in self.threads:
-                        del self.threads[keyword]
                     logger.info(f"워커 이미 삭제됨: {keyword}")
                     return
                 
@@ -4116,8 +4414,6 @@ class MainApp(QMainWindow):
                     pass
                 del self.workers[keyword]
                 logger.info(f"워커 정리 완료: {keyword}")
-            if keyword in self.threads:
-                del self.threads[keyword]
         except Exception as e:
             logger.error(f"워커 정리 오류 ({keyword}): {e}")
 
@@ -4602,7 +4898,6 @@ class MainApp(QMainWindow):
                     logger.error(f"워커 종료 오류 ({keyword}): {e}")
             
             self.workers.clear()
-            self.threads.clear()
             logger.info("워커 정리 완료")
             
             # 설정 저장

@@ -128,11 +128,11 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='뉴스스크래퍼Pro',
+    name='NewsScraperPro_Safe',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,  # 디버그 심볼 제거 (경량화)
-    upx=True,    # UPX 압축 활성화
+    strip=False,  # 디버그 심볼 유지 (오류 방지)
+    upx=False,    # UPX 압축 비활성화 (오류 방지)
     upx_exclude=[
         'vcruntime140.dll',
         'python*.dll',
