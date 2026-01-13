@@ -4,6 +4,7 @@ import sys
 import json
 import traceback
 import requests
+from requests.adapters import HTTPAdapter
 import os
 import html
 import urllib.parse
@@ -22,7 +23,7 @@ from email.utils import parsedate_to_datetime
 from collections import deque
 from typing import List, Dict, Optional, Tuple
 from queue import Queue
-from functools import partial
+from functools import partial, lru_cache
 from enum import Enum
 
 # Windows 전용 레지스트리 모듈 (자동 시작 기능용)
@@ -42,11 +43,12 @@ from PyQt6.QtWidgets import (
     QTabWidget, QInputDialog, QComboBox, QFileDialog, QSystemTrayIcon,
     QMenu, QStyle, QTabBar, QDialog, QDialogButtonBox, QGroupBox,
     QGridLayout, QProgressBar, QCheckBox, QTextEdit, QListWidget,
-    QGraphicsOpacityEffect, QToolTip, QScrollArea
+    QGraphicsOpacityEffect, QToolTip, QScrollArea, QDateEdit, QToolButton,
+    QFrame
 )
 from PyQt6.QtCore import (
     QThread, QObject, pyqtSignal, Qt, QTimer, QUrl, 
-    QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker
+    QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker, QDate
 )
 from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut, QIcon
 
@@ -88,7 +90,7 @@ DB_FILE = os.path.join(APP_DIR, "news_database.db")
 ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
-VERSION = "32.1"  # 리팩토링 + 자동 백업 + 로그 뷰어 + 키워드 그룹 + 알림 소리
+VERSION = "32.3.0"  # UI/UX 리팩토링 + CSS 호환성 개선 + 레이아웃 카드화
 
 # --- 색상 상수 (중앙화) ---
 class Colors:
@@ -214,21 +216,32 @@ def parse_date_string(date_str: str) -> str:
                 return dt.strftime(DATE_OUTPUT_FORMAT)
             except (ValueError, TypeError):
                 continue
+    
+    # 추가: 한국어 날짜 형식 등 기타 포맷 시도 (필요시 확장)
+    
     return date_str  # 파싱 실패 시 원본 반환
 
-# --- 하이라이트 패턴 캐시 ---
-_highlight_pattern_cache: Dict[str, re.Pattern] = {}
+def parse_date_to_ts(date_str: str) -> float:
+    """날짜 문자열을 타임스탬프로 변환 (정렬용)"""
+    if not date_str:
+        return 0.0
+    try:
+        dt = parsedate_to_datetime(date_str)
+        return dt.timestamp()
+    except (ValueError, TypeError):
+        for fmt in DATE_FORMATS:
+            try:
+                dt = datetime.strptime(date_str[:19], fmt)
+                return dt.timestamp()
+            except (ValueError, TypeError):
+                continue
+    return 0.0
 
+# --- 하이라이트 패턴 캐시 (LRU 최적화) ---
+@lru_cache(maxsize=128)
 def get_highlight_pattern(keyword: str) -> re.Pattern:
-    """하이라이트 패턴 캐시 반환 (성능 최적화)"""
-    if keyword not in _highlight_pattern_cache:
-        # 캐시 크기 제한 (메모리 관리)
-        if len(_highlight_pattern_cache) > 100:
-            _highlight_pattern_cache.clear()
-        _highlight_pattern_cache[keyword] = re.compile(
-            f'({re.escape(keyword)})', re.IGNORECASE
-        )
-    return _highlight_pattern_cache[keyword]
+    """하이라이트 패턴 캐시 반환 (LRU 캐시 사용)"""
+    return re.compile(f'({re.escape(keyword)})', re.IGNORECASE)
 
 
 # --- 유틸리티 함수 ---
@@ -540,6 +553,7 @@ class NoScrollComboBox(QComboBox):
 # --- 커스텀 브라우저 (미리보기 기능) ---
 class NewsBrowser(QTextBrowser):
     """링크 클릭 시 페이지 이동 차단, 호버 시 미리보기 표시"""
+    action_triggered = pyqtSignal(str, str) # action, link_hash
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -578,6 +592,52 @@ class NewsBrowser(QTextBrowser):
         
         super().mouseMoveEvent(event)
 
+    def contextMenuEvent(self, event):
+        # 마우스오버 또는 클릭 위치의 링크 확인
+        anchor = self.anchorAt(event.pos())
+        
+        link_hash = ""
+        if anchor:
+            url = QUrl(anchor)
+            if url.scheme() == 'app':
+                link_hash = url.path().lstrip('/')
+        
+        # 링크 위가 아니라면 기본 메뉴 사용 (복사 등)
+        if not link_hash:
+            super().contextMenuEvent(event)
+            return
+            
+        # 커스텀 메뉴 생성
+        menu = QMenu(self)
+        
+        act_open = menu.addAction("🌐 브라우저로 열기")
+        act_copy = menu.addAction("📋 제목 및 링크 복사")
+        menu.addSeparator()
+        act_bm = menu.addAction("⭐ 북마크 토글")
+        act_read = menu.addAction("👁 읽음/안읽음 토글")
+        act_note = menu.addAction("📝 메모 편집")
+        menu.addSeparator()
+        act_del = menu.addAction("🗑 목록에서 삭제")
+        
+        # 메뉴 실행
+        action = menu.exec(event.globalPos())
+        
+        if action == act_open:
+            self.emit_action("ext", link_hash)
+        elif action == act_copy:
+            self.emit_action("share", link_hash)
+        elif action == act_bm:
+            self.emit_action("bm", link_hash)
+        elif action == act_read:
+            self.emit_action("toggle_read", link_hash)
+        elif action == act_note:
+            self.emit_action("note", link_hash)
+        elif action == act_del:
+            self.emit_action("delete", link_hash)
+            
+    def emit_action(self, action, link_hash):
+        self.action_triggered.emit(action, link_hash)
+
 
 # --- 스타일시트 ---
 class AppStyle:
@@ -589,11 +649,10 @@ class AppStyle:
             font-weight: 600;
             margin-top: 16px;
             padding: 20px 16px 16px 16px;
-            border: none;
+            border: 1px solid {Colors.LIGHT_BORDER};
             border-radius: 12px;
             background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
                 stop:0 {Colors.LIGHT_CARD_BG}, stop:1 {Colors.LIGHT_BG});
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
@@ -688,7 +747,14 @@ class AppStyle:
             padding: 4px;
         }}
         QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ background-color: {Colors.LIGHT_PRIMARY_LIGHT}; }}
+        QComboBox QAbstractItemView::item:hover {{ 
+            background-color: {Colors.LIGHT_PRIMARY_LIGHT}; 
+            color: {Colors.LIGHT_TEXT};
+        }}
+        QComboBox QAbstractItemView::item:selected {{ 
+            background-color: {Colors.LIGHT_PRIMARY}; 
+            color: white;
+        }}
         QTextBrowser, QTextEdit, QListWidget {{ 
             font-family: '맑은 고딕', -apple-system, sans-serif; 
             background-color: {Colors.LIGHT_CARD_BG}; 
@@ -917,7 +983,14 @@ class AppStyle:
             padding: 4px;
         }}
         QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ background-color: {Colors.DARK_BORDER}; }}
+        QComboBox QAbstractItemView::item:hover {{ 
+            background-color: {Colors.DARK_BORDER}; 
+            color: {Colors.DARK_TEXT};
+        }}
+        QComboBox QAbstractItemView::item:selected {{ 
+            background-color: {Colors.DARK_PRIMARY}; 
+            color: white;
+        }}
         QTextBrowser, QTextEdit, QListWidget {{ 
             font-family: '맑은 고딕', -apple-system, sans-serif; 
             background-color: {Colors.DARK_CARD_BG}; 
@@ -1048,57 +1121,28 @@ class AppStyle:
             color: {text_color};
             line-height: 1.6;
         }}
-        a {{ text-decoration: none; color: {link_color}; transition: all 0.2s ease; }}
+        a {{ text-decoration: none; color: {link_color}; }}
         a:hover {{ color: {link_hover}; }}
         
-        /* 뉴스 카드 - 현대화된 디자인 */
+        /* 뉴스 카드 - QTextBrowser 호환 디자인 */
         .news-item {{ 
-            border: none;
-            border-radius: 16px; 
-            padding: 20px 24px; 
-            margin-bottom: 12px; 
+            border: 1px solid {border_color};
+            border-left: 4px solid {link_color};
+            border-radius: 12px; 
+            padding: 18px 22px; 
+            margin-bottom: 10px; 
             background: {bg_color};
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }}
-        .news-item::before {{
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 4px;
-            background: linear-gradient(180deg, {link_color} 0%, {accent_color} 100%);
-            border-radius: 4px 0 0 4px;
-        }}
-        .news-item:hover {{ 
-            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
-            transform: translateY(-4px);
-            background: linear-gradient(145deg, {bg_hover} 0%, {bg_color} 100%);
-        }}
-        .news-item:hover::before {{
-            width: 6px;
         }}
         .news-item.read {{ 
             background: {read_bg}; 
-            opacity: 0.65;
-        }}
-        .news-item.read::before {{
-            background: {border_color};
-        }}
-        .news-item.read:hover {{
-            opacity: 0.85;
-        }}
-        .news-item.read:hover::before {{
-            background: linear-gradient(180deg, {link_color} 0%, {accent_color} 100%);
+            border-left-color: {border_color};
+            opacity: 0.7;
         }}
         .news-item.duplicate {{ 
             border-left-color: #FB923C; 
         }}
-        .news-item.duplicate::before {{
-            background: linear-gradient(180deg, #FB923C 0%, #F97316 100%);
+        .news-item.bookmarked {{
+            border-left-color: #FBBF24;
         }}
         
         /* 제목 링크 */
@@ -1109,11 +1153,10 @@ class AppStyle:
             line-height: 1.45; 
             display: block; 
             margin-bottom: 8px;
-            transition: color 0.2s ease;
         }}
         .title-link:hover {{
             color: {link_color};
-            text-decoration: none;
+            text-decoration: underline;
         }}
         
         /* 메타 정보 */
@@ -1124,17 +1167,9 @@ class AppStyle:
             border-bottom: 1px solid {border_color}; 
             padding-bottom: 8px; 
             margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 4px;
         }}
         .meta-left {{
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            flex-wrap: wrap;
+            display: inline;
         }}
         
         /* 본문 */
@@ -1145,124 +1180,85 @@ class AppStyle:
             font-size: 10.5pt;
         }}
         
-        /* 액션 버튼 - pill 스타일 */
+        /* 액션 버튼 - 간소화 스타일 */
         .actions {{ 
             font-size: 9pt; 
-            white-space: nowrap;
-            display: flex;
-            gap: 6px;
-            align-items: center;
+            margin-top: 10px;
         }}
         .actions a {{ 
-            padding: 6px 14px;
-            border-radius: 20px;
+            padding: 5px 12px;
+            border-radius: 16px;
             font-weight: 500;
             font-size: 8.5pt;
-            background: linear-gradient(135deg, {action_bg} 0%, {action_bg_end} 100%);
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
+            background: {action_bg};
+            margin-right: 6px;
         }}
         .actions a:hover {{
             background: {action_hover};
-            transform: scale(1.05);
             text-decoration: none;
         }}
         .actions a.bookmark {{
-            background: linear-gradient(135deg, {bookmark_bg} 0%, {bookmark_end} 100%);
+            background: {link_color};
             color: white;
-        }}
-        .actions a.bookmark:hover {{
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
         }}
         .actions a.unbookmark {{
-            background: linear-gradient(135deg, #EF4444 0%, #F87171 100%);
+            background: #EF4444;
             color: white;
         }}
-        .actions a.unbookmark:hover {{
-            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
-        }}
         
-        /* 빈 상태 - 향상된 디자인 */
+        /* 빈 상태 */
         .empty-state {{ 
             text-align: center; 
-            padding: 100px 60px; 
+            padding: 80px 40px; 
             color: {meta_color}; 
             font-size: 14pt;
-            background: linear-gradient(145deg, {empty_bg} 0%, {bg_gradient} 100%);
-            border-radius: 20px;
-            margin: 30px 10px;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
-            border: 1px dashed {border_color};
+            background: {bg_gradient};
+            border-radius: 16px;
+            margin: 20px 10px;
+            border: 2px dashed {border_color};
         }}
         .empty-state-title {{
             font-size: 18pt;
             font-weight: 700;
             margin-bottom: 16px;
             color: {link_color};
-            letter-spacing: -0.5px;
         }}
         
         /* 하이라이트 */
         .highlight {{ 
-            background: linear-gradient(120deg, #FCD34D 0%, #FBBF24 100%); 
+            background: #FCD34D; 
             color: #000000; 
-            padding: 2px 6px; 
-            border-radius: 4px; 
+            padding: 2px 5px; 
+            border-radius: 3px; 
             font-weight: 600;
-            box-shadow: 0 1px 3px rgba(252, 211, 77, 0.4);
         }}
         
         /* 키워드 태그 */
         .keyword-tag {{ 
-            display: inline-flex;
-            align-items: center;
-            background: linear-gradient(135deg, {tag_bg} 0%, {link_color} 100%);
+            background: {tag_bg};
             color: {tag_color}; 
-            padding: 4px 12px; 
-            border-radius: 14px; 
+            padding: 3px 10px; 
+            border-radius: 12px; 
             font-size: 8.5pt; 
             margin-right: 6px;
             font-weight: 600;
-            box-shadow: 0 1px 4px rgba(0, 122, 255, 0.2);
         }}
         
         /* 중복 배지 */
         .duplicate-badge {{ 
-            display: inline-flex;
-            align-items: center;
-            background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
+            background: #FFA500;
             color: #FFFFFF; 
-            padding: 4px 12px; 
-            border-radius: 14px; 
+            padding: 3px 10px; 
+            border-radius: 12px; 
             font-size: 8.5pt; 
             margin-right: 6px;
             font-weight: 600;
-            box-shadow: 0 1px 4px rgba(255, 165, 0, 0.3);
         }}
         
         /* 메모 아이콘 */
         .note-icon {{
             color: {link_color};
             font-weight: bold;
-        }}
-        
-        /* 스크롤바 스타일 */
-        ::-webkit-scrollbar {{
-            width: 8px;
-            height: 8px;
-        }}
-        ::-webkit-scrollbar-track {{
-            background: {scrollbar_track};
-            border-radius: 4px;
-        }}
-        ::-webkit-scrollbar-thumb {{
-            background: {scrollbar_thumb};
-            border-radius: 4px;
-        }}
-        ::-webkit-scrollbar-thumb:hover {{
-            background: {link_color};
         }}
     </style>
     """
@@ -1281,6 +1277,13 @@ class DatabaseManager:
         self._active_connections = 0   # 추가: 활성 연결 추적
         self._closed = False  # 추가: 종료 상태 추적
         self._emergency_connections = set()  # 추가: 비상 연결 추적
+        
+        # DB 무결성 검사 및 복구
+        if os.path.exists(self.db_file):
+            if not self._check_integrity():
+                logger.error("데이터베이스 손상 감지. 복구를 시도합니다.")
+                self._recover_database()
+        
         self.init_db()
         
         for _ in range(max_connections):
@@ -1356,7 +1359,45 @@ class DatabaseManager:
                 conn.close()
             except sqlite3.Error:
                 pass
-    
+    def _check_integrity(self) -> bool:
+        """데이터베이스 무결성 검사"""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA integrity_check")
+            result = cursor.fetchone()
+            conn.close()
+            if result and result[0] == "ok":
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"DB 무결성 검사 실패: {e}")
+            return False
+
+    def _recover_database(self):
+        """손상된 데이터베이스 백업 및 재생성"""
+        try:
+            # 기존 연결 풀 닫기 (이 시점엔 아직 생성 안됐지만 혹시 모르니)
+            
+            # 파일 백업
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"{self.db_file}.corrupt_{timestamp}"
+            
+            if os.path.exists(self.db_file):
+                try:
+                    os.rename(self.db_file, backup_name)
+                    logger.info(f"손상된 DB 백업 완료: {backup_name}")
+                except OSError:
+                    # 파일이 잠겨있거나 사용 중일 경우 복사 시도
+                    import shutil
+                    shutil.copy2(self.db_file, backup_name)
+                    os.remove(self.db_file)
+                    logger.info(f"손상된 DB 복사 및 삭제 완료: {backup_name}")
+            
+        except Exception as e:
+            logger.critical(f"DB 복구 실패: {e}")
+            # 최후의 수단: 파일명 변경 시도 (충돌 회피)
+            
     def init_db(self):
         """데이터베이스 초기화"""
         conn = sqlite3.connect(self.db_file)
@@ -1389,21 +1430,23 @@ class DatabaseManager:
             except sqlite3.OperationalError:
                 pass  # 이미 존재
             
-            try:
-                conn.execute("ALTER TABLE news ADD COLUMN notes TEXT")
-            except sqlite3.OperationalError:
-                pass
-            
-            try:
-                conn.execute("ALTER TABLE news ADD COLUMN title_hash TEXT")
-                columns_added = True
-            except sqlite3.OperationalError:
-                pass
-            
-            try:
-                conn.execute("ALTER TABLE news ADD COLUMN is_duplicate INTEGER DEFAULT 0")
-            except sqlite3.OperationalError:
-                pass
+            # 구버전 호환성 보강 (missing columns check)
+            for col, dtype in [
+                ("publisher", "TEXT"),
+                ("is_read", "INTEGER DEFAULT 0"),
+                ("is_bookmarked", "INTEGER DEFAULT 0"),
+                ("created_at", "REAL DEFAULT (strftime('%s', 'now'))"),
+                ("notes", "TEXT"),
+                ("title_hash", "TEXT"),
+                ("is_duplicate", "INTEGER DEFAULT 0")
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE news ADD COLUMN {col} {dtype}")
+                    logger.info(f"{col} 컬럼 추가됨 (마이그레이션)")
+                    if col == "title_hash":
+                        columns_added = True
+                except sqlite3.OperationalError:
+                    pass
             
             # 컬럼 추가 후 인덱스 생성 (성능 최적화)
             indexes = [
@@ -1437,6 +1480,20 @@ class DatabaseManager:
                             title_hash = self._calculate_title_hash(title)
                             conn.execute("UPDATE news SET title_hash = ? WHERE link = ?", (title_hash, link))
                     logger.info("마이그레이션 완료")
+            
+            # pubDate_ts Backfill (성능 최적화: 인덱스 활용을 위한 데이터 보정)
+            cursor = conn.execute("SELECT link, pubDate FROM news WHERE pubDate_ts IS NULL LIMIT 5000")
+            rows = cursor.fetchall()
+            if rows:
+                logger.info(f"pubDate_ts 데이터 보정 중... ({len(rows)}개)")
+                updates = []
+                for link, pub_date in rows:
+                    ts = parse_date_to_ts(pub_date)
+                    updates.append((ts, link))
+                
+                if updates:
+                    conn.executemany("UPDATE news SET pubDate_ts = ? WHERE link = ?", updates)
+                logger.info("pubDate_ts 데이터 보정 완료")
         
         conn.close()
     
@@ -1460,11 +1517,7 @@ class DatabaseManager:
             hashes = []
             
             for item in items:
-                ts = 0.0
-                try:
-                    ts = parsedate_to_datetime(item['pubDate']).timestamp()
-                except (ValueError, TypeError, KeyError):
-                    ts = 0.0
+                ts = parse_date_to_ts(item['pubDate'])
                 
                 title_hash = self._calculate_title_hash(item['title'])
                 hashes.append(title_hash)
@@ -1539,49 +1592,78 @@ class DatabaseManager:
     
     def fetch_news(self, keyword: str, filter_txt: str = "", sort_mode: str = "최신순", 
                    only_bookmark: bool = False, only_unread: bool = False,
-                   hide_duplicates: bool = False) -> List[Dict]:
-        """뉴스 조회 - 안전한 버전"""
-        conn = None
+                   hide_duplicates: bool = False,
+                   start_date: str = None, end_date: str = None) -> List[Dict]:
+        """뉴스 조회 - 안전한 버전 (날짜 필터 추가)"""
+        conn = self.get_connection()
+        news_items = []
         try:
-            conn = self.get_connection(timeout=5.0)
-            
+            # 기본 쿼리
             query = "SELECT * FROM news WHERE 1=1"
             params = []
-
-            if only_bookmark:
-                query += " AND is_bookmarked = 1"
-            else:
-                query += " AND keyword = ?"
-                params.append(keyword)
-
-            if only_unread:
-                query += " AND is_read = 0"
             
+            # 키워드 필터 (북마크 탭이 아닌 경우)
+            if not only_bookmark:
+                query += " AND keyword=?"
+                params.append(keyword)
+                
+            # 북마크 필터
+            if only_bookmark:
+                query += " AND is_bookmarked=1"
+                
+            # 읽지 않은 항목 필터
+            if only_unread:
+                query += " AND is_read=0"
+                
+            # 중복 숨김 필터
             if hide_duplicates:
-                query += " AND is_duplicate = 0"
-
+                query += " AND is_duplicate=0"
+                
+            # 텍스트 검색 필터 (제목 또는 설명)
             if filter_txt:
                 query += " AND (title LIKE ? OR description LIKE ?)"
-                params.extend([f"%{filter_txt}%", f"%{filter_txt}%"])
-            
-            # 정렬 방향 검증 (허용된 값만 사용)
-            order = "DESC" if sort_mode == "최신순" else "ASC"
-            query += f" ORDER BY pubDate_ts {order} LIMIT 1000"
+                wildcard = f"%{filter_txt}%"
+                params.extend([wildcard, wildcard])
 
-            cursor = conn.execute(query, tuple(params))
-            return [dict(row) for row in cursor.fetchall()]
-        
-        except sqlite3.Error as e:
-            logger.error(f"DB Fetch Error: {e}")
-            traceback.print_exc()
-            return []
+            # 날짜 범위 필터 (SQL 레벨 - pubDate_ts 인덱스 활용으로 성능 최적화)
+            if start_date:
+                try:
+                    s_ts = datetime.strptime(start_date, "%Y-%m-%d").timestamp()
+                    query += " AND pubDate_ts >= ?"
+                    params.append(s_ts)
+                except ValueError:
+                    logger.warning(f"Invalid start_date format: {start_date}")
+            
+            if end_date:
+                try:
+                    # 종료일 다음날 0시까지 포함
+                    e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                    query += " AND pubDate_ts < ?"
+                    params.append(e_ts)
+                except ValueError:
+                    logger.warning(f"Invalid end_date format: {end_date}")
+            
+            # 정렬 (인덱스 활용을 위해 pubDate_ts 사용)
+            if sort_mode == "최신순":
+                query += " ORDER BY pubDate_ts DESC" 
+            else:
+                query += " ORDER BY pubDate_ts ASC"
+                
+            # 쿼리 실행
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            
+            columns = [column[0] for column in cursor.description]
+            for row in cursor.fetchall():
+                item = dict(zip(columns, row))
+                news_items.append(item)
+                
         except Exception as e:
-            logger.error(f"Unexpected Fetch Error: {e}")
-            traceback.print_exc()
-            return []
+            logger.error(f"뉴스 조회 오류: {e}")
         finally:
-            if conn:
-                self.return_connection(conn)
+            self.return_connection(conn)
+            
+        return news_items
     
     def get_counts(self, keyword: str) -> int:
         """특정 키워드 뉴스 개수"""
@@ -1723,6 +1805,24 @@ class DatabaseManager:
         finally:
             self.return_connection(conn)
     
+    def mark_all_as_read(self, keyword: str, only_bookmark: bool) -> int:
+        """모든 기사 읽음 처리"""
+        conn = self.get_connection()
+        count = 0
+        try:
+            with conn:
+                if only_bookmark:
+                    cursor = conn.execute("UPDATE news SET is_read=1 WHERE is_bookmarked=1 AND is_read=0")
+                else:
+                    cursor = conn.execute("UPDATE news SET is_read=1 WHERE keyword=? AND is_read=0", (keyword,))
+                count = cursor.rowcount
+        except Exception as e:
+            logger.error(f"일괄 읽음 처리 오류: {e}")
+            raise
+        finally:
+            self.return_connection(conn)
+        return count
+
     def close(self):
         """모든 연결 종료 - 안전한 버전"""
         self._closed = True
@@ -1748,6 +1848,125 @@ class DatabaseManager:
             logger.error(f"DB 종료 중 오류: {e}")
 
 
+# --- 비동기 작업 워커 (일괄 업데이트 등) ---
+class AsyncJobWorker(QThread):
+    """단발성 비동기 작업 수행 워커"""
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    
+    def __init__(self, job_func, *args, **kwargs):
+        super().__init__()
+        self.job_func = job_func
+        self.args = args
+        self.kwargs = kwargs
+    
+    def run(self):
+        try:
+            result = self.job_func(*self.args, **self.kwargs)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+            traceback.print_exc()
+
+
+# --- DB 조회 워커 (비동기) ---
+class DBWorker(QThread):
+    """비동기 DB 조회 워커 - NewsTab에서 사용"""
+    finished = pyqtSignal(list, int)  # (data, total_count)
+    error = pyqtSignal(str)
+    
+    def __init__(self, db_manager: DatabaseManager, keyword: str, 
+                 filter_txt: str = "", sort_mode: str = "최신순",
+                 only_bookmark: bool = False, only_unread: bool = False,
+                 hide_duplicates: bool = False, start_date: str = None, 
+                 end_date: str = None):
+        super().__init__()
+        self.db = db_manager
+        self.keyword = keyword
+        self.filter_txt = filter_txt
+        self.sort_mode = sort_mode
+        self.only_bookmark = only_bookmark
+        self.only_unread = only_unread
+        self.hide_duplicates = hide_duplicates
+        self.start_date = start_date
+        self.end_date = end_date
+        self._stopped = False
+    
+    def stop(self):
+        """워커 중지 요청"""
+        self._stopped = True
+    
+    def run(self):
+        """DB 조회 실행"""
+        if self._stopped:
+            return
+        
+        try:
+            # DB 저장용 키워드 (첫 번째 단어만 사용)
+            db_keyword = self.keyword.split()[0] if self.keyword else ""
+            
+            # 북마크 탭인 경우 전체 북마크 조회
+            if self.only_bookmark:
+                db_keyword = ""  # 전체 조회
+            
+            data = self.db.fetch_news(
+                keyword=db_keyword,
+                filter_txt=self.filter_txt,
+                sort_mode=self.sort_mode,
+                only_bookmark=self.only_bookmark,
+                only_unread=self.only_unread,
+                hide_duplicates=self.hide_duplicates,
+                start_date=self.start_date,
+                end_date=self.end_date
+            )
+            
+            if self._stopped:
+                return
+            
+            # 전체 개수 조회
+            total_count = self.db.get_counts(db_keyword) if db_keyword else len(data)
+            
+            self.finished.emit(data, total_count)
+            
+        except Exception as e:
+            logger.error(f"DBWorker 오류: {e}")
+            traceback.print_exc()
+            self.error.emit(str(e))
+
+
+# --- 전역 HTTP 세션 풀 (성능 최적화) ---
+_global_session: Optional[requests.Session] = None
+_session_lock = threading.Lock()
+
+def get_shared_session() -> requests.Session:
+    """공유 HTTP 세션 반환 (커넥션 재사용으로 성능 향상)"""
+    global _global_session
+    with _session_lock:
+        if _global_session is None:
+            _global_session = requests.Session()
+            adapter = HTTPAdapter(
+                pool_connections=5,
+                pool_maxsize=10,
+                max_retries=0  # 재시도는 ApiWorker에서 처리
+            )
+            _global_session.mount('https://', adapter)
+            _global_session.mount('http://', adapter)
+        return _global_session
+
+
+def close_shared_session():
+    """전역 HTTP 세션 정리 (애플리케이션 종료 시 호출)"""
+    global _global_session
+    with _session_lock:
+        if _global_session is not None:
+            try:
+                _global_session.close()
+                logger.info("전역 HTTP 세션 종료")
+            except Exception as e:
+                logger.warning(f"세션 종료 오류: {e}")
+            finally:
+                _global_session = None
+
 # --- 개선된 API 워커 (재시도 로직) ---
 class ApiWorker(QObject):
     """API 호출 워커 (재시도 로직 및 백그라운드 DB 저장 포함) - 안정성 개선 버전"""
@@ -1758,7 +1977,8 @@ class ApiWorker(QObject):
 
     def __init__(self, client_id: str, client_secret: str, keyword: str, 
                  exclude_words: List[str], db_manager: DatabaseManager, 
-                 start_idx: int = 1, max_retries: int = 3, timeout: int = 15):
+                 start_idx: int = 1, max_retries: int = 3, timeout: int = 15,
+                 session: Optional[requests.Session] = None):
         super().__init__()
         self.cid = client_id
         self.csec = client_secret
@@ -1768,6 +1988,7 @@ class ApiWorker(QObject):
         self.start = start_idx
         self.max_retries = max_retries
         self.timeout = timeout
+        self.session = session
         self._is_running = True
         self._lock = threading.Lock()
         self._destroyed = False
@@ -1819,7 +2040,10 @@ class ApiWorker(QObject):
                     "sort": "date"
                 }
                 
-                resp = requests.get(url, headers=headers, params=params, timeout=self.timeout)
+                
+                # 공유 세션 사용 (커넥션 재사용으로 성능 향상)
+                session = self.session or get_shared_session()
+                resp = session.get(url, headers=headers, params=params, timeout=self.timeout)
                 
                 if resp.status_code == 429:
                     if attempt < self.max_retries - 1:
@@ -1948,6 +2172,86 @@ class ApiWorker(QObject):
         logger.info(f"ApiWorker 중지 요청: {self.keyword}")
         self._destroyed = True
         self.is_running = False
+
+
+# --- DB 로딩 워커 (비동기 로딩) ---
+class DBWorker(QThread):
+    """DB 데이터 로딩을 위한 워커 스레드 (UI 프리징 방지)"""
+    finished = pyqtSignal(list, int)  # result_data, total_count
+    error = pyqtSignal(str)
+    
+    def __init__(self, db_manager: DatabaseManager, keyword: str, 
+                 filter_txt: str = "", sort_mode: str = "최신순",
+                 only_bookmark: bool = False, only_unread: bool = False,
+                 hide_duplicates: bool = False,
+                 start_date: str = None, end_date: str = None):
+        super().__init__()
+        self.db = db_manager
+        self.keyword = keyword
+        self.filter_txt = filter_txt
+        self.sort_mode = sort_mode
+        self.only_bookmark = only_bookmark
+        self.only_unread = only_unread
+        self.hide_duplicates = hide_duplicates
+        self.start_date = start_date
+        self.end_date = end_date
+        self._is_cancelled = False
+
+    def stop(self):
+        """워커 중지 (플래그 설정)"""
+        self._is_cancelled = True
+        self.quit()
+        self.wait(100)
+        
+    def run(self):
+        try:
+            if self._is_cancelled: return
+            # 키워드 파싱 (제외어 처리)
+            parts = self.keyword.split()
+            if not parts:
+                self.finished.emit([], 0)
+                return
+                
+            search_keyword = parts[0] # 첫 단어를 DB 검색용 키워드로 사용
+            exclude_words = [w[1:] for w in parts if w.startswith('-')]
+            
+            # DB 조회 수행 (검색 키워드로 조회)
+            data = self.db.fetch_news(
+                keyword=search_keyword,
+                filter_txt=self.filter_txt,
+                sort_mode=self.sort_mode,
+                only_bookmark=self.only_bookmark,
+                only_unread=self.only_unread,
+                hide_duplicates=self.hide_duplicates,
+                start_date=self.start_date,
+                end_date=self.end_date
+            )
+            
+            # 제외어 필터링 (메모리에서 수행)
+            if exclude_words:
+                filtered_data = []
+                for item in data:
+                    title = item.get('title', '')
+                    desc = item.get('description', '')
+                    
+                    should_exclude = False
+                    for ex in exclude_words:
+                        if ex and (ex in title or ex in desc):
+                            should_exclude = True
+                            break
+                    
+                    if not should_exclude:
+                        filtered_data.append(item)
+                data = filtered_data
+            
+            # 총 개수는 별도로 계산하지 않고 리스트 길이로 대체하거나 필요시 추가 쿼리
+            total_count = len(data)
+            
+            self.finished.emit(data, total_count)
+            
+        except Exception as e:
+            self.error.emit(str(e))
+            traceback.print_exc()
 
 # --- 메모 다이얼로그 ---
 class NoteDialog(QDialog):
@@ -2745,6 +3049,7 @@ class NewsTab(QWidget):
     INITIAL_RENDER_COUNT = 50   # 초기 렌더링 개수
     LOAD_MORE_COUNT = 30        # 추가 로딩 개수
     MAX_RENDER_COUNT = 500      # 최대 렌더링 개수
+    FILTER_DEBOUNCE_MS = 250    # 필터 디바운싱 시간 (ms) - 성능 최적화
     
     def __init__(self, keyword: str, db_manager: DatabaseManager, theme_mode: int = 0, parent=None):
         super().__init__(parent)
@@ -2762,15 +3067,43 @@ class NewsTab(QWidget):
         self._rendered_count = 0           # 현재 렌더링된 항목 수
         self._is_loading_more = False      # 추가 로딩 중 여부
         
+        # Async DB Worker
+        self.worker = None
+        
         self.setup_ui()
         self.load_data_from_db()
+
+    @property
+    def db_keyword(self):
+        """DB 저장용 키워드 (첫 번째 단어만 사용)"""
+        return self.keyword.split()[0] if self.keyword else ""
 
     def setup_ui(self):
         """UI 설정"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 10, 0, 0)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
         
-        top_layout = QHBoxLayout()
+        # --- 상단 필터 카드 ---
+        filter_card = QFrame()
+        filter_card.setObjectName("FilterCard")
+        is_dark = (self.theme == 1)
+        filter_card.setStyleSheet(f"""
+            QFrame#FilterCard {{
+                background-color: {Colors.DARK_CARD_BG if is_dark else Colors.LIGHT_CARD_BG};
+                border: 1px solid {Colors.DARK_BORDER if is_dark else Colors.LIGHT_BORDER};
+                border-radius: 10px;
+                padding: 8px;
+            }}
+        """)
+        
+        filter_layout = QVBoxLayout(filter_card)
+        filter_layout.setContentsMargins(12, 10, 12, 10)
+        filter_layout.setSpacing(8)
+        
+        # 1열: 검색/정렬
+        row1_layout = QHBoxLayout()
+        row1_layout.setSpacing(10)
         
         self.inp_filter = QLineEdit()
         self.inp_filter.setPlaceholderText("🔍 제목 또는 내용으로 필터링...")
@@ -2786,22 +3119,76 @@ class NewsTab(QWidget):
         self.combo_sort.addItems(["최신순", "오래된순"])
         self.combo_sort.currentIndexChanged.connect(self.load_data_from_db)
         
+        row1_layout.addWidget(self.inp_filter, 4)
+        row1_layout.addWidget(self.combo_sort, 1)
+        
+        filter_layout.addLayout(row1_layout)
+        
+        # 2열: 옵션 체크박스 + 날짜 필터
+        row2_layout = QHBoxLayout()
+        row2_layout.setSpacing(12)
+        
         self.chk_unread = QCheckBox("안 읽은 것만")
         self.chk_unread.stateChanged.connect(self.load_data_from_db)
         
         self.chk_hide_dup = QCheckBox("중복 숨김")
         self.chk_hide_dup.stateChanged.connect(self.load_data_from_db)
         
-        top_layout.addWidget(self.inp_filter, 3)
-        top_layout.addWidget(self.combo_sort, 1)
-        top_layout.addWidget(self.chk_unread, 1)
-        top_layout.addWidget(self.chk_hide_dup, 1)
-        layout.addLayout(top_layout)
+        row2_layout.addWidget(self.chk_unread)
+        row2_layout.addWidget(self.chk_hide_dup)
+        
+        # 구분선
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        row2_layout.addWidget(sep)
+        
+        self.btn_date_toggle = QToolButton()
+        self.btn_date_toggle.setText("📅 기간")
+        self.btn_date_toggle.setCheckable(True)
+        self.btn_date_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._update_date_toggle_style(False)
+        self.btn_date_toggle.toggled.connect(self._toggle_date_filter)
+        
+        self.date_container = QWidget()
+        date_inner_layout = QHBoxLayout(self.date_container)
+        date_inner_layout.setContentsMargins(0, 0, 0, 0)
+        date_inner_layout.setSpacing(4)
+        
+        self.date_start = QDateEdit()
+        self.date_start.setCalendarPopup(True)
+        self.date_start.setDisplayFormat("yyyy-MM-dd")
+        self.date_start.setDate(QDate.currentDate().addDays(-7))
+        self.date_start.dateChanged.connect(self.load_data_from_db)
+        
+        self.lbl_tilde = QLabel("~")
+        
+        self.date_end = QDateEdit()
+        self.date_end.setCalendarPopup(True)
+        self.date_end.setDisplayFormat("yyyy-MM-dd")
+        self.date_end.setDate(QDate.currentDate())
+        self.date_end.dateChanged.connect(self.load_data_from_db)
+        
+        date_inner_layout.addWidget(self.date_start)
+        date_inner_layout.addWidget(self.lbl_tilde)
+        date_inner_layout.addWidget(self.date_end)
+        
+        row2_layout.addWidget(self.btn_date_toggle)
+        row2_layout.addWidget(self.date_container)
+        row2_layout.addStretch()
+        
+        filter_layout.addLayout(row2_layout)
+        
+        # 초기에는 날짜 필터 숨김
+        self.date_container.setVisible(False)
+        
+        layout.addWidget(filter_card)
         
         self.browser = NewsBrowser()
         self.browser.setOpenExternalLinks(False)
         self.browser.setOpenLinks(False)
         self.browser.anchorClicked.connect(self.on_link_clicked)
+        self.browser.action_triggered.connect(self.on_browser_action)
         layout.addWidget(self.browser)
         
         btm_layout = QHBoxLayout()
@@ -2824,26 +3211,101 @@ class NewsTab(QWidget):
         self.btn_top.clicked.connect(lambda: self.browser.verticalScrollBar().setValue(0))
         self.btn_read_all.clicked.connect(self.mark_all_read)
     
+    def _toggle_date_filter(self, checked: bool):
+        """날짜 필터 표시/숨김 토글"""
+        self.date_container.setVisible(checked)
+        self._update_date_toggle_style(checked)
+        
+        if not checked:
+            self.load_data_from_db() # 끄면 전체 조회
+
+    def _update_date_toggle_style(self, checked: bool):
+        """날짜 토글 버튼 스타일 업데이트"""
+        is_dark = (self.theme == 1)
+        
+        if checked:
+            if is_dark:
+                # Dark Mode Active
+                bg = Colors.DARK_PRIMARY_LIGHT
+                border = Colors.DARK_PRIMARY
+                text = Colors.DARK_TEXT
+            else:
+                # Light Mode Active
+                bg = Colors.LIGHT_PRIMARY_LIGHT
+                border = Colors.LIGHT_PRIMARY
+                text = "#4338ca" # 인디고 700 (Colors에는 없음)
+                
+            # Hex codes directly for specific active look
+            if is_dark:
+                style = f"background: {bg}; border: 1px solid {border}; border-radius: 4px; padding: 4px; color: {text};"
+            else:
+                style = f"background: #e0e7ff; border: 1px solid #6366f1; border-radius: 4px; padding: 4px; color: #4338ca;"
+        else:
+            # Inactive
+            if is_dark:
+                border = Colors.DARK_BORDER
+                text = Colors.DARK_TEXT_MUTED
+            else:
+                border = Colors.LIGHT_BORDER
+                text = Colors.LIGHT_TEXT_MUTED
+                
+            style = f"background: transparent; border: 1px solid {border}; border-radius: 4px; padding: 4px; color: {text};"
+            
+        self.btn_date_toggle.setStyleSheet(style)
+
     def _on_filter_changed(self):
         """필터 입력 변경 시 디바운싱 타이머 시작"""
         self.filter_timer.stop()
-        self.filter_timer.start(300)  # 300ms 디바운싱
+        self.filter_timer.start(self.FILTER_DEBOUNCE_MS)
     
     def _apply_filter_debounced(self):
         """디바운싱된 필터 적용"""
         self.apply_filter()
 
     def load_data_from_db(self):
-        """DB에서 데이터 로드 (캐싱)"""
-        self.news_data_cache = self.db.fetch_news(
+        """DB에서 데이터 로드 (비동기 처리)"""
+        # 실행 중인 워커가 있다면 중지
+        if self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.wait()
+            
+        self.lbl_status.setText("⏳ 데이터 로딩 중...")
+        self.btn_load.setEnabled(False)
+        
+        # 날짜 필터 파라미터 준비
+        s_date = None
+        e_date = None
+        if self.btn_date_toggle.isChecked():
+            s_date = self.date_start.date().toString("yyyy-MM-dd")
+            e_date = self.date_end.date().toString("yyyy-MM-dd")
+        
+        # DB 워커 시작
+        self.worker = DBWorker(
+            self.db, 
             keyword=self.keyword,
-            filter_txt="",
+            filter_txt="", # 텍스트 필터는 메모리에서 처리 (fetch_all 후 apply_filter)
             sort_mode=self.combo_sort.currentText(),
             only_bookmark=self.is_bookmark_tab,
             only_unread=self.chk_unread.isChecked(),
-            hide_duplicates=self.chk_hide_dup.isChecked()
+            hide_duplicates=self.chk_hide_dup.isChecked(),
+            start_date=s_date,
+            end_date=e_date
         )
-        self.apply_filter()
+        self.worker.finished.connect(self.on_data_loaded)
+        self.worker.error.connect(self.on_data_error)
+        self.worker.start()
+
+    def on_data_loaded(self, data, total_count):
+        """데이터 로드 완료 시 호출"""
+        self.news_data_cache = data
+        self.total_api_count = total_count
+        self.btn_load.setEnabled(True)
+        self.apply_filter() # 렌더링 수행
+        
+    def on_data_error(self, err_msg):
+        """데이터 로드 오류 시 호출"""
+        self.lbl_status.setText(f"⚠️ 오류: {err_msg}")
+        self.btn_load.setEnabled(True)
     
     def apply_filter(self):
         """메모리 내 필터링 (DB 쿼리 없이)"""
@@ -2868,6 +3330,87 @@ class NewsTab(QWidget):
         self._rendered_count = 0
         self.render_html()
 
+    def _render_single_item(self, item: Dict, filter_word: str) -> str:
+        """단일 뉴스 아이템 HTML 렌더링"""
+        # 안전한 딕셔너리 접근
+        is_read_cls = " read" if item.get('is_read', 0) else ""
+        is_dup_cls = " duplicate" if item.get('is_duplicate', 0) else ""
+        title_pfx = "⭐ " if item.get('is_bookmarked', 0) else ""
+        item_link = item.get('link', '')
+        item_title = item.get('title', '(제목 없음)')
+        item_desc = item.get('description', '')
+        
+        link_hash = hashlib.md5(item_link.encode()).hexdigest()
+        
+        # 미리보기 데이터 저장 (append 시에도 동작)
+        if hasattr(self.browser, 'preview_data'):
+            self.browser.preview_data[link_hash] = item_desc
+        
+        if filter_word:
+            title = TextUtils.highlight_text(item_title, filter_word)
+            desc = TextUtils.highlight_text(item_desc, filter_word)
+        else:
+            title = html.escape(item_title)
+            desc = html.escape(item_desc)
+
+        # 북마크 버튼 텍스트
+        bk_txt = "북마크 해제" if item.get('is_bookmarked', 0) else "북마크"
+        bk_col = "#DC3545" if item.get('is_bookmarked', 0) else "#17A2B8"
+        
+        date_str = item.get('pubDate', '')
+        date_str = parse_date_string(date_str)
+
+        has_note = item.get('notes') and item['notes'].strip()
+        note_indicator = " 📝" if has_note else ""
+
+        # 액션 버튼
+        actions = f"""
+            <a href='app://share/{link_hash}'>공유</a>
+            <a href='app://ext/{link_hash}'>외부</a>
+            <a href='app://note/{link_hash}'>메모{note_indicator}</a>
+        """
+        if item.get('is_read', 0):
+            actions += f"<a href='app://unread/{link_hash}'>안읽음</a>"
+        actions += f"<a href='app://bm/{link_hash}' style='color:{bk_col}'>{bk_txt}</a>"
+
+        badges = ""
+        if not self.is_bookmark_tab and self.keyword:
+            keywords = self.keyword.split()
+            for kw in keywords:
+                if not kw.startswith('-'):
+                    badges += f"<span class='keyword-tag'>{html.escape(kw)}</span>"
+        
+        if item.get('is_duplicate', 0):
+            badges += "<span class='duplicate-badge'>유사</span>"
+
+        return f"""
+        <div class="news-item{is_read_cls}{is_dup_cls}">
+            <a href="app://open/{link_hash}" class="title-link">{title_pfx}{title}</a>
+            <div class="meta-info">
+                <span class="meta-left">📰 {item['publisher']} · {date_str} {badges}</span>
+                <span class="actions">{actions}</span>
+            </div>
+            <div class="description">{desc}</div>
+        </div>
+        """
+
+    def _get_load_more_html(self, remaining: int) -> str:
+        """더 보기 버튼 HTML"""
+        return f"""
+        <div class="load-more-container" style="text-align: center; padding: 20px;">
+            <a href="app://load_more" style="
+                display: inline-block;
+                padding: 12px 30px;
+                background: linear-gradient(135deg, #007AFF, #00C7BE);
+                color: white;
+                text-decoration: none;
+                border-radius: 25px;
+                font-weight: bold;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            ">더 보기 ({remaining}개 남음)</a>
+        </div>
+        """
+
     def render_html(self):
         """HTML 렌더링 - Colors 헬퍼 사용 버전"""
         scroll_pos = self.browser.verticalScrollBar().value()
@@ -2881,7 +3424,9 @@ class NewsTab(QWidget):
         
         html_parts = [f"<html><head><meta charset='utf-8'>{css}</head><body>"]
         
-        preview_data = {}
+        # 미리보기 데이터 초기화
+        if hasattr(self.browser, 'set_preview_data'):
+            self.browser.set_preview_data({})
         
         if not self.filtered_data_cache:
             if self.is_bookmark_tab:
@@ -2897,116 +3442,62 @@ class NewsTab(QWidget):
             # Phase 3: 렌더링 최적화 - 초기에는 제한된 수만 렌더링
             total_items = len(self.filtered_data_cache)
             render_limit = min(self._rendered_count + self.INITIAL_RENDER_COUNT, self.MAX_RENDER_COUNT)
+            # 첫 렌더링 시 _rendered_count 보정
+            if self._rendered_count < self.INITIAL_RENDER_COUNT:
+                self._rendered_count = self.INITIAL_RENDER_COUNT
+            
+            render_limit = min(self._rendered_count, total_items) # 실제 데이터 개수 제한
             items_to_render = self.filtered_data_cache[:render_limit]
             self._rendered_count = len(items_to_render)
             
             for item in items_to_render:
-                # 안전한 딕셔너리 접근 (KeyError 방어)
-                is_read_cls = " read" if item.get('is_read', 0) else ""
-                is_dup_cls = " duplicate" if item.get('is_duplicate', 0) else ""
-                title_pfx = "⭐ " if item.get('is_bookmarked', 0) else ""
-                item_link = item.get('link', '')
-                item_title = item.get('title', '(제목 없음)')
-                item_desc = item.get('description', '')
-                
-                link_hash = hashlib.md5(item_link.encode()).hexdigest()
-                
-                preview_data[link_hash] = item_desc
-                
-                if filter_word:
-                    title = TextUtils.highlight_text(item_title, filter_word)
-                    desc = TextUtils.highlight_text(item_desc, filter_word)
-                else:
-                    title = html.escape(item_title)
-                    desc = html.escape(item_desc)
-
-                # 북마크 버튼 텍스트
-                bk_txt = "북마크 해제" if item.get('is_bookmarked', 0) else "북마크"
-                bk_col = "#DC3545" if item.get('is_bookmarked', 0) else "#17A2B8"
-                
-                date_str = item.get('pubDate', '')
-                try:
-                    dt = parsedate_to_datetime(date_str)
-                    date_str = dt.strftime('%Y.%m.%d %H:%M')
-                except (ValueError, TypeError):
-                    # RFC 2822 파싱 실패 시 대체 포맷 시도
-                    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
-                        try:
-                            dt = datetime.strptime(date_str[:19], fmt)
-                            date_str = dt.strftime('%Y.%m.%d %H:%M')
-                            break
-                        except (ValueError, TypeError):
-                            continue
-
-                has_note = item.get('notes') and item['notes'].strip()
-                note_indicator = " 📝" if has_note else ""
-
-                # 액션 버튼 (텍스트 형태)
-                actions = f"""
-                    <a href='app://share/{link_hash}'>공유</a>
-                    <a href='app://ext/{link_hash}'>외부</a>
-                    <a href='app://note/{link_hash}'>메모{note_indicator}</a>
-                """
-                if item.get('is_read', 0):
-                    actions += f"<a href='app://unread/{link_hash}'>안읽음</a>"
-                actions += f"<a href='app://bm/{link_hash}' style='color:{bk_col}'>{bk_txt}</a>"
-
-                badges = ""
-                if not self.is_bookmark_tab and self.keyword:
-                    keywords = self.keyword.split()
-                    for kw in keywords:
-                        if not kw.startswith('-'):
-                            badges += f"<span class='keyword-tag'>{html.escape(kw)}</span>"
-                
-                if item.get('is_duplicate', 0):
-                    badges += "<span class='duplicate-badge'>유사</span>"
-
-                html_parts.append(f"""
-                <div class="news-item{is_read_cls}{is_dup_cls}">
-                    <a href="app://open/{link_hash}" class="title-link">{title_pfx}{title}</a>
-                    <div class="meta-info">
-                        <span class="meta-left">📰 {item['publisher']} · {date_str} {badges}</span>
-                        <span class="actions">{actions}</span>
-                    </div>
-                    <div class="description">{desc}</div>
-                </div>
-                """)
+                html_parts.append(self._render_single_item(item, filter_word))
             
             # 더 많은 항목이 있으면 "더 보기" 링크 표시
             remaining = total_items - self._rendered_count
             if remaining > 0:
-                html_parts.append(f"""
-                <div class="load-more-container" style="text-align: center; padding: 20px;">
-                    <a href="app://load_more" style="
-                        display: inline-block;
-                        padding: 12px 30px;
-                        background: linear-gradient(135deg, #007AFF, #00C7BE);
-                        color: white;
-                        text-decoration: none;
-                        border-radius: 25px;
-                        font-weight: bold;
-                        box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
-                    ">📄 {remaining}개 더 보기</a>
-                </div>
-                """)
+                html_parts.append(self._get_load_more_html(remaining))
         
         html_parts.append("</body></html>")
         
-        self.browser.set_preview_data(preview_data)
+        final_html = "".join(html_parts)
+        self.browser.setHtml(final_html)
         
-        self.browser.setHtml("".join(html_parts))
-        
-        QTimer.singleShot(10, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
+        # 스크롤 위치 복원
+        if scroll_pos > 0:
+            QTimer.singleShot(0, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
         self.update_status_label()
 
 
+    def append_items(self):
+        """추가 아이템 로딩 (최적화: 전체 재렌더링 대신 _rendered_count 증가 후 렌더링)"""
+        total_items = len(self.filtered_data_cache)
+        start_idx = self._rendered_count
+        end_idx = min(start_idx + self.LOAD_MORE_COUNT, total_items)
+        
+        if start_idx >= end_idx:
+            return
+        
+        # _rendered_count 증가 (render_html에서 이 값까지 렌더링)
+        self._rendered_count = end_idx
+        
+        # 스크롤 위치 저장 후 렌더링
+        scroll_pos = self.browser.verticalScrollBar().value()
+        self.render_html()
+        
+        # 스크롤 위치 복원 (약간의 지연 필요)
+        if scroll_pos > 0:
+            QTimer.singleShot(10, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
+
+
     def update_status_label(self):
-        """상태 레이블 업데이트"""
+        """상태 레이블 업데이트 - 캐시 기반 최적화"""
         total_filtered = len(self.filtered_data_cache)
         rendered = self._rendered_count
         
         if not self.is_bookmark_tab:
-            unread = self.db.get_unread_count(self.keyword)
+            # 캐시된 데이터에서 안 읽은 수 계산 (DB 쿼리 방지)
+            unread = sum(1 for item in self.news_data_cache if not item.get('is_read', 0))
             msg = f"'{self.keyword}': 총 {self.total_api_count}개"
             
             filter_word = self.inp_filter.text().strip()
@@ -3047,10 +3538,10 @@ class NewsTab(QWidget):
         action = url.host()
         link_hash = url.path().lstrip('/')
         
-        # Phase 3: 더 보기 액션 처리
+        # Phase 3: 더 보기 액션 처리 (최적화: 부분 렌더링)
         if action == "load_more":
-            self._rendered_count += self.LOAD_MORE_COUNT
-            self.render_html()
+            # self._rendered_count += self.LOAD_MORE_COUNT # append_items 내부에서 처리됨
+            self.append_items()
             return
         
         target = next(
@@ -3114,8 +3605,12 @@ class NewsTab(QWidget):
             QDesktopServices.openUrl(QUrl(link))
             return
 
+
+
+# ... (in NewsTab) ...
+
     def mark_all_read(self):
-        """모두 읽음으로 표시"""
+        """모두 읽음으로 표시 (비동기)"""
         reply = QMessageBox.question(
             self,
             "모두 읽음으로 표시",
@@ -3125,24 +3620,122 @@ class NewsTab(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            conn = self.db.get_connection()
-            try:
-                with conn:
-                    if self.is_bookmark_tab:
-                        conn.execute("UPDATE news SET is_read=1 WHERE is_bookmarked=1")
-                    else:
-                        conn.execute("UPDATE news SET is_read=1 WHERE keyword=?", (self.keyword,))
-                self.load_data_from_db()
-                if self.window():
-                    self.window().show_toast("✓ 모든 기사를 읽음으로 표시했습니다.")
-            except Exception as e:
-                QMessageBox.critical(self, "오류", f"처리 중 오류가 발생했습니다:\n\n{str(e)}")
-            finally:
-                self.db.return_connection(conn)
+            self.lbl_status.setText("⏳ 처리 중...")
+            self.btn_read_all.setEnabled(False)
+            
+            # 비동기 워커 실행
+            # DB 검색용 키워드(db_keyword)를 사용
+            self.job_worker = AsyncJobWorker(
+                self.db.mark_all_as_read, 
+                self.db_keyword, 
+                self.is_bookmark_tab
+            )
+            self.job_worker.finished.connect(self._on_mark_all_read_done)
+            self.job_worker.error.connect(self._on_mark_all_read_error)
+            self.job_worker.start()
+            
+    def _on_mark_all_read_done(self, count):
+        """모두 읽음 처리 완료"""
+        self.btn_read_all.setEnabled(True)
+        self.load_data_from_db() # UI 갱신
+        if self.window():
+            self.window().show_toast(f"✓ {count}개의 기사를 읽음으로 표시했습니다.")
+            
+    def _on_mark_all_read_error(self, err_msg):
+        """모두 읽음 처리 오류"""
+        self.btn_read_all.setEnabled(True)
+        self.lbl_status.setText("오류 발생")
+        QMessageBox.critical(self, "오류", f"처리 중 오류가 발생했습니다:\n\n{err_msg}")
 
     def update_timestamp(self):
         """업데이트 시간 갱신"""
         self.last_update = datetime.now().strftime('%H:%M:%S')
+
+
+    def on_browser_action(self, action, link_hash):
+        """브라우저 컨텍스트 메뉴 액션 처리"""
+        target = next((i for i in self.news_data_cache if hashlib.md5(i['link'].encode()).hexdigest() == link_hash), None)
+        if not target:
+            return
+            
+        link = target['link']
+        
+        if action == "ext":
+            QDesktopServices.openUrl(QUrl(link))
+            if not target.get('is_read'):
+                self.db.update_status(link, "is_read", 1)
+                target['is_read'] = 1
+                self.apply_filter()
+                
+        elif action == "share":
+             clip = f"{target['title']}\n{target['link']}"
+             QApplication.clipboard().setText(clip)
+             if self.window(): self.window().show_toast("📋 복사되었습니다.")
+             
+        elif action == "bm":
+            new_val = 0 if target.get('is_bookmarked') else 1
+            if self.db.update_status(link, "is_bookmarked", new_val):
+                target['is_bookmarked'] = new_val
+                if self.is_bookmark_tab and new_val == 0:
+                     self.news_data_cache.remove(target)
+                self.apply_filter()
+                if self.window():
+                     if hasattr(self.window(), 'refresh_bookmark_tab'):
+                        self.window().refresh_bookmark_tab()
+                     msg = "⭐ 북마크됨" if new_val else "북마크 해제됨"
+                     self.window().show_toast(msg)
+
+        elif action == "toggle_read":
+            new_val = 0 if target.get('is_read') else 1
+            if self.db.update_status(link, "is_read", new_val):
+                target['is_read'] = new_val
+                self.apply_filter()
+            
+        elif action == "note":
+            current_note = self.db.get_note(link)
+            dialog = NoteDialog(current_note, self)
+            if dialog.exec():
+                new_note = dialog.get_note()
+                if self.db.save_note(link, new_note):
+                    target['notes'] = new_note
+                    self.apply_filter()
+                    if self.window():
+                        self.window().show_toast("📝 메모가 저장되었습니다.")
+             
+        elif action == "delete":
+             reply = QMessageBox.question(self, "삭제", "이 기사를 목록에서 삭제하시겠습니까?\n(DB에서 완전히 삭제됩니다)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+             if reply == QMessageBox.StandardButton.Yes:
+                 conn = self.db.get_connection()
+                 try:
+                     conn.execute("DELETE FROM news WHERE link=?", (link,))
+                     conn.commit()
+                     self.news_data_cache.remove(target)
+                     # filtered_data_cache도 동기화
+                     if target in self.filtered_data_cache:
+                         self.filtered_data_cache.remove(target)
+                     self.apply_filter()
+                     if self.window(): self.window().show_toast("🗑 삭제되었습니다.")
+                 except Exception as e:
+                     QMessageBox.warning(self, "오류", f"삭제 실패: {e}")
+                 finally:
+                     self.db.return_connection(conn)
+
+    def cleanup(self):
+        """탭 종료 시 리소스 정리"""
+        # 필터 타이머 정리
+        if hasattr(self, 'filter_timer') and self.filter_timer:
+            self.filter_timer.stop()
+        
+        # DB 워커 정리
+        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.wait(1000)
+        
+        # Job 워커 정리
+        if hasattr(self, 'job_worker') and self.job_worker and self.job_worker.isRunning():
+            self.job_worker.wait(1000)
+        
+        logger.debug(f"NewsTab 정리 완료: {self.keyword}")
 
 
 # --- 메인 윈도우 ---
@@ -3170,9 +3763,18 @@ class MainApp(QMainWindow):
         self.client_secret = ""
         self.toast_queue = None
         self.db = None
+        self.session = None  # 세션 초기화
         
         try:
             self.db = DatabaseManager(DB_FILE)
+            
+            # Requests Session 설정 (성능 최적화: 연결 재사용)
+            self.session = requests.Session()
+            # Connection Pool 크기 증가 (동시 요청 처리)
+            adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=3)
+            self.session.mount('https://', adapter)
+            self.session.mount('http://', adapter)
+            
             self.workers = {}
             self.toast_queue = ToastQueue(self)
             
@@ -3310,10 +3912,10 @@ class MainApp(QMainWindow):
             # 트레이 아이콘 지원 확인
             if not QSystemTrayIcon.isSystemTrayAvailable():
                 logger.warning("시스템 트레이를 사용할 수 없습니다.")
-                self.tray_icon = None
+                self.tray = None
                 return
             
-            self.tray_icon = QSystemTrayIcon(self)
+            self.tray = QSystemTrayIcon(self)
             
             # 아이콘 설정
             script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3322,10 +3924,10 @@ class MainApp(QMainWindow):
                 icon_path = os.path.join(script_dir, ICON_PNG)
             
             if os.path.exists(icon_path):
-                self.tray_icon.setIcon(QIcon(icon_path))
+                self.tray.setIcon(QIcon(icon_path))
             else:
                 # 기본 아이콘 사용
-                self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+                self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
             
             # 트레이 컨텍스트 메뉴 생성
             tray_menu = QMenu(self)
@@ -3350,21 +3952,21 @@ class MainApp(QMainWindow):
             action_quit = tray_menu.addAction("❌ 종료")
             action_quit.triggered.connect(self.real_quit)
             
-            self.tray_icon.setContextMenu(tray_menu)
+            self.tray.setContextMenu(tray_menu)
             
             # 더블클릭 시 창 보이기
-            self.tray_icon.activated.connect(self.on_tray_activated)
+            self.tray.activated.connect(self.on_tray_activated)
             
             # 초기 툴팁 설정
             self.update_tray_tooltip()
             
             # 트레이 아이콘 표시
-            self.tray_icon.show()
+            self.tray.show()
             
             logger.info("시스템 트레이 아이콘 설정 완료")
         except Exception as e:
             logger.error(f"시스템 트레이 설정 오류: {e}")
-            self.tray_icon = None
+            self.tray = None
     
     def on_tray_activated(self, reason):
         """트레이 아이콘 활성화 이벤트 처리"""
@@ -3376,7 +3978,7 @@ class MainApp(QMainWindow):
     
     def update_tray_tooltip(self):
         """트레이 아이콘 툴팁 업데이트 (읽지 않은 기사 수 표시)"""
-        if not hasattr(self, 'tray_icon') or not self.tray_icon:
+        if not hasattr(self, 'tray') or not self.tray:
             return
         
         try:
@@ -3393,10 +3995,10 @@ class MainApp(QMainWindow):
             else:
                 tooltip = f"{APP_NAME}\n✅ 모든 기사를 읽었습니다"
             
-            self.tray_icon.setToolTip(tooltip)
+            self.tray.setToolTip(tooltip)
         except Exception as e:
             logger.warning(f"트레이 툴팁 업데이트 오류: {e}")
-            self.tray_icon.setToolTip(APP_NAME)
+            self.tray.setToolTip(APP_NAME)
     
     def show_window(self):
         """창 표시 (트레이에서 복원)"""
@@ -3418,21 +4020,21 @@ class MainApp(QMainWindow):
             logger.error(f"종료 전 설정 저장 오류: {e}")
         
         # 트레이 아이콘 숨기기
-        if hasattr(self, 'tray_icon') and self.tray_icon:
-            self.tray_icon.hide()
+        if hasattr(self, 'tray') and self.tray:
+            self.tray.hide()
         
         self.close()
     
     def show_tray_notification(self, title: str, message: str, icon_type=None):
         """시스템 트레이 알림 표시 (새 뉴스 도착 등)"""
-        if not hasattr(self, 'tray_icon') or not self.tray_icon:
+        if not hasattr(self, 'tray') or not self.tray:
             return
         
         try:
             if icon_type is None:
                 icon_type = QSystemTrayIcon.MessageIcon.Information
             
-            self.tray_icon.showMessage(
+            self.tray.showMessage(
                 title,
                 message,
                 icon_type,
@@ -3577,38 +4179,51 @@ class MainApp(QMainWindow):
         layout.setContentsMargins(15, 15, 15, 15)
         
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        toolbar.setSpacing(6)
         
-        # 툴바 버튼 생성 (단축키 힌트 포함)
+        # --- 주요 액션 그룹 ---
         self.btn_refresh = QPushButton("🔄 새로고침")
         self.btn_refresh.setToolTip("모든 탭의 뉴스를 새로고침합니다 (Ctrl+R, F5)")
+        self.btn_refresh.setObjectName("RefreshBtn")
         
         self.btn_save = QPushButton("💾 내보내기")
         self.btn_save.setToolTip("현재 탭의 뉴스를 CSV로 내보냅니다 (Ctrl+S)")
         
-        self.btn_setting = QPushButton("⚙ 설정")
-        self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
+        toolbar.addWidget(self.btn_refresh)
+        toolbar.addWidget(self.btn_save)
         
-        self.btn_stats = QPushButton("📊 통계/분석")
+        # 구분선 1
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.VLine)
+        sep1.setFrameShadow(QFrame.Shadow.Sunken)
+        sep1.setStyleSheet(f"color: {Colors.LIGHT_BORDER if self.theme_idx == 0 else Colors.DARK_BORDER};")
+        toolbar.addWidget(sep1)
+        
+        # --- 분석/관리 그룹 ---
+        self.btn_stats = QPushButton("📊 통계")
         self.btn_stats.setToolTip("전체 뉴스 통계 및 언론사별 분석 보기")
         
-        self.btn_help = QPushButton("❓ 도움말")
-        self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
+        self.btn_setting = QPushButton("⚙ 설정")
+        self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
         
         self.btn_backup = QPushButton("🗂 백업")
         self.btn_backup.setToolTip("설정 백업 및 복원")
         
+        self.btn_help = QPushButton("❓ 도움말")
+        self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
+        
+        toolbar.addWidget(self.btn_stats)
+        toolbar.addWidget(self.btn_setting)
+        toolbar.addWidget(self.btn_backup)
+        toolbar.addWidget(self.btn_help)
+        
+        toolbar.addStretch()
+        
+        # --- 탭 관리 그룹 ---
         self.btn_add = QPushButton("➕ 새 탭")
         self.btn_add.setToolTip("새로운 키워드 탭 추가 (Ctrl+T)")
         self.btn_add.setObjectName("AddTab")
         
-        toolbar.addWidget(self.btn_refresh)
-        toolbar.addWidget(self.btn_save)
-        toolbar.addWidget(self.btn_stats)
-        toolbar.addWidget(self.btn_setting)
-        toolbar.addWidget(self.btn_help)
-        toolbar.addWidget(self.btn_backup)
-        toolbar.addStretch()
         toolbar.addWidget(self.btn_add)
         layout.addLayout(toolbar)
         
@@ -3624,6 +4239,8 @@ class MainApp(QMainWindow):
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.tabBar().tabBarDoubleClicked.connect(self.rename_tab)
         self.tabs.tabBar().tabMoved.connect(self.on_tab_moved)  # 탭 순서 저장
+        self.tabs.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tabs.tabBar().customContextMenuRequested.connect(self.on_tab_context_menu)
         layout.addWidget(self.tabs)
         
         self.btn_refresh.clicked.connect(self.refresh_all)
@@ -3651,21 +4268,7 @@ class MainApp(QMainWindow):
         else:
             self.statusBar().showMessage("⚠️ API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요.")
         
-        self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
-        self.tray.setToolTip(APP_NAME)
-        
-        tray_menu = QMenu()
-        show_action = tray_menu.addAction("창 표시")
-        show_action.triggered.connect(self.show)
-        refresh_action = tray_menu.addAction("새로고침")
-        refresh_action.triggered.connect(self.refresh_all)
-        tray_menu.addSeparator()
-        quit_action = tray_menu.addAction("종료")
-        quit_action.triggered.connect(self.close)
-        
-        self.tray.setContextMenu(tray_menu)
-        self.tray.show()
+
 
     def setup_shortcuts(self):
         """키보드 단축키 설정"""
@@ -3706,7 +4309,9 @@ class MainApp(QMainWindow):
                 widget = self.tabs.widget(i)
                 if widget and hasattr(widget, 'keyword'):
                     keyword = widget.keyword
-                    unread_count = self.db.get_unread_count(keyword)
+                    # DB 조회 시에는 메인 키워드(첫 단어)만 사용
+                    search_keyword = keyword.split()[0] if keyword else ""
+                    unread_count = self.db.get_unread_count(search_keyword)
                     
                     # 탭 이름 업데이트
                     if unread_count > 0:
@@ -3726,7 +4331,9 @@ class MainApp(QMainWindow):
             for i in range(1, self.tabs.count()):
                 widget = self.tabs.widget(i)
                 if widget and hasattr(widget, 'keyword') and widget.keyword == keyword:
-                    unread_count = self.db.get_unread_count(keyword)
+                    # DB 조회 시에는 메인 키워드(첫 단어)만 사용
+                    search_keyword = keyword.split()[0] if keyword else ""
+                    unread_count = self.db.get_unread_count(search_keyword)
                     
                     if unread_count > 0:
                         badge = f" ({unread_count})" if unread_count <= 99 else " (99+)"
@@ -3934,7 +4541,7 @@ class MainApp(QMainWindow):
             # 중복 탭 체크
             for i in range(1, self.tabs.count()):
                 w = self.tabs.widget(i)
-                if w and hasattr(w, 'keyword') and w.keyword == keyword:
+                if hasattr(w, 'keyword') and w.keyword == keyword:
                     QMessageBox.information(
                         self, 
                         "중복 태브", 
@@ -4007,6 +4614,55 @@ class MainApp(QMainWindow):
             self.fetch_news(new_keyword)
             self.save_config()
 
+    def on_tab_context_menu(self, pos):
+        """탭 바 컨텍스트 메뉴"""
+        idx = self.tabs.tabBar().tabAt(pos)
+        if idx <= 0:  # 0은 북마크 탭
+            return
+            
+        widget = self.tabs.widget(idx)
+        if not widget or not hasattr(widget, 'keyword'):
+            return
+            
+        keyword = widget.keyword
+        
+        menu = QMenu(self)
+        
+        act_refresh = menu.addAction("🔄 새로고침")
+        act_rename = menu.addAction("✏️ 이름 변경")
+        menu.addSeparator()
+        
+        # 그룹 메뉴
+        group_menu = menu.addMenu("📁 그룹에 추가")
+        groups = self.keyword_group_manager.get_all_groups()
+        if groups:
+            for group in groups:
+                act = group_menu.addAction(group)
+                act.triggered.connect(lambda checked, g=group, k=keyword: 
+                                    self._add_to_group_callback(g, k))
+        else:
+            group_menu.setDisabled(True)
+            
+        menu.addSeparator()
+        act_close = menu.addAction("❌ 탭 닫기")
+        
+        # mapToGlobal은 self.tabs.tabBar() 기준으로 변환해야 함
+        action = menu.exec(self.tabs.tabBar().mapToGlobal(pos))
+        
+        if action == act_refresh:
+            self.fetch_news(keyword)
+        elif action == act_rename:
+            self.rename_tab(idx)
+        elif action == act_close:
+            self.close_tab(idx)
+
+    def _add_to_group_callback(self, group: str, keyword: str):
+        """컨텍스트 메뉴에서 그룹 추가 콜백"""
+        if self.keyword_group_manager.add_keyword_to_group(group, keyword):
+            self.show_success_toast(f"'{keyword}'을(를) '{group}' 그룹에 추가했습니다.")
+        else:
+            self.show_warning_toast(f"이미 '{group}' 그룹에 존재하는 키워드입니다.")
+
     def _safe_refresh_all(self):
         """안전한 자동 새로고침 래퍼 (타이머에서 호출)"""
         # 네트워크 연속 오류 시 자동 새로고침 일시 중지
@@ -4020,7 +4676,7 @@ class MainApp(QMainWindow):
         # 이미 새로고침 진행 중이면 건너뜀
         with QMutexLocker(self._refresh_mutex):
             if self._refresh_in_progress or self._sequential_refresh_active:
-                logger.warning("새로고침이 이미 진행 중입니다. 건너뜁니다.")
+                logger.warning("새로고침이 이미 진행 중입니다. 건너킵니다.")
                 return
             self._refresh_in_progress = True
         
@@ -4040,7 +4696,7 @@ class MainApp(QMainWindow):
         
         # 이미 순차 새로고침 진행 중이면 무시
         if self._sequential_refresh_active:
-            logger.warning("순차 새로고침이 이미 진행 중입니다. 건너뜁니다.")
+            logger.warning("순차 새로고침이 이미 진행 중입니다. 건너킵니다.")
             return
         
         try:
@@ -4222,7 +4878,8 @@ class MainApp(QMainWindow):
             exclude_words, 
             self.db,  # DB 매니저 전달
             start_idx,
-            timeout=self.api_timeout # 타임아웃 전달
+            timeout=self.api_timeout, # 타임아웃 전달
+            session=self.session      # 공유 세션 전달
         )
         thread = QThread()
         worker.moveToThread(thread)
@@ -4486,7 +5143,8 @@ class MainApp(QMainWindow):
                     'start_minimized': self.start_minimized,
                     'notify_on_refresh': self.notify_on_refresh
                 },
-                'tabs': [self.tabs.widget(i).keyword for i in range(1, self.tabs.count()) 
+                'tabs': [self.tabs.widget(i).keyword 
+                        for i in range(1, self.tabs.count()) 
                         if hasattr(self.tabs.widget(i), 'keyword')]
             }
             
@@ -4656,7 +5314,9 @@ class MainApp(QMainWindow):
         for i in range(1, self.tabs.count()):
             w = self.tabs.widget(i)
             if w and hasattr(w, 'keyword'):
-                tab_combo.addItem(w.keyword, w.keyword)
+                # DB 조회용 키워드(db_keyword)를 data로 저장
+                db_kw = w.db_keyword if hasattr(w, 'db_keyword') else w.keyword.split()[0]
+                tab_combo.addItem(w.keyword, db_kw)
         analysis_layout.addWidget(tab_combo)
         
         result_label = QLabel("📈 언론사별 기사 수:")
@@ -4808,8 +5468,16 @@ class MainApp(QMainWindow):
 
     def closeEvent(self, event):
         """종료 이벤트 - 트레이 최소화 지원 버전"""
+        # 초기화 실패 시에도 안전하게 동작하도록 방어적 코딩
+        if not hasattr(self, '_system_shutdown'):
+            self._system_shutdown = False
+        if not hasattr(self, '_force_close'):
+            self._force_close = False
+        if not hasattr(self, '_user_requested_close'):
+            self._user_requested_close = False
+        
         # 종료 원인 분석을 위한 호출 스택 로깅
-        caller_info = self._get_close_caller_info()
+        caller_info = self._get_close_caller_info() if hasattr(self, '_get_close_caller_info') else "Unknown"
         logger.info(f"closeEvent 호출됨 (호출 원인: {caller_info})")
         
         # 시스템 종료거나 강제 종료 요청인 경우 → 실제 종료
@@ -4821,7 +5489,7 @@ class MainApp(QMainWindow):
             return
         
         # 트레이 아이콘이 있고, 트레이로 최소화 설정이 켜져 있으면 → 트레이로 숨기기
-        if hasattr(self, 'tray_icon') and self.tray_icon and self.close_to_tray:
+        if hasattr(self, 'tray') and self.tray and self.close_to_tray:
             logger.info("창을 트레이로 최소화")
             event.ignore()
             self.hide()
@@ -4865,10 +5533,13 @@ class MainApp(QMainWindow):
         logger.info("프로그램 실제 종료 시작...")
         
         try:
-            # 모든 타이머 중지
-            self.timer.stop()
-            self._countdown_timer.stop()
-            self._tab_badge_timer.stop()
+            # 모든 타이머 중지 (초기화되지 않았을 수 있으므로 hasattr 체크)
+            if hasattr(self, 'timer') and self.timer:
+                self.timer.stop()
+            if hasattr(self, '_countdown_timer') and self._countdown_timer:
+                self._countdown_timer.stop()
+            if hasattr(self, '_tab_badge_timer') and self._tab_badge_timer:
+                self._tab_badge_timer.stop()
             logger.info("타이머 중지됨")
             
             # 모든 워커 정리 (시그널 disconnect 포함)
@@ -4908,18 +5579,36 @@ class MainApp(QMainWindow):
                 logger.error(f"설정 저장 오류: {e}")
             
             # DB 종료
-            try:
-                self.db.close()
-                logger.info("DB 종료 완료")
-            except Exception as e:
-                logger.error(f"DB 종료 오류: {e}")
-                
-            logger.info("프로그램 정상 종료")
+            if hasattr(self, 'db') and self.db:
+                try:
+                    self.db.close()
+                    logger.info("DB 연결 종료")
+                except Exception as e:
+                    logger.error(f"DB 종료 오류: {e}")
+            
+            # HTTP 세션 종료
+            if hasattr(self, 'session') and self.session:
+                try:
+                    self.session.close()
+                    logger.info("HTTP 세션 종료")
+                except Exception as e:
+                    logger.error(f"세션 종료 오류: {e}")
+            
+            # 전역 HTTP 세션 정리
+            close_shared_session()
+            
+            logger.info("프로그램 종료 처리 완료")
+            
+            # 명시적으로 애플리케이션 종료
+            QApplication.instance().quit()
+            
         except Exception as e:
-            logger.error(f"종료 처리 오류: {e}")
+            logger.error(f"종료 처리 중 오류: {e}")
             traceback.print_exc()
-        finally:
-            super().closeEvent(event)
+            # 오류가 나더라도 종료 시도
+            QApplication.instance().quit()
+        
+        event.accept()
     
     def _get_close_caller_info(self) -> str:
         """종료 호출 원인을 분석하여 반환"""
