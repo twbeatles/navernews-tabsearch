@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-뉴스 스크래퍼 Pro v32.3.0 - 경량화 PyInstaller Spec File
+뉴스 스크래퍼 Pro v32.5.0 - 경량화 PyInstaller Spec File
 빌드 명령어: pyinstaller news_scraper_pro.spec
 
 경량화 전략:

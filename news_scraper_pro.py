@@ -25,6 +25,7 @@ from typing import List, Dict, Optional, Tuple
 from queue import Queue
 from functools import partial, lru_cache
 from enum import Enum
+from styles import Colors, UIConstants, ToastType, AppStyle
 
 # Windows 전용 레지스트리 모듈 (자동 시작 기능용)
 try:
@@ -90,103 +91,9 @@ DB_FILE = os.path.join(APP_DIR, "news_database.db")
 ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
-VERSION = "32.3.0"  # UI/UX 리팩토링 + CSS 호환성 개선 + 레이아웃 카드화
+VERSION = "32.5.0"  # UI/UX Refactoring + Modularization (styles.py)
 
 # --- 색상 상수 (중앙화) ---
-class Colors:
-    """앱 전체에서 사용되는 색상 상수 - 현대화된 팔레트"""
-    # 라이트 테마 - Tailwind CSS 인디고 기반
-    LIGHT_PRIMARY = "#6366F1"          # 인디고 500
-    LIGHT_PRIMARY_HOVER = "#4F46E5"    # 인디고 600
-    LIGHT_PRIMARY_LIGHT = "#E0E7FF"    # 인디고 100
-    LIGHT_SECONDARY = "#64748B"        # 슬레이트 500
-    LIGHT_SUCCESS = "#10B981"          # 에메랄드 500
-    LIGHT_SUCCESS_LIGHT = "#D1FAE5"    # 에메랄드 100
-    LIGHT_WARNING = "#F59E0B"          # 앰버 500
-    LIGHT_DANGER = "#EF4444"           # 레드 500
-    LIGHT_INFO = "#06B6D4"             # 시안 500
-    LIGHT_BG = "#F8FAFC"               # 슬레이트 50
-    LIGHT_CARD_BG = "#FFFFFF"
-    LIGHT_BORDER = "#E2E8F0"           # 슬레이트 200
-    LIGHT_TEXT = "#1E293B"             # 슬레이트 800
-    LIGHT_TEXT_MUTED = "#94A3B8"       # 슬레이트 400
-    
-    # 다크 테마 - 깊은 슬레이트 기반
-    DARK_PRIMARY = "#818CF8"           # 인디고 400
-    DARK_PRIMARY_HOVER = "#A5B4FC"     # 인디고 300
-    DARK_PRIMARY_LIGHT = "#312E81"     # 인디고 900
-    DARK_SECONDARY = "#64748B"         # 슬레이트 500
-    DARK_SUCCESS = "#34D399"           # 에메랄드 400
-    DARK_WARNING = "#FBBF24"           # 앰버 400
-    DARK_DANGER = "#F87171"            # 레드 400
-    DARK_INFO = "#22D3EE"              # 시안 400
-    DARK_BG = "#0F172A"                # 슬레이트 900
-    DARK_CARD_BG = "#1E293B"           # 슬레이트 800
-    DARK_BORDER = "#334155"            # 슬레이트 700
-    DARK_TEXT = "#F1F5F9"              # 슬레이트 100
-    DARK_TEXT_MUTED = "#94A3B8"        # 슬레이트 400
-    
-    # 공통 색상
-    HIGHLIGHT = "#FCD34D"              # 앰버 300
-    BOOKMARK = "#FBBF24"               # 앰버 400
-    DUPLICATE = "#FB923C"              # 오렌지 400
-    
-    @classmethod
-    def get_html_colors(cls, is_dark: bool) -> Dict[str, str]:
-        """HTML 렌더링용 테마별 색상 딕셔너리 반환 - 현대화된 팔레트"""
-        if is_dark:
-            return {
-                'text_color': "#F1F5F9",        # 슬레이트 100
-                'link_color': "#818CF8",        # 인디고 400
-                'link_hover': "#A5B4FC",        # 인디고 300
-                'accent_color': "#34D399",      # 에메랄드 400
-                'border_color': "#475569",      # 슬레이트 600
-                'bg_color': "#1E293B",          # 슬레이트 800
-                'bg_gradient': "#0F172A",       # 슬레이트 900
-                'bg_hover': "#334155",          # 슬레이트 700
-                'read_bg': "#0F172A",           # 슬레이트 900
-                'title_color': "#F1F5F9",       # 슬레이트 100
-                'meta_color': "#94A3B8",        # 슬레이트 400
-                'desc_color': "#CBD5E1",        # 슬레이트 300
-                'tag_bg': "#6366F1",            # 인디고 500
-                'tag_color': "#FFFFFF",
-                'action_bg': "rgba(129, 140, 248, 0.12)",
-                'action_bg_end': "rgba(129, 140, 248, 0.08)",
-                'action_hover': "rgba(129, 140, 248, 0.25)",
-                'bookmark_bg': "#6366F1",       # 인디고 500
-                'bookmark_end': "#34D399",      # 에메랄드 400
-                'empty_bg': "rgba(255, 255, 255, 0.03)",
-                'scrollbar_track': "#1E293B",   # 슬레이트 800
-                'scrollbar_thumb': "#475569"    # 슬레이트 600
-            }
-        else:
-            return {
-                'text_color': "#1E293B",        # 슬레이트 800
-                'link_color': "#6366F1",        # 인디고 500
-                'link_hover': "#4F46E5",        # 인디고 600
-                'accent_color': "#10B981",      # 에메랄드 500
-                'border_color': "#E2E8F0",      # 슬레이트 200
-                'bg_color': "#FFFFFF",
-                'bg_gradient': "#F8FAFC",       # 슬레이트 50
-                'bg_hover': "#EEF2FF",          # 인디고 50
-                'read_bg': "#F1F5F9",           # 슬레이트 100
-                'title_color': "#0F172A",       # 슬레이트 900
-                'meta_color': "#64748B",        # 슬레이트 500
-                'desc_color': "#475569",        # 슬레이트 600
-                'tag_bg': "#6366F1",            # 인디고 500
-                'tag_color': "#FFFFFF",
-                'action_bg': "rgba(99, 102, 241, 0.08)",
-                'action_bg_end': "rgba(99, 102, 241, 0.04)",
-                'action_hover': "rgba(99, 102, 241, 0.18)",
-                'bookmark_bg': "#6366F1",       # 인디고 500
-                'bookmark_end': "#10B981",      # 에메랄드 500
-                'empty_bg': "rgba(0, 0, 0, 0.02)",
-                'scrollbar_track': "#F1F5F9",   # 슬레이트 100
-                'scrollbar_thumb': "#CBD5E1"    # 슬레이트 300
-            }
-
-
-
 # --- 프리컴파일된 정규식 패턴 (성능 최적화) ---
 RE_HTML_TAGS = re.compile(r'<[^>]+>')
 RE_WHITESPACE = re.compile(r'\s+')
@@ -362,26 +269,6 @@ class StartupManager:
 
 
 # --- UI 상수 ---
-class UIConstants:
-    """UI 관련 상수"""
-    CARD_PADDING = "16px 20px"
-    BORDER_RADIUS = "10px"
-    ANIMATION_DURATION = 300
-    TOAST_DURATION = 2500
-    MAX_PREVIEW_LENGTH = 200
-    # 새로 추가된 상수
-    TAB_BADGE_NEW = "🔵"      # 새 기사 있음
-    TAB_BADGE_UNREAD = "🟠"   # 안 읽은 기사 있음
-    FIRST_RUN_KEY = "first_run_completed"
-
-# --- 토스트 메시지 유형 ---
-class ToastType(Enum):
-    """토스트 메시지 유형"""
-    INFO = "info"
-    SUCCESS = "success"
-    WARNING = "warning"
-    ERROR = "error"
-
 # --- 커스텀 위젯: 토스트 메시지 큐 시스템 ---
 class ToastQueue:
     """토스트 메시지 큐 관리 - 유형별 스타일 지원"""
@@ -640,631 +527,6 @@ class NewsBrowser(QTextBrowser):
 
 
 # --- 스타일시트 ---
-class AppStyle:
-    LIGHT = f"""
-        QMainWindow, QDialog {{ background-color: {Colors.LIGHT_BG}; }}
-        QGroupBox {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 11pt;
-            font-weight: 600;
-            margin-top: 16px;
-            padding: 20px 16px 16px 16px;
-            border: 1px solid {Colors.LIGHT_BORDER};
-            border-radius: 12px;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 {Colors.LIGHT_CARD_BG}, stop:1 {Colors.LIGHT_BG});
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: 16px;
-            top: 4px;
-            padding: 4px 12px;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
-            color: white;
-            border-radius: 8px;
-        }}
-        QLabel, QDialog QLabel {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            color: {Colors.LIGHT_TEXT}; 
-        }}
-        QPushButton {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            font-weight: 500;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 #FFFFFF, stop:1 {Colors.LIGHT_BG});
-            color: {Colors.LIGHT_TEXT}; 
-            padding: 10px 18px; 
-            border-radius: 10px; 
-            border: 1px solid {Colors.LIGHT_BORDER};
-            min-width: 70px;
-            margin: 0 4px;
-        }}
-        QPushButton:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 {Colors.LIGHT_PRIMARY_LIGHT}, stop:1 #FFFFFF);
-            border-color: {Colors.LIGHT_PRIMARY};
-            color: {Colors.LIGHT_PRIMARY};
-        }}
-        QPushButton:pressed {{
-            background: {Colors.LIGHT_PRIMARY_LIGHT};
-            border-color: {Colors.LIGHT_PRIMARY};
-        }}
-        QPushButton:disabled {{ 
-            background-color: {Colors.LIGHT_BG}; 
-            color: {Colors.LIGHT_TEXT_MUTED}; 
-            border-color: {Colors.LIGHT_BORDER};
-        }}
-        QPushButton#AddTab {{ 
-            font-weight: bold; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
-            color: white; 
-            border: none; 
-            padding: 12px 24px;
-        }}
-        QPushButton#AddTab:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #7C3AED);
-        }}
-        QPushButton#RefreshBtn {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.LIGHT_SUCCESS}, stop:1 #34D399);
-            color: white; 
-            border: none; 
-        }}
-        QPushButton#RefreshBtn:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 #059669, stop:1 #10B981);
-        }}
-        QComboBox {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            padding: 8px 12px; 
-            border-radius: 10px; 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            color: {Colors.LIGHT_TEXT};
-            min-width: 90px;
-        }}
-        QComboBox:hover {{ border-color: {Colors.LIGHT_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 24px; }}
-        QComboBox::down-arrow {{ 
-            image: none; 
-            border-left: 5px solid transparent; 
-            border-right: 5px solid transparent; 
-            border-top: 5px solid {Colors.LIGHT_TEXT_MUTED}; 
-        }}
-        QComboBox QAbstractItemView {{ 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            color: {Colors.LIGHT_TEXT}; 
-            selection-background-color: {Colors.LIGHT_PRIMARY}; 
-            selection-color: white; 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 8px;
-            padding: 4px;
-        }}
-        QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ 
-            background-color: {Colors.LIGHT_PRIMARY_LIGHT}; 
-            color: {Colors.LIGHT_TEXT};
-        }}
-        QComboBox QAbstractItemView::item:selected {{ 
-            background-color: {Colors.LIGHT_PRIMARY}; 
-            color: white;
-        }}
-        QTextBrowser, QTextEdit, QListWidget {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 12px; 
-            color: {Colors.LIGHT_TEXT};
-            padding: 12px;
-        }}
-        QListWidget::item:selected {{ 
-            background-color: {Colors.LIGHT_PRIMARY}; 
-            color: white; 
-            border-radius: 6px; 
-        }}
-        QTabWidget::pane {{ 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            border-radius: 12px;
-            background-color: {Colors.LIGHT_CARD_BG};
-            margin-top: -1px;
-        }}
-        QTabBar::tab {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            color: {Colors.LIGHT_TEXT_MUTED}; 
-            padding: 12px 20px; 
-            border: 1px solid transparent; 
-            border-bottom: none; 
-            background-color: transparent;
-            margin-right: 4px;
-        }}
-        QTabBar::tab:selected {{ 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            border-color: {Colors.LIGHT_BORDER}; 
-            border-bottom: 3px solid {Colors.LIGHT_PRIMARY};
-            border-top-left-radius: 10px; 
-            border-top-right-radius: 10px; 
-            color: {Colors.LIGHT_PRIMARY}; 
-            font-weight: 600; 
-        }}
-        QTabBar::tab:!selected {{ color: {Colors.LIGHT_TEXT_MUTED}; }}
-        QTabBar::tab:!selected:hover {{ 
-            color: {Colors.LIGHT_TEXT}; 
-            background-color: {Colors.LIGHT_PRIMARY_LIGHT}; 
-            border-bottom: 2px solid rgba(99, 102, 241, 0.4);
-            border-top-left-radius: 10px; 
-            border-top-right-radius: 10px; 
-        }}
-        QLineEdit {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            padding: 10px 14px; 
-            border-radius: 10px; 
-            border: 1px solid {Colors.LIGHT_BORDER}; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            color: {Colors.LIGHT_TEXT};
-        }}
-        QLineEdit:focus {{ 
-            border: 2px solid {Colors.LIGHT_PRIMARY}; 
-            padding: 9px 13px; 
-            background-color: #FEFFFE;
-        }}
-        QLineEdit#FilterActive {{ 
-            border: 2px solid {Colors.LIGHT_PRIMARY}; 
-            background-color: {Colors.LIGHT_PRIMARY_LIGHT}; 
-        }}
-        QLineEdit::placeholder {{ color: {Colors.LIGHT_TEXT_MUTED}; }}
-        QProgressBar {{ 
-            border: none; 
-            border-radius: 6px; 
-            text-align: center; 
-            background-color: {Colors.LIGHT_BORDER}; 
-            color: {Colors.LIGHT_TEXT};
-            height: 8px;
-        }}
-        QProgressBar::chunk {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 {Colors.LIGHT_INFO});
-            border-radius: 6px;
-        }}
-        QCheckBox {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            color: {Colors.LIGHT_TEXT}; 
-            spacing: 8px;
-        }}
-        QCheckBox::indicator {{ width: 22px; height: 22px; }}
-        QCheckBox::indicator:unchecked {{ 
-            border: 2px solid {Colors.LIGHT_BORDER}; 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            border-radius: 6px; 
-        }}
-        QCheckBox::indicator:checked {{ 
-            border: none; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
-            border-radius: 6px; 
-        }}
-        QCheckBox::indicator:checked:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-                stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #7C3AED);
-        }}
-        QStatusBar {{ 
-            background-color: {Colors.LIGHT_CARD_BG}; 
-            border-top: 1px solid {Colors.LIGHT_BORDER}; 
-            padding: 4px;
-        }}
-        QScrollBar:vertical {{ 
-            background: {Colors.LIGHT_BG}; 
-            width: 10px; 
-            border-radius: 5px; 
-            margin: 2px;
-        }}
-        QScrollBar::handle:vertical {{ 
-            background: {Colors.LIGHT_BORDER}; 
-            border-radius: 5px; 
-            min-height: 30px; 
-        }}
-        QScrollBar::handle:vertical:hover {{ background: {Colors.LIGHT_TEXT_MUTED}; }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-    """
-
-    
-    DARK = f"""
-        QMainWindow, QDialog {{ background-color: {Colors.DARK_BG}; }}
-        QGroupBox {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            color: {Colors.DARK_TEXT}; 
-            font-size: 11pt;
-            font-weight: 600; 
-            margin-top: 16px;
-            padding: 20px 16px 16px 16px;
-            border: none;
-            border-radius: 12px;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 {Colors.DARK_CARD_BG}, stop:1 {Colors.DARK_BG});
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: 16px;
-            top: 4px;
-            padding: 4px 12px;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
-            color: white;
-            border-radius: 8px;
-        }}
-        QLabel, QDialog QLabel {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            color: {Colors.DARK_TEXT}; 
-        }}
-        QPushButton {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt;
-            font-weight: 500;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 {Colors.DARK_CARD_BG}, stop:1 {Colors.DARK_BG});
-            color: {Colors.DARK_TEXT}; 
-            padding: 10px 18px; 
-            border-radius: 10px; 
-            border: 1px solid {Colors.DARK_BORDER};
-            min-width: 70px;
-            margin: 0 4px;
-        }}
-        QPushButton:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 {Colors.DARK_BORDER}, stop:1 {Colors.DARK_CARD_BG});
-            border-color: {Colors.DARK_PRIMARY};
-            color: {Colors.DARK_PRIMARY};
-        }}
-        QPushButton:pressed {{
-            background: {Colors.DARK_BORDER};
-            border-color: {Colors.DARK_PRIMARY};
-        }}
-        QPushButton:disabled {{ 
-            background-color: {Colors.DARK_BG}; 
-            color: {Colors.DARK_TEXT_MUTED}; 
-            border-color: {Colors.DARK_BORDER};
-        }}
-        QPushButton#AddTab {{ 
-            font-weight: bold; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
-            color: white; 
-            border: none; 
-            padding: 12px 24px;
-        }}
-        QPushButton#AddTab:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #C4B5FD);
-        }}
-        QPushButton#RefreshBtn {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.DARK_SUCCESS}, stop:1 #6EE7B7);
-            color: #064E3B; 
-            border: none; 
-        }}
-        QPushButton#RefreshBtn:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 #6EE7B7, stop:1 {Colors.DARK_SUCCESS});
-        }}
-        QComboBox {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            padding: 8px 12px; 
-            border-radius: 10px; 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            background-color: {Colors.DARK_CARD_BG}; 
-            color: {Colors.DARK_TEXT};
-            min-width: 90px;
-        }}
-        QComboBox:hover {{ border-color: {Colors.DARK_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 24px; }}
-        QComboBox::down-arrow {{ 
-            image: none; 
-            border-left: 5px solid transparent; 
-            border-right: 5px solid transparent; 
-            border-top: 5px solid {Colors.DARK_TEXT_MUTED}; 
-        }}
-        QComboBox QAbstractItemView {{ 
-            background-color: {Colors.DARK_CARD_BG}; 
-            color: {Colors.DARK_TEXT}; 
-            selection-background-color: {Colors.DARK_PRIMARY}; 
-            selection-color: white; 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 8px;
-            padding: 4px;
-        }}
-        QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{ 
-            background-color: {Colors.DARK_BORDER}; 
-            color: {Colors.DARK_TEXT};
-        }}
-        QComboBox QAbstractItemView::item:selected {{ 
-            background-color: {Colors.DARK_PRIMARY}; 
-            color: white;
-        }}
-        QTextBrowser, QTextEdit, QListWidget {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            background-color: {Colors.DARK_CARD_BG}; 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 12px; 
-            color: {Colors.DARK_TEXT};
-            padding: 12px;
-        }}
-        QListWidget::item:selected {{ 
-            background-color: {Colors.DARK_PRIMARY}; 
-            color: white; 
-            border-radius: 6px; 
-        }}
-        QTabWidget::pane {{ 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            border-radius: 12px;
-            background-color: {Colors.DARK_CARD_BG};
-            margin-top: -1px;
-        }}
-        QTabBar::tab {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            color: {Colors.DARK_TEXT_MUTED}; 
-            padding: 12px 20px; 
-            border: 1px solid transparent; 
-            border-bottom: none; 
-            background-color: transparent;
-            margin-right: 4px;
-        }}
-        QTabBar::tab:selected {{ 
-            background-color: {Colors.DARK_CARD_BG}; 
-            border-color: {Colors.DARK_BORDER}; 
-            border-bottom: 3px solid {Colors.DARK_PRIMARY};
-            border-top-left-radius: 10px; 
-            border-top-right-radius: 10px; 
-            color: {Colors.DARK_PRIMARY}; 
-            font-weight: 600; 
-        }}
-        QTabBar::tab:!selected {{ color: {Colors.DARK_TEXT_MUTED}; }}
-        QTabBar::tab:!selected:hover {{ 
-            color: {Colors.DARK_TEXT}; 
-            background-color: {Colors.DARK_PRIMARY_LIGHT}; 
-            border-bottom: 2px solid rgba(129, 140, 248, 0.4);
-            border-top-left-radius: 10px; 
-            border-top-right-radius: 10px; 
-        }}
-        QLineEdit {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            padding: 10px 14px; 
-            border-radius: 10px; 
-            border: 1px solid {Colors.DARK_BORDER}; 
-            background-color: {Colors.DARK_CARD_BG}; 
-            color: {Colors.DARK_TEXT};
-        }}
-        QLineEdit:focus {{ 
-            border: 2px solid {Colors.DARK_PRIMARY}; 
-            padding: 9px 13px; 
-            background-color: {Colors.DARK_BORDER};
-        }}
-        QLineEdit#FilterActive {{ 
-            border: 2px solid {Colors.DARK_PRIMARY}; 
-            background-color: {Colors.DARK_PRIMARY_LIGHT}; 
-        }}
-        QLineEdit::placeholder {{ color: {Colors.DARK_TEXT_MUTED}; }}
-        QProgressBar {{ 
-            border: none; 
-            border-radius: 6px; 
-            text-align: center; 
-            background-color: {Colors.DARK_BORDER}; 
-            color: {Colors.DARK_TEXT};
-            height: 8px;
-        }}
-        QProgressBar::chunk {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 {Colors.DARK_INFO});
-            border-radius: 6px;
-        }}
-        QCheckBox {{ 
-            font-family: '맑은 고딕', -apple-system, sans-serif; 
-            font-size: 10pt; 
-            color: {Colors.DARK_TEXT}; 
-            spacing: 8px;
-        }}
-        QCheckBox::indicator {{ width: 22px; height: 22px; }}
-        QCheckBox::indicator:unchecked {{ 
-            border: 2px solid {Colors.DARK_BORDER}; 
-            background-color: {Colors.DARK_BG}; 
-            border-radius: 6px; 
-        }}
-        QCheckBox::indicator:checked {{ 
-            border: none; 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
-            border-radius: 6px; 
-        }}
-        QCheckBox::indicator:checked:hover {{ 
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-                stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #C4B5FD);
-        }}
-        QStatusBar {{ 
-            background-color: {Colors.DARK_CARD_BG}; 
-            border-top: 1px solid {Colors.DARK_BORDER}; 
-            color: {Colors.DARK_TEXT}; 
-            padding: 4px;
-        }}
-        QScrollBar:vertical {{ 
-            background: {Colors.DARK_BG}; 
-            width: 10px; 
-            border-radius: 5px; 
-            margin: 2px;
-        }}
-        QScrollBar::handle:vertical {{ 
-            background: {Colors.DARK_BORDER}; 
-            border-radius: 5px; 
-            min-height: 30px; 
-        }}
-        QScrollBar::handle:vertical:hover {{ background: {Colors.DARK_TEXT_MUTED}; }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-    """
-
-
-    HTML_TEMPLATE = """
-    <style>
-        body {{ 
-            font-family: '맑은 고딕', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-            margin: 12px; 
-            color: {text_color};
-            line-height: 1.6;
-        }}
-        a {{ text-decoration: none; color: {link_color}; }}
-        a:hover {{ color: {link_hover}; }}
-        
-        /* 뉴스 카드 - QTextBrowser 호환 디자인 */
-        .news-item {{ 
-            border: 1px solid {border_color};
-            border-left: 4px solid {link_color};
-            border-radius: 12px; 
-            padding: 18px 22px; 
-            margin-bottom: 10px; 
-            background: {bg_color};
-        }}
-        .news-item.read {{ 
-            background: {read_bg}; 
-            border-left-color: {border_color};
-            opacity: 0.7;
-        }}
-        .news-item.duplicate {{ 
-            border-left-color: #FB923C; 
-        }}
-        .news-item.bookmarked {{
-            border-left-color: #FBBF24;
-        }}
-        
-        /* 제목 링크 */
-        .title-link {{ 
-            font-size: 12.5pt; 
-            font-weight: 600; 
-            color: {title_color}; 
-            line-height: 1.45; 
-            display: block; 
-            margin-bottom: 8px;
-        }}
-        .title-link:hover {{
-            color: {link_color};
-            text-decoration: underline;
-        }}
-        
-        /* 메타 정보 */
-        .meta-info {{ 
-            font-size: 9pt; 
-            color: {meta_color}; 
-            margin-top: 4px; 
-            border-bottom: 1px solid {border_color}; 
-            padding-bottom: 8px; 
-            margin-bottom: 10px;
-        }}
-        .meta-left {{
-            display: inline;
-        }}
-        
-        /* 본문 */
-        .description {{ 
-            margin-top: 0; 
-            line-height: 1.7; 
-            color: {desc_color}; 
-            font-size: 10.5pt;
-        }}
-        
-        /* 액션 버튼 - 간소화 스타일 */
-        .actions {{ 
-            font-size: 9pt; 
-            margin-top: 10px;
-        }}
-        .actions a {{ 
-            padding: 5px 12px;
-            border-radius: 16px;
-            font-weight: 500;
-            font-size: 8.5pt;
-            background: {action_bg};
-            margin-right: 6px;
-        }}
-        .actions a:hover {{
-            background: {action_hover};
-            text-decoration: none;
-        }}
-        .actions a.bookmark {{
-            background: {link_color};
-            color: white;
-        }}
-        .actions a.unbookmark {{
-            background: #EF4444;
-            color: white;
-        }}
-        
-        /* 빈 상태 */
-        .empty-state {{ 
-            text-align: center; 
-            padding: 80px 40px; 
-            color: {meta_color}; 
-            font-size: 14pt;
-            background: {bg_gradient};
-            border-radius: 16px;
-            margin: 20px 10px;
-            border: 2px dashed {border_color};
-        }}
-        .empty-state-title {{
-            font-size: 18pt;
-            font-weight: 700;
-            margin-bottom: 16px;
-            color: {link_color};
-        }}
-        
-        /* 하이라이트 */
-        .highlight {{ 
-            background: #FCD34D; 
-            color: #000000; 
-            padding: 2px 5px; 
-            border-radius: 3px; 
-            font-weight: 600;
-        }}
-        
-        /* 키워드 태그 */
-        .keyword-tag {{ 
-            background: {tag_bg};
-            color: {tag_color}; 
-            padding: 3px 10px; 
-            border-radius: 12px; 
-            font-size: 8.5pt; 
-            margin-right: 6px;
-            font-weight: 600;
-        }}
-        
-        /* 중복 배지 */
-        .duplicate-badge {{ 
-            background: #FFA500;
-            color: #FFFFFF; 
-            padding: 3px 10px; 
-            border-radius: 12px; 
-            font-size: 8.5pt; 
-            margin-right: 6px;
-            font-weight: 600;
-        }}
-        
-        /* 메모 아이콘 */
-        .note-icon {{
-            color: {link_color};
-            font-weight: bold;
-        }}
-    </style>
-    """
-
-
-
 # --- 개선된 데이터베이스 관리 (연결 풀 패턴) ---
 class DatabaseManager:
     """스레드 안전한 데이터베이스 매니저 (연결 풀 사용) - 디버깅 버전"""
@@ -1293,6 +555,7 @@ class DatabaseManager:
     def _create_connection(self):
         """새 DB 연결 생성"""
         conn = sqlite3.connect(self.db_file, timeout=30.0, check_same_thread=False)
+        conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA cache_size=-64000")
@@ -1380,7 +643,7 @@ class DatabaseManager:
             # 기존 연결 풀 닫기 (이 시점엔 아직 생성 안됐지만 혹시 모르니)
             
             # 파일 백업
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_name = f"{self.db_file}.corrupt_{timestamp}"
             
             if os.path.exists(self.db_file):
@@ -1401,6 +664,7 @@ class DatabaseManager:
     def init_db(self):
         """데이터베이스 초기화"""
         conn = sqlite3.connect(self.db_file)
+        conn.execute("PRAGMA foreign_keys=ON")
         with conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS news (
@@ -1468,6 +732,38 @@ class DatabaseManager:
                 except sqlite3.OperationalError as e:
                     logger.debug(f"Index creation skipped: {e}")
 
+            # 키워드-기사 매핑 테이블 (동일 기사가 여러 탭에 보이도록)
+            # - news: 기사 본문/상태(읽음, 북마크, 메모 등) = 링크 단위로 1개
+            # - news_keywords: 키워드 탭과 기사 매핑 + 키워드별 중복 플래그
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS news_keywords (
+                        link TEXT NOT NULL,
+                        keyword TEXT NOT NULL,
+                        is_duplicate INTEGER DEFAULT 0,
+                        created_at REAL DEFAULT (strftime('%s', 'now')),
+                        PRIMARY KEY (link, keyword),
+                        FOREIGN KEY (link) REFERENCES news(link) ON DELETE CASCADE
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_nk_keyword ON news_keywords(keyword)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_nk_link ON news_keywords(link)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_nk_keyword_dup ON news_keywords(keyword, is_duplicate)")
+            except sqlite3.Error as e:
+                logger.error(f"news_keywords 테이블 생성 오류: {e}")
+
+            # 기존 DB 마이그레이션: news.keyword 기반으로 news_keywords 채우기
+            # (구버전 호환: keyword/is_duplicate 컬럼에 있던 탭 정보를 매핑 테이블로 이관)
+            try:
+                conn.execute("""
+                    INSERT OR IGNORE INTO news_keywords (link, keyword, is_duplicate)
+                    SELECT link, keyword, COALESCE(is_duplicate, 0)
+                    FROM news
+                    WHERE keyword IS NOT NULL AND keyword != ''
+                """)
+            except sqlite3.Error as e:
+                logger.warning(f"news_keywords 마이그레이션 스킵/실패: {e}")
+
             
             # 기존 데이터의 title_hash 업데이트 (마이그레이션)
             if columns_added:
@@ -1512,76 +808,122 @@ class DatabaseManager:
         duplicate_count = 0
         
         try:
-            # 1. 데이더 전처리 (해시 계산 및 날짜 파싱)
-            prepared_items = []
-            hashes = []
-            
+            # 1. 데이터 전처리 (해시 계산 및 날짜 파싱)
+            prepared_items: List[Dict[str, object]] = []
+            hashes: List[str] = []
+
             for item in items:
-                ts = parse_date_to_ts(item['pubDate'])
-                
-                title_hash = self._calculate_title_hash(item['title'])
+                link = (item.get('link') or '').strip()
+                if not link:
+                    continue
+
+                title = item.get('title') or ''
+                desc = item.get('description') or ''
+                pub_date = item.get('pubDate') or ''
+                publisher = item.get('publisher') or ''
+
+                ts = parse_date_to_ts(pub_date)
+                title_hash = self._calculate_title_hash(title)
                 hashes.append(title_hash)
-                
+
                 prepared_items.append({
-                    'link': item['link'],
-                    'keyword': keyword,
-                    'title': item['title'],
-                    'description': item['description'],
-                    'pubDate': item['pubDate'],
-                    'publisher': item['publisher'],
+                    'link': link,
+                    'title': title,
+                    'description': desc,
+                    'pubDate': pub_date,
+                    'publisher': publisher,
                     'pubDate_ts': ts,
-                    'title_hash': title_hash
+                    'title_hash': title_hash,
                 })
 
+            if not prepared_items:
+                return 0, 0
+
             with conn:
-                # 2. 중복 여부 일괄 확인 (기존 DB에 있는 해시 목록 조회)
-                # SQLite 변수 제한(999)을 고려하여 청크 단위로 조회 할 수도 있으나, 
-                # items가 보통 100개 단위이므로 직접 조회
+                # 2. 키워드 단위 중복 여부 확인 (news + news_keywords JOIN)
+                # SQLite 변수 제한(999)을 고려해도 보통 100개 단위이므로 직접 조회
                 placeholders = ','.join(['?'] * len(hashes))
                 cursor = conn.execute(
-                    f"SELECT title_hash FROM news WHERE keyword = ? AND title_hash IN ({placeholders})",
-                    [keyword] + hashes
+                    f"""
+                        SELECT n.title_hash
+                        FROM news n
+                        JOIN news_keywords nk ON nk.link = n.link
+                        WHERE nk.keyword = ? AND n.title_hash IN ({placeholders})
+                    """,
+                    [keyword] + hashes,
                 )
                 existing_hashes = {row[0] for row in cursor.fetchall()}
-                
+
                 # 3. 데이터 분류 (신규 vs 중복) 및 삽입 데이터 준비
-                insert_data = []
+                # - 중복은 '키워드 탭' 단위로 관리 (news_keywords.is_duplicate)
+                # - 동일 응답 내 중복도 잡기 위해 seen_hashes를 사용
+                seen_hashes = set(existing_hashes)
+
+                news_insert_data = []
+                kw_insert_data = []
+
                 for item in prepared_items:
-                    is_dup = item['title_hash'] in existing_hashes
+                    title_hash = item['title_hash']
+                    is_dup = title_hash in seen_hashes
                     if is_dup:
                         duplicate_count += 1
                     else:
                         added_count += 1
-                    
-                    # (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash, is_duplicate)
-                    insert_data.append((
-                        item['link'], 
-                        item['keyword'], 
-                        item['title'], 
-                        item['description'], 
-                        item['pubDate'], 
-                        item['publisher'], 
-                        item['pubDate_ts'], 
-                        item['title_hash'], 
-                        1 if is_dup else 0
-                    ))
-                
-                # 4. 일괄 삽입/갱신 (executemany 사용)
-                # ON CONFLICT DO UPDATE: 기존 데이터 상태(읽음, 북마크, 메모) 보존하며 내용 갱신
-                conn.executemany("""
-                    INSERT INTO news 
-                    (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash, is_duplicate)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(link) DO UPDATE SET
-                        title = excluded.title,
-                        description = excluded.description,
-                        pubDate = excluded.pubDate,
-                        publisher = excluded.publisher,
-                        pubDate_ts = CASE WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts ELSE pubDate_ts END,
-                        title_hash = excluded.title_hash,
-                        is_duplicate = excluded.is_duplicate
-                """, insert_data)
-                
+                    seen_hashes.add(title_hash)
+
+                    # news: 기사 본문/상태는 link 단위로 1개만 유지
+                    news_insert_data.append(
+                        (
+                            item['link'],
+                            keyword,
+                            item['title'],
+                            item['description'],
+                            item['pubDate'],
+                            item['publisher'],
+                            item['pubDate_ts'],
+                            item['title_hash'],
+                        )
+                    )
+
+                    # news_keywords: 키워드-기사 매핑 + 키워드별 중복 플래그
+                    kw_insert_data.append(
+                        (
+                            item['link'],
+                            keyword,
+                            1 if is_dup else 0,
+                        )
+                    )
+
+                # 4. 일괄 삽입/갱신
+                # - ON CONFLICT(link): 기존 상태(읽음/북마크/메모)는 보존하면서 본문만 갱신
+                # - keyword 컬럼은 레거시 호환을 위해 "비어있을 때만" 채움
+                conn.executemany(
+                    """
+                        INSERT INTO news
+                        (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(link) DO UPDATE SET
+                            keyword = CASE WHEN keyword IS NULL OR keyword = '' THEN excluded.keyword ELSE keyword END,
+                            title = excluded.title,
+                            description = excluded.description,
+                            pubDate = excluded.pubDate,
+                            publisher = excluded.publisher,
+                            pubDate_ts = CASE WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts ELSE pubDate_ts END,
+                            title_hash = excluded.title_hash
+                    """,
+                    news_insert_data,
+                )
+
+                conn.executemany(
+                    """
+                        INSERT INTO news_keywords (link, keyword, is_duplicate)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(link, keyword) DO UPDATE SET
+                            is_duplicate = excluded.is_duplicate
+                    """,
+                    kw_insert_data,
+                )
+
             return added_count, duplicate_count
         
         except sqlite3.Error as e:
@@ -1598,65 +940,101 @@ class DatabaseManager:
         conn = self.get_connection()
         news_items = []
         try:
-            # 기본 쿼리
-            query = "SELECT * FROM news WHERE 1=1"
             params = []
-            
-            # 키워드 필터 (북마크 탭이 아닌 경우)
-            if not only_bookmark:
-                query += " AND keyword=?"
-                params.append(keyword)
-                
-            # 북마크 필터
+
+            # 동일 기사가 여러 탭에 보이도록, 키워드 필터는 news_keywords를 기준으로 JOIN
             if only_bookmark:
-                query += " AND is_bookmarked=1"
-                
+                # 북마크 탭: 전체 북마크를 기사 단위로 조회
+                query = """
+                    SELECT
+                        n.link,
+                        n.title,
+                        n.description,
+                        n.pubDate,
+                        n.publisher,
+                        n.is_read,
+                        n.is_bookmarked,
+                        n.pubDate_ts,
+                        n.created_at,
+                        n.notes,
+                        n.title_hash,
+                        CASE
+                            WHEN EXISTS (
+                                SELECT 1 FROM news_keywords nk
+                                WHERE nk.link = n.link AND nk.is_duplicate = 1
+                            ) THEN 1
+                            ELSE 0
+                        END AS is_duplicate
+                    FROM news n
+                    WHERE n.is_bookmarked = 1
+                """
+            else:
+                # 일반 탭: 키워드-기사 매핑을 따라 조회
+                query = """
+                    SELECT
+                        n.link,
+                        n.title,
+                        n.description,
+                        n.pubDate,
+                        n.publisher,
+                        n.is_read,
+                        n.is_bookmarked,
+                        n.pubDate_ts,
+                        n.created_at,
+                        n.notes,
+                        n.title_hash,
+                        nk.is_duplicate AS is_duplicate
+                    FROM news n
+                    JOIN news_keywords nk ON nk.link = n.link
+                    WHERE nk.keyword = ?
+                """
+                params.append(keyword)
+
             # 읽지 않은 항목 필터
             if only_unread:
-                query += " AND is_read=0"
-                
+                query += " AND n.is_read = 0"
+
             # 중복 숨김 필터
             if hide_duplicates:
-                query += " AND is_duplicate=0"
-                
+                if only_bookmark:
+                    query += " AND NOT EXISTS (SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
+                else:
+                    query += " AND nk.is_duplicate = 0"
+
             # 텍스트 검색 필터 (제목 또는 설명)
             if filter_txt:
-                query += " AND (title LIKE ? OR description LIKE ?)"
+                query += " AND (n.title LIKE ? OR n.description LIKE ?)"
                 wildcard = f"%{filter_txt}%"
                 params.extend([wildcard, wildcard])
 
-            # 날짜 범위 필터 (SQL 레벨 - pubDate_ts 인덱스 활용으로 성능 최적화)
+            # 날짜 범위 필터 (SQL 레벨 - pubDate_ts 인덱스 활용)
             if start_date:
                 try:
                     s_ts = datetime.strptime(start_date, "%Y-%m-%d").timestamp()
-                    query += " AND pubDate_ts >= ?"
+                    query += " AND n.pubDate_ts >= ?"
                     params.append(s_ts)
                 except ValueError:
                     logger.warning(f"Invalid start_date format: {start_date}")
-            
+
             if end_date:
                 try:
-                    # 종료일 다음날 0시까지 포함
                     e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
-                    query += " AND pubDate_ts < ?"
+                    query += " AND n.pubDate_ts < ?"
                     params.append(e_ts)
                 except ValueError:
                     logger.warning(f"Invalid end_date format: {end_date}")
-            
-            # 정렬 (인덱스 활용을 위해 pubDate_ts 사용)
+
+            # 정렬
             if sort_mode == "최신순":
-                query += " ORDER BY pubDate_ts DESC" 
+                query += " ORDER BY n.pubDate_ts DESC"
             else:
-                query += " ORDER BY pubDate_ts ASC"
-                
-            # 쿼리 실행
+                query += " ORDER BY n.pubDate_ts ASC"
+
             cursor = conn.cursor()
             cursor.execute(query, params)
-            
             columns = [column[0] for column in cursor.description]
             for row in cursor.fetchall():
-                item = dict(zip(columns, row))
-                news_items.append(item)
+                news_items.append(dict(zip(columns, row)))
                 
         except Exception as e:
             logger.error(f"뉴스 조회 오류: {e}")
@@ -1669,7 +1047,7 @@ class DatabaseManager:
         """특정 키워드 뉴스 개수"""
         conn = self.get_connection()
         try:
-            cursor = conn.execute("SELECT COUNT(*) FROM news WHERE keyword=?", (keyword,))
+            cursor = conn.execute("SELECT COUNT(*) FROM news_keywords WHERE keyword=?", (keyword,))
             return cursor.fetchone()[0] or 0
         except Exception as e:
             logger.error(f"get_counts 오류: {e}")
@@ -1682,8 +1060,13 @@ class DatabaseManager:
         conn = self.get_connection()
         try:
             cursor = conn.execute(
-                "SELECT COUNT(*) FROM news WHERE keyword=? AND is_read=0", 
-                (keyword,)
+                """
+                    SELECT COUNT(*)
+                    FROM news n
+                    JOIN news_keywords nk ON nk.link = n.link
+                    WHERE nk.keyword = ? AND n.is_read = 0
+                """,
+                (keyword,),
             )
             return cursor.fetchone()[0] or 0
         except Exception as e:
@@ -1769,7 +1152,9 @@ class DatabaseManager:
             stats['unread'] = conn.execute("SELECT COUNT(*) FROM news WHERE is_read=0").fetchone()[0]
             stats['bookmarked'] = conn.execute("SELECT COUNT(*) FROM news WHERE is_bookmarked=1").fetchone()[0]
             stats['with_notes'] = conn.execute("SELECT COUNT(*) FROM news WHERE notes IS NOT NULL AND notes != ''").fetchone()[0]
-            stats['duplicates'] = conn.execute("SELECT COUNT(*) FROM news WHERE is_duplicate=1").fetchone()[0]
+            stats['duplicates'] = conn.execute(
+                "SELECT COUNT(DISTINCT link) FROM news_keywords WHERE is_duplicate=1"
+            ).fetchone()[0]
             return stats
         except Exception as e:
             logger.error(f"get_statistics 오류: {e}")
@@ -1785,7 +1170,7 @@ class DatabaseManager:
                 cursor = conn.execute("""
                     SELECT publisher, COUNT(*) as count 
                     FROM news 
-                    WHERE keyword=? 
+                    WHERE link IN (SELECT link FROM news_keywords WHERE keyword=?)
                     GROUP BY publisher 
                     ORDER BY count DESC 
                     LIMIT ?
@@ -1814,7 +1199,15 @@ class DatabaseManager:
                 if only_bookmark:
                     cursor = conn.execute("UPDATE news SET is_read=1 WHERE is_bookmarked=1 AND is_read=0")
                 else:
-                    cursor = conn.execute("UPDATE news SET is_read=1 WHERE keyword=? AND is_read=0", (keyword,))
+                    cursor = conn.execute(
+                        """
+                            UPDATE news
+                            SET is_read = 1
+                            WHERE is_read = 0
+                              AND link IN (SELECT link FROM news_keywords WHERE keyword = ?)
+                        """,
+                        (keyword,),
+                    )
                 count = cursor.rowcount
         except Exception as e:
             logger.error(f"일괄 읽음 처리 오류: {e}")
@@ -1867,72 +1260,6 @@ class AsyncJobWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
             traceback.print_exc()
-
-
-# --- DB 조회 워커 (비동기) ---
-class DBWorker(QThread):
-    """비동기 DB 조회 워커 - NewsTab에서 사용"""
-    finished = pyqtSignal(list, int)  # (data, total_count)
-    error = pyqtSignal(str)
-    
-    def __init__(self, db_manager: DatabaseManager, keyword: str, 
-                 filter_txt: str = "", sort_mode: str = "최신순",
-                 only_bookmark: bool = False, only_unread: bool = False,
-                 hide_duplicates: bool = False, start_date: str = None, 
-                 end_date: str = None):
-        super().__init__()
-        self.db = db_manager
-        self.keyword = keyword
-        self.filter_txt = filter_txt
-        self.sort_mode = sort_mode
-        self.only_bookmark = only_bookmark
-        self.only_unread = only_unread
-        self.hide_duplicates = hide_duplicates
-        self.start_date = start_date
-        self.end_date = end_date
-        self._stopped = False
-    
-    def stop(self):
-        """워커 중지 요청"""
-        self._stopped = True
-    
-    def run(self):
-        """DB 조회 실행"""
-        if self._stopped:
-            return
-        
-        try:
-            # DB 저장용 키워드 (첫 번째 단어만 사용)
-            db_keyword = self.keyword.split()[0] if self.keyword else ""
-            
-            # 북마크 탭인 경우 전체 북마크 조회
-            if self.only_bookmark:
-                db_keyword = ""  # 전체 조회
-            
-            data = self.db.fetch_news(
-                keyword=db_keyword,
-                filter_txt=self.filter_txt,
-                sort_mode=self.sort_mode,
-                only_bookmark=self.only_bookmark,
-                only_unread=self.only_unread,
-                hide_duplicates=self.hide_duplicates,
-                start_date=self.start_date,
-                end_date=self.end_date
-            )
-            
-            if self._stopped:
-                return
-            
-            # 전체 개수 조회
-            total_count = self.db.get_counts(db_keyword) if db_keyword else len(data)
-            
-            self.finished.emit(data, total_count)
-            
-        except Exception as e:
-            logger.error(f"DBWorker 오류: {e}")
-            traceback.print_exc()
-            self.error.emit(str(e))
-
 
 # --- 전역 HTTP 세션 풀 (성능 최적화) ---
 _global_session: Optional[requests.Session] = None
@@ -2057,6 +1384,10 @@ class ApiWorker(QObject):
                     else:
                         self._safe_emit(self.error, "API 요청 제한 초과. 잠시 후 다시 시도해주세요.")
                         return
+
+                if resp.status_code == 401:
+                    self._safe_emit(self.error, "API 인증 실패(401). 설정(Ctrl+,)에서 Client ID/Secret을 확인해주세요.")
+                    return
                 
                 if resp.status_code != 200:
                     try:
@@ -3087,15 +2418,6 @@ class NewsTab(QWidget):
         # --- 상단 필터 카드 ---
         filter_card = QFrame()
         filter_card.setObjectName("FilterCard")
-        is_dark = (self.theme == 1)
-        filter_card.setStyleSheet(f"""
-            QFrame#FilterCard {{
-                background-color: {Colors.DARK_CARD_BG if is_dark else Colors.LIGHT_CARD_BG};
-                border: 1px solid {Colors.DARK_BORDER if is_dark else Colors.LIGHT_BORDER};
-                border-radius: 10px;
-                padding: 8px;
-            }}
-        """)
         
         filter_layout = QVBoxLayout(filter_card)
         filter_layout.setContentsMargins(12, 10, 12, 10)
@@ -3144,10 +2466,10 @@ class NewsTab(QWidget):
         row2_layout.addWidget(sep)
         
         self.btn_date_toggle = QToolButton()
+        self.btn_date_toggle.setObjectName("DateToggle")
         self.btn_date_toggle.setText("📅 기간")
         self.btn_date_toggle.setCheckable(True)
         self.btn_date_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self._update_date_toggle_style(False)
         self.btn_date_toggle.toggled.connect(self._toggle_date_filter)
         
         self.date_container = QWidget()
@@ -3214,44 +2536,9 @@ class NewsTab(QWidget):
     def _toggle_date_filter(self, checked: bool):
         """날짜 필터 표시/숨김 토글"""
         self.date_container.setVisible(checked)
-        self._update_date_toggle_style(checked)
         
         if not checked:
             self.load_data_from_db() # 끄면 전체 조회
-
-    def _update_date_toggle_style(self, checked: bool):
-        """날짜 토글 버튼 스타일 업데이트"""
-        is_dark = (self.theme == 1)
-        
-        if checked:
-            if is_dark:
-                # Dark Mode Active
-                bg = Colors.DARK_PRIMARY_LIGHT
-                border = Colors.DARK_PRIMARY
-                text = Colors.DARK_TEXT
-            else:
-                # Light Mode Active
-                bg = Colors.LIGHT_PRIMARY_LIGHT
-                border = Colors.LIGHT_PRIMARY
-                text = "#4338ca" # 인디고 700 (Colors에는 없음)
-                
-            # Hex codes directly for specific active look
-            if is_dark:
-                style = f"background: {bg}; border: 1px solid {border}; border-radius: 4px; padding: 4px; color: {text};"
-            else:
-                style = f"background: #e0e7ff; border: 1px solid #6366f1; border-radius: 4px; padding: 4px; color: #4338ca;"
-        else:
-            # Inactive
-            if is_dark:
-                border = Colors.DARK_BORDER
-                text = Colors.DARK_TEXT_MUTED
-            else:
-                border = Colors.LIGHT_BORDER
-                text = Colors.LIGHT_TEXT_MUTED
-                
-            style = f"background: transparent; border: 1px solid {border}; border-radius: 4px; padding: 4px; color: {text};"
-            
-        self.btn_date_toggle.setStyleSheet(style)
 
     def _on_filter_changed(self):
         """필터 입력 변경 시 디바운싱 타이머 시작"""
@@ -3335,6 +2622,7 @@ class NewsTab(QWidget):
         # 안전한 딕셔너리 접근
         is_read_cls = " read" if item.get('is_read', 0) else ""
         is_dup_cls = " duplicate" if item.get('is_duplicate', 0) else ""
+        is_bm_cls = " bookmarked" if item.get('is_bookmarked', 0) else ""
         title_pfx = "⭐ " if item.get('is_bookmarked', 0) else ""
         item_link = item.get('link', '')
         item_title = item.get('title', '(제목 없음)')
@@ -3353,25 +2641,26 @@ class NewsTab(QWidget):
             title = html.escape(item_title)
             desc = html.escape(item_desc)
 
-        # 북마크 버튼 텍스트
-        bk_txt = "북마크 해제" if item.get('is_bookmarked', 0) else "북마크"
-        bk_col = "#DC3545" if item.get('is_bookmarked', 0) else "#17A2B8"
+        # 북마크 버튼 텍스트/클래스
+        is_bookmarked = bool(item.get('is_bookmarked', 0))
+        bk_txt = "북마크 해제" if is_bookmarked else "북마크"
+        bk_cls = "action-unbookmark" if is_bookmarked else "action-bookmark"
         
         date_str = item.get('pubDate', '')
         date_str = parse_date_string(date_str)
 
-        has_note = item.get('notes') and item['notes'].strip()
-        note_indicator = " 📝" if has_note else ""
+        has_note = bool(item.get('notes') and str(item.get('notes')).strip())
+        note_indicator = " <span class='note-badge'>📝</span>" if has_note else ""
 
         # 액션 버튼
         actions = f"""
-            <a href='app://share/{link_hash}'>공유</a>
-            <a href='app://ext/{link_hash}'>외부</a>
-            <a href='app://note/{link_hash}'>메모{note_indicator}</a>
+            <a class='action action-share' href='app://share/{link_hash}'>공유</a>
+            <a class='action action-ext' href='app://ext/{link_hash}'>외부</a>
+            <a class='action action-note' href='app://note/{link_hash}'>메모{note_indicator}</a>
         """
         if item.get('is_read', 0):
-            actions += f"<a href='app://unread/{link_hash}'>안읽음</a>"
-        actions += f"<a href='app://bm/{link_hash}' style='color:{bk_col}'>{bk_txt}</a>"
+            actions += f"<a class='action action-unread' href='app://unread/{link_hash}'>안 읽음</a>"
+        actions += f"<a class='action {bk_cls}' href='app://bm/{link_hash}'>{bk_txt}</a>"
 
         badges = ""
         if not self.is_bookmark_tab and self.keyword:
@@ -3384,11 +2673,11 @@ class NewsTab(QWidget):
             badges += "<span class='duplicate-badge'>유사</span>"
 
         return f"""
-        <div class="news-item{is_read_cls}{is_dup_cls}">
+        <div class="news-item{is_read_cls}{is_dup_cls}{is_bm_cls}">
             <a href="app://open/{link_hash}" class="title-link">{title_pfx}{title}</a>
             <div class="meta-info">
-                <span class="meta-left">📰 {item['publisher']} · {date_str} {badges}</span>
-                <span class="actions">{actions}</span>
+                <div class="meta-left">📰 {html.escape(item.get('publisher', '정보 없음'))} · {date_str} {badges}</div>
+                <div class="actions">{actions}</div>
             </div>
             <div class="description">{desc}</div>
         </div>
@@ -3397,17 +2686,8 @@ class NewsTab(QWidget):
     def _get_load_more_html(self, remaining: int) -> str:
         """더 보기 버튼 HTML"""
         return f"""
-        <div class="load-more-container" style="text-align: center; padding: 20px;">
-            <a href="app://load_more" style="
-                display: inline-block;
-                padding: 12px 30px;
-                background: linear-gradient(135deg, #007AFF, #00C7BE);
-                color: white;
-                text-decoration: none;
-                border-radius: 25px;
-                font-weight: bold;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            ">더 보기 ({remaining}개 남음)</a>
+        <div class="load-more-container">
+            <a class="load-more-btn" href="app://load_more">더 보기 ({remaining}개 남음)</a>
         </div>
         """
 
@@ -3883,17 +3163,21 @@ class MainApp(QMainWindow):
         icon_path = None
         
         # 실행 파일과 같은 디렉토리에서 아이콘 찾기
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        resource_dir = (
+            getattr(sys, '_MEIPASS', APP_DIR)
+            if getattr(sys, 'frozen', False)
+            else APP_DIR
+        )
         
         # Windows: .ico 파일 우선
         if sys.platform == 'win32':
-            ico_path = os.path.join(script_dir, ICON_FILE)
+            ico_path = os.path.join(resource_dir, ICON_FILE)
             if os.path.exists(ico_path):
                 icon_path = ico_path
         
         # .ico가 없으면 .png 사용
         if not icon_path:
-            png_path = os.path.join(script_dir, ICON_PNG)
+            png_path = os.path.join(resource_dir, ICON_PNG)
             if os.path.exists(png_path):
                 icon_path = png_path
         
@@ -3918,10 +3202,15 @@ class MainApp(QMainWindow):
             self.tray = QSystemTrayIcon(self)
             
             # 아이콘 설정
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(script_dir, ICON_FILE)
+            resource_dir = (
+                getattr(sys, '_MEIPASS', APP_DIR)
+                if getattr(sys, 'frozen', False)
+                else APP_DIR
+            )
+
+            icon_path = os.path.join(resource_dir, ICON_FILE)
             if not os.path.exists(icon_path):
-                icon_path = os.path.join(script_dir, ICON_PNG)
+                icon_path = os.path.join(resource_dir, ICON_PNG)
             
             if os.path.exists(icon_path):
                 self.tray.setIcon(QIcon(icon_path))
@@ -4068,13 +3357,36 @@ class MainApp(QMainWindow):
                     self.config['notification_enabled'] = settings.get('notification_enabled', True)
                     self.config['alert_keywords'] = settings.get('alert_keywords', [])
                     self.config['sound_enabled'] = settings.get('sound_enabled', True)
+
+                    # 새 설정: 트레이/자동시작/창 상태
+                    self.config['minimize_to_tray'] = settings.get('minimize_to_tray', True)
+                    self.config['close_to_tray'] = settings.get('close_to_tray', True)
+                    self.config['start_minimized'] = settings.get('start_minimized', False)
+                    self.config['auto_start_enabled'] = settings.get('auto_start_enabled', False)
+                    self.config['notify_on_refresh'] = settings.get('notify_on_refresh', False)
+                    self.config['api_timeout'] = settings.get('api_timeout', 15)
+                    self.config['window_geometry'] = settings.get('window_geometry', None)
+
+                    # 루트 데이터
+                    self.config['search_history'] = loaded.get('search_history', [])
                 else:
                     self.config['client_id'] = loaded.get('id', '')
                     self.config['client_secret'] = loaded.get('secret', '')
                     self.config['theme'] = loaded.get('theme', 0)
                     self.config['interval'] = loaded.get('interval', 2)
-                    self.config['interval'] = loaded.get('interval', 2)
                     self.config['tabs'] = loaded.get('tabs', [])
+
+                    # 레거시 호환
+                    self.config['notification_enabled'] = loaded.get('notification_enabled', True)
+                    self.config['alert_keywords'] = loaded.get('alert_keywords', [])
+                    self.config['sound_enabled'] = loaded.get('sound_enabled', True)
+                    self.config['minimize_to_tray'] = loaded.get('minimize_to_tray', True)
+                    self.config['close_to_tray'] = loaded.get('close_to_tray', True)
+                    self.config['start_minimized'] = loaded.get('start_minimized', False)
+                    self.config['auto_start_enabled'] = loaded.get('auto_start_enabled', False)
+                    self.config['notify_on_refresh'] = loaded.get('notify_on_refresh', False)
+                    self.config['window_geometry'] = loaded.get('window_geometry', None)
+
                     self.config['search_history'] = loaded.get('search_history', []) # 검색 히스토리 로드
                     self.config['api_timeout'] = loaded.get('api_timeout', 15) # API 타임아웃 로드
             except Exception as e:
@@ -6139,6 +5451,544 @@ class SettingsDialog(QDialog):
             <div style="margin-top: 30px; padding: 15px; background-color: #E8F5E9; border-radius: 8px; border-left: 4px solid #4CAF50;">
                 <strong>🎯 프로 팁:</strong> 단축키를 조합하여 사용하면 훨씬 빠르게 작업할 수 있습니다!<br>
                 예: <span class="key">Alt</span>+<span class="key">2</span> (탭 전환) → <span class="key">Ctrl</span>+<span class="key">F</span> (필터 포커스) → 검색어 입력
+            </div>
+        </body>
+        </html>
+        """
+    
+    def validate_api_key(self):
+        """API 키 검증"""
+        client_id = self.txt_id.text().strip()
+        client_secret = self.txt_sec.text().strip()
+        
+        valid, msg = ValidationUtils.validate_api_credentials(client_id, client_secret)
+        
+        if not valid:
+            QMessageBox.warning(self, "검증 실패", msg)
+            return
+        
+        try:
+            headers = {
+                "X-Naver-Client-Id": client_id,
+                "X-Naver-Client-Secret": client_secret
+            }
+            url = "https://openapi.naver.com/v1/search/news.json"
+            params = {"query": "테스트", "display": 1}
+            
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if resp.status_code == 200:
+                QMessageBox.information(
+                    self, 
+                    "검증 성공", 
+                    "✓ API 키가 정상적으로 작동합니다!"
+                )
+            else:
+                error_data = resp.json()
+                error_msg = error_data.get('errorMessage', '알 수 없는 오류')
+                QMessageBox.warning(
+                    self,
+                    "검증 실패",
+                    f"API 키가 올바르지 않습니다.\n\n오류: {error_msg}"
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "검증 오류",
+                f"API 키 검증 중 오류가 발생했습니다:\n\n{str(e)}"
+            )
+    
+    def accept_with_validation(self):
+        """검증 후 저장"""
+        client_id = self.txt_id.text().strip()
+        client_secret = self.txt_sec.text().strip()
+        
+        if client_id or client_secret:
+            valid, msg = ValidationUtils.validate_api_credentials(client_id, client_secret)
+            if not valid:
+                reply = QMessageBox.question(
+                    self,
+                    "API 키 확인",
+                    f"{msg}\n\n그래도 저장하시겠습니까?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return
+        
+        self.accept()
+
+    def clean_data(self):
+        """오래된 데이터 정리"""
+        reply = QMessageBox.question(
+            self,
+            "데이터 정리",
+            "30일 이전의 기사를 삭제하시겠습니까?\n\n(북마크된 기사는 삭제되지 않습니다)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            db = DatabaseManager(DB_FILE)
+            cnt = db.delete_old_news(30)
+            db.close()
+            QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 오래된 기사를 삭제했습니다.")
+
+    def clean_all(self):
+        """모든 기사 삭제"""
+        reply = QMessageBox.warning(
+            self,
+            "⚠ 경고",
+            "정말 모든 기사를 삭제하시겠습니까?\n\n"
+            "이 작업은 취소할 수 없습니다.\n"
+            "(북마크된 기사는 삭제되지 않습니다)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            db = DatabaseManager(DB_FILE)
+            cnt = db.delete_all_news()
+            db.close()
+            QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 기사를 삭제했습니다.")
+    
+    def export_settings_dialog(self):
+        """설정 내보내기 (부모 호출)"""
+        if self.parent() and hasattr(self.parent(), 'export_settings'):
+            self.parent().export_settings()
+    
+    def import_settings_dialog(self):
+        """설정 가져오기 (부모 호출)"""
+        if self.parent() and hasattr(self.parent(), 'import_settings'):
+            self.parent().import_settings()
+    
+    def show_log_dialog(self):
+        """로그 뷰어 표시 (부모 호출)"""
+        if self.parent() and hasattr(self.parent(), 'show_log_viewer'):
+            self.parent().show_log_viewer()
+    
+    def open_data_folder(self):
+        """데이터 폴더 열기"""
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(os.path.abspath(CONFIG_FILE))))
+    
+    def show_groups_dialog(self):
+        """키워드 그룹 관리 (부모 호출)"""
+        if self.parent() and hasattr(self.parent(), 'show_keyword_groups'):
+            self.parent().show_keyword_groups()
+
+    def get_data(self) -> Dict:
+        """설정 데이터 반환"""
+        # 알림 키워드 파싱 (쉼표로 구분, 최대 10개)
+        keywords_text = self.txt_alert_keywords.text().strip()
+        alert_keywords = []
+        if keywords_text:
+            alert_keywords = [kw.strip() for kw in keywords_text.split(',') if kw.strip()][:10]
+        
+        return {
+            'id': self.txt_id.text().strip(),
+            'secret': self.txt_sec.text().strip(),
+            'interval': self.cb_time.currentIndex(),
+            'theme': self.cb_theme.currentIndex(),
+            'notification_enabled': self.chk_notification.isChecked(),
+            'alert_keywords': alert_keywords,
+            'close_to_tray': self.chk_close_to_tray.isChecked(),
+            'auto_start_enabled': self.chk_auto_start.isChecked(),
+            'start_minimized': self.chk_start_minimized.isChecked(),
+            'notify_on_refresh': self.chk_notify_on_refresh.isChecked()
+        }
+        form = QGridLayout()
+        
+        self.txt_id = QLineEdit(self.config.get('client_id', ''))
+        self.txt_id.setPlaceholderText("네이버 개발자센터에서 발급받은 Client ID")
+        
+        self.txt_sec = QLineEdit(self.config.get('client_secret', ''))
+        self.txt_sec.setEchoMode(QLineEdit.EchoMode.Password)
+        self.txt_sec.setPlaceholderText("Client Secret")
+        
+        self.chk_show_pw = QCheckBox("비밀번호 표시")
+        self.chk_show_pw.stateChanged.connect(
+            lambda: self.txt_sec.setEchoMode(
+                QLineEdit.EchoMode.Normal if self.chk_show_pw.isChecked() 
+                else QLineEdit.EchoMode.Password
+            )
+        )
+        
+        btn_get_key = QPushButton("🔑 API 키 발급받기")
+        btn_get_key.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://developers.naver.com/apps/#/register"))
+        )
+        
+        btn_validate = QPushButton("✓ API 키 검증")
+        btn_validate.clicked.connect(self.validate_api_key)
+        
+        form.addWidget(QLabel("Client ID:"), 0, 0)
+        form.addWidget(self.txt_id, 0, 1, 1, 2)
+        form.addWidget(QLabel("Client Secret:"), 1, 0)
+        form.addWidget(self.txt_sec, 1, 1, 1, 2)
+        form.addWidget(self.chk_show_pw, 2, 1)
+        form.addWidget(btn_get_key, 3, 0, 1, 2)
+        form.addWidget(btn_validate, 3, 2)
+        
+        gp_api.setLayout(form)
+        settings_layout.addWidget(gp_api)
+        
+        gp_app = QGroupBox("⚙ 일반 설정")
+        form2 = QGridLayout()
+        
+        self.cb_time = NoScrollComboBox()
+        self.cb_time.addItems(["10분", "30분", "1시간", "3시간", "6시간", "자동 새로고침 안함"])
+        idx = self.config.get('interval', 2)
+        if isinstance(idx, int) and 0 <= idx <= 5:
+            self.cb_time.setCurrentIndex(idx)
+        else:
+            self.cb_time.setCurrentIndex(2)
+        
+        self.cb_theme = NoScrollComboBox()
+        self.cb_theme.addItems(["☀ 라이트 모드", "🌙 다크 모드"])
+        self.cb_theme.setCurrentIndex(self.config.get('theme', 0))
+        
+        form2.addWidget(QLabel("자동 새로고침:"), 0, 0)
+        form2.addWidget(self.cb_time, 0, 1)
+        form2.addWidget(QLabel("테마:"), 1, 0)
+        form2.addWidget(self.cb_theme, 1, 1)
+        
+        gp_app.setLayout(form2)
+        settings_layout.addWidget(gp_app)
+        
+        # 시스템 트레이 및 자동 시작 설정
+        gp_tray = QGroupBox("🖥️ 시스템 트레이 및 시작 설정")
+        tray_layout = QVBoxLayout()
+        
+        # 트레이로 최소화 옵션
+        self.chk_close_to_tray = QCheckBox("X 버튼 클릭 시 트레이로 최소화 (종료하지 않음)")
+        self.chk_close_to_tray.setChecked(self.config.get('close_to_tray', True))
+        tray_layout.addWidget(self.chk_close_to_tray)
+        
+        # 자동 시작 옵션 (Windows만)
+        self.chk_auto_start = QCheckBox("윈도우 시작 시 자동 실행")
+        if StartupManager.is_available():
+            self.chk_auto_start.setChecked(StartupManager.is_startup_enabled())
+        else:
+            self.chk_auto_start.setEnabled(False)
+            self.chk_auto_start.setToolTip("Windows에서만 사용 가능합니다.")
+        tray_layout.addWidget(self.chk_auto_start)
+        
+        # 최소화 상태로 시작 옵션
+        self.chk_start_minimized = QCheckBox("시작 시 최소화 상태로 시작 (트레이로)")
+        self.chk_start_minimized.setChecked(self.config.get('start_minimized', False))
+        tray_layout.addWidget(self.chk_start_minimized)
+        
+        # 자동 새로고침 완료 알림 옵션
+        self.chk_notify_on_refresh = QCheckBox("자동 새로고침 완료 시 알림 표시")
+        self.chk_notify_on_refresh.setChecked(self.config.get('notify_on_refresh', False))
+        tray_layout.addWidget(self.chk_notify_on_refresh)
+        
+        # 안내 메시지
+        tray_info = QLabel("💡 트레이로 최소화하면 백그라운드에서 뉴스를 계속 수집합니다.")
+        tray_info.setStyleSheet("color: #666; font-size: 9pt;")
+        tray_layout.addWidget(tray_info)
+        
+        gp_tray.setLayout(tray_layout)
+        settings_layout.addWidget(gp_tray)
+        
+        gp_data = QGroupBox("🗂 데이터 관리")
+        vbox = QVBoxLayout()
+        
+        btn_clean = QPushButton("🧹 오래된 데이터 정리 (30일 이전)")
+        btn_clean.clicked.connect(self.clean_data)
+        
+        btn_all = QPushButton("🗑 모든 기사 삭제 (북마크 제외)")
+        btn_all.clicked.connect(self.clean_all)
+        
+        # JSON 설정 백업/복원 버튼
+        backup_layout = QHBoxLayout()
+        btn_export_settings = QPushButton("📤 설정 내보내기")
+        btn_export_settings.clicked.connect(self.export_settings_dialog)
+        btn_import_settings = QPushButton("📥 설정 가져오기")
+        btn_import_settings.clicked.connect(self.import_settings_dialog)
+        backup_layout.addWidget(btn_export_settings)
+        backup_layout.addWidget(btn_import_settings)
+        
+        # 고급 도구 버튼 (툴바에서 이동)
+        tools_layout = QHBoxLayout()
+        btn_log = QPushButton("📋 로그 보기")
+        btn_log.clicked.connect(self.show_log_dialog)
+        btn_folder = QPushButton("📁 데이터 폴더")
+        btn_folder.clicked.connect(self.open_data_folder)
+        btn_groups = QPushButton("🗂 키워드 그룹")
+        btn_groups.clicked.connect(self.show_groups_dialog)
+        tools_layout.addWidget(btn_log)
+        tools_layout.addWidget(btn_folder)
+        tools_layout.addWidget(btn_groups)
+        
+        vbox.addWidget(btn_clean)
+        vbox.addWidget(btn_all)
+        vbox.addLayout(backup_layout)
+        vbox.addLayout(tools_layout)
+        gp_data.setLayout(vbox)
+        settings_layout.addWidget(gp_data)
+        
+        # 알림 설정 그룹
+        gp_notification = QGroupBox("🔔 알림 설정")
+        notif_layout = QVBoxLayout()
+        
+        self.chk_notification = QCheckBox("데스크톱 알림 활성화 (새 뉴스 도착 시)")
+        self.chk_notification.setChecked(self.config.get('notification_enabled', True))
+        notif_layout.addWidget(self.chk_notification)
+        
+        keywords_label = QLabel("알림 키워드 (쉼표로 구분, 최대 10개):")
+        notif_layout.addWidget(keywords_label)
+        
+        self.txt_alert_keywords = QLineEdit()
+        current_keywords = self.config.get('alert_keywords', [])
+        self.txt_alert_keywords.setText(", ".join(current_keywords) if current_keywords else "")
+        self.txt_alert_keywords.setPlaceholderText("예: 긴급, 속보, 단독")
+        notif_layout.addWidget(self.txt_alert_keywords)
+        
+        keywords_info = QLabel("💡 위 키워드가 기사 제목이나 내용에 포함되면 알림이 표시됩니다.")
+        keywords_info.setStyleSheet("color: #666; font-size: 9pt;")
+        notif_layout.addWidget(keywords_info)
+        
+        # 알림 소리 설정
+        self.chk_sound = QCheckBox("알림 소리 활성화")
+        self.chk_sound.setChecked(self.config.get('sound_enabled', True))
+        notif_layout.addWidget(self.chk_sound)
+        
+        # 소리 테스트 버튼
+        btn_test_sound = QPushButton("🔊 소리 테스트")
+        btn_test_sound.clicked.connect(lambda: NotificationSound.play('success'))
+        notif_layout.addWidget(btn_test_sound)
+        
+        gp_notification.setLayout(notif_layout)
+        settings_layout.addWidget(gp_notification)
+        
+        settings_layout.addStretch()
+        
+        # === 도움말 탭 ===
+        help_widget = QWidget()
+        help_layout = QVBoxLayout(help_widget)
+        
+        help_browser = QTextBrowser()
+        help_browser.setOpenExternalLinks(True)
+        help_browser.setHtml(self.get_help_html())
+        help_layout.addWidget(help_browser)
+        
+        # === 단축키 탭 ===
+        shortcuts_widget = QWidget()
+        shortcuts_layout = QVBoxLayout(shortcuts_widget)
+        
+        shortcuts_browser = QTextBrowser()
+        shortcuts_browser.setOpenExternalLinks(False)
+        shortcuts_browser.setHtml(self.get_shortcuts_html())
+        shortcuts_layout.addWidget(shortcuts_browser)
+        
+        # 스크롤 영역에 설정 위젯 추가
+        scroll_area.setWidget(settings_widget)
+        
+        # 탭에 추가
+        tab_widget.addTab(scroll_area, "⚙ 설정")
+        tab_widget.addTab(help_widget, "📖 도움말")
+        tab_widget.addTab(shortcuts_widget, "⌨ 단축키")
+        
+        layout.addWidget(tab_widget)
+        
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept_with_validation)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def _get_docs_css(self) -> str:
+        """설정/도움말 탭에서 쓰는 HTML 공통 CSS (라이트/다크 대응)."""
+        if self.is_dark:
+            bg = Colors.DARK_BG
+            card = Colors.DARK_CARD_BG
+            border = Colors.DARK_BORDER
+            text = "#E2E8F0" # Slate 200 (더 밝은 텍스트)
+            muted = "#94A3B8"
+            primary = Colors.DARK_PRIMARY
+            success = Colors.DARK_SUCCESS
+            warning = Colors.DARK_WARNING
+            danger = Colors.DARK_DANGER
+            info = Colors.DARK_INFO
+            code_bg = "#334155" # 더 명확한 코드 배경
+        else:
+            bg = "#F8FAFC"
+            card = "#FFFFFF"
+            border = "#E2E8F0"
+            text = "#0F172A" # Slate 900 (더 진한 텍스트)
+            muted = "#475569" # Slate 600 (덜 흐릿한 Muted)
+            primary = Colors.LIGHT_PRIMARY
+            success = Colors.LIGHT_SUCCESS
+            warning = Colors.LIGHT_WARNING
+            danger = Colors.LIGHT_DANGER
+            info = Colors.LIGHT_INFO
+            code_bg = "#F1F5F9"
+
+        return f"""
+        <style>
+            @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+            
+            body {{
+                font-family: 'Pretendard', 'Malgun Gothic', -apple-system, sans-serif;
+                padding: 24px;
+                margin: 0;
+                line-height: 1.7;
+                background: {bg};
+                color: {text};
+            }}
+            h2 {{
+                margin: 0 0 16px 0;
+                font-size: 18pt;
+                font-weight: 700;
+                color: {primary};
+                border-bottom: 2px solid {border};
+                padding-bottom: 8px;
+            }}
+            h3 {{
+                margin: 24px 0 12px 0;
+                font-size: 13pt;
+                font-weight: 600;
+                color: {text};
+            }}
+            .card {{
+                background: {card};
+                border: 1px solid {border};
+                border-radius: 12px;
+                padding: 20px;
+                margin: 16px 0;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05); /* 미세한 그림자 */
+            }}
+            .muted {{ color: {muted}; font-size: 0.95em; }}
+            a {{ color: {primary}; text-decoration: none; font-weight: 600; }}
+            a:hover {{ text-decoration: underline; }}
+            code {{
+                background: {code_bg};
+                padding: 3px 6px;
+                border-radius: 6px;
+                font-family: Consolas, 'Monaco', monospace;
+                font-size: 0.9em;
+                color: {primary};
+            }}
+            ul {{ margin: 8px 0 0 20px; padding: 0; }}
+            li {{ margin: 6px 0; color: {text}; }}
+            .callout {{
+                border-left: 4px solid {primary};
+                background: {card};
+                border: 1px solid {border};
+                border-left-width: 4px; /* 중복 보장이지만 명시 */
+                border-radius: 8px;
+                padding: 12px 16px;
+                margin-top: 16px;
+            }}
+            .callout.success {{ border-left-color: {success}; }}
+            .callout.warning {{ border-left-color: {warning}; }}
+            .callout.danger {{ border-left-color: {danger}; }}
+            .callout.info {{ border-left-color: {info}; }}
+            
+            table {{ width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 12px; border: 1px solid {border}; border-radius: 8px; overflow: hidden; }}
+            th, td {{ padding: 12px 16px; border-bottom: 1px solid {border}; text-align: left; }}
+            th {{ background-color: {code_bg}; color: {text}; font-weight: 700; border-bottom: 1px solid {border}; }}
+            tr:last-child td {{ border-bottom: none; }}
+            
+            .key {{
+                display: inline-block;
+                padding: 4px 8px;
+                border-radius: 6px;
+                border: 1px solid {border};
+                background: {code_bg};
+                font-family: Consolas, 'Monaco', monospace;
+                font-weight: 700;
+                font-size: 0.85em;
+                box-shadow: 0 1px 0 {border};
+            }}
+        </style>
+        """
+    
+    def get_help_html(self) -> str:
+        """도움말 HTML 생성"""
+        css = self._get_docs_css()
+        return f"""
+        <html>
+        <head>{css}</head>
+        <body>
+            <h2>사용 가이드</h2>
+
+            <div class='card'>
+                <h3>1) API 키 설정</h3>
+                <ul>
+                    <li><a href='https://developers.naver.com/apps/#/register'>네이버 개발자센터</a>에서 애플리케이션 등록</li>
+                    <li>검색 API(뉴스) 권한 선택</li>
+                    <li>설정 탭에 <code>Client ID</code> / <code>Client Secret</code> 입력</li>
+                    <li><span class='muted'>"✓ API 키 검증"</span> 버튼으로 정상 동작 확인</li>
+                </ul>
+                <div class='callout info'>API 키는 로컬 설정 파일에만 저장됩니다.</div>
+            </div>
+
+            <div class='card'>
+                <h3>2) 탭 추가 / 검색</h3>
+                <ul>
+                    <li>기본: <code>주식</code></li>
+                    <li>제외어: <code>주식 -코인</code></li>
+                    <li>복합: <code>인공지능 AI -광고 -채용</code></li>
+                </ul>
+            </div>
+
+            <div class='card'>
+                <h3>3) 기사 관리</h3>
+                <ul>
+                    <li>제목 클릭: 기본 브라우저로 열고 자동으로 읽음 처리</li>
+                    <li>기사 카드: 공유 / 외부 / 메모 / 북마크</li>
+                    <li>제목 호버: 내용 미리보기 툴팁</li>
+                </ul>
+            </div>
+
+            <div class='card'>
+                <h3>4) 필터 & 정렬</h3>
+                <ul>
+                    <li>검색창: 입력 즉시 필터링</li>
+                    <li>안 읽은 것만 / 중복 숨김 / 기간 필터</li>
+                    <li>정렬: 최신순 / 오래된순</li>
+                </ul>
+                <div class='callout success'>팁: <span class='key'>Ctrl</span>+<span class='key'>F</span>로 필터 입력란에 바로 포커스합니다.</div>
+            </div>
+        </body>
+        </html>
+        """
+    
+    def get_shortcuts_html(self) -> str:
+        """단축키 안내 HTML 생성"""
+        css = self._get_docs_css()
+        return f"""
+        <html>
+        <head>{css}</head>
+        <body>
+            <h2>단축키</h2>
+
+            <div class='card'>
+                <h3>앱 공통</h3>
+                <table>
+                    <tr><th style='width: 38%;'>키</th><th>동작</th></tr>
+                    <tr><td><span class='key'>Ctrl</span>+<span class='key'>R</span> / <span class='key'>F5</span></td><td>모든 탭 새로고침</td></tr>
+                    <tr><td><span class='key'>Ctrl</span>+<span class='key'>T</span></td><td>새 탭 추가</td></tr>
+                    <tr><td><span class='key'>Ctrl</span>+<span class='key'>W</span></td><td>현재 탭 닫기</td></tr>
+                    <tr><td><span class='key'>Ctrl</span>+<span class='key'>S</span></td><td>CSV 내보내기</td></tr>
+                    <tr><td><span class='key'>Ctrl</span>+<span class='key'>,</span></td><td>설정 열기</td></tr>
+                    <tr><td><span class='key'>F1</span></td><td>도움말 열기</td></tr>
+                    <tr><td><span class='key'>Alt</span>+<span class='key'>1</span>~<span class='key'>9</span></td><td>탭 바로가기</td></tr>
+                    <tr><td><span class='key'>Ctrl</span>+<span class='key'>F</span></td><td>현재 탭 필터 포커스</td></tr>
+                </table>
+            </div>
+
+            <div class='card'>
+                <h3>마우스</h3>
+                <ul>
+                    <li>제목 클릭: 기사 열기(읽음 처리)</li>
+                    <li>제목 호버: 미리보기</li>
+                    <li>탭 더블클릭: 탭 이름 변경</li>
+                    <li>탭 우클릭: 컨텍스트 메뉴</li>
+                </ul>
             </div>
         </body>
         </html>
