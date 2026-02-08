@@ -21,18 +21,20 @@ import inspect
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from collections import deque
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple, cast
 from queue import Queue
 from functools import partial, lru_cache
 from enum import Enum
 from styles import Colors, UIConstants, ToastType, AppStyle
 
 # Windows 전용 레지스트리 모듈 (자동 시작 기능용)
+winreg = None
 try:
-    import winreg
-    WINREG_AVAILABLE = True
+    import winreg as _winreg
+    winreg = _winreg
 except ImportError:
-    WINREG_AVAILABLE = False
+    pass
+WINREG_AVAILABLE = winreg is not None
 
 # --- HiDPI 지원 (반드시 PyQt6 임포트 전에 설정) ---
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
@@ -51,7 +53,16 @@ from PyQt6.QtCore import (
     QThread, QObject, pyqtSignal, Qt, QTimer, QUrl, 
     QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker, QDate
 )
-from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut, QIcon
+from PyQt6.QtGui import (
+    QDesktopServices,
+    QKeySequence,
+    QShortcut,
+    QIcon,
+    QTextDocument,
+    QWheelEvent,
+    QMouseEvent,
+    QContextMenuEvent,
+)
 
 # --- 로깅 설정 (PyInstaller frozen 환경 대응) ---
 def get_app_dir():
@@ -146,7 +157,7 @@ def parse_date_to_ts(date_str: str) -> float:
 
 # --- 하이라이트 패턴 캐시 (LRU 최적화) ---
 @lru_cache(maxsize=128)
-def get_highlight_pattern(keyword: str) -> re.Pattern:
+def get_highlight_pattern(keyword: str) -> re.Pattern[str]:
     """하이라이트 패턴 캐시 반환 (LRU 캐시 사용)"""
     return re.compile(f'({re.escape(keyword)})', re.IGNORECASE)
 
@@ -206,13 +217,14 @@ class StartupManager:
     @classmethod
     def is_startup_enabled(cls) -> bool:
         """시작프로그램 등록 여부 확인"""
-        if not cls.is_available():
+        reg = winreg
+        if not cls.is_available() or reg is None:
             return False
         
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_READ) as key:
+            with reg.OpenKey(reg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, reg.KEY_READ) as key:
                 try:
-                    winreg.QueryValueEx(key, cls.APP_NAME)
+                    reg.QueryValueEx(key, cls.APP_NAME)
                     return True
                 except FileNotFoundError:
                     return False
@@ -223,7 +235,8 @@ class StartupManager:
     @classmethod
     def enable_startup(cls, start_minimized: bool = False) -> bool:
         """시작프로그램에 등록"""
-        if not cls.is_available():
+        reg = winreg
+        if not cls.is_available() or reg is None:
             return False
         
         try:
@@ -239,8 +252,8 @@ class StartupManager:
             if start_minimized:
                 exe_path += ' --minimized'
             
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_SET_VALUE) as key:
-                winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, exe_path)
+            with reg.OpenKey(reg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, reg.KEY_SET_VALUE) as key:
+                reg.SetValueEx(key, cls.APP_NAME, 0, reg.REG_SZ, exe_path)
             
             logger.info(f"시작프로그램 등록 완료: {exe_path}")
             return True
@@ -251,13 +264,14 @@ class StartupManager:
     @classmethod
     def disable_startup(cls) -> bool:
         """시작프로그램에서 제거"""
-        if not cls.is_available():
+        reg = winreg
+        if not cls.is_available() or reg is None:
             return False
         
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            with reg.OpenKey(reg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, reg.KEY_SET_VALUE) as key:
                 try:
-                    winreg.DeleteValue(key, cls.APP_NAME)
+                    reg.DeleteValue(key, cls.APP_NAME)
                     logger.info("시작프로그램 등록 해제 완료")
                     return True
                 except FileNotFoundError:
@@ -348,6 +362,7 @@ class ToastMessage(QLabel):
         super().__init__(display_message, parent)
         self.queue = queue
         self.toast_type = toast_type
+        self.anim_out: Optional[QPropertyAnimation] = None
         
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.SubWindow)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -382,13 +397,14 @@ class ToastMessage(QLabel):
         
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.fade_out)
+        _ = self.timer.timeout.connect(self.fade_out)
         self.timer.start(UIConstants.TOAST_DURATION)
     
     def update_position(self):
         """부모 크기 변경에 대응하는 위치 업데이트"""
-        if self.parent():
-            p_rect = self.parent().rect()
+        parent_widget = self.parentWidget()
+        if parent_widget:
+            p_rect = parent_widget.rect()
             self.move(
                 p_rect.center().x() - self.width() // 2,
                 p_rect.bottom() - self.queue.y_offset
@@ -401,7 +417,7 @@ class ToastMessage(QLabel):
         self.anim_out.setStartValue(1.0)
         self.anim_out.setEndValue(0.0)
         self.anim_out.setEasingCurve(QEasingCurve.Type.InCubic)
-        self.anim_out.finished.connect(self.on_finished)
+        _ = self.anim_out.finished.connect(self.on_finished)
         self.anim_out.start()
     
     def on_finished(self):
@@ -411,9 +427,10 @@ class ToastMessage(QLabel):
             if hasattr(self, 'timer') and self.timer and self.timer.isActive():
                 self.timer.stop()
             # 애니메이션 정리
-            if hasattr(self, 'anim_out'):
-                self.anim_out.stop()
-                self.anim_out.deleteLater()
+            anim_out = self.anim_out
+            if anim_out is not None:
+                anim_out.stop()
+                anim_out.deleteLater()
             if hasattr(self, 'anim_in'):
                 self.anim_in.stop()
                 self.anim_in.deleteLater()
@@ -433,9 +450,10 @@ class ToastMessage(QLabel):
 class NoScrollComboBox(QComboBox):
     """마우스 휠로 값이 변경되지 않는 콤보박스 (설정창 UX 개선)"""
     
-    def wheelEvent(self, event):
+    def wheelEvent(self, e: Optional[QWheelEvent]) -> None:
         """휠 이벤트 무시 - 부모 위젯으로 전달"""
-        event.ignore()
+        if e:
+            e.ignore()
 
 # --- 커스텀 브라우저 (미리보기 기능) ---
 class NewsBrowser(QTextBrowser):
@@ -449,18 +467,24 @@ class NewsBrowser(QTextBrowser):
         self.setMouseTracking(True)
         self.preview_data = {}
         
-    def setSource(self, url):
-        if url.scheme() == 'app':
+    def setSource(
+        self,
+        name: QUrl,
+        type: QTextDocument.ResourceType = QTextDocument.ResourceType.UnknownResource,
+    ) -> None:
+        if name.scheme() == 'app':
             return
-        super().setSource(url)
+        super().setSource(name, type=type)
     
     def set_preview_data(self, data: Dict[str, str]):
         """미리보기 데이터 설정"""
         self.preview_data = data
     
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, ev: Optional[QMouseEvent]) -> None:
         """마우스 호버 시 미리보기 표시"""
-        anchor = self.anchorAt(event.pos())
+        if ev is None:
+            return
+        anchor = self.anchorAt(ev.pos())
         
         if anchor and anchor.startswith('app://open/'):
             link_hash = anchor.split('/')[-1]
@@ -470,18 +494,20 @@ class NewsBrowser(QTextBrowser):
                     preview_text = preview_text[:200] + "..."
                 
                 QToolTip.showText(
-                    event.globalPosition().toPoint(),
+                    ev.globalPosition().toPoint(),
                     f"<div style='max-width: 400px;'>{html.escape(preview_text)}</div>",
                     self
                 )
         else:
             QToolTip.hideText()
         
-        super().mouseMoveEvent(event)
+        super().mouseMoveEvent(ev)
 
-    def contextMenuEvent(self, event):
+    def contextMenuEvent(self, e: Optional[QContextMenuEvent]) -> None:
+        if e is None:
+            return
         # 마우스오버 또는 클릭 위치의 링크 확인
-        anchor = self.anchorAt(event.pos())
+        anchor = self.anchorAt(e.pos())
         
         link_hash = ""
         if anchor:
@@ -491,7 +517,7 @@ class NewsBrowser(QTextBrowser):
         
         # 링크 위가 아니라면 기본 메뉴 사용 (복사 등)
         if not link_hash:
-            super().contextMenuEvent(event)
+            super().contextMenuEvent(e)
             return
             
         # 커스텀 메뉴 생성
@@ -507,7 +533,7 @@ class NewsBrowser(QTextBrowser):
         act_del = menu.addAction("🗑 목록에서 삭제")
         
         # 메뉴 실행
-        action = menu.exec(event.globalPos())
+        action = menu.exec(e.globalPos())
         
         if action == act_open:
             self.emit_action("ext", link_hash)
@@ -554,7 +580,7 @@ class DatabaseManager:
     
     def _create_connection(self):
         """새 DB 연결 생성"""
-        conn = sqlite3.connect(self.db_file, timeout=30.0, check_same_thread=False)
+        _ = conn = sqlite3.connect(self.db_file, timeout=30.0, check_same_thread=False)
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -625,7 +651,7 @@ class DatabaseManager:
     def _check_integrity(self) -> bool:
         """데이터베이스 무결성 검사"""
         try:
-            conn = sqlite3.connect(self.db_file)
+            _ = conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
             cursor.execute("PRAGMA integrity_check")
             result = cursor.fetchone()
@@ -663,7 +689,7 @@ class DatabaseManager:
             
     def init_db(self):
         """데이터베이스 초기화"""
-        conn = sqlite3.connect(self.db_file)
+        _ = conn = sqlite3.connect(self.db_file)
         conn.execute("PRAGMA foreign_keys=ON")
         with conn:
             conn.execute("""
@@ -798,7 +824,7 @@ class DatabaseManager:
         normalized = RE_WHITESPACE.sub('', title.lower())
         return hashlib.md5(normalized.encode()).hexdigest()
     
-    def upsert_news(self, items: List[Dict], keyword: str) -> Tuple[int, int]:
+    def upsert_news(self, items: List[Dict[str, Any]], keyword: str) -> Tuple[int, int]:
         """뉴스 삽입 및 중복 감지 (배치 처리 최적화)"""
         if not items:
             return 0, 0
@@ -935,7 +961,7 @@ class DatabaseManager:
     def fetch_news(self, keyword: str, filter_txt: str = "", sort_mode: str = "최신순", 
                    only_bookmark: bool = False, only_unread: bool = False,
                    hide_duplicates: bool = False,
-                   start_date: str = None, end_date: str = None) -> List[Dict]:
+                   start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """뉴스 조회 - 안전한 버전 (날짜 필터 추가)"""
         conn = self.get_connection()
         news_items = []
@@ -1515,7 +1541,7 @@ class DBWorker(QThread):
                  filter_txt: str = "", sort_mode: str = "최신순",
                  only_bookmark: bool = False, only_unread: bool = False,
                  hide_duplicates: bool = False,
-                 start_date: str = None, end_date: str = None):
+                 start_date: Optional[str] = None, end_date: Optional[str] = None):
         super().__init__()
         self.db = db_manager
         self.keyword = keyword
@@ -1606,8 +1632,8 @@ class NoteDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        _ = buttons.accepted.connect(self.accept)
+        _ = buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
     
     def get_note(self) -> str:
@@ -1630,13 +1656,13 @@ class LogViewerDialog(QDialog):
         btn_layout = QHBoxLayout()
         
         self.btn_refresh = QPushButton("🔄 새로고침")
-        self.btn_refresh.clicked.connect(self.load_logs)
+        _ = self.btn_refresh.clicked.connect(self.load_logs)
         
         self.btn_clear = QPushButton("🗑 로그 지우기")
-        self.btn_clear.clicked.connect(self.clear_logs)
+        _ = self.btn_clear.clicked.connect(self.clear_logs)
         
         self.btn_open_file = QPushButton("📁 로그 파일 열기")
-        self.btn_open_file.clicked.connect(self.open_log_file)
+        _ = self.btn_open_file.clicked.connect(self.open_log_file)
         
         self.chk_auto_scroll = QCheckBox("자동 스크롤")
         self.chk_auto_scroll.setChecked(True)
@@ -1654,13 +1680,13 @@ class LogViewerDialog(QDialog):
         
         self.combo_level = QComboBox()
         self.combo_level.addItems(["모두", "INFO", "WARNING", "ERROR", "CRITICAL"])
-        self.combo_level.currentIndexChanged.connect(self.load_logs)
+        _ = self.combo_level.currentIndexChanged.connect(self.load_logs)
         filter_layout.addWidget(self.combo_level)
         
         filter_layout.addWidget(QLabel("검색:"))
         self.inp_search = QLineEdit()
         self.inp_search.setPlaceholderText("로그 내용 검색...")
-        self.inp_search.textChanged.connect(self.load_logs)
+        _ = self.inp_search.textChanged.connect(self.load_logs)
         filter_layout.addWidget(self.inp_search, 1)
         
         layout.addLayout(filter_layout)
@@ -1685,7 +1711,7 @@ class LogViewerDialog(QDialog):
         
         # 닫기 버튼
         btn_close = QPushButton("닫기")
-        btn_close.clicked.connect(self.accept)
+        _ = btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
         
         # 로그 로드
@@ -1751,9 +1777,9 @@ class LogViewerDialog(QDialog):
             
             # 자동 스크롤
             if self.chk_auto_scroll.isChecked():
-                self.log_browser.verticalScrollBar().setValue(
-                    self.log_browser.verticalScrollBar().maximum()
-                )
+                scroll_bar = self.log_browser.verticalScrollBar()
+                if scroll_bar:
+                    scroll_bar.setValue(scroll_bar.maximum())
             
             self.lbl_status.setText(f"총 {len(lines)}줄 중 {len(filtered_lines)}줄 표시")
             
@@ -1778,14 +1804,14 @@ class LogViewerDialog(QDialog):
                 self.load_logs()
                 logger.info("로그 파일 초기화됨")
             except Exception as e:
-                QMessageBox.warning(self, "오류", f"로그 지우기 실패: {str(e)}")
+                _ = QMessageBox.warning(self, "오류", f"로그 지우기 실패: {str(e)}")
     
     def open_log_file(self):
         """로그 파일을 기본 편집기로 열기"""
         if os.path.exists(LOG_FILE):
             QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(LOG_FILE)))
         else:
-            QMessageBox.information(self, "알림", "로그 파일이 아직 생성되지 않았습니다.")
+            _ = QMessageBox.information(self, "알림", "로그 파일이 아직 생성되지 않았습니다.")
 
 
 # --- 알림 소리 유틸리티 ---
@@ -1942,14 +1968,14 @@ class KeywordGroupDialog(QDialog):
         left_layout = QVBoxLayout(left_group)
         
         self.group_list = QListWidget()
-        self.group_list.currentRowChanged.connect(self.on_group_selected)
+        _ = self.group_list.currentRowChanged.connect(self.on_group_selected)
         left_layout.addWidget(self.group_list)
         
         group_btn_layout = QHBoxLayout()
         self.btn_add_group = QPushButton("➕ 추가")
-        self.btn_add_group.clicked.connect(self.add_group)
+        _ = self.btn_add_group.clicked.connect(self.add_group)
         self.btn_del_group = QPushButton("🗑 삭제")
-        self.btn_del_group.clicked.connect(self.delete_group)
+        _ = self.btn_del_group.clicked.connect(self.delete_group)
         group_btn_layout.addWidget(self.btn_add_group)
         group_btn_layout.addWidget(self.btn_del_group)
         left_layout.addLayout(group_btn_layout)
@@ -1961,10 +1987,10 @@ class KeywordGroupDialog(QDialog):
         center_layout.addStretch()
         self.btn_add_to_group = QPushButton("→")
         self.btn_add_to_group.setFixedWidth(40)
-        self.btn_add_to_group.clicked.connect(self.add_keyword_to_group)
+        _ = self.btn_add_to_group.clicked.connect(self.add_keyword_to_group)
         self.btn_remove_from_group = QPushButton("←")
         self.btn_remove_from_group.setFixedWidth(40)
-        self.btn_remove_from_group.clicked.connect(self.remove_keyword_from_group)
+        _ = self.btn_remove_from_group.clicked.connect(self.remove_keyword_from_group)
         center_layout.addWidget(self.btn_add_to_group)
         center_layout.addWidget(self.btn_remove_from_group)
         center_layout.addStretch()
@@ -1990,7 +2016,7 @@ class KeywordGroupDialog(QDialog):
         
         # 닫기 버튼
         btn_close = QPushButton("닫기")
-        btn_close.clicked.connect(self.accept)
+        _ = btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
     
     def load_groups(self):
@@ -2036,7 +2062,7 @@ class KeywordGroupDialog(QDialog):
             if self.group_manager.create_group(name.strip()):
                 self.load_groups()
             else:
-                QMessageBox.warning(self, "오류", "이미 존재하는 그룹 이름입니다.")
+                _ = QMessageBox.warning(self, "오류", "이미 존재하는 그룹 이름입니다.")
     
     def delete_group(self):
         """그룹 삭제"""
@@ -2170,7 +2196,7 @@ class AutoBackup:
         except Exception as e:
             logger.error(f"백업 정리 오류: {e}")
     
-    def get_backup_list(self) -> List[Dict]:
+    def get_backup_list(self) -> List[Dict[str, Any]]:
         """백업 목록 조회 (최신순)"""
         backups = []
         try:
@@ -2245,7 +2271,7 @@ class BackupDialog(QDialog):
         btn_layout = QHBoxLayout()
         
         self.btn_create = QPushButton("📦 새 백업 생성")
-        self.btn_create.clicked.connect(self.create_backup)
+        _ = self.btn_create.clicked.connect(self.create_backup)
         
         self.chk_include_db = QCheckBox("데이터베이스 포함")
         self.chk_include_db.setChecked(True)
@@ -2258,20 +2284,20 @@ class BackupDialog(QDialog):
         # 백업 목록
         layout.addWidget(QLabel("📁 백업 목록:"))
         self.backup_list = QListWidget()
-        self.backup_list.itemDoubleClicked.connect(self.restore_backup)
+        _ = self.backup_list.itemDoubleClicked.connect(self.restore_backup)
         layout.addWidget(self.backup_list)
         
         # 하단 버튼
         bottom_layout = QHBoxLayout()
         
         self.btn_restore = QPushButton("♻ 복원")
-        self.btn_restore.clicked.connect(self.restore_backup)
+        _ = self.btn_restore.clicked.connect(self.restore_backup)
         
         self.btn_delete = QPushButton("🗑 삭제")
-        self.btn_delete.clicked.connect(self.delete_backup)
+        _ = self.btn_delete.clicked.connect(self.delete_backup)
         
         self.btn_open_folder = QPushButton("📂 폴더 열기")
-        self.btn_open_folder.clicked.connect(self.open_backup_folder)
+        _ = self.btn_open_folder.clicked.connect(self.open_backup_folder)
         
         bottom_layout.addWidget(self.btn_restore)
         bottom_layout.addWidget(self.btn_delete)
@@ -2281,7 +2307,7 @@ class BackupDialog(QDialog):
         
         # 닫기 버튼
         btn_close = QPushButton("닫기")
-        btn_close.clicked.connect(self.accept)
+        _ = btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
     
     def load_backups(self):
@@ -2302,10 +2328,10 @@ class BackupDialog(QDialog):
                 date_str = timestamp
             
             item_text = f"📁 {date_str} (v{version}) {include_db}"
-            item = self.backup_list.addItem(item_text)
-            self.backup_list.item(self.backup_list.count() - 1).setData(
-                Qt.ItemDataRole.UserRole, backup['name']
-            )
+            self.backup_list.addItem(item_text)
+            item_obj = self.backup_list.item(self.backup_list.count() - 1)
+            if item_obj:
+                item_obj.setData(Qt.ItemDataRole.UserRole, backup['name'])
     
     def create_backup(self):
         """백업 생성"""
@@ -2313,16 +2339,16 @@ class BackupDialog(QDialog):
         result = self.auto_backup.create_backup(include_db)
         
         if result:
-            QMessageBox.information(self, "완료", f"백업이 생성되었습니다:\n{result}")
+            _ = QMessageBox.information(self, "완료", f"백업이 생성되었습니다:\n{result}")
             self.load_backups()
         else:
-            QMessageBox.warning(self, "오류", "백업 생성에 실패했습니다.")
+            _ = QMessageBox.warning(self, "오류", "백업 생성에 실패했습니다.")
     
     def restore_backup(self):
         """백업 복원"""
         current_item = self.backup_list.currentItem()
         if not current_item:
-            QMessageBox.information(self, "알림", "복원할 백업을 선택하세요.")
+            _ = QMessageBox.information(self, "알림", "복원할 백업을 선택하세요.")
             return
         
         backup_name = current_item.data(Qt.ItemDataRole.UserRole)
@@ -2337,12 +2363,12 @@ class BackupDialog(QDialog):
         
         if reply == QMessageBox.StandardButton.Yes:
             if self.auto_backup.restore_backup(backup_name):
-                QMessageBox.information(
+                _ = QMessageBox.information(
                     self, "완료", 
                     "백업이 복원되었습니다.\n프로그램을 재시작하세요."
                 )
             else:
-                QMessageBox.warning(self, "오류", "백업 복원에 실패했습니다.")
+                _ = QMessageBox.warning(self, "오류", "백업 복원에 실패했습니다.")
     
     def delete_backup(self):
         """백업 삭제"""
@@ -2365,7 +2391,7 @@ class BackupDialog(QDialog):
                 shutil.rmtree(backup_path, ignore_errors=True)
                 self.load_backups()
             except Exception as e:
-                QMessageBox.warning(self, "오류", f"삭제 실패: {str(e)}")
+                _ = QMessageBox.warning(self, "오류", f"삭제 실패: {str(e)}")
     
     def open_backup_folder(self):
         """백업 폴더 열기"""
@@ -2400,6 +2426,7 @@ class NewsTab(QWidget):
         
         # Async DB Worker
         self.worker = None
+        self.job_worker = None
         
         self.setup_ui()
         self.load_data_from_db()
@@ -2408,6 +2435,13 @@ class NewsTab(QWidget):
     def db_keyword(self):
         """DB 저장용 키워드 (첫 번째 단어만 사용)"""
         return self.keyword.split()[0] if self.keyword else ""
+
+    def _main_app(self) -> Optional["MainApp"]:
+        """부모 메인 윈도우를 타입 안전하게 반환"""
+        window = self.window()
+        if isinstance(window, MainApp):
+            return window
+        return None
 
     def setup_ui(self):
         """UI 설정"""
@@ -2434,12 +2468,12 @@ class NewsTab(QWidget):
         # 필터 디바운싱 타이머 (300ms)
         self.filter_timer = QTimer(self)
         self.filter_timer.setSingleShot(True)
-        self.filter_timer.timeout.connect(self._apply_filter_debounced)
-        self.inp_filter.textChanged.connect(self._on_filter_changed)
+        _ = self.filter_timer.timeout.connect(self._apply_filter_debounced)
+        _ = self.inp_filter.textChanged.connect(self._on_filter_changed)
         
         self.combo_sort = NoScrollComboBox()
         self.combo_sort.addItems(["최신순", "오래된순"])
-        self.combo_sort.currentIndexChanged.connect(self.load_data_from_db)
+        _ = self.combo_sort.currentIndexChanged.connect(self.load_data_from_db)
         
         row1_layout.addWidget(self.inp_filter, 4)
         row1_layout.addWidget(self.combo_sort, 1)
@@ -2451,10 +2485,10 @@ class NewsTab(QWidget):
         row2_layout.setSpacing(12)
         
         self.chk_unread = QCheckBox("안 읽은 것만")
-        self.chk_unread.stateChanged.connect(self.load_data_from_db)
+        _ = self.chk_unread.stateChanged.connect(self.load_data_from_db)
         
         self.chk_hide_dup = QCheckBox("중복 숨김")
-        self.chk_hide_dup.stateChanged.connect(self.load_data_from_db)
+        _ = self.chk_hide_dup.stateChanged.connect(self.load_data_from_db)
         
         row2_layout.addWidget(self.chk_unread)
         row2_layout.addWidget(self.chk_hide_dup)
@@ -2470,7 +2504,7 @@ class NewsTab(QWidget):
         self.btn_date_toggle.setText("📅 기간")
         self.btn_date_toggle.setCheckable(True)
         self.btn_date_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.btn_date_toggle.toggled.connect(self._toggle_date_filter)
+        _ = self.btn_date_toggle.toggled.connect(self._toggle_date_filter)
         
         self.date_container = QWidget()
         date_inner_layout = QHBoxLayout(self.date_container)
@@ -2481,7 +2515,7 @@ class NewsTab(QWidget):
         self.date_start.setCalendarPopup(True)
         self.date_start.setDisplayFormat("yyyy-MM-dd")
         self.date_start.setDate(QDate.currentDate().addDays(-7))
-        self.date_start.dateChanged.connect(self.load_data_from_db)
+        _ = self.date_start.dateChanged.connect(self.load_data_from_db)
         
         self.lbl_tilde = QLabel("~")
         
@@ -2489,7 +2523,7 @@ class NewsTab(QWidget):
         self.date_end.setCalendarPopup(True)
         self.date_end.setDisplayFormat("yyyy-MM-dd")
         self.date_end.setDate(QDate.currentDate())
-        self.date_end.dateChanged.connect(self.load_data_from_db)
+        _ = self.date_end.dateChanged.connect(self.load_data_from_db)
         
         date_inner_layout.addWidget(self.date_start)
         date_inner_layout.addWidget(self.lbl_tilde)
@@ -2509,8 +2543,8 @@ class NewsTab(QWidget):
         self.browser = NewsBrowser()
         self.browser.setOpenExternalLinks(False)
         self.browser.setOpenLinks(False)
-        self.browser.anchorClicked.connect(self.on_link_clicked)
-        self.browser.action_triggered.connect(self.on_browser_action)
+        _ = self.browser.anchorClicked.connect(self.on_link_clicked)
+        _ = self.browser.action_triggered.connect(self.on_browser_action)
         layout.addWidget(self.browser)
         
         btm_layout = QHBoxLayout()
@@ -2530,8 +2564,14 @@ class NewsTab(QWidget):
         btm_layout.addWidget(self.lbl_status)
         layout.addLayout(btm_layout)
 
-        self.btn_top.clicked.connect(lambda: self.browser.verticalScrollBar().setValue(0))
-        self.btn_read_all.clicked.connect(self.mark_all_read)
+        _ = self.btn_top.clicked.connect(lambda: self._set_browser_scroll(0))
+        _ = self.btn_read_all.clicked.connect(self.mark_all_read)
+
+    def _set_browser_scroll(self, value: int) -> None:
+        """브라우저 스크롤 안전 설정"""
+        scroll_bar = self.browser.verticalScrollBar()
+        if scroll_bar:
+            scroll_bar.setValue(value)
     
     def _toggle_date_filter(self, checked: bool):
         """날짜 필터 표시/숨김 토글"""
@@ -2578,8 +2618,8 @@ class NewsTab(QWidget):
             start_date=s_date,
             end_date=e_date
         )
-        self.worker.finished.connect(self.on_data_loaded)
-        self.worker.error.connect(self.on_data_error)
+        _ = self.worker.finished.connect(self.on_data_loaded)
+        _ = self.worker.error.connect(self.on_data_error)
         self.worker.start()
 
     def on_data_loaded(self, data, total_count):
@@ -2617,7 +2657,7 @@ class NewsTab(QWidget):
         self._rendered_count = 0
         self.render_html()
 
-    def _render_single_item(self, item: Dict, filter_word: str) -> str:
+    def _render_single_item(self, item: Dict[str, Any], filter_word: str) -> str:
         """단일 뉴스 아이템 HTML 렌더링"""
         # 안전한 딕셔너리 접근
         is_read_cls = " read" if item.get('is_read', 0) else ""
@@ -2693,7 +2733,8 @@ class NewsTab(QWidget):
 
     def render_html(self):
         """HTML 렌더링 - Colors 헬퍼 사용 버전"""
-        scroll_pos = self.browser.verticalScrollBar().value()
+        scroll_bar = self.browser.verticalScrollBar()
+        scroll_pos = scroll_bar.value() if scroll_bar else 0
         
         is_dark = (self.theme == 1)
         
@@ -2745,7 +2786,7 @@ class NewsTab(QWidget):
         
         # 스크롤 위치 복원
         if scroll_pos > 0:
-            QTimer.singleShot(0, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
+            QTimer.singleShot(0, lambda: self._set_browser_scroll(scroll_pos))
         self.update_status_label()
 
 
@@ -2762,12 +2803,13 @@ class NewsTab(QWidget):
         self._rendered_count = end_idx
         
         # 스크롤 위치 저장 후 렌더링
-        scroll_pos = self.browser.verticalScrollBar().value()
+        scroll_bar = self.browser.verticalScrollBar()
+        scroll_pos = scroll_bar.value() if scroll_bar else 0
         self.render_html()
         
         # 스크롤 위치 복원 (약간의 지연 필요)
         if scroll_pos > 0:
-            QTimer.singleShot(10, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
+            QTimer.singleShot(10, lambda: self._set_browser_scroll(scroll_pos))
 
 
     def update_status_label(self):
@@ -2848,26 +2890,29 @@ class NewsTab(QWidget):
                 if self.is_bookmark_tab and new_val == 0:
                     self.news_data_cache.remove(target)
                 self.apply_filter()
-                if self.window() and hasattr(self.window(), 'refresh_bookmark_tab'):
-                    self.window().refresh_bookmark_tab()
-                    
-                if self.window():
+                main_app = self._main_app()
+                if main_app:
+                    main_app.refresh_bookmark_tab()
                     msg = "⭐ 북마크에 추가되었습니다." if new_val else "북마크가 해제되었습니다."
-                    self.window().show_toast(msg)
+                    main_app.show_toast(msg)
                     
         elif action == "share":
             clip = f"{target['title']}\n{target['link']}"
-            QApplication.clipboard().setText(clip)
-            if self.window():
-                self.window().show_toast("📋 링크와 제목이 복사되었습니다!")
+            clipboard = QApplication.clipboard()
+            if clipboard:
+                clipboard.setText(clip)
+            main_app = self._main_app()
+            if main_app:
+                main_app.show_toast("📋 링크와 제목이 복사되었습니다!")
             return
             
         elif action == "unread":
             self.db.update_status(link, "is_read", 0)
             target['is_read'] = 0
             self.apply_filter()
-            if self.window():
-                self.window().show_toast("📖 안 읽음으로 표시되었습니다.")
+            main_app = self._main_app()
+            if main_app:
+                main_app.show_toast("📖 안 읽음으로 표시되었습니다.")
         
         elif action == "note":
             current_note = self.db.get_note(link)
@@ -2877,8 +2922,9 @@ class NewsTab(QWidget):
                 if self.db.save_note(link, new_note):
                     target['notes'] = new_note
                     self.apply_filter()
-                    if self.window():
-                        self.window().show_toast("📝 메모가 저장되었습니다.")
+                    main_app = self._main_app()
+                    if main_app:
+                        main_app.show_toast("📝 메모가 저장되었습니다.")
             return
             
         elif action == "ext":
@@ -2910,22 +2956,23 @@ class NewsTab(QWidget):
                 self.db_keyword, 
                 self.is_bookmark_tab
             )
-            self.job_worker.finished.connect(self._on_mark_all_read_done)
-            self.job_worker.error.connect(self._on_mark_all_read_error)
+            _ = self.job_worker.finished.connect(self._on_mark_all_read_done)
+            _ = self.job_worker.error.connect(self._on_mark_all_read_error)
             self.job_worker.start()
             
     def _on_mark_all_read_done(self, count):
         """모두 읽음 처리 완료"""
         self.btn_read_all.setEnabled(True)
         self.load_data_from_db() # UI 갱신
-        if self.window():
-            self.window().show_toast(f"✓ {count}개의 기사를 읽음으로 표시했습니다.")
+        main_app = self._main_app()
+        if main_app:
+            main_app.show_toast(f"✓ {count}개의 기사를 읽음으로 표시했습니다.")
             
     def _on_mark_all_read_error(self, err_msg):
         """모두 읽음 처리 오류"""
         self.btn_read_all.setEnabled(True)
         self.lbl_status.setText("오류 발생")
-        QMessageBox.critical(self, "오류", f"처리 중 오류가 발생했습니다:\n\n{err_msg}")
+        _ = QMessageBox.critical(self, "오류", f"처리 중 오류가 발생했습니다:\n\n{err_msg}")
 
     def update_timestamp(self):
         """업데이트 시간 갱신"""
@@ -2937,40 +2984,44 @@ class NewsTab(QWidget):
         target = next((i for i in self.news_data_cache if hashlib.md5(i['link'].encode()).hexdigest() == link_hash), None)
         if not target:
             return
-            
+
         link = target['link']
-        
+
         if action == "ext":
             QDesktopServices.openUrl(QUrl(link))
             if not target.get('is_read'):
                 self.db.update_status(link, "is_read", 1)
                 target['is_read'] = 1
                 self.apply_filter()
-                
+
         elif action == "share":
-             clip = f"{target['title']}\n{target['link']}"
-             QApplication.clipboard().setText(clip)
-             if self.window(): self.window().show_toast("📋 복사되었습니다.")
-             
+            clip = f"{target['title']}\n{target['link']}"
+            clipboard = QApplication.clipboard()
+            if clipboard:
+                clipboard.setText(clip)
+            main_app = self._main_app()
+            if main_app:
+                main_app.show_toast("📋 복사되었습니다.")
+
         elif action == "bm":
             new_val = 0 if target.get('is_bookmarked') else 1
             if self.db.update_status(link, "is_bookmarked", new_val):
                 target['is_bookmarked'] = new_val
                 if self.is_bookmark_tab and new_val == 0:
-                     self.news_data_cache.remove(target)
+                    self.news_data_cache.remove(target)
                 self.apply_filter()
-                if self.window():
-                     if hasattr(self.window(), 'refresh_bookmark_tab'):
-                        self.window().refresh_bookmark_tab()
-                     msg = "⭐ 북마크됨" if new_val else "북마크 해제됨"
-                     self.window().show_toast(msg)
+                main_app = self._main_app()
+                if main_app:
+                    main_app.refresh_bookmark_tab()
+                    msg = "⭐ 북마크됨" if new_val else "북마크 해제됨"
+                    main_app.show_toast(msg)
 
         elif action == "toggle_read":
             new_val = 0 if target.get('is_read') else 1
             if self.db.update_status(link, "is_read", new_val):
                 target['is_read'] = new_val
                 self.apply_filter()
-            
+
         elif action == "note":
             current_note = self.db.get_note(link)
             dialog = NoteDialog(current_note, self)
@@ -2979,26 +3030,33 @@ class NewsTab(QWidget):
                 if self.db.save_note(link, new_note):
                     target['notes'] = new_note
                     self.apply_filter()
-                    if self.window():
-                        self.window().show_toast("📝 메모가 저장되었습니다.")
-             
+                    main_app = self._main_app()
+                    if main_app:
+                        main_app.show_toast("📝 메모가 저장되었습니다.")
+
         elif action == "delete":
-             reply = QMessageBox.question(self, "삭제", "이 기사를 목록에서 삭제하시겠습니까?\n(DB에서 완전히 삭제됩니다)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-             if reply == QMessageBox.StandardButton.Yes:
-                 conn = self.db.get_connection()
-                 try:
-                     conn.execute("DELETE FROM news WHERE link=?", (link,))
-                     conn.commit()
-                     self.news_data_cache.remove(target)
-                     # filtered_data_cache도 동기화
-                     if target in self.filtered_data_cache:
-                         self.filtered_data_cache.remove(target)
-                     self.apply_filter()
-                     if self.window(): self.window().show_toast("🗑 삭제되었습니다.")
-                 except Exception as e:
-                     QMessageBox.warning(self, "오류", f"삭제 실패: {e}")
-                 finally:
-                     self.db.return_connection(conn)
+            reply = QMessageBox.question(
+                self,
+                "삭제",
+                "이 기사를 목록에서 삭제하시겠습니까?\n(DB에서 완전히 삭제됩니다)",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                conn = self.db.get_connection()
+                try:
+                    conn.execute("DELETE FROM news WHERE link=?", (link,))
+                    conn.commit()
+                    self.news_data_cache.remove(target)
+                    if target in self.filtered_data_cache:
+                        self.filtered_data_cache.remove(target)
+                    self.apply_filter()
+                    main_app = self._main_app()
+                    if main_app:
+                        main_app.show_toast("🗑 삭제되었습니다.")
+                except Exception as e:
+                    _ = QMessageBox.warning(self, "오류", f"삭제 실패: {e}")
+                finally:
+                    self.db.return_connection(conn)
 
     def cleanup(self):
         """탭 종료 시 리소스 정리"""
@@ -3021,6 +3079,16 @@ class NewsTab(QWidget):
 # --- 메인 윈도우 ---
 class MainApp(QMainWindow):
     """메인 애플리케이션 윈도우 - 안정성 개선 버전"""
+    btn_refresh: QPushButton
+    btn_save: QPushButton
+    btn_stats: QPushButton
+    btn_setting: QPushButton
+    btn_backup: QPushButton
+    btn_help: QPushButton
+    btn_add: QPushButton
+    progress: QProgressBar
+    tabs: QTabWidget
+    bm_tab: NewsTab
     
     def __init__(self):
         super().__init__()
@@ -3044,6 +3112,28 @@ class MainApp(QMainWindow):
         self.toast_queue = None
         self.db = None
         self.session = None  # 세션 초기화
+        self.tray = None
+        self._tray_hide_notified = False
+        self.config = {}
+        self.theme_idx = 0
+        self.interval_idx = 2
+        self.tabs_data = []
+        self.minimize_to_tray = True
+        self.close_to_tray = True
+        self.start_minimized = False
+        self.auto_start_enabled = False
+        self._saved_geometry = None
+        self.api_timeout = 15
+        self.btn_refresh = QPushButton(self)
+        self.btn_save = QPushButton(self)
+        self.btn_stats = QPushButton(self)
+        self.btn_setting = QPushButton(self)
+        self.btn_backup = QPushButton(self)
+        self.btn_help = QPushButton(self)
+        self.btn_add = QPushButton(self)
+        self.progress = QProgressBar(self)
+        self.tabs = QTabWidget(self)
+        self.bm_tab = cast(NewsTab, QWidget(self))
         
         try:
             self.db = DatabaseManager(DB_FILE)
@@ -3094,7 +3184,7 @@ class MainApp(QMainWindow):
             
             # 다음 새로고침 카운트다운 타이머
             self._countdown_timer = QTimer(self)
-            self._countdown_timer.timeout.connect(self._update_countdown)
+            _ = self._countdown_timer.timeout.connect(self._update_countdown)
             self._next_refresh_seconds = 0
             
             # 아이콘 설정
@@ -3106,7 +3196,7 @@ class MainApp(QMainWindow):
             
             # 타이머 설정 (안정성 개선)
             self.timer = QTimer(self)
-            self.timer.timeout.connect(self._safe_refresh_all)
+            _ = self.timer.timeout.connect(self._safe_refresh_all)
             self.apply_refresh_interval()
             
             if self.client_id and self.tabs.count() > 1:
@@ -3117,7 +3207,7 @@ class MainApp(QMainWindow):
             
             # 탭 배지 업데이트 타이머 (30초마다)
             self._tab_badge_timer = QTimer(self)
-            self._tab_badge_timer.timeout.connect(self.update_all_tab_badges)
+            _ = self._tab_badge_timer.timeout.connect(self.update_all_tab_badges)
             self._tab_badge_timer.start(30000)  # 30초
             
             # 첫 실행 가이드 표시
@@ -3138,7 +3228,38 @@ class MainApp(QMainWindow):
         except Exception as e:
             logger.critical(f"MainApp 초기화 중 치명적 오류: {e}")
             traceback.print_exc()
-            QMessageBox.critical(None, "초기화 오류", f"프로그램 초기화 중 오류가 발생했습니다:\n{e}")
+            _ = QMessageBox.critical(None, "초기화 오류", f"프로그램 초기화 중 오류가 발생했습니다:\n{e}")
+
+    def _show_status_message(self, message: str, timeout: int = 0) -> None:
+        """statusBar None 가능성을 방어한 메시지 표시 헬퍼"""
+        status_bar = self.statusBar()
+        if not status_bar:
+            return
+        if timeout > 0:
+            status_bar.showMessage(message, timeout)
+        else:
+            status_bar.showMessage(message)
+
+    def _news_tab_at(self, index: int) -> Optional[NewsTab]:
+        """인덱스 위치가 뉴스 탭이면 NewsTab 반환"""
+        widget = self.tabs.widget(index)
+        if isinstance(widget, NewsTab):
+            return widget
+        return None
+
+    def _iter_news_tabs(self):
+        """북마크를 제외한 뉴스 탭 순회"""
+        for i in range(1, self.tabs.count()):
+            tab = self._news_tab_at(i)
+            if tab:
+                yield i, tab
+
+    def _current_news_tab(self) -> Optional[NewsTab]:
+        """현재 선택된 탭이 NewsTab이면 반환"""
+        widget = self.tabs.currentWidget()
+        if isinstance(widget, NewsTab):
+            return widget
+        return None
 
     
     def _update_countdown(self):
@@ -3153,7 +3274,7 @@ class MainApp(QMainWindow):
                     countdown_text = f"⏰ 다음 새로고침: {minutes}분 {seconds}초 후"
                 else:
                     countdown_text = f"⏰ 다음 새로고침: {seconds}초 후"
-                self.statusBar().showMessage(countdown_text)
+                self._show_status_message(countdown_text)
         else:
             self._countdown_timer.stop()
 
@@ -3216,35 +3337,41 @@ class MainApp(QMainWindow):
                 self.tray.setIcon(QIcon(icon_path))
             else:
                 # 기본 아이콘 사용
-                self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+                style = self.style()
+                if style:
+                    self.tray.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
             
             # 트레이 컨텍스트 메뉴 생성
             tray_menu = QMenu(self)
             
             # 열기 액션
             action_show = tray_menu.addAction("📰 열기")
-            action_show.triggered.connect(self.show_window)
+            if action_show:
+                _ = action_show.triggered.connect(self.show_window)
             
             # 새로고침 액션
             action_refresh = tray_menu.addAction("🔄 새로고침")
-            action_refresh.triggered.connect(self._safe_refresh_all)
+            if action_refresh:
+                _ = action_refresh.triggered.connect(self._safe_refresh_all)
             
             tray_menu.addSeparator()
             
             # 설정 액션
             action_settings = tray_menu.addAction("⚙ 설정")
-            action_settings.triggered.connect(self.open_settings)
+            if action_settings:
+                _ = action_settings.triggered.connect(self.open_settings)
             
             tray_menu.addSeparator()
             
             # 종료 액션
             action_quit = tray_menu.addAction("❌ 종료")
-            action_quit.triggered.connect(self.real_quit)
+            if action_quit:
+                _ = action_quit.triggered.connect(self.real_quit)
             
             self.tray.setContextMenu(tray_menu)
             
             # 더블클릭 시 창 보이기
-            self.tray.activated.connect(self.on_tray_activated)
+            _ = self.tray.activated.connect(self.on_tray_activated)
             
             # 초기 툴팁 설정
             self.update_tray_tooltip()
@@ -3272,12 +3399,10 @@ class MainApp(QMainWindow):
         
         try:
             unread_count = 0
-            for i in range(1, self.tabs.count()):
-                tab_widget = self.tabs.widget(i)
-                if tab_widget and hasattr(tab_widget, 'news_data_cache'):
-                    for news_item in tab_widget.news_data_cache:
-                        if not news_item.get('is_read', False):
-                            unread_count += 1
+            for _, tab_widget in self._iter_news_tabs():
+                for news_item in tab_widget.news_data_cache:
+                    if not news_item.get('is_read', False):
+                        unread_count += 1
             
             if unread_count > 0:
                 tooltip = f"{APP_NAME}\n📬 읽지 않은 기사: {unread_count:,}개"
@@ -3391,38 +3516,46 @@ class MainApp(QMainWindow):
                     self.config['api_timeout'] = loaded.get('api_timeout', 15) # API 타임아웃 로드
             except Exception as e:
                 logger.error(f"Config Load Error: {e}")
-                QMessageBox.warning(
+                _ = QMessageBox.warning(
                     self, 
                     "설정 로드 오류", 
                     f"설정 파일을 읽는 중 오류가 발생했습니다.\n기본 설정으로 시작합니다.\n\n{str(e)}"
                 )
         
-        self.client_id = self.config['client_id']
-        self.client_secret = self.config['client_secret']
-        self.theme_idx = self.config['theme']
-        self.interval_idx = self.config['interval']
-        self.tabs_data = self.config['tabs']
-        self.notification_enabled = self.config.get('notification_enabled', True)
-        self.alert_keywords = self.config.get('alert_keywords', [])
-        self.sound_enabled = self.config.get('sound_enabled', True)
+        client_id = self.config.get('client_id', '')
+        client_secret = self.config.get('client_secret', '')
+        theme_idx = self.config.get('theme', 0)
+        interval_idx = self.config.get('interval', 2)
+        tabs_data = self.config.get('tabs', [])
+        alert_keywords = self.config.get('alert_keywords', [])
+        search_history = self.config.get('search_history', [])
+        saved_geometry = self.config.get('window_geometry', None)
+
+        self.client_id = client_id if isinstance(client_id, str) else ''
+        self.client_secret = client_secret if isinstance(client_secret, str) else ''
+        self.theme_idx = theme_idx if isinstance(theme_idx, int) else 0
+        self.interval_idx = interval_idx if isinstance(interval_idx, int) else 2
+        self.tabs_data = tabs_data if isinstance(tabs_data, list) else []
+        self.notification_enabled = bool(self.config.get('notification_enabled', True))
+        self.alert_keywords = alert_keywords if isinstance(alert_keywords, list) else []
+        self.sound_enabled = bool(self.config.get('sound_enabled', True))
         
         # 새 설정: 트레이/자동시작/창 상태
-        self.minimize_to_tray = self.config.get('minimize_to_tray', True)  # 트레이로 최소화
-        self.close_to_tray = self.config.get('close_to_tray', True)  # 닫기 시 트레이로
-        self.start_minimized = self.config.get('start_minimized', False)  # 최소화 상태로 시작
-        self.auto_start_enabled = self.config.get('auto_start_enabled', False)  # 윈도우 시작 시 자동 실행
-        self._saved_geometry = self.config.get('window_geometry', None)  # 창 위치/크기
-        self.notify_on_refresh = self.config.get('notify_on_refresh', False)  # 새로고침 완료 알림 (기본 비활성화)
-        self.search_history = self.config.get('search_history', [])  # 검색 히스토리 초기화 (저장된 값 사용)
-        self.api_timeout = self.config.get('api_timeout', 15) # 타임아웃 설정
+        self.minimize_to_tray = bool(self.config.get('minimize_to_tray', True))  # 트레이로 최소화
+        self.close_to_tray = bool(self.config.get('close_to_tray', True))  # 닫기 시 트레이로
+        self.start_minimized = bool(self.config.get('start_minimized', False))  # 최소화 상태로 시작
+        self.auto_start_enabled = bool(self.config.get('auto_start_enabled', False))  # 윈도우 시작 시 자동 실행
+        self._saved_geometry = saved_geometry if isinstance(saved_geometry, dict) else None  # 창 위치/크기
+        self.notify_on_refresh = bool(self.config.get('notify_on_refresh', False))  # 새로고침 완료 알림
+        self.search_history = search_history if isinstance(search_history, list) else []
+        timeout_value = self.config.get('api_timeout', 15)
+        self.api_timeout = timeout_value if isinstance(timeout_value, int) else 15
 
     def save_config(self):
         """설정 저장"""
         tab_names = []
-        for i in range(1, self.tabs.count()):
-            tab_widget = self.tabs.widget(i)
-            if tab_widget and hasattr(tab_widget, 'keyword'):
-                tab_names.append(tab_widget.keyword)
+        for _, tab_widget in self._iter_news_tabs():
+            tab_names.append(tab_widget.keyword)
         
         data = {
             'app_settings': {
@@ -3461,7 +3594,7 @@ class MainApp(QMainWindow):
                 json.dump(data, f, indent=4, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Config Save Error: {e}")
-            QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(e)}")
+            _ = QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(e)}")
 
     def init_ui(self):
         """UI 초기화"""
@@ -3548,24 +3681,31 @@ class MainApp(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
-        self.tabs.tabCloseRequested.connect(self.close_tab)
-        self.tabs.tabBar().tabBarDoubleClicked.connect(self.rename_tab)
-        self.tabs.tabBar().tabMoved.connect(self.on_tab_moved)  # 탭 순서 저장
-        self.tabs.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tabs.tabBar().customContextMenuRequested.connect(self.on_tab_context_menu)
+        _ = self.tabs.tabCloseRequested.connect(self.close_tab)
+        tab_bar = self.tabs.tabBar()
+        if tab_bar:
+            _ = tab_bar.tabBarDoubleClicked.connect(self.rename_tab)
+            _ = tab_bar.tabMoved.connect(self.on_tab_moved)  # 탭 순서 저장
+            tab_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            _ = tab_bar.customContextMenuRequested.connect(self.on_tab_context_menu)
         layout.addWidget(self.tabs)
         
-        self.btn_refresh.clicked.connect(self.refresh_all)
-        self.btn_setting.clicked.connect(self.open_settings)
-        self.btn_stats.clicked.connect(self.show_stats_analysis)
-        self.btn_help.clicked.connect(self.show_help)
-        self.btn_backup.clicked.connect(self.show_backup_dialog)
-        self.btn_add.clicked.connect(self.add_tab_dialog)
-        self.btn_save.clicked.connect(self.export_data)
+        _ = self.btn_refresh.clicked.connect(self.refresh_all)
+        _ = self.btn_setting.clicked.connect(self.open_settings)
+        _ = self.btn_stats.clicked.connect(self.show_stats_analysis)
+        _ = self.btn_help.clicked.connect(self.show_help)
+        _ = self.btn_backup.clicked.connect(self.show_backup_dialog)
+        _ = self.btn_add.clicked.connect(self.add_tab_dialog)
+        _ = self.btn_save.clicked.connect(self.export_data)
         
-        self.bm_tab = NewsTab("북마크", self.db, self.theme_idx, self)
+        db_manager = self.db
+        if db_manager is None:
+            raise RuntimeError("DB가 초기화되지 않았습니다.")
+        self.bm_tab = NewsTab("북마크", db_manager, self.theme_idx, self)
         self.tabs.addTab(self.bm_tab, "⭐ 북마크")
-        self.tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
+        tab_bar = self.tabs.tabBar()
+        if tab_bar:
+            tab_bar.setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
         
         for key in self.tabs_data:
             if key and key != "북마크":
@@ -3576,9 +3716,9 @@ class MainApp(QMainWindow):
         
         # 상태바 초기 메시지
         if self.client_id:
-            self.statusBar().showMessage(f"✅ 준비됨 - {len(self.tabs_data)}개 탭")
+            self._show_status_message(f"✅ 준비됨 - {len(self.tabs_data)}개 탭")
         else:
-            self.statusBar().showMessage("⚠️ API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요.")
+            self._show_status_message("⚠️ API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요.")
         
 
 
@@ -3617,36 +3757,35 @@ class MainApp(QMainWindow):
     def update_all_tab_badges(self):
         """모든 탭의 배지(미읽음 수) 업데이트"""
         try:
-            for i in range(1, self.tabs.count()):
-                widget = self.tabs.widget(i)
-                if widget and hasattr(widget, 'keyword'):
-                    keyword = widget.keyword
-                    # DB 조회 시에는 메인 키워드(첫 단어)만 사용
-                    search_keyword = keyword.split()[0] if keyword else ""
-                    unread_count = self.db.get_unread_count(search_keyword)
-                    
-                    # 탭 이름 업데이트
-                    if unread_count > 0:
-                        if unread_count > 99:
-                            badge = f" ({99}+)"
-                        else:
-                            badge = f" ({unread_count})"
-                        self.tabs.setTabText(i, f"{keyword}{badge}")
-                    else:
-                        self.tabs.setTabText(i, keyword)
+            db_manager = self.db
+            if db_manager is None:
+                return
+
+            for i, widget in self._iter_news_tabs():
+                keyword = widget.keyword
+                search_keyword = keyword.split()[0] if keyword else ""
+                unread_count = db_manager.get_unread_count(search_keyword)
+
+                if unread_count > 0:
+                    badge = f" ({99}+)" if unread_count > 99 else f" ({unread_count})"
+                    self.tabs.setTabText(i, f"{keyword}{badge}")
+                else:
+                    self.tabs.setTabText(i, keyword)
         except Exception as e:
             logger.warning(f"탭 배지 업데이트 오류: {e}")
     
     def update_tab_badge(self, keyword: str):
         """특정 탭의 배지 업데이트"""
         try:
-            for i in range(1, self.tabs.count()):
-                widget = self.tabs.widget(i)
-                if widget and hasattr(widget, 'keyword') and widget.keyword == keyword:
-                    # DB 조회 시에는 메인 키워드(첫 단어)만 사용
+            db_manager = self.db
+            if db_manager is None:
+                return
+
+            for i, widget in self._iter_news_tabs():
+                if widget.keyword == keyword:
                     search_keyword = keyword.split()[0] if keyword else ""
-                    unread_count = self.db.get_unread_count(search_keyword)
-                    
+                    unread_count = db_manager.get_unread_count(search_keyword)
+
                     if unread_count > 0:
                         badge = f" ({unread_count})" if unread_count <= 99 else " (99+)"
                         self.tabs.setTabText(i, f"{keyword}{badge}")
@@ -3663,8 +3802,8 @@ class MainApp(QMainWindow):
     
     def focus_filter(self):
         """현재 탭의 필터 입력란에 포커스"""
-        current_widget = self.tabs.currentWidget()
-        if current_widget and hasattr(current_widget, 'inp_filter'):
+        current_widget = self._current_news_tab()
+        if current_widget:
             current_widget.inp_filter.setFocus()
             current_widget.inp_filter.selectAll()
     
@@ -3698,12 +3837,7 @@ class MainApp(QMainWindow):
     
     def show_keyword_groups(self):
         """키워드 그룹 관리 다이얼로그 표시"""
-        # 현재 탭 목록 수집
-        current_tabs = []
-        for i in range(1, self.tabs.count()):
-            widget = self.tabs.widget(i)
-            if widget and hasattr(widget, 'keyword'):
-                current_tabs.append(widget.keyword)
+        current_tabs = [widget.keyword for _, widget in self._iter_news_tabs()]
         
         dialog = KeywordGroupDialog(self.keyword_group_manager, current_tabs, self)
         dialog.exec()
@@ -3713,7 +3847,7 @@ class MainApp(QMainWindow):
         dialog = BackupDialog(self.auto_backup, self)
         dialog.exec()
     
-    def check_alert_keywords(self, items: list) -> list:
+    def check_alert_keywords(self, items: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], str]]:
         """알림 키워드 체크 - 해당 키워드 포함된 기사 반환"""
         if not self.alert_keywords:
             return []
@@ -3730,7 +3864,9 @@ class MainApp(QMainWindow):
 
     def show_toast(self, message: str, toast_type: ToastType = ToastType.INFO):
         """토스트 메시지 표시 - 유형별 스타일 지원"""
-        self.toast_queue.add(message, toast_type)
+        toast_queue = self.toast_queue
+        if toast_queue is not None:
+            toast_queue.add(message, toast_type)
     
     def show_success_toast(self, message: str):
         """성공 토스트 메시지"""
@@ -3744,9 +3880,9 @@ class MainApp(QMainWindow):
         """오류 토스트 메시지"""
         self.show_toast(message, ToastType.ERROR)
     
-    def resizeEvent(self, event):
+    def resizeEvent(self, a0):
         """창 크기 변경 시 토스트 위치 업데이트"""
-        super().resizeEvent(event)
+        super().resizeEvent(a0)
         if hasattr(self, 'toast_queue') and self.toast_queue and self.toast_queue.current_toast:
             self.toast_queue.current_toast.update_position()
 
@@ -3759,13 +3895,16 @@ class MainApp(QMainWindow):
     def add_news_tab(self, keyword: str):
         """뉴스 탭 추가"""
         for i in range(self.tabs.count()):
-            widget = self.tabs.widget(i)
-            if hasattr(widget, 'keyword') and widget.keyword == keyword:
+            widget = self._news_tab_at(i)
+            if widget and widget.keyword == keyword:
                 self.tabs.setCurrentIndex(i)
                 return
-        
-        tab = NewsTab(keyword, self.db, self.theme_idx, self)
-        tab.btn_load.clicked.connect(lambda: self.fetch_news(keyword, is_more=True))
+
+        db_manager = self.db
+        if db_manager is None:
+            return
+        tab = NewsTab(keyword, db_manager, self.theme_idx, self)
+        _ = tab.btn_load.clicked.connect(lambda: self.fetch_news(keyword, is_more=True))
         icon_text = "📰" if not keyword.startswith("-") else "🚫"
         self.tabs.addTab(tab, f"{icon_text} {keyword}")
         
@@ -3802,7 +3941,7 @@ class MainApp(QMainWindow):
             for kw in self.search_history[:5]:  # 최근 5개
                 btn = QPushButton(kw)
                 btn.setStyleSheet("padding: 4px 8px; font-size: 9pt;")
-                btn.clicked.connect(lambda checked, text=kw: input_field.setText(text))
+                _ = btn.clicked.connect(lambda checked, text=kw: input_field.setText(text))
                 history_layout.addWidget(btn)
             history_layout.addStretch()
             layout.addLayout(history_layout)
@@ -3817,7 +3956,7 @@ class MainApp(QMainWindow):
         for example in examples:
             btn = QPushButton(example)
             btn.setStyleSheet("padding: 4px 8px; font-size: 9pt;")
-            btn.clicked.connect(lambda checked, text=example: input_field.setText(text))
+            _ = btn.clicked.connect(lambda checked, text=example: input_field.setText(text))
             quick_layout.addWidget(btn)
         quick_layout.addStretch()
         layout.addLayout(quick_layout)
@@ -3827,8 +3966,8 @@ class MainApp(QMainWindow):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
+        _ = buttons.accepted.connect(dialog.accept)
+        _ = buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         
         if dialog.exec():
@@ -3836,11 +3975,11 @@ class MainApp(QMainWindow):
             
             # 키워드 입력 검증
             if not raw_keyword:
-                QMessageBox.warning(self, "입력 오류", "키워드를 입력해 주세요.")
+                _ = QMessageBox.warning(self, "입력 오류", "키워드를 입력해 주세요.")
                 return
             
             if len(raw_keyword) > 100:
-                QMessageBox.warning(
+                _ = QMessageBox.warning(
                     self, 
                     "입력 오류", 
                     f"키워드가 너무 깁니다. ({len(raw_keyword)}자)\n"
@@ -3851,10 +3990,9 @@ class MainApp(QMainWindow):
             keyword = ValidationUtils.sanitize_keyword(raw_keyword)
             
             # 중복 탭 체크
-            for i in range(1, self.tabs.count()):
-                w = self.tabs.widget(i)
-                if hasattr(w, 'keyword') and w.keyword == keyword:
-                    QMessageBox.information(
+            for i, w in self._iter_news_tabs():
+                if w.keyword == keyword:
+                    _ = QMessageBox.information(
                         self, 
                         "중복 태브", 
                         f"'{keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다."
@@ -3888,11 +4026,11 @@ class MainApp(QMainWindow):
         """탭 이름 변경"""
         if idx == 0:
             return
-        
-        w = self.tabs.widget(idx)
+
+        w = self._news_tab_at(idx)
         if not w:
             return
-        
+
         text, ok = QInputDialog.getText(
             self,
             '탭 이름 변경',
@@ -3913,7 +4051,10 @@ class MainApp(QMainWindow):
             old_search_keyword = old_keyword.split()[0] if old_keyword.split() else old_keyword
             new_search_keyword = new_keyword.split()[0] if new_keyword.split() else new_keyword
             
-            conn = self.db.get_connection()
+            db_manager = self.db
+            if db_manager is None:
+                return
+            conn = db_manager.get_connection()
             try:
                 with conn:
                     conn.execute("UPDATE news SET keyword=? WHERE keyword=?", 
@@ -3921,19 +4062,22 @@ class MainApp(QMainWindow):
             except Exception as e:
                 logger.error(f"Rename error: {e}")
             finally:
-                self.db.return_connection(conn)
+                db_manager.return_connection(conn)
             
             self.fetch_news(new_keyword)
             self.save_config()
 
     def on_tab_context_menu(self, pos):
         """탭 바 컨텍스트 메뉴"""
-        idx = self.tabs.tabBar().tabAt(pos)
+        tab_bar = self.tabs.tabBar()
+        if not tab_bar:
+            return
+        idx = tab_bar.tabAt(pos)
         if idx <= 0:  # 0은 북마크 탭
             return
-            
-        widget = self.tabs.widget(idx)
-        if not widget or not hasattr(widget, 'keyword'):
+
+        widget = self._news_tab_at(idx)
+        if not widget:
             return
             
         keyword = widget.keyword
@@ -3947,19 +4091,21 @@ class MainApp(QMainWindow):
         # 그룹 메뉴
         group_menu = menu.addMenu("📁 그룹에 추가")
         groups = self.keyword_group_manager.get_all_groups()
-        if groups:
+        if groups and group_menu:
             for group in groups:
                 act = group_menu.addAction(group)
-                act.triggered.connect(lambda checked, g=group, k=keyword: 
-                                    self._add_to_group_callback(g, k))
+                if act:
+                    _ = act.triggered.connect(lambda checked, g=group, k=keyword: 
+                                        self._add_to_group_callback(g, k))
         else:
-            group_menu.setDisabled(True)
+            if group_menu:
+                group_menu.setDisabled(True)
             
         menu.addSeparator()
         act_close = menu.addAction("❌ 탭 닫기")
         
         # mapToGlobal은 self.tabs.tabBar() 기준으로 변환해야 함
-        action = menu.exec(self.tabs.tabBar().mapToGlobal(pos))
+        action = menu.exec(tab_bar.mapToGlobal(pos))
         
         if action == act_refresh:
             self.fetch_news(keyword)
@@ -3982,7 +4128,7 @@ class MainApp(QMainWindow):
             if self._network_available:  # 첫 번째 감지 시에만 로그
                 logger.warning(f"네트워크 연속 오류 {self._network_error_count}회. 자동 새로고침 일시 중지.")
                 self._network_available = False
-                self.statusBar().showMessage("⚠ 네트워크 오류로 자동 새로고침 일시 중지 (수동 새로고침으로 재개)")
+                self._show_status_message("⚠ 네트워크 오류로 자동 새로고침 일시 중지 (수동 새로고침으로 재개)")
             return
         
         # 이미 새로고침 진행 중이면 건너뜀
@@ -4014,7 +4160,7 @@ class MainApp(QMainWindow):
         try:
             valid, msg = ValidationUtils.validate_api_credentials(self.client_id, self.client_secret)
             if not valid:
-                self.statusBar().showMessage(f"⚠ {msg}")
+                self._show_status_message(f"⚠ {msg}")
                 logger.warning(f"API 자격증명 오류: {msg}")
                 return
 
@@ -4030,17 +4176,11 @@ class MainApp(QMainWindow):
             
             # 새로고침할 키워드 목록 수집
             self._pending_refresh_keywords = []
-            tab_count = self.tabs.count()
-            for i in range(1, tab_count):
-                try:
-                    widget = self.tabs.widget(i)
-                    if widget and hasattr(widget, 'keyword'):
-                        self._pending_refresh_keywords.append(widget.keyword)
-                except Exception as e:
-                    logger.error(f"탭 {i} 접근 오류: {e}")
+            for _, widget in self._iter_news_tabs():
+                self._pending_refresh_keywords.append(widget.keyword)
             
             if not self._pending_refresh_keywords:
-                self.statusBar().showMessage("새로고침할 탭이 없습니다.")
+                self._show_status_message("새로고침할 탭이 없습니다.")
                 return
             
             # 순차 새로고침 상태 초기화
@@ -4054,7 +4194,7 @@ class MainApp(QMainWindow):
             self.progress.setVisible(True)
             self.progress.setRange(0, self._total_refresh_count)
             self.progress.setValue(0)
-            self.statusBar().showMessage(f"🔄 순차 새로고침 중... (0/{self._total_refresh_count})")
+            self._show_status_message(f"🔄 순차 새로고침 중... (0/{self._total_refresh_count})")
             self.btn_refresh.setEnabled(False)
             
             logger.info(f"순차 새로고침 시작: {self._total_refresh_count}개 탭")
@@ -4065,7 +4205,7 @@ class MainApp(QMainWindow):
         except Exception as e:
             logger.error(f"refresh_all 오류: {e}")
             traceback.print_exc()
-            self.statusBar().showMessage(f"⚠ 새로고침 오류: {str(e)}")
+            self._show_status_message(f"⚠ 새로고침 오류: {str(e)}")
             self._finish_sequential_refresh()
 
     def _process_next_refresh(self):
@@ -4082,7 +4222,7 @@ class MainApp(QMainWindow):
         logger.info(f"순차 새로고침: [{self._current_refresh_idx + 1}/{self._total_refresh_count}] '{keyword}'")
         
         self.progress.setValue(self._current_refresh_idx)
-        self.statusBar().showMessage(
+        self._show_status_message(
             f"🔄 '{keyword}' 새로고침 중... ({self._current_refresh_idx + 1}/{self._total_refresh_count})"
         )
         
@@ -4129,7 +4269,7 @@ class MainApp(QMainWindow):
             toast_msg += f", {dup}건 중복"
         toast_msg += ")"
         
-        self.statusBar().showMessage(toast_msg, 5000)
+        self._show_status_message(toast_msg, 5000)
         self.show_toast(toast_msg)
         
         # 자동 새로고침 완료 윈도우 알림 (설정 시)
@@ -4150,9 +4290,12 @@ class MainApp(QMainWindow):
         
         start_idx = 1
         if is_more:
-            start_idx = self.db.get_counts(search_keyword) + 1
+            db_manager = self.db
+            if db_manager is None:
+                return
+            start_idx = db_manager.get_counts(search_keyword) + 1
             if start_idx > 1000:
-                QMessageBox.information(
+                _ = QMessageBox.information(
                     self,
                     "알림",
                     "네이버 검색 API는 최대 1,000개까지만 조회할 수 있습니다."
@@ -4176,19 +4319,22 @@ class MainApp(QMainWindow):
                 pass
             self.cleanup_worker(keyword)
 
-        for i in range(1, self.tabs.count()):
-            w = self.tabs.widget(i)
-            if w and hasattr(w, 'keyword') and w.keyword == keyword:
+        for _, w in self._iter_news_tabs():
+            if w.keyword == keyword:
                 w.btn_load.setEnabled(False)
                 w.btn_load.setText("⏳ 로딩 중...")
                 break
+
+        db_manager = self.db
+        if db_manager is None:
+            return
 
         worker = ApiWorker(
             self.client_id, 
             self.client_secret, 
             search_keyword, 
             exclude_words, 
-            self.db,  # DB 매니저 전달
+            db_manager,  # DB 매니저 전달
             start_idx,
             timeout=self.api_timeout, # 타임아웃 전달
             session=self.session      # 공유 세션 전달
@@ -4199,23 +4345,23 @@ class MainApp(QMainWindow):
         self.workers[keyword] = (worker, thread)
         # Note: self.threads는 workers와 중복되므로 제거됨
         
-        worker.finished.connect(lambda res: self.on_fetch_done(res, keyword, is_more, is_sequential))
-        worker.error.connect(lambda err: self.on_fetch_error(err, keyword, is_sequential))
+        _ = worker.finished.connect(lambda res: self.on_fetch_done(res, keyword, is_more, is_sequential))
+        _ = worker.error.connect(lambda err: self.on_fetch_error(err, keyword, is_sequential))
         if not is_sequential:
-            worker.progress.connect(self.statusBar().showMessage)
+            _ = worker.progress.connect(self._show_status_message)
         
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        worker.error.connect(thread.quit)
-        worker.error.connect(worker.deleteLater)  # 오류 시에도 워커 정리
+        _ = worker.finished.connect(thread.quit)
+        _ = worker.finished.connect(worker.deleteLater)
+        _ = worker.error.connect(thread.quit)
+        _ = worker.error.connect(worker.deleteLater)  # 오류 시에도 워커 정리
         
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self.cleanup_worker(keyword))
+        _ = thread.finished.connect(thread.deleteLater)
+        _ = thread.finished.connect(lambda: self.cleanup_worker(keyword))
         
-        thread.started.connect(worker.run)
+        _ = thread.started.connect(worker.run)
         thread.start()
 
-    def on_fetch_done(self, result: Dict, keyword: str, is_more: bool, is_sequential: bool = False):
+    def on_fetch_done(self, result: Dict[str, Any], keyword: str, is_more: bool, is_sequential: bool = False):
         """뉴스 가져오기 완료 - 순차 새로고침 지원"""
         try:
             search_keyword = keyword.split()[0] if keyword.split() else keyword
@@ -4224,9 +4370,8 @@ class MainApp(QMainWindow):
             added_count = result.get('added_count', 0)
             dup_count = result.get('dup_count', 0)
             
-            for i in range(1, self.tabs.count()):
-                w = self.tabs.widget(i)
-                if w and hasattr(w, 'keyword') and w.keyword == keyword:
+            for _, w in self._iter_news_tabs():
+                if w.keyword == keyword:
                     w.total_api_count = result['total']
                     w.update_timestamp()
                     w.load_data_from_db()
@@ -4256,7 +4401,7 @@ class MainApp(QMainWindow):
                         toast_msg += f", {dup_count}건 유사"
                     toast_msg += ")"
                     self.show_toast(toast_msg)
-                    self.statusBar().showMessage(toast_msg, 3000)
+                    self._show_status_message(toast_msg, 3000)
                     
                     # 새 기사가 있으면 데스크톱 알림
                     if added_count > 0:
@@ -4299,7 +4444,7 @@ class MainApp(QMainWindow):
         except Exception as e:
             logger.error(f"Fetch Done Error: {e}")
             traceback.print_exc()
-            self.statusBar().showMessage(f"⚠ 처리 중 오류: {str(e)}")
+            self._show_status_message(f"⚠ 처리 중 오류: {str(e)}")
             # UI 복원
             if not is_sequential:
                 self.progress.setVisible(False)
@@ -4310,9 +4455,8 @@ class MainApp(QMainWindow):
 
     def on_fetch_error(self, error_msg: str, keyword: str, is_sequential: bool = False):
         """뉴스 가져오기 오류 - 순차 새로고침 지원"""
-        for i in range(1, self.tabs.count()):
-            w = self.tabs.widget(i)
-            if w and hasattr(w, 'keyword') and w.keyword == keyword:
+        for _, w in self._iter_news_tabs():
+            if w.keyword == keyword:
                 w.btn_load.setEnabled(True)
                 w.btn_load.setText("📥 더 불러오기")
                 break
@@ -4323,8 +4467,8 @@ class MainApp(QMainWindow):
             self.progress.setRange(0, 100)
             self.btn_refresh.setEnabled(True)
             
-            self.statusBar().showMessage(f"⚠ '{keyword}' 오류: {error_msg}", 5000)
-            QMessageBox.critical(
+            self._show_status_message(f"⚠ '{keyword}' 오류: {error_msg}", 5000)
+            _ = QMessageBox.critical(
                 self, 
                 "API 오류", 
                 f"'{keyword}' 검색 중 오류가 발생했습니다:\n\n{error_msg}\n\n"
@@ -4392,9 +4536,9 @@ class MainApp(QMainWindow):
 
     def export_data(self):
         """데이터 내보내기"""
-        cur_widget = self.tabs.currentWidget()
-        if not cur_widget or not hasattr(cur_widget, 'news_data_cache') or not cur_widget.news_data_cache:
-            QMessageBox.information(self, "알림", "저장할 뉴스가 없습니다.")
+        cur_widget = self._current_news_tab()
+        if not cur_widget or not cur_widget.news_data_cache:
+            _ = QMessageBox.information(self, "알림", "저장할 뉴스가 없습니다.")
             return
         
         keyword = cur_widget.keyword
@@ -4427,10 +4571,10 @@ class MainApp(QMainWindow):
                         ])
                 
                 self.show_success_toast(f"✓ {len(cur_widget.news_data_cache)}개 항목이 저장되었습니다")
-                QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{fname}")
+                _ = QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{fname}")
                 
             except Exception as e:
-                QMessageBox.warning(self, "오류", f"저장 중 오류 발생:\n{str(e)}")
+                _ = QMessageBox.warning(self, "오류", f"저장 중 오류 발생:\n{str(e)}")
     
     def export_settings(self):
         """설정 JSON 내보내기 (API 키 제외)"""
@@ -4451,22 +4595,22 @@ class MainApp(QMainWindow):
                     'refresh_interval_index': self.interval_idx,
                     'notification_enabled': self.notification_enabled,
                     'alert_keywords': self.alert_keywords,
+                    'sound_enabled': self.sound_enabled,
                     'close_to_tray': self.close_to_tray,
                     'start_minimized': self.start_minimized,
+                    'auto_start_enabled': self.auto_start_enabled,
                     'notify_on_refresh': self.notify_on_refresh
                 },
-                'tabs': [self.tabs.widget(i).keyword 
-                        for i in range(1, self.tabs.count()) 
-                        if hasattr(self.tabs.widget(i), 'keyword')]
+                'tabs': [widget.keyword for _, widget in self._iter_news_tabs()]
             }
             
             try:
                 with open(fname, 'w', encoding='utf-8') as f:
                     json.dump(export_data, f, indent=4, ensure_ascii=False)
                 self.show_success_toast("✓ 설정이 내보내기되었습니다.")
-                QMessageBox.information(self, "완료", f"설정이 저장되었습니다:\n{fname}\n\n(API 키는 보안상 제외됨)")
+                _ = QMessageBox.information(self, "완료", f"설정이 저장되었습니다:\n{fname}\n\n(API 키는 보안상 제외됨)")
             except Exception as e:
-                QMessageBox.warning(self, "오류", f"설정 내보내기 오류:\n{str(e)}")
+                _ = QMessageBox.warning(self, "오류", f"설정 내보내기 오류:\n{str(e)}")
     
     def import_settings(self):
         """설정 JSON 가져오기"""
@@ -4484,29 +4628,57 @@ class MainApp(QMainWindow):
                 
                 # 설정 적용
                 settings = import_data.get('settings', {})
-                self.theme_idx = settings.get('theme_index', self.theme_idx)
-                self.interval_idx = settings.get('refresh_interval_index', self.interval_idx)
-                self.notification_enabled = settings.get('notification_enabled', True)
-                self.alert_keywords = settings.get('alert_keywords', [])
+                if not isinstance(settings, dict):
+                    settings = {}
+
+                theme_index = settings.get('theme_index', self.theme_idx)
+                if isinstance(theme_index, int) and theme_index in (0, 1):
+                    self.theme_idx = theme_index
+
+                interval_index = settings.get('refresh_interval_index', self.interval_idx)
+                if isinstance(interval_index, int) and 0 <= interval_index <= 5:
+                    self.interval_idx = interval_index
+
+                self.notification_enabled = bool(settings.get('notification_enabled', True))
+
+                alert_keywords = settings.get('alert_keywords', [])
+                self.alert_keywords = [str(k).strip() for k in alert_keywords if str(k).strip()][:10] if isinstance(alert_keywords, list) else []
+
+                self.sound_enabled = bool(settings.get('sound_enabled', self.sound_enabled))
+                self.close_to_tray = bool(settings.get('close_to_tray', self.close_to_tray))
+
+                old_start_minimized = self.start_minimized
+                self.start_minimized = bool(settings.get('start_minimized', self.start_minimized))
+                self.notify_on_refresh = bool(settings.get('notify_on_refresh', self.notify_on_refresh))
+
+                imported_auto_start = bool(settings.get('auto_start_enabled', self.auto_start_enabled))
+                if imported_auto_start != self.auto_start_enabled:
+                    if imported_auto_start:
+                        self.auto_start_enabled = StartupManager.enable_startup(self.start_minimized)
+                    else:
+                        self.auto_start_enabled = not StartupManager.disable_startup()
+                elif imported_auto_start and old_start_minimized != self.start_minimized:
+                    self.auto_start_enabled = StartupManager.enable_startup(self.start_minimized)
                 
                 # 테마 적용
                 self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
                 for i in range(self.tabs.count()):
                     widget = self.tabs.widget(i)
-                    if widget and hasattr(widget, 'theme'):
+                    if isinstance(widget, NewsTab):
                         widget.theme = self.theme_idx
                         widget.render_html()
                 
                 # 탭 추가 (중복 제외)
                 imported_tabs = import_data.get('tabs', [])
-                existing_keywords = [self.tabs.widget(i).keyword 
-                                    for i in range(1, self.tabs.count()) 
-                                    if hasattr(self.tabs.widget(i), 'keyword')]
+                if not isinstance(imported_tabs, list):
+                    imported_tabs = []
+                existing_keywords = [widget.keyword for _, widget in self._iter_news_tabs()]
                 
                 new_tabs = 0
                 for keyword in imported_tabs:
-                    if keyword and keyword not in existing_keywords:
-                        self.add_news_tab(keyword)
+                    keyword_str = str(keyword).strip()
+                    if keyword_str and keyword_str not in existing_keywords:
+                        self.add_news_tab(keyword_str)
                         new_tabs += 1
                 
                 self.apply_refresh_interval()
@@ -4518,11 +4690,14 @@ class MainApp(QMainWindow):
                 self.show_toast(msg)
                 
             except Exception as e:
-                QMessageBox.warning(self, "오류", f"설정 가져오기 오류:\n{str(e)}")
+                _ = QMessageBox.warning(self, "오류", f"설정 가져오기 오류:\n{str(e)}")
 
     def show_statistics(self):
         """통계 정보 표시"""
-        stats = self.db.get_statistics()
+        db_manager = self.db
+        if db_manager is None:
+            return
+        stats = db_manager.get_statistics()
         
         if stats['total'] > 0:
             read_count = stats['total'] - stats['unread']
@@ -4562,13 +4737,16 @@ class MainApp(QMainWindow):
         layout.addWidget(group)
         
         btn_close = QPushButton("닫기")
-        btn_close.clicked.connect(dialog.accept)
+        _ = btn_close.clicked.connect(dialog.accept)
         layout.addWidget(btn_close)
         
         dialog.exec()
 
     def show_stats_analysis(self):
         """통계 및 분석 통합 다이얼로그"""
+        db_manager = self.db
+        if db_manager is None:
+            return
         dialog = QDialog(self)
         dialog.setWindowTitle("📊 통계 및 분석")
         dialog.resize(550, 500)
@@ -4582,7 +4760,7 @@ class MainApp(QMainWindow):
         stats_widget = QWidget()
         stats_layout = QVBoxLayout(stats_widget)
         
-        stats = self.db.get_statistics()
+        stats = db_manager.get_statistics()
         if stats['total'] > 0:
             read_percent = ((stats['total'] - stats['unread']) / stats['total']) * 100
         else:
@@ -4623,12 +4801,9 @@ class MainApp(QMainWindow):
         
         tab_combo = QComboBox()
         tab_combo.addItem("전체", None)
-        for i in range(1, self.tabs.count()):
-            w = self.tabs.widget(i)
-            if w and hasattr(w, 'keyword'):
-                # DB 조회용 키워드(db_keyword)를 data로 저장
-                db_kw = w.db_keyword if hasattr(w, 'db_keyword') else w.keyword.split()[0]
-                tab_combo.addItem(w.keyword, db_kw)
+        for _, w in self._iter_news_tabs():
+            db_kw = w.db_keyword
+            tab_combo.addItem(w.keyword, db_kw)
         analysis_layout.addWidget(tab_combo)
         
         result_label = QLabel("📈 언론사별 기사 수:")
@@ -4641,7 +4816,7 @@ class MainApp(QMainWindow):
         def update_analysis():
             result_list.clear()
             keyword = tab_combo.currentData()
-            publishers = self.db.get_top_publishers(keyword, limit=20)
+            publishers = db_manager.get_top_publishers(keyword, limit=20)
             
             if publishers:
                 for i, (pub, count) in enumerate(publishers, 1):
@@ -4649,7 +4824,7 @@ class MainApp(QMainWindow):
             else:
                 result_list.addItem("데이터가 없습니다.")
         
-        tab_combo.currentIndexChanged.connect(update_analysis)
+        _ = tab_combo.currentIndexChanged.connect(update_analysis)
         update_analysis()
         
         # 탭 추가
@@ -4659,7 +4834,7 @@ class MainApp(QMainWindow):
         main_layout.addWidget(tab_widget)
         
         btn_close = QPushButton("닫기")
-        btn_close.clicked.connect(dialog.accept)
+        _ = btn_close.clicked.connect(dialog.accept)
         main_layout.addWidget(btn_close)
         
         dialog.exec()
@@ -4695,6 +4870,7 @@ class MainApp(QMainWindow):
             'theme': self.theme_idx,
             'notification_enabled': self.notification_enabled,
             'alert_keywords': self.alert_keywords,
+            'sound_enabled': self.sound_enabled,
             'close_to_tray': self.close_to_tray,
             'start_minimized': self.start_minimized,
             'auto_start_enabled': self.auto_start_enabled,
@@ -4708,36 +4884,52 @@ class MainApp(QMainWindow):
             self.client_id = data['id']
             self.client_secret = data['secret']
             self.interval_idx = data['interval']
+
+            old_auto_start = self.auto_start_enabled
+            old_start_minimized = self.start_minimized
             
             # 알림 설정 적용
             self.notification_enabled = data.get('notification_enabled', True)
             self.alert_keywords = data.get('alert_keywords', [])
+            self.sound_enabled = data.get('sound_enabled', True)
             
             # 트레이 설정 적용
-            self.close_to_tray = data.get('close_to_tray', True)
-            self.start_minimized = data.get('start_minimized', False)
-            self.notify_on_refresh = data.get('notify_on_refresh', False)
+            self.close_to_tray = bool(data.get('close_to_tray', True))
+            self.start_minimized = bool(data.get('start_minimized', False))
+            self.notify_on_refresh = bool(data.get('notify_on_refresh', False))
             
             # 자동 시작 설정 적용 (Windows 레지스트리)
-            new_auto_start = data.get('auto_start_enabled', False)
-            if new_auto_start != self.auto_start_enabled:
+            new_auto_start = bool(data.get('auto_start_enabled', False))
+            if new_auto_start != old_auto_start:
                 if new_auto_start:
-                    if StartupManager.enable_startup(self.start_minimized):
+                    if StartupManager.enable_startup(bool(self.start_minimized)):
+                        self.auto_start_enabled = True
                         self.show_success_toast("✓ 윈도우 시작 시 자동 실행이 설정되었습니다.")
                     else:
+                        self.auto_start_enabled = False
                         self.show_error_toast("자동 시작 설정에 실패했습니다.")
                 else:
                     if StartupManager.disable_startup():
+                        self.auto_start_enabled = False
                         self.show_success_toast("✓ 자동 실행이 해제되었습니다.")
-                self.auto_start_enabled = new_auto_start
+                    else:
+                        self.auto_start_enabled = True
+                        self.show_error_toast("자동 실행 해제에 실패했습니다.")
+            elif new_auto_start and self.start_minimized != old_start_minimized:
+                if StartupManager.enable_startup(bool(self.start_minimized)):
+                    self.show_success_toast("✓ 자동 실행 시작 옵션이 업데이트되었습니다.")
+                else:
+                    self.show_error_toast("자동 실행 시작 옵션 업데이트에 실패했습니다.")
             
             if self.theme_idx != data['theme']:
-                self.theme_idx = data['theme']
+                theme_value = data['theme']
+                if isinstance(theme_value, int):
+                    self.theme_idx = theme_value
                 self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
                 
                 for i in range(self.tabs.count()):
                     widget = self.tabs.widget(i)
-                    if widget and hasattr(widget, 'theme'):
+                    if isinstance(widget, NewsTab):
                         widget.theme = self.theme_idx
                         widget.render_html()
             
@@ -4752,7 +4944,7 @@ class MainApp(QMainWindow):
             self.timer.stop()
             self._countdown_timer.stop()
             idx = self.interval_idx
-            minutes = [10, 30, 60, 180, 360]
+            minutes = [10, 30, 60, 120, 360]
             
             if 0 <= idx < len(minutes):
                 ms = minutes[idx] * 60 * 1000
@@ -4764,22 +4956,24 @@ class MainApp(QMainWindow):
                 self._countdown_timer.setInterval(1000)  # 1초마다 업데이트
                 self._countdown_timer.start()
                 
-                self.statusBar().showMessage(f"⏰ 자동 새로고침: {minutes[idx]}분 간격")
+                self._show_status_message(f"⏰ 자동 새로고침: {minutes[idx]}분 간격")
                 logger.info(f"자동 새로고침 설정: {minutes[idx]}분 ({ms}ms)")
             else:
                 # 인덱스 5 = "자동 새로고침 안함"
                 self.timer.stop()
                 self._countdown_timer.stop()
                 self._next_refresh_seconds = 0
-                self.statusBar().showMessage("⏰ 자동 새로고침 꺼짐")
+                self._show_status_message("⏰ 자동 새로고침 꺼짐")
                 logger.info("자동 새로고침 비활성화됨")
         except Exception as e:
             logger.error(f"타이머 설정 오류: {e}")
             traceback.print_exc()
 
 
-    def closeEvent(self, event):
+    def closeEvent(self, a0):
         """종료 이벤트 - 트레이 최소화 지원 버전"""
+        if a0 is None:
+            return
         # 초기화 실패 시에도 안전하게 동작하도록 방어적 코딩
         if not hasattr(self, '_system_shutdown'):
             self._system_shutdown = False
@@ -4797,13 +4991,13 @@ class MainApp(QMainWindow):
             if self._system_shutdown:
                 logger.warning("시스템 종료로 인한 프로그램 종료")
             # 실제 종료 처리로 진행
-            self._perform_real_close(event)
+            self._perform_real_close(a0)
             return
         
         # 트레이 아이콘이 있고, 트레이로 최소화 설정이 켜져 있으면 → 트레이로 숨기기
         if hasattr(self, 'tray') and self.tray and self.close_to_tray:
             logger.info("창을 트레이로 최소화")
-            event.ignore()
+            a0.ignore()
             self.hide()
             
             # 처음 트레이로 숨길 때 알림 표시
@@ -4831,14 +5025,14 @@ class MainApp(QMainWindow):
             
             if reply != QMessageBox.StandardButton.Yes:
                 logger.info("사용자가 종료를 취소함")
-                event.ignore()
+                a0.ignore()
                 return
             
             self._user_requested_close = True
             logger.info("사용자가 종료 확인함")
         
         # 실제 종료 처리
-        self._perform_real_close(event)
+        self._perform_real_close(a0)
     
     def _perform_real_close(self, event):
         """프로그램 실제 종료 처리"""
@@ -4912,13 +5106,17 @@ class MainApp(QMainWindow):
             logger.info("프로그램 종료 처리 완료")
             
             # 명시적으로 애플리케이션 종료
-            QApplication.instance().quit()
+            app_instance = QApplication.instance()
+            if app_instance:
+                app_instance.quit()
             
         except Exception as e:
             logger.error(f"종료 처리 중 오류: {e}")
             traceback.print_exc()
             # 오류가 나더라도 종료 시도
-            QApplication.instance().quit()
+            app_instance = QApplication.instance()
+            if app_instance:
+                app_instance.quit()
         
         event.accept()
     
@@ -4961,7 +5159,7 @@ class MainApp(QMainWindow):
 class SettingsDialog(QDialog):
     """설정 다이얼로그 (검증 기능 + 도움말 추가)"""
     
-    def __init__(self, config: Dict, parent=None):
+    def __init__(self, config: Dict[str, Any], parent=None):
         super().__init__(parent)
         self.setWindowTitle("설정 및 도움말")
         self.resize(600, 550)
@@ -4983,6 +5181,29 @@ class SettingsDialog(QDialog):
         else:
             bg_color = "#FFFFFF"
             text_color = "#000000"
+
+        client_id = self.config.get('client_id', '')
+        client_secret = self.config.get('client_secret', '')
+        interval_index = self.config.get('interval', 2)
+        theme_index = self.config.get('theme', 0)
+        close_to_tray = self.config.get('close_to_tray', True)
+        start_minimized = self.config.get('start_minimized', False)
+        notify_on_refresh = self.config.get('notify_on_refresh', False)
+        notification_enabled = self.config.get('notification_enabled', True)
+        alert_keywords = self.config.get('alert_keywords', [])
+        sound_enabled = self.config.get('sound_enabled', True)
+
+        if not isinstance(client_id, str):
+            client_id = ''
+        if not isinstance(client_secret, str):
+            client_secret = ''
+        if not isinstance(interval_index, int) or not (0 <= interval_index <= 5):
+            interval_index = 2
+        if not isinstance(theme_index, int) or not (0 <= theme_index <= 1):
+            theme_index = 0
+        if not isinstance(alert_keywords, list):
+            alert_keywords = []
+
         # 탭 위젯 생성
         tab_widget = QTabWidget()
         
@@ -4999,15 +5220,15 @@ class SettingsDialog(QDialog):
         gp_api = QGroupBox("📡 네이버 API 설정")
         form = QGridLayout()
         
-        self.txt_id = QLineEdit(self.config.get('client_id', ''))
+        self.txt_id = QLineEdit(client_id)
         self.txt_id.setPlaceholderText("네이버 개발자센터에서 발급받은 Client ID")
         
-        self.txt_sec = QLineEdit(self.config.get('client_secret', ''))
+        self.txt_sec = QLineEdit(client_secret)
         self.txt_sec.setEchoMode(QLineEdit.EchoMode.Password)
         self.txt_sec.setPlaceholderText("Client Secret")
         
         self.chk_show_pw = QCheckBox("비밀번호 표시")
-        self.chk_show_pw.stateChanged.connect(
+        _ = self.chk_show_pw.stateChanged.connect(
             lambda: self.txt_sec.setEchoMode(
                 QLineEdit.EchoMode.Normal if self.chk_show_pw.isChecked() 
                 else QLineEdit.EchoMode.Password
@@ -5015,12 +5236,12 @@ class SettingsDialog(QDialog):
         )
         
         btn_get_key = QPushButton("🔑 API 키 발급받기")
-        btn_get_key.clicked.connect(
+        _ = btn_get_key.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://developers.naver.com/apps/#/register"))
         )
         
         btn_validate = QPushButton("✓ API 키 검증")
-        btn_validate.clicked.connect(self.validate_api_key)
+        _ = btn_validate.clicked.connect(self.validate_api_key)
         
         form.addWidget(QLabel("Client ID:"), 0, 0)
         form.addWidget(self.txt_id, 0, 1, 1, 2)
@@ -5037,16 +5258,12 @@ class SettingsDialog(QDialog):
         form2 = QGridLayout()
         
         self.cb_time = NoScrollComboBox()
-        self.cb_time.addItems(["10분", "30분", "1시간", "3시간", "6시간", "자동 새로고침 안함"])
-        idx = self.config.get('interval', 2)
-        if isinstance(idx, int) and 0 <= idx <= 5:
-            self.cb_time.setCurrentIndex(idx)
-        else:
-            self.cb_time.setCurrentIndex(2)
+        self.cb_time.addItems(["10분", "30분", "1시간", "2시간", "6시간", "자동 새로고침 안함"])
+        self.cb_time.setCurrentIndex(interval_index)
         
         self.cb_theme = NoScrollComboBox()
         self.cb_theme.addItems(["☀ 라이트 모드", "🌙 다크 모드"])
-        self.cb_theme.setCurrentIndex(self.config.get('theme', 0))
+        self.cb_theme.setCurrentIndex(theme_index)
         
         form2.addWidget(QLabel("자동 새로고침:"), 0, 0)
         form2.addWidget(self.cb_time, 0, 1)
@@ -5062,7 +5279,7 @@ class SettingsDialog(QDialog):
         
         # 트레이로 최소화 옵션
         self.chk_close_to_tray = QCheckBox("X 버튼 클릭 시 트레이로 최소화 (종료하지 않음)")
-        self.chk_close_to_tray.setChecked(self.config.get('close_to_tray', True))
+        self.chk_close_to_tray.setChecked(bool(close_to_tray))
         tray_layout.addWidget(self.chk_close_to_tray)
         
         # 자동 시작 옵션 (Windows만)
@@ -5076,12 +5293,12 @@ class SettingsDialog(QDialog):
         
         # 최소화 상태로 시작 옵션
         self.chk_start_minimized = QCheckBox("시작 시 최소화 상태로 시작 (트레이로)")
-        self.chk_start_minimized.setChecked(self.config.get('start_minimized', False))
+        self.chk_start_minimized.setChecked(bool(start_minimized))
         tray_layout.addWidget(self.chk_start_minimized)
         
         # 자동 새로고침 완료 알림 옵션
         self.chk_notify_on_refresh = QCheckBox("자동 새로고침 완료 시 알림 표시")
-        self.chk_notify_on_refresh.setChecked(self.config.get('notify_on_refresh', False))
+        self.chk_notify_on_refresh.setChecked(bool(notify_on_refresh))
         tray_layout.addWidget(self.chk_notify_on_refresh)
         
         # 안내 메시지
@@ -5096,28 +5313,28 @@ class SettingsDialog(QDialog):
         vbox = QVBoxLayout()
         
         btn_clean = QPushButton("🧹 오래된 데이터 정리 (30일 이전)")
-        btn_clean.clicked.connect(self.clean_data)
+        _ = btn_clean.clicked.connect(self.clean_data)
         
         btn_all = QPushButton("🗑 모든 기사 삭제 (북마크 제외)")
-        btn_all.clicked.connect(self.clean_all)
+        _ = btn_all.clicked.connect(self.clean_all)
         
         # JSON 설정 백업/복원 버튼
         backup_layout = QHBoxLayout()
         btn_export_settings = QPushButton("📤 설정 내보내기")
-        btn_export_settings.clicked.connect(self.export_settings_dialog)
+        _ = btn_export_settings.clicked.connect(self.export_settings_dialog)
         btn_import_settings = QPushButton("📥 설정 가져오기")
-        btn_import_settings.clicked.connect(self.import_settings_dialog)
+        _ = btn_import_settings.clicked.connect(self.import_settings_dialog)
         backup_layout.addWidget(btn_export_settings)
         backup_layout.addWidget(btn_import_settings)
         
         # 고급 도구 버튼 (툴바에서 이동)
         tools_layout = QHBoxLayout()
         btn_log = QPushButton("📋 로그 보기")
-        btn_log.clicked.connect(self.show_log_dialog)
+        _ = btn_log.clicked.connect(self.show_log_dialog)
         btn_folder = QPushButton("📁 데이터 폴더")
-        btn_folder.clicked.connect(self.open_data_folder)
+        _ = btn_folder.clicked.connect(self.open_data_folder)
         btn_groups = QPushButton("🗂 키워드 그룹")
-        btn_groups.clicked.connect(self.show_groups_dialog)
+        _ = btn_groups.clicked.connect(self.show_groups_dialog)
         tools_layout.addWidget(btn_log)
         tools_layout.addWidget(btn_folder)
         tools_layout.addWidget(btn_groups)
@@ -5134,14 +5351,14 @@ class SettingsDialog(QDialog):
         notif_layout = QVBoxLayout()
         
         self.chk_notification = QCheckBox("데스크톱 알림 활성화 (새 뉴스 도착 시)")
-        self.chk_notification.setChecked(self.config.get('notification_enabled', True))
+        self.chk_notification.setChecked(bool(notification_enabled))
         notif_layout.addWidget(self.chk_notification)
         
         keywords_label = QLabel("알림 키워드 (쉼표로 구분, 최대 10개):")
         notif_layout.addWidget(keywords_label)
         
         self.txt_alert_keywords = QLineEdit()
-        current_keywords = self.config.get('alert_keywords', [])
+        current_keywords = [str(k) for k in alert_keywords]
         self.txt_alert_keywords.setText(", ".join(current_keywords) if current_keywords else "")
         self.txt_alert_keywords.setPlaceholderText("예: 긴급, 속보, 단독")
         notif_layout.addWidget(self.txt_alert_keywords)
@@ -5152,12 +5369,12 @@ class SettingsDialog(QDialog):
         
         # 알림 소리 설정
         self.chk_sound = QCheckBox("알림 소리 활성화")
-        self.chk_sound.setChecked(self.config.get('sound_enabled', True))
+        self.chk_sound.setChecked(bool(sound_enabled))
         notif_layout.addWidget(self.chk_sound)
         
         # 소리 테스트 버튼
         btn_test_sound = QPushButton("🔊 소리 테스트")
-        btn_test_sound.clicked.connect(lambda: NotificationSound.play('success'))
+        _ = btn_test_sound.clicked.connect(lambda: NotificationSound.play('success'))
         notif_layout.addWidget(btn_test_sound)
         
         gp_notification.setLayout(notif_layout)
@@ -5200,605 +5417,10 @@ class SettingsDialog(QDialog):
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        btns.accepted.connect(self.accept_with_validation)
-        btns.rejected.connect(self.reject)
+        _ = btns.accepted.connect(self.accept_with_validation)
+        _ = btns.rejected.connect(self.reject)
         layout.addWidget(btns)
     
-    def get_help_html(self) -> str:
-        """도움말 HTML 생성"""
-        return """
-        <html>
-        <head>
-            <style>
-                body { font-family: '맑은 고딕', sans-serif; padding: 15px; line-height: 1.6; }
-                h2 { color: #007AFF; border-bottom: 2px solid #007AFF; padding-bottom: 5px; }
-                h3 { color: #333; margin-top: 20px; }
-                .section { margin-bottom: 25px; }
-                .tip { background-color: #FFF3CD; padding: 10px; border-left: 4px solid #FFC107; margin: 10px 0; }
-                .warning { background-color: #F8D7DA; padding: 10px; border-left: 4px solid #DC3545; margin: 10px 0; }
-                .info { background-color: #D1ECF1; padding: 10px; border-left: 4px solid #17A2B8; margin: 10px 0; }
-                code { background-color: #F5F5F5; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
-                ul { margin-left: 20px; }
-                li { margin: 5px 0; }
-                a { color: #007AFF; text-decoration: none; }
-                a:hover { text-decoration: underline; }
-            </style>
-        </head>
-        <body>
-            <h2>🎯 빠른 시작 가이드</h2>
-            
-            <div class="section">
-                <h3>1️⃣ API 키 설정</h3>
-                <ul>
-                    <li><a href="https://developers.naver.com/apps/#/register">네이버 개발자센터</a>에서 애플리케이션 등록</li>
-                    <li>검색 API 선택 (뉴스 검색)</li>
-                    <li>Client ID와 Client Secret을 설정 탭에 입력</li>
-                    <li>"✓ API 키 검증" 버튼으로 정상 작동 확인</li>
-                </ul>
-                <div class="tip">
-                    <strong>💡 팁:</strong> API 키는 안전하게 로컬 파일에만 저장됩니다.
-                </div>
-            </div>
-            
-            <div class="section">
-                <h3>2️⃣ 탭 추가 및 검색</h3>
-                <ul>
-                    <li><strong>기본 검색:</strong> <code>주식</code></li>
-                    <li><strong>제외 키워드:</strong> <code>주식 -코인</code> (코인 제외)</li>
-                    <li><strong>복합 검색:</strong> <code>인공지능 AI -광고 -채용</code></li>
-                </ul>
-                <div class="info">
-                    <strong>ℹ️ 정보:</strong> 제외 키워드는 '-' 기호로 시작하며, 여러 개 사용 가능합니다.
-                </div>
-            </div>
-            
-            <div class="section">
-                <h3>3️⃣ 기사 관리</h3>
-                <ul>
-                    <li><strong>읽음 표시:</strong> 제목 클릭 시 자동으로 읽음 처리</li>
-                    <li><strong>북마크:</strong> ⭐ 버튼으로 중요 기사 저장</li>
-                    <li><strong>메모:</strong> 📝 버튼으로 기사별 메모 작성</li>
-                    <li><strong>공유:</strong> 📋 버튼으로 제목+링크 클립보드 복사</li>
-                    <li><strong>미리보기:</strong> 제목에 마우스 올리면 내용 미리보기</li>
-                </ul>
-            </div>
-            
-            <div class="section">
-                <h3>4️⃣ 필터링 및 정렬</h3>
-                <ul>
-                    <li><strong>실시간 필터:</strong> 검색창에 입력하면 즉시 반영</li>
-                    <li><strong>안 읽은 것만:</strong> 읽지 않은 기사만 표시</li>
-                    <li><strong>중복 숨김:</strong> 유사한 기사 자동 숨김</li>
-                    <li><strong>정렬:</strong> 최신순 / 오래된순 선택</li>
-                </ul>
-                <div class="tip">
-                    <strong>💡 팁:</strong> Ctrl+F를 누르면 필터 검색창에 즉시 포커스됩니다.
-                </div>
-            </div>
-            
-            <div class="section">
-                <h3>5️⃣ 데이터 관리</h3>
-                <ul>
-                    <li><strong>내보내기:</strong> Ctrl+S로 현재 탭의 기사를 CSV로 저장</li>
-                    <li><strong>통계:</strong> 📊 버튼으로 전체 통계 확인</li>
-                    <li><strong>분석:</strong> 📈 버튼으로 언론사별 기사 수 분석</li>
-                    <li><strong>오래된 데이터 정리:</strong> 30일 이전 기사 삭제 (북마크 제외)</li>
-                </ul>
-                <div class="warning">
-                    <strong>⚠️ 주의:</strong> 북마크하지 않은 기사는 데이터 정리 시 삭제될 수 있습니다.
-                </div>
-            </div>
-            
-            <div class="section">
-                <h3>6️⃣ 자동 새로고침</h3>
-                <ul>
-                    <li>설정에서 간격 선택: 10분 / 30분 / 1시간 / 3시간 / 6시간</li>
-                    <li>백그라운드에서 자동으로 새 기사 수집</li>
-                    <li>새 기사 발견 시 토스트 알림 표시</li>
-                </ul>
-            </div>
-            
-            <div class="section">
-                <h3>7️⃣ 문제 해결</h3>
-                <ul>
-                    <li><strong>검색 결과가 없을 때:</strong> 키워드 철자 확인, 제외 키워드 줄이기</li>
-                    <li><strong>API 오류:</strong> 설정에서 "✓ API 키 검증" 실행</li>
-                    <li><strong>앱이 느릴 때:</strong> 오래된 데이터 정리 실행</li>
-                    <li><strong>중복 기사가 많을 때:</strong> "중복 숨김" 체크박스 활성화</li>
-                </ul>
-            </div>
-            
-            <div class="info" style="margin-top: 30px;">
-                <strong>📚 더 많은 정보:</strong> 단축키는 "⌨ 단축키" 탭을 참고하세요.
-            </div>
-        </body>
-        </html>
-        """
-    
-    def get_shortcuts_html(self) -> str:
-        """단축키 안내 HTML 생성"""
-        return """
-        <html>
-        <head>
-            <style>
-                body { font-family: '맑은 고딕', sans-serif; padding: 15px; line-height: 1.6; }
-                h2 { color: #007AFF; border-bottom: 2px solid #007AFF; padding-bottom: 5px; }
-                h3 { color: #333; margin-top: 20px; background-color: #F5F5F5; padding: 8px; border-radius: 5px; }
-                .shortcut-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-                .shortcut-table th { background-color: #007AFF; color: white; padding: 10px; text-align: left; }
-                .shortcut-table td { padding: 10px; border-bottom: 1px solid #E0E0E0; }
-                .shortcut-table tr:hover { background-color: #F8F9FA; }
-                .key { background-color: #FFFFFF; border: 2px solid #CCCCCC; border-radius: 5px; padding: 3px 8px; font-family: monospace; font-weight: bold; color: #333; display: inline-block; margin: 0 2px; box-shadow: 0 2px 3px rgba(0,0,0,0.1); }
-                .description { color: #555; }
-                .category { background-color: #E3F2FD; padding: 5px 10px; border-radius: 3px; font-weight: bold; color: #1976D2; margin-top: 15px; }
-            </style>
-        </head>
-        <body>
-            <h2>⌨️ 키보드 단축키 가이드</h2>
-            
-            <div class="category">🔄 새로고침 & 탭 관리</div>
-            <table class="shortcut-table">
-                <tr>
-                    <td style="width: 35%;"><span class="key">Ctrl</span> + <span class="key">R</span> 또는 <span class="key">F5</span></td>
-                    <td class="description">모든 탭 새로고침</td>
-                </tr>
-                <tr>
-                    <td><span class="key">Ctrl</span> + <span class="key">T</span></td>
-                    <td class="description">새 탭 추가</td>
-                </tr>
-                <tr>
-                    <td><span class="key">Ctrl</span> + <span class="key">W</span></td>
-                    <td class="description">현재 탭 닫기 (북마크 탭은 제외)</td>
-                </tr>
-                <tr>
-                    <td><span class="key">Alt</span> + <span class="key">1</span>~<span class="key">9</span></td>
-                    <td class="description">탭 빠른 전환 (1=북마크, 2=첫 번째 탭, ...)</td>
-                </tr>
-            </table>
-            
-            <div class="category">🔍 검색 & 필터링</div>
-            <table class="shortcut-table">
-                <tr>
-                    <td><span class="key">Ctrl</span> + <span class="key">F</span></td>
-                    <td class="description">필터 검색창에 포커스 (전체 선택)</td>
-                </tr>
-            </table>
-            
-            <div class="category">💾 데이터 관리</div>
-            <table class="shortcut-table">
-                <tr>
-                    <td><span class="key">Ctrl</span> + <span class="key">S</span></td>
-                    <td class="description">현재 탭 데이터 CSV로 내보내기</td>
-                </tr>
-            </table>
-            
-            <div class="category">⚙️ 설정 & 도움말</div>
-            <table class="shortcut-table">
-                <tr>
-                    <td><span class="key">Ctrl</span> + <span class="key">,</span></td>
-                    <td class="description">설정 창 열기</td>
-                </tr>
-                <tr>
-                    <td><span class="key">F1</span></td>
-                    <td class="description">도움말 열기</td>
-                </tr>
-            </table>
-            
-            <h3>🖱️ 마우스 동작</h3>
-            <table class="shortcut-table">
-                <tr>
-                    <td style="width: 35%;"><strong>제목 클릭</strong></td>
-                    <td class="description">기사 열기 (자동으로 읽음 처리)</td>
-                </tr>
-                <tr>
-                    <td><strong>제목 호버</strong></td>
-                    <td class="description">기사 내용 미리보기 (툴팁)</td>
-                </tr>
-                <tr>
-                    <td><strong>탭 더블클릭</strong></td>
-                    <td class="description">탭 이름(키워드) 변경</td>
-                </tr>
-                <tr>
-                    <td><strong>탭 X 버튼</strong></td>
-                    <td class="description">탭 닫기</td>
-                </tr>
-            </table>
-            
-            <h3>📋 기사 카드 버튼</h3>
-            <table class="shortcut-table">
-                <tr>
-                    <td style="width: 35%;"><strong>공유</strong></td>
-                    <td class="description">제목과 링크를 클립보드에 복사</td>
-                </tr>
-                <tr>
-                    <td><strong>외부</strong></td>
-                    <td class="description">기본 브라우저에서 열기</td>
-                </tr>
-                <tr>
-                    <td><strong>메모 📝</strong></td>
-                    <td class="description">기사에 메모 작성/편집 (메모가 있으면 📝 표시)</td>
-                </tr>
-                <tr>
-                    <td><strong>안읽음</strong></td>
-                    <td class="description">읽음 → 안읽음으로 변경</td>
-                </tr>
-                <tr>
-                    <td><strong>북마크 / 북마크 해제</strong></td>
-                    <td class="description">중요 기사로 표시/해제 (⭐ 북마크 탭에서 모아보기)</td>
-                </tr>
-            </table>
-            
-            <h3>💡 유용한 팁</h3>
-            <table class="shortcut-table">
-                <tr>
-                    <td style="width: 35%;"><strong>탭 드래그</strong></td>
-                    <td class="description">탭 순서 변경 가능</td>
-                </tr>
-                <tr>
-                    <td><strong>필터 검색</strong></td>
-                    <td class="description">입력하는 즉시 실시간으로 필터링 적용</td>
-                </tr>
-                <tr>
-                    <td><strong>중복 숨김</strong></td>
-                    <td class="description">유사한 제목의 기사 자동 숨김</td>
-                </tr>
-                <tr>
-                    <td><strong>안 읽은 것만</strong></td>
-                    <td class="description">읽지 않은 기사만 표시</td>
-                </tr>
-            </table>
-            
-            <div style="margin-top: 30px; padding: 15px; background-color: #E8F5E9; border-radius: 8px; border-left: 4px solid #4CAF50;">
-                <strong>🎯 프로 팁:</strong> 단축키를 조합하여 사용하면 훨씬 빠르게 작업할 수 있습니다!<br>
-                예: <span class="key">Alt</span>+<span class="key">2</span> (탭 전환) → <span class="key">Ctrl</span>+<span class="key">F</span> (필터 포커스) → 검색어 입력
-            </div>
-        </body>
-        </html>
-        """
-    
-    def validate_api_key(self):
-        """API 키 검증"""
-        client_id = self.txt_id.text().strip()
-        client_secret = self.txt_sec.text().strip()
-        
-        valid, msg = ValidationUtils.validate_api_credentials(client_id, client_secret)
-        
-        if not valid:
-            QMessageBox.warning(self, "검증 실패", msg)
-            return
-        
-        try:
-            headers = {
-                "X-Naver-Client-Id": client_id,
-                "X-Naver-Client-Secret": client_secret
-            }
-            url = "https://openapi.naver.com/v1/search/news.json"
-            params = {"query": "테스트", "display": 1}
-            
-            resp = requests.get(url, headers=headers, params=params, timeout=10)
-            
-            if resp.status_code == 200:
-                QMessageBox.information(
-                    self, 
-                    "검증 성공", 
-                    "✓ API 키가 정상적으로 작동합니다!"
-                )
-            else:
-                error_data = resp.json()
-                error_msg = error_data.get('errorMessage', '알 수 없는 오류')
-                QMessageBox.warning(
-                    self,
-                    "검증 실패",
-                    f"API 키가 올바르지 않습니다.\n\n오류: {error_msg}"
-                )
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "검증 오류",
-                f"API 키 검증 중 오류가 발생했습니다:\n\n{str(e)}"
-            )
-    
-    def accept_with_validation(self):
-        """검증 후 저장"""
-        client_id = self.txt_id.text().strip()
-        client_secret = self.txt_sec.text().strip()
-        
-        if client_id or client_secret:
-            valid, msg = ValidationUtils.validate_api_credentials(client_id, client_secret)
-            if not valid:
-                reply = QMessageBox.question(
-                    self,
-                    "API 키 확인",
-                    f"{msg}\n\n그래도 저장하시겠습니까?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.No:
-                    return
-        
-        self.accept()
-
-    def clean_data(self):
-        """오래된 데이터 정리"""
-        reply = QMessageBox.question(
-            self,
-            "데이터 정리",
-            "30일 이전의 기사를 삭제하시겠습니까?\n\n(북마크된 기사는 삭제되지 않습니다)",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            db = DatabaseManager(DB_FILE)
-            cnt = db.delete_old_news(30)
-            db.close()
-            QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 오래된 기사를 삭제했습니다.")
-
-    def clean_all(self):
-        """모든 기사 삭제"""
-        reply = QMessageBox.warning(
-            self,
-            "⚠ 경고",
-            "정말 모든 기사를 삭제하시겠습니까?\n\n"
-            "이 작업은 취소할 수 없습니다.\n"
-            "(북마크된 기사는 삭제되지 않습니다)",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            db = DatabaseManager(DB_FILE)
-            cnt = db.delete_all_news()
-            db.close()
-            QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 기사를 삭제했습니다.")
-    
-    def export_settings_dialog(self):
-        """설정 내보내기 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'export_settings'):
-            self.parent().export_settings()
-    
-    def import_settings_dialog(self):
-        """설정 가져오기 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'import_settings'):
-            self.parent().import_settings()
-    
-    def show_log_dialog(self):
-        """로그 뷰어 표시 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'show_log_viewer'):
-            self.parent().show_log_viewer()
-    
-    def open_data_folder(self):
-        """데이터 폴더 열기"""
-        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(os.path.abspath(CONFIG_FILE))))
-    
-    def show_groups_dialog(self):
-        """키워드 그룹 관리 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'show_keyword_groups'):
-            self.parent().show_keyword_groups()
-
-    def get_data(self) -> Dict:
-        """설정 데이터 반환"""
-        # 알림 키워드 파싱 (쉼표로 구분, 최대 10개)
-        keywords_text = self.txt_alert_keywords.text().strip()
-        alert_keywords = []
-        if keywords_text:
-            alert_keywords = [kw.strip() for kw in keywords_text.split(',') if kw.strip()][:10]
-        
-        return {
-            'id': self.txt_id.text().strip(),
-            'secret': self.txt_sec.text().strip(),
-            'interval': self.cb_time.currentIndex(),
-            'theme': self.cb_theme.currentIndex(),
-            'notification_enabled': self.chk_notification.isChecked(),
-            'alert_keywords': alert_keywords,
-            'close_to_tray': self.chk_close_to_tray.isChecked(),
-            'auto_start_enabled': self.chk_auto_start.isChecked(),
-            'start_minimized': self.chk_start_minimized.isChecked(),
-            'notify_on_refresh': self.chk_notify_on_refresh.isChecked()
-        }
-        form = QGridLayout()
-        
-        self.txt_id = QLineEdit(self.config.get('client_id', ''))
-        self.txt_id.setPlaceholderText("네이버 개발자센터에서 발급받은 Client ID")
-        
-        self.txt_sec = QLineEdit(self.config.get('client_secret', ''))
-        self.txt_sec.setEchoMode(QLineEdit.EchoMode.Password)
-        self.txt_sec.setPlaceholderText("Client Secret")
-        
-        self.chk_show_pw = QCheckBox("비밀번호 표시")
-        self.chk_show_pw.stateChanged.connect(
-            lambda: self.txt_sec.setEchoMode(
-                QLineEdit.EchoMode.Normal if self.chk_show_pw.isChecked() 
-                else QLineEdit.EchoMode.Password
-            )
-        )
-        
-        btn_get_key = QPushButton("🔑 API 키 발급받기")
-        btn_get_key.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://developers.naver.com/apps/#/register"))
-        )
-        
-        btn_validate = QPushButton("✓ API 키 검증")
-        btn_validate.clicked.connect(self.validate_api_key)
-        
-        form.addWidget(QLabel("Client ID:"), 0, 0)
-        form.addWidget(self.txt_id, 0, 1, 1, 2)
-        form.addWidget(QLabel("Client Secret:"), 1, 0)
-        form.addWidget(self.txt_sec, 1, 1, 1, 2)
-        form.addWidget(self.chk_show_pw, 2, 1)
-        form.addWidget(btn_get_key, 3, 0, 1, 2)
-        form.addWidget(btn_validate, 3, 2)
-        
-        gp_api.setLayout(form)
-        settings_layout.addWidget(gp_api)
-        
-        gp_app = QGroupBox("⚙ 일반 설정")
-        form2 = QGridLayout()
-        
-        self.cb_time = NoScrollComboBox()
-        self.cb_time.addItems(["10분", "30분", "1시간", "3시간", "6시간", "자동 새로고침 안함"])
-        idx = self.config.get('interval', 2)
-        if isinstance(idx, int) and 0 <= idx <= 5:
-            self.cb_time.setCurrentIndex(idx)
-        else:
-            self.cb_time.setCurrentIndex(2)
-        
-        self.cb_theme = NoScrollComboBox()
-        self.cb_theme.addItems(["☀ 라이트 모드", "🌙 다크 모드"])
-        self.cb_theme.setCurrentIndex(self.config.get('theme', 0))
-        
-        form2.addWidget(QLabel("자동 새로고침:"), 0, 0)
-        form2.addWidget(self.cb_time, 0, 1)
-        form2.addWidget(QLabel("테마:"), 1, 0)
-        form2.addWidget(self.cb_theme, 1, 1)
-        
-        gp_app.setLayout(form2)
-        settings_layout.addWidget(gp_app)
-        
-        # 시스템 트레이 및 자동 시작 설정
-        gp_tray = QGroupBox("🖥️ 시스템 트레이 및 시작 설정")
-        tray_layout = QVBoxLayout()
-        
-        # 트레이로 최소화 옵션
-        self.chk_close_to_tray = QCheckBox("X 버튼 클릭 시 트레이로 최소화 (종료하지 않음)")
-        self.chk_close_to_tray.setChecked(self.config.get('close_to_tray', True))
-        tray_layout.addWidget(self.chk_close_to_tray)
-        
-        # 자동 시작 옵션 (Windows만)
-        self.chk_auto_start = QCheckBox("윈도우 시작 시 자동 실행")
-        if StartupManager.is_available():
-            self.chk_auto_start.setChecked(StartupManager.is_startup_enabled())
-        else:
-            self.chk_auto_start.setEnabled(False)
-            self.chk_auto_start.setToolTip("Windows에서만 사용 가능합니다.")
-        tray_layout.addWidget(self.chk_auto_start)
-        
-        # 최소화 상태로 시작 옵션
-        self.chk_start_minimized = QCheckBox("시작 시 최소화 상태로 시작 (트레이로)")
-        self.chk_start_minimized.setChecked(self.config.get('start_minimized', False))
-        tray_layout.addWidget(self.chk_start_minimized)
-        
-        # 자동 새로고침 완료 알림 옵션
-        self.chk_notify_on_refresh = QCheckBox("자동 새로고침 완료 시 알림 표시")
-        self.chk_notify_on_refresh.setChecked(self.config.get('notify_on_refresh', False))
-        tray_layout.addWidget(self.chk_notify_on_refresh)
-        
-        # 안내 메시지
-        tray_info = QLabel("💡 트레이로 최소화하면 백그라운드에서 뉴스를 계속 수집합니다.")
-        tray_info.setStyleSheet("color: #666; font-size: 9pt;")
-        tray_layout.addWidget(tray_info)
-        
-        gp_tray.setLayout(tray_layout)
-        settings_layout.addWidget(gp_tray)
-        
-        gp_data = QGroupBox("🗂 데이터 관리")
-        vbox = QVBoxLayout()
-        
-        btn_clean = QPushButton("🧹 오래된 데이터 정리 (30일 이전)")
-        btn_clean.clicked.connect(self.clean_data)
-        
-        btn_all = QPushButton("🗑 모든 기사 삭제 (북마크 제외)")
-        btn_all.clicked.connect(self.clean_all)
-        
-        # JSON 설정 백업/복원 버튼
-        backup_layout = QHBoxLayout()
-        btn_export_settings = QPushButton("📤 설정 내보내기")
-        btn_export_settings.clicked.connect(self.export_settings_dialog)
-        btn_import_settings = QPushButton("📥 설정 가져오기")
-        btn_import_settings.clicked.connect(self.import_settings_dialog)
-        backup_layout.addWidget(btn_export_settings)
-        backup_layout.addWidget(btn_import_settings)
-        
-        # 고급 도구 버튼 (툴바에서 이동)
-        tools_layout = QHBoxLayout()
-        btn_log = QPushButton("📋 로그 보기")
-        btn_log.clicked.connect(self.show_log_dialog)
-        btn_folder = QPushButton("📁 데이터 폴더")
-        btn_folder.clicked.connect(self.open_data_folder)
-        btn_groups = QPushButton("🗂 키워드 그룹")
-        btn_groups.clicked.connect(self.show_groups_dialog)
-        tools_layout.addWidget(btn_log)
-        tools_layout.addWidget(btn_folder)
-        tools_layout.addWidget(btn_groups)
-        
-        vbox.addWidget(btn_clean)
-        vbox.addWidget(btn_all)
-        vbox.addLayout(backup_layout)
-        vbox.addLayout(tools_layout)
-        gp_data.setLayout(vbox)
-        settings_layout.addWidget(gp_data)
-        
-        # 알림 설정 그룹
-        gp_notification = QGroupBox("🔔 알림 설정")
-        notif_layout = QVBoxLayout()
-        
-        self.chk_notification = QCheckBox("데스크톱 알림 활성화 (새 뉴스 도착 시)")
-        self.chk_notification.setChecked(self.config.get('notification_enabled', True))
-        notif_layout.addWidget(self.chk_notification)
-        
-        keywords_label = QLabel("알림 키워드 (쉼표로 구분, 최대 10개):")
-        notif_layout.addWidget(keywords_label)
-        
-        self.txt_alert_keywords = QLineEdit()
-        current_keywords = self.config.get('alert_keywords', [])
-        self.txt_alert_keywords.setText(", ".join(current_keywords) if current_keywords else "")
-        self.txt_alert_keywords.setPlaceholderText("예: 긴급, 속보, 단독")
-        notif_layout.addWidget(self.txt_alert_keywords)
-        
-        keywords_info = QLabel("💡 위 키워드가 기사 제목이나 내용에 포함되면 알림이 표시됩니다.")
-        keywords_info.setStyleSheet("color: #666; font-size: 9pt;")
-        notif_layout.addWidget(keywords_info)
-        
-        # 알림 소리 설정
-        self.chk_sound = QCheckBox("알림 소리 활성화")
-        self.chk_sound.setChecked(self.config.get('sound_enabled', True))
-        notif_layout.addWidget(self.chk_sound)
-        
-        # 소리 테스트 버튼
-        btn_test_sound = QPushButton("🔊 소리 테스트")
-        btn_test_sound.clicked.connect(lambda: NotificationSound.play('success'))
-        notif_layout.addWidget(btn_test_sound)
-        
-        gp_notification.setLayout(notif_layout)
-        settings_layout.addWidget(gp_notification)
-        
-        settings_layout.addStretch()
-        
-        # === 도움말 탭 ===
-        help_widget = QWidget()
-        help_layout = QVBoxLayout(help_widget)
-        
-        help_browser = QTextBrowser()
-        help_browser.setOpenExternalLinks(True)
-        help_browser.setHtml(self.get_help_html())
-        help_layout.addWidget(help_browser)
-        
-        # === 단축키 탭 ===
-        shortcuts_widget = QWidget()
-        shortcuts_layout = QVBoxLayout(shortcuts_widget)
-        
-        shortcuts_browser = QTextBrowser()
-        shortcuts_browser.setOpenExternalLinks(False)
-        shortcuts_browser.setHtml(self.get_shortcuts_html())
-        shortcuts_layout.addWidget(shortcuts_browser)
-        
-        # 스크롤 영역에 설정 위젯 추가
-        scroll_area.setWidget(settings_widget)
-        
-        # 탭에 추가
-        tab_widget.addTab(scroll_area, "⚙ 설정")
-        tab_widget.addTab(help_widget, "📖 도움말")
-        tab_widget.addTab(shortcuts_widget, "⌨ 단축키")
-        
-        layout.addWidget(tab_widget)
-        
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        btns.accepted.connect(self.accept_with_validation)
-        btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
-
     def _get_docs_css(self) -> str:
         """설정/도움말 탭에서 쓰는 HTML 공통 CSS (라이트/다크 대응)."""
         if self.is_dark:
@@ -6002,7 +5624,7 @@ class SettingsDialog(QDialog):
         valid, msg = ValidationUtils.validate_api_credentials(client_id, client_secret)
         
         if not valid:
-            QMessageBox.warning(self, "검증 실패", msg)
+            _ = QMessageBox.warning(self, "검증 실패", msg)
             return
         
         try:
@@ -6016,7 +5638,7 @@ class SettingsDialog(QDialog):
             resp = requests.get(url, headers=headers, params=params, timeout=10)
             
             if resp.status_code == 200:
-                QMessageBox.information(
+                _ = QMessageBox.information(
                     self, 
                     "검증 성공", 
                     "✓ API 키가 정상적으로 작동합니다!"
@@ -6024,13 +5646,13 @@ class SettingsDialog(QDialog):
             else:
                 error_data = resp.json()
                 error_msg = error_data.get('errorMessage', '알 수 없는 오류')
-                QMessageBox.warning(
+                _ = QMessageBox.warning(
                     self,
                     "검증 실패",
                     f"API 키가 올바르지 않습니다.\n\n오류: {error_msg}"
                 )
         except Exception as e:
-            QMessageBox.critical(
+            _ = QMessageBox.critical(
                 self,
                 "검증 오류",
                 f"API 키 검증 중 오류가 발생했습니다:\n\n{str(e)}"
@@ -6070,7 +5692,7 @@ class SettingsDialog(QDialog):
             db = DatabaseManager(DB_FILE)
             cnt = db.delete_old_news(30)
             db.close()
-            QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 오래된 기사를 삭제했습니다.")
+            _ = QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 오래된 기사를 삭제했습니다.")
 
     def clean_all(self):
         """모든 기사 삭제"""
@@ -6088,22 +5710,25 @@ class SettingsDialog(QDialog):
             db = DatabaseManager(DB_FILE)
             cnt = db.delete_all_news()
             db.close()
-            QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 기사를 삭제했습니다.")
+            _ = QMessageBox.information(self, "완료", f"✓ {cnt:,}개의 기사를 삭제했습니다.")
     
     def export_settings_dialog(self):
         """설정 내보내기 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'export_settings'):
-            self.parent().export_settings()
+        parent = self.parent()
+        if isinstance(parent, MainApp):
+            parent.export_settings()
     
     def import_settings_dialog(self):
         """설정 가져오기 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'import_settings'):
-            self.parent().import_settings()
+        parent = self.parent()
+        if isinstance(parent, MainApp):
+            parent.import_settings()
     
     def show_log_dialog(self):
         """로그 뷰어 표시 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'show_log_viewer'):
-            self.parent().show_log_viewer()
+        parent = self.parent()
+        if isinstance(parent, MainApp):
+            parent.show_log_viewer()
     
     def open_data_folder(self):
         """데이터 폴더 열기"""
@@ -6111,10 +5736,11 @@ class SettingsDialog(QDialog):
     
     def show_groups_dialog(self):
         """키워드 그룹 관리 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'show_keyword_groups'):
-            self.parent().show_keyword_groups()
+        parent = self.parent()
+        if isinstance(parent, MainApp):
+            parent.show_keyword_groups()
 
-    def get_data(self) -> Dict:
+    def get_data(self) -> Dict[str, object]:
         """설정 데이터 반환"""
         # 알림 키워드 파싱 (쉼표로 구분, 최대 10개)
         keywords_text = self.txt_alert_keywords.text().strip()
@@ -6129,6 +5755,7 @@ class SettingsDialog(QDialog):
             'theme': self.cb_theme.currentIndex(),
             'notification_enabled': self.chk_notification.isChecked(),
             'alert_keywords': alert_keywords,
+            'sound_enabled': self.chk_sound.isChecked(),
             'close_to_tray': self.chk_close_to_tray.isChecked(),
             'auto_start_enabled': self.chk_auto_start.isChecked(),
             'start_minimized': self.chk_start_minimized.isChecked(),
@@ -6237,7 +5864,7 @@ def main():
             # QApplication은 이미 전역으로 import 되어 있음
             # 만약 QApplication이 없다면 이 부분도 실패하겠지만, main 진입했다면 import는 성공한 상태임
             app = QApplication.instance() or QApplication(sys.argv)
-            QMessageBox.critical(None, "시작 오류", f"프로그램을 시작할 수 없습니다:\n\n{str(e)}\n\n자세한 내용은 crash_log.txt를 확인하세요.")
+            _ = QMessageBox.critical(None, "시작 오류", f"프로그램을 시작할 수 없습니다:\n\n{str(e)}\n\n자세한 내용은 crash_log.txt를 확인하세요.")
         except:
             pass
         
