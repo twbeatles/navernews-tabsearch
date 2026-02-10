@@ -2493,12 +2493,7 @@ class NewsTab(QWidget):
         row2_layout.addWidget(self.chk_unread)
         row2_layout.addWidget(self.chk_hide_dup)
         
-        # 구분선
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Sunken)
-        row2_layout.addWidget(sep)
-        
+
         self.btn_date_toggle = QToolButton()
         self.btn_date_toggle.setObjectName("DateToggle")
         self.btn_date_toggle.setText("📅 기간")
@@ -2535,8 +2530,9 @@ class NewsTab(QWidget):
         
         filter_layout.addLayout(row2_layout)
         
-        # 초기에는 날짜 필터 숨김
-        self.date_container.setVisible(False)
+        # 초기에는 날짜 필터 표시
+        self.date_container.setVisible(True)
+        self.btn_date_toggle.setChecked(True)
         
         layout.addWidget(filter_card)
         
@@ -3637,12 +3633,7 @@ class MainApp(QMainWindow):
         toolbar.addWidget(self.btn_refresh)
         toolbar.addWidget(self.btn_save)
         
-        # 구분선 1
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setFrameShadow(QFrame.Shadow.Sunken)
-        sep1.setStyleSheet(f"color: {Colors.LIGHT_BORDER if self.theme_idx == 0 else Colors.DARK_BORDER};")
-        toolbar.addWidget(sep1)
+
         
         # --- 분석/관리 그룹 ---
         self.btn_stats = QPushButton("📊 통계")
