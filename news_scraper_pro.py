@@ -155,6 +155,31 @@ def parse_date_to_ts(date_str: str) -> float:
                 continue
     return 0.0
 
+
+def parse_tab_query(raw: str) -> Tuple[str, List[str]]:
+    """탭 문자열을 DB 키워드(첫 단어 정책 유지)와 제외어 목록으로 분해."""
+    parts = raw.split()
+    if not parts:
+        return "", []
+
+    db_keyword = ""
+    exclude_words: List[str] = []
+
+    for idx, token in enumerate(parts):
+        if token.startswith("-"):
+            if len(token) > 1:
+                exclude_words.append(token[1:])
+            continue
+
+        if not db_keyword:
+            # 기존 정책 유지: DB 키는 첫 번째 일반 단어
+            if idx == 0:
+                db_keyword = token
+            else:
+                db_keyword = token
+
+    return db_keyword, exclude_words
+
 # --- 하이라이트 패턴 캐시 (LRU 최적화) ---
 @lru_cache(maxsize=128)
 def get_highlight_pattern(keyword: str) -> re.Pattern[str]:
@@ -1482,7 +1507,9 @@ class ApiWorker(QObject):
                 
                 # 백그라운드 DB 저장 (UI 프리징 방지)
                 self._safe_emit(self.progress, f"'{self.keyword}' 저장 중...")
-                search_keyword_only = self.keyword.split()[0] if self.keyword.split() else self.keyword
+                search_keyword_only, _ = parse_tab_query(self.keyword)
+                if not search_keyword_only:
+                    search_keyword_only = self.keyword
                 added_count, dup_count = self.db.upsert_news(items, search_keyword_only)
                 
                 result = {
@@ -1563,15 +1590,11 @@ class DBWorker(QThread):
     def run(self):
         try:
             if self._is_cancelled: return
-            # 키워드 파싱 (제외어 처리)
-            parts = self.keyword.split()
-            if not parts:
+            search_keyword, exclude_words = parse_tab_query(self.keyword)
+            if not search_keyword:
                 self.finished.emit([], 0)
                 return
-                
-            search_keyword = parts[0] # 첫 단어를 DB 검색용 키워드로 사용
-            exclude_words = [w[1:] for w in parts if w.startswith('-')]
-            
+
             # DB 조회 수행 (검색 키워드로 조회)
             data = self.db.fetch_news(
                 keyword=search_keyword,
@@ -2134,7 +2157,46 @@ class AutoBackup:
                 logger.info(f"백업 디렉토리 생성: {self.backup_dir}")
             except Exception as e:
                 logger.error(f"백업 디렉토리 생성 실패: {e}")
-    
+
+    def _copy_db_sidecars(self, src_base: str, dst_base: str):
+        """SQLite sidecar(-wal/-shm) 파일을 함께 복사."""
+        for suffix in ("-wal", "-shm"):
+            src = f"{src_base}{suffix}"
+            dst = f"{dst_base}{suffix}"
+            if os.path.exists(src):
+                shutil.copy2(src, dst)
+            elif os.path.exists(dst):
+                # 백업/복원 시 기존 sidecar 잔존으로 인한 일관성 문제 방지
+                try:
+                    os.remove(dst)
+                except OSError:
+                    logger.warning(f"sidecar 삭제 실패: {dst}")
+
+    def _snapshot_db(self, dst_db_file: str) -> bool:
+        """sqlite backup API로 일관된 DB 스냅샷 생성."""
+        src_conn = None
+        dst_conn = None
+        try:
+            src_conn = sqlite3.connect(self.db_file, timeout=10.0, check_same_thread=False)
+            dst_conn = sqlite3.connect(dst_db_file, timeout=10.0, check_same_thread=False)
+            src_conn.backup(dst_conn)
+            dst_conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.warning(f"sqlite backup API 실패, 파일 복사로 fallback: {e}")
+            return False
+        finally:
+            if dst_conn is not None:
+                try:
+                    dst_conn.close()
+                except sqlite3.Error:
+                    pass
+            if src_conn is not None:
+                try:
+                    src_conn.close()
+                except sqlite3.Error:
+                    pass
+
     def create_backup(self, include_db: bool = True) -> Optional[str]:
         """백업 생성"""
         try:
@@ -2153,12 +2215,11 @@ class AutoBackup:
             
             # 데이터베이스 백업 (선택적)
             if include_db and os.path.exists(self.db_file):
-                import shutil
-                shutil.copy2(
-                    self.db_file,
-                    os.path.join(backup_path, os.path.basename(self.db_file))
-                )
-            
+                backup_db = os.path.join(backup_path, os.path.basename(self.db_file))
+                if not self._snapshot_db(backup_db):
+                    shutil.copy2(self.db_file, backup_db)
+                self._copy_db_sidecars(self.db_file, backup_db)
+
             # 백업 정보 파일 생성
             info = {
                 'timestamp': timestamp,
@@ -2236,13 +2297,16 @@ class AutoBackup:
             config_backup = os.path.join(backup_path, os.path.basename(self.config_file))
             if os.path.exists(config_backup):
                 shutil.copy2(config_backup, self.config_file)
-            
+
             # 데이터베이스 복원 (선택적)
             if restore_db:
                 db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
                 if os.path.exists(db_backup):
                     shutil.copy2(db_backup, self.db_file)
-            
+                    self._copy_db_sidecars(db_backup, self.db_file)
+                else:
+                    logger.warning(f"복원할 DB 파일 없음: {db_backup}")
+
             logger.info(f"백업 복원 완료: {backup_name}")
             return True
             
@@ -2434,7 +2498,8 @@ class NewsTab(QWidget):
     @property
     def db_keyword(self):
         """DB 저장용 키워드 (첫 번째 단어만 사용)"""
-        return self.keyword.split()[0] if self.keyword else ""
+        db_keyword, _ = parse_tab_query(self.keyword)
+        return db_keyword
 
     def _main_app(self) -> Optional["MainApp"]:
         """부모 메인 윈도우를 타입 안전하게 반환"""
@@ -2590,8 +2655,9 @@ class NewsTab(QWidget):
         # 실행 중인 워커가 있다면 중지
         if self.worker and self.worker.isRunning():
             self.worker.stop()
-            self.worker.wait()
-            
+            if not self.worker.wait(1000):
+                logger.warning(f"DBWorker 종료 대기 타임아웃: {self.keyword}")
+
         self.lbl_status.setText("⏳ 데이터 로딩 중...")
         self.btn_load.setEnabled(False)
         
@@ -3585,9 +3651,13 @@ class MainApp(QMainWindow):
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as src:
                     with open(backup_file, 'w', encoding='utf-8') as dst:
                         dst.write(src.read())
-            
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+
+            tmp_file = CONFIG_FILE + ".tmp"
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, CONFIG_FILE)
         except Exception as e:
             logger.error(f"Config Save Error: {e}")
             _ = QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(e)}")
@@ -3754,7 +3824,10 @@ class MainApp(QMainWindow):
 
             for i, widget in self._iter_news_tabs():
                 keyword = widget.keyword
-                search_keyword = keyword.split()[0] if keyword else ""
+                search_keyword, _ = parse_tab_query(keyword)
+                if not search_keyword:
+                    self.tabs.setTabText(i, keyword)
+                    continue
                 unread_count = db_manager.get_unread_count(search_keyword)
 
                 if unread_count > 0:
@@ -3774,7 +3847,10 @@ class MainApp(QMainWindow):
 
             for i, widget in self._iter_news_tabs():
                 if widget.keyword == keyword:
-                    search_keyword = keyword.split()[0] if keyword else ""
+                    search_keyword, _ = parse_tab_query(keyword)
+                    if not search_keyword:
+                        self.tabs.setTabText(i, keyword)
+                        break
                     unread_count = db_manager.get_unread_count(search_keyword)
 
                     if unread_count > 0:
@@ -4006,9 +4082,13 @@ class MainApp(QMainWindow):
         """탭 닫기"""
         if idx == 0:
             return
-        
+
         widget = self.tabs.widget(idx)
-        if widget:
+        if isinstance(widget, NewsTab):
+            widget.cleanup()
+            logger.info(f"탭 리소스 정리 완료: {widget.keyword}")
+            widget.deleteLater()
+        elif widget:
             widget.deleteLater()
         self.tabs.removeTab(idx)
         self.save_config()
@@ -4039,17 +4119,27 @@ class MainApp(QMainWindow):
             self.tabs.setTabText(idx, f"{icon_text} {new_keyword}")
             
             # DB 업데이트: 검색 키워드(첫 번째 단어)만 사용
-            old_search_keyword = old_keyword.split()[0] if old_keyword.split() else old_keyword
-            new_search_keyword = new_keyword.split()[0] if new_keyword.split() else new_keyword
-            
+            old_search_keyword, _ = parse_tab_query(old_keyword)
+            new_search_keyword, _ = parse_tab_query(new_keyword)
+            if not old_search_keyword or not new_search_keyword:
+                logger.warning(f"탭 이름 변경 키워드 파싱 실패: '{old_keyword}' -> '{new_keyword}'")
+                self.fetch_news(new_keyword)
+                self.save_config()
+                return
+
             db_manager = self.db
             if db_manager is None:
                 return
             conn = db_manager.get_connection()
             try:
                 with conn:
-                    conn.execute("UPDATE news SET keyword=? WHERE keyword=?", 
+                    conn.execute(
+                        "UPDATE news_keywords SET keyword=? WHERE keyword=?",
+                        (new_search_keyword, old_search_keyword)
+                    )
+                    conn.execute("UPDATE news SET keyword=? WHERE keyword=?",
                                 (new_search_keyword, old_search_keyword))
+                logger.info(f"탭 이름 변경 DB 동기화 완료: {old_search_keyword} -> {new_search_keyword}")
             except Exception as e:
                 logger.error(f"Rename error: {e}")
             finally:
@@ -4275,10 +4365,13 @@ class MainApp(QMainWindow):
 
     def fetch_news(self, keyword: str, is_more: bool = False, is_sequential: bool = False):
         """뉴스 가져오기 - 순차 새로고침 지원"""
-        parts = keyword.split()
-        search_keyword = parts[0] if parts else keyword
-        exclude_words = [p[1:] for p in parts[1:] if p.startswith('-')]
-        
+        search_keyword, exclude_words = parse_tab_query(keyword)
+        if not search_keyword:
+            self._show_status_message(f"⚠ 올바른 검색어가 없습니다: '{keyword}'", 3000)
+            if is_sequential:
+                self._on_sequential_fetch_done(keyword)
+            return
+
         start_idx = 1
         if is_more:
             db_manager = self.db
@@ -4303,9 +4396,7 @@ class MainApp(QMainWindow):
                 old_worker.stop()
                 old_thread.quit()
                 if not old_thread.wait(1000):  # 최대 1초 대기
-                    logger.warning(f"기존 스레드 강제 종료: {keyword}")
-                    old_thread.terminate()
-                    old_thread.wait(500)
+                    logger.warning(f"기존 스레드 종료 지연(강제 종료 생략): {keyword}")
             except (RuntimeError, AttributeError):
                 pass
             self.cleanup_worker(keyword)
@@ -4355,8 +4446,10 @@ class MainApp(QMainWindow):
     def on_fetch_done(self, result: Dict[str, Any], keyword: str, is_more: bool, is_sequential: bool = False):
         """뉴스 가져오기 완료 - 순차 새로고침 지원"""
         try:
-            search_keyword = keyword.split()[0] if keyword.split() else keyword
-            
+            search_keyword, _ = parse_tab_query(keyword)
+            if not search_keyword:
+                search_keyword = keyword
+
             # DB 저장은 Worker에서 이미 수행됨
             added_count = result.get('added_count', 0)
             dup_count = result.get('dup_count', 0)
@@ -5059,9 +5152,7 @@ class MainApp(QMainWindow):
                     worker.stop()
                     thread.quit()
                     if not thread.wait(2000):
-                        logger.warning(f"스레드 강제 종료: {keyword}")
-                        thread.terminate()
-                        thread.wait(1000)
+                        logger.warning(f"스레드 종료 지연(강제 종료 생략): {keyword}")
                 except Exception as e:
                     logger.error(f"워커 종료 오류 ({keyword}): {e}")
             
