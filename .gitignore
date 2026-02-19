@@ -1,0 +1,46 @@
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# IDE / OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs and runtime noise
+*.log
+logs/
+crash_log.txt
+
+# Text files (request: do not upload .txt)
+*.txt
+
+# Local database and config data (request: exclude db/json)
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.json
+
+# Backups and temporary files
+backups/
+*.bak
+*.backup
+*.tmp
+*.temp
+*.swp
