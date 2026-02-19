@@ -257,22 +257,7 @@ class MainApp(QMainWindow):
     
     def set_application_icon(self):
         """애플리케이션 아이콘 설정"""
-        icon_path = None
-        
-        # 실행 파일과 같은 디렉토리에서 아이콘 찾기
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Windows: .ico 파일 우선
-        if sys.platform == 'win32':
-            ico_path = os.path.join(script_dir, ICON_FILE)
-            if os.path.exists(ico_path):
-                icon_path = ico_path
-        
-        # .ico가 없으면 .png 사용
-        if not icon_path:
-            png_path = os.path.join(script_dir, ICON_PNG)
-            if os.path.exists(png_path):
-                icon_path = png_path
+        icon_path = self._resolve_icon_path()
         
         # 아이콘 적용
         if icon_path and os.path.exists(icon_path):
@@ -282,6 +267,29 @@ class MainApp(QMainWindow):
         else:
             logger.warning(f"아이콘 파일을 찾을 수 없습니다: {ICON_FILE} 또는 {ICON_PNG}")
             logger.warning(f"실행 파일과 같은 폴더에 아이콘 파일을 배치하세요.")
+
+    def _resolve_icon_path(self):
+        """런타임 환경(소스/onefile/onedir)에 맞는 아이콘 경로 해석"""
+        search_dirs = []
+        if hasattr(sys, "_MEIPASS"):
+            search_dirs.append(sys._MEIPASS)
+        search_dirs.extend([
+            APP_DIR,
+            os.path.dirname(os.path.abspath(__file__)),
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        ])
+
+        for base_dir in search_dirs:
+            if not base_dir:
+                continue
+            if sys.platform == "win32":
+                ico_path = os.path.join(base_dir, ICON_FILE)
+                if os.path.exists(ico_path):
+                    return ico_path
+            png_path = os.path.join(base_dir, ICON_PNG)
+            if os.path.exists(png_path):
+                return png_path
+        return None
 
     def setup_system_tray(self):
         """시스템 트레이 아이콘 설정"""
@@ -295,12 +303,9 @@ class MainApp(QMainWindow):
             self.tray = QSystemTrayIcon(self)
             
             # 아이콘 설정
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(script_dir, ICON_FILE)
-            if not os.path.exists(icon_path):
-                icon_path = os.path.join(script_dir, ICON_PNG)
+            icon_path = self._resolve_icon_path()
             
-            if os.path.exists(icon_path):
+            if icon_path and os.path.exists(icon_path):
                 self.tray.setIcon(QIcon(icon_path))
             else:
                 # 기본 아이콘 사용

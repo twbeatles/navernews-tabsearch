@@ -1,32 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""
-?댁뒪 ?ㅽ겕?섑띁 Pro v32.7.0 - 寃쎈웾??PyInstaller Spec File
-鍮뚮뱶 紐낅졊?? pyinstaller news_scraper_pro.spec
+"""News Scraper Pro - PyInstaller onefile spec."""
 
-?꾩옱 鍮뚮뱶 ?꾨왂:
-1. 遺덊븘?뷀븳 紐⑤뱢 ?쒖쇅 (tkinter, numpy, pandas ??
-2. ?⑥씪 ?ㅽ뻾 ?뚯씪 (onefile) 紐⑤뱶
-3. ?덉젙???곗꽑: strip=False, upx=False ?좎?
-"""
-
-import sys
 import os
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
+project_root = Path(globals().get('SPECPATH', os.getcwd())).resolve()
+main_script = str(project_root / 'news_scraper_pro.py')
 
-# 硫붿씤 ?ㅽ겕由쏀듃
-main_script = 'news_scraper_pro.py'
-
-# 異붽? ?곗씠???뚯씪 (?꾩씠肄???
 datas = []
+for icon_name in ('news_icon.ico', 'news_icon.png'):
+    icon_path = project_root / icon_name
+    if icon_path.exists():
+        datas.append((str(icon_path), '.'))
 
-# ?꾩씠肄??뚯씪???덉쑝硫??ы븿
-if os.path.exists('news_icon.ico'):
-    datas.append(('news_icon.ico', '.'))
-if os.path.exists('news_icon.png'):
-    datas.append(('news_icon.png', '.'))
-
-# ?④꺼吏??꾪룷??(?꾩닔 紐⑤뱢留?
+# Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [
     'PyQt6.QtWidgets',
     'PyQt6.QtCore',
@@ -35,32 +25,20 @@ hiddenimports = [
     'sqlite3',
     'requests',
     'email.utils',
+    'charset_normalizer',
+    'chardet',
 ]
+hiddenimports += collect_submodules('requests')
+hiddenimports += collect_submodules('urllib3')
 
-# ?쒖쇅??紐⑤뱢 (寃쎈웾???듭떖)
 excludes = [
-    # GUI ?꾨젅?꾩썙??
     'tkinter', '_tkinter', 'Tkinter',
-    
-    # 怨쇳븰 怨꾩궛
     'numpy', 'scipy', 'pandas', 'matplotlib',
-    
-    # ?대?吏/鍮꾨뵒??
     'PIL', 'Pillow', 'cv2', 'opencv',
-    
-    # 癒몄떊?щ떇
     'tensorflow', 'torch', 'keras', 'sklearn',
-    
-    # ???꾨젅?꾩썙??
     'flask', 'django', 'fastapi',
-    
-    # ?뚯뒪??
     'pytest', 'unittest', 'nose',
-    
-    # 媛쒕컻 ?꾧뎄
     'IPython', 'jupyter', 'notebook',
-    
-    # PyQt 遺덊븘??紐⑤뱢
     'PyQt6.QtBluetooth',
     'PyQt6.QtDBus',
     'PyQt6.QtDesigner',
@@ -92,7 +70,7 @@ excludes = [
 
 a = Analysis(
     [main_script],
-    pathex=[],
+    pathex=[str(project_root)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -106,19 +84,18 @@ a = Analysis(
     noarchive=False,
 )
 
-# 遺덊븘?뷀븳 諛붿씠?덈━ ?쒓굅 (寃쎈웾??
-a.binaries = [x for x in a.binaries if not any(
-    exclude in x[0].lower() for exclude in [
-        'qpdf', 'qtpdf', 'qtwebengine', 'qtquick',
-        'qml', 'qt6quick', 'qt6qml', 'qt6webengine',
-    ]
-)]
+a.binaries = [
+    item for item in a.binaries if not any(
+        exclude in item[0].lower() for exclude in (
+            'qpdf', 'qtpdf', 'qtwebengine', 'qtquick',
+            'qml', 'qt6quick', 'qt6qml', 'qt6webengine',
+        )
+    )
+]
 
-pyz = PYZ(
-    a.pure,
-    a.zipped_data,
-    cipher=block_cipher,
-)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+icon_path = str(project_root / 'news_icon.ico') if (project_root / 'news_icon.ico').exists() else None
 
 exe = EXE(
     pyz,
@@ -130,21 +107,21 @@ exe = EXE(
     name='NewsScraperPro_Safe',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,  # ?붾쾭洹??щ낵 ?좎? (?ㅻ쪟 諛⑹?)
-    upx=False,    # UPX ?뺤텞 鍮꾪솢?깊솕 (?ㅻ쪟 諛⑹?)
+    strip=False,
+    upx=False,
     upx_exclude=[
         'vcruntime140.dll',
         'python*.dll',
-        'Qt6Core.dll',  # Qt DLL? UPX ?쒖쇅 (?덉젙??
+        'Qt6Core.dll',
         'Qt6Gui.dll',
         'Qt6Widgets.dll',
     ],
-    runtime_tmpdir=None,
-    console=False,  # GUI ?좏뵆由ъ??댁뀡
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='news_icon.ico' if os.path.exists('news_icon.ico') else None,
+    icon=icon_path,
+    runtime_tmpdir=os.path.join(os.environ.get('LOCALAPPDATA', os.environ.get('TEMP', '.')), 'NewsScraperPro'),
 )
