@@ -30,23 +30,55 @@
 
 ```text
 navernews-tabsearch/
-+- news_scraper_pro.py
-+- news_scraper_pro.spec
-+- core/
-|  +- bootstrap.py
-|  +- constants.py
-|  +- config_store.py
-|  +- database.py
-|  +- workers.py
-|  +- startup.py
-|  +- ...
-+- ui/
-|  +- main_window.py
-|  +- news_tab.py
-|  +- settings_dialog.py
-|  +- ...
-+- tests/
-+- dist/
+├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
+├── news_scraper_pro.spec        # PyInstaller 빌드 설정
+├── core/                        # 코어 로직 패키지
+│   ├── __init__.py
+│   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
+│   ├── constants.py             # 경로/버전/앱 상수
+│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
+│   ├── database.py              # DatabaseManager (연결 풀, CRUD)
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
+│   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
+│   ├── query_parser.py          # parse_tab_query/build_fetch_key
+│   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
+│   ├── backup_guard.py          # 리팩토링 백업 유틸리티
+│   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
+│   ├── keyword_groups.py        # KeywordGroupManager
+│   ├── logging_setup.py         # configure_logging
+│   ├── notifications.py         # NotificationSound
+│   ├── text_utils.py            # TextUtils, parse_date_string, perf_timer, LRU 캐시
+│   └── validation.py            # ValidationUtils
+├── ui/                          # UI 로직 패키지
+│   ├── __init__.py
+│   ├── main_window.py           # MainApp (메인 윈도우)
+│   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── settings_dialog.py       # SettingsDialog
+│   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
+│   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
+│   ├── toast.py                 # ToastQueue/ToastMessage
+│   └── widgets.py               # NewsBrowser/NoScrollComboBox
+├── tests/                       # 회귀/호환성/안정성 테스트
+│   ├── test_db_queries.py
+│   ├── test_entrypoint_bootstrap.py
+│   ├── test_import_settings_dedupe.py
+│   ├── test_plan_regression.py
+│   ├── test_refactor_backup_guard.py
+│   ├── test_refactor_compat.py
+│   ├── test_settings_roundtrip.py
+│   ├── test_single_instance_guard.py
+│   ├── test_stability.py
+│   ├── test_startup_registry_command.py
+│   └── test_symbol_resolution.py
+├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
+├── config_store.py              # 호환 래퍼 (→ core.config_store)
+├── backup_manager.py            # 호환 래퍼 (→ core.backup)
+├── worker_registry.py           # 호환 래퍼 (→ core.worker_registry)
+├── workers.py                   # 호환 래퍼 (→ core.workers)
+├── database_manager.py          # 호환 래퍼 (→ core.database)
+├── styles.py                    # 호환 래퍼 (→ ui.styles)
+├── backups/                     # 백업 디렉터리
+└── dist/                        # PyInstaller 빌드 결과물
 ```
 
 ## 실행 방법

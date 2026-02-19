@@ -34,30 +34,60 @@ HTTP: requests
 ```
 navernews-tabsearch/
 │
-├── news_scraper_pro.py      # 엔트리포인트 + 호환 re-export 레이어
-├── core/                    # 코어 로직
-│   ├── bootstrap.py         # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
-│   ├── constants.py         # 경로/버전/앱 상수
-│   ├── database.py          # DatabaseManager
-│   ├── workers.py           # ApiWorker/DBWorker/AsyncJobWorker
-│   ├── config_store.py      # 설정 스키마 정규화 + 원자 저장
-│   ├── backup.py            # 백업/복원(pending restore)
-│   ├── startup.py           # Windows 자동 시작 레지스트리
-│   └── ...
-├── ui/                      # UI 로직
-│   ├── main_window.py       # MainApp
-│   ├── settings_dialog.py   # SettingsDialog
-│   ├── news_tab.py          # NewsTab
-│   ├── dialogs.py           # 보조 다이얼로그
-│   ├── styles.py            # Colors/UIConstants/ToastType/AppStyle
-│   └── ...
-├── tests/                   # 회귀/호환성/안정성 테스트
-├── news_scraper_config.json # 사용자 설정
-├── news_database.db         # SQLite 데이터베이스
-├── news_icon.ico            # 앱 아이콘
-├── news_scraper.log         # 로그 파일
-├── README.md                # 사용자 문서
-└── news_scraper_pro.spec    # PyInstaller 설정
+├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
+├── news_scraper_pro.spec        # PyInstaller 빌드 설정
+├── core/                        # 코어 로직 패키지
+│   ├── __init__.py
+│   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
+│   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.1')
+│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
+│   ├── database.py              # DatabaseManager (연결 풀, CRUD)
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
+│   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
+│   ├── query_parser.py          # parse_tab_query/build_fetch_key
+│   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
+│   ├── backup_guard.py          # 리팩토링 백업 유틸리티
+│   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
+│   ├── keyword_groups.py        # KeywordGroupManager
+│   ├── logging_setup.py         # configure_logging
+│   ├── notifications.py         # NotificationSound
+│   ├── text_utils.py            # TextUtils, parse_date_string, perf_timer, LRU 캐시
+│   └── validation.py            # ValidationUtils
+├── ui/                          # UI 로직 패키지
+│   ├── __init__.py
+│   ├── main_window.py           # MainApp (메인 윈도우)
+│   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── settings_dialog.py       # SettingsDialog
+│   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
+│   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
+│   ├── toast.py                 # ToastQueue/ToastMessage
+│   └── widgets.py               # NewsBrowser/NoScrollComboBox
+├── tests/                       # 회귀/호환성/안정성 테스트
+│   ├── test_db_queries.py
+│   ├── test_entrypoint_bootstrap.py
+│   ├── test_import_settings_dedupe.py
+│   ├── test_plan_regression.py
+│   ├── test_refactor_backup_guard.py
+│   ├── test_refactor_compat.py
+│   ├── test_settings_roundtrip.py
+│   ├── test_single_instance_guard.py
+│   ├── test_stability.py
+│   ├── test_startup_registry_command.py
+│   └── test_symbol_resolution.py
+├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
+├── config_store.py              # 호환 래퍼 (→ core.config_store)
+├── backup_manager.py            # 호환 래퍼 (→ core.backup)
+├── worker_registry.py           # 호환 래퍼 (→ core.worker_registry)
+├── workers.py                   # 호환 래퍼 (→ core.workers)
+├── database_manager.py          # 호환 래퍼 (→ core.database)
+├── styles.py                    # 호환 래퍼 (→ ui.styles)
+├── news_scraper_config.json     # 사용자 설정
+├── news_database.db             # SQLite 데이터베이스
+├── news_icon.ico                # 앱 아이콘
+├── news_scraper.log             # 로그 파일
+├── README.md                    # 사용자 문서
+├── backups/                     # 백업 디렉터리
+└── dist/                        # PyInstaller 빌드 결과물
 ```
 
 ---
@@ -69,14 +99,32 @@ navernews-tabsearch/
 | 클래스명 | 설명 | 위치 |
 |----------|------|-------------|
 | `Colors` | 테마 색상 상수 | `ui/styles.py` |
-| `AppStyle` | QSS 스타일시트 | `ui/styles.py` |
+| `AppStyle` | QSS 스타일시트 + HTML 템플릿 | `ui/styles.py` |
 | `UIConstants` | UI 상수 | `ui/styles.py` |
-| `ToastQueue` | 알림 시스템 | `ui/toast.py` |
-| `NewsBrowser` | 커스텀 브라우저 | `ui/widgets.py` |
-| `DatabaseManager` | DB 연결 관리 | `core/database.py` |
-| `ApiWorker` | API 호출 워커 | `core/workers.py` |
+| `ToastType` | 토스트 메시지 유형 열거 | `ui/styles.py` |
+| `ToastQueue` | 토스트 메시지 큐 관리 | `ui/toast.py` |
+| `ToastMessage` | 토스트 메시지 위젯 | `ui/toast.py` |
+| `NewsBrowser` | 커스텀 브라우저 (링크 차단, 미리보기) | `ui/widgets.py` |
+| `NoScrollComboBox` | 휠 스크롤 방지 콤보박스 | `ui/widgets.py` |
+| `DatabaseManager` | 스레드 안전 DB 매니저 (연결 풀) | `core/database.py` |
+| `ApiWorker` | API 호출 워커 (재시도, DB 저장) | `core/workers.py` |
+| `DBWorker` | DB 조회 전용 워커 스레드 | `core/workers.py` |
+| `AsyncJobWorker` | 단발성 비동기 작업 워커 | `core/workers.py` |
+| `WorkerRegistry` | 요청 ID 기반 워커 레지스트리 | `core/worker_registry.py` |
+| `WorkerHandle` | 워커 핸들 데이터클래스 | `core/worker_registry.py` |
+| `AutoBackup` | 설정/DB 자동 백업 | `core/backup.py` |
+| `KeywordGroupManager` | 키워드 그룹(폴더) 관리 | `core/keyword_groups.py` |
+| `StartupManager` | Windows 시작프로그램 레지스트리 | `core/startup.py` |
+| `NotificationSound` | 시스템 알림 소리 재생 | `core/notifications.py` |
+| `ValidationUtils` | API 키/키워드 입력 검증 | `core/validation.py` |
+| `TextUtils` | 텍스트 처리 (하이라이팅 등) | `core/text_utils.py` |
 | `MainApp` | 메인 윈도우 | `ui/main_window.py` |
-| `SettingsDialog` | 설정/도움말 다이얼로그 | `ui/settings_dialog.py` |
+| `NewsTab` | 개별 뉴스 탭 위젯 | `ui/news_tab.py` |
+| `SettingsDialog` | 설정 다이얼로그 | `ui/settings_dialog.py` |
+| `NoteDialog` | 메모 편집 다이얼로그 | `ui/dialogs.py` |
+| `LogViewerDialog` | 로그 뷰어 다이얼로그 | `ui/dialogs.py` |
+| `KeywordGroupDialog` | 키워드 그룹 관리 다이얼로그 | `ui/dialogs.py` |
+| `BackupDialog` | 백업 관리 다이얼로그 | `ui/dialogs.py` |
 
 ---
 
@@ -108,8 +156,8 @@ navernews-tabsearch/
 ### 색상 사용
 
 ```python
-# ✅ 올바른 사용 (styles.py에서 임포트)
-from styles import Colors
+# ✅ 올바른 사용 (ui/styles.py에서 임포트)
+from ui.styles import Colors
 
 # 위젯 적용
 widget.setStyleSheet(f"color: {Colors.LIGHT_PRIMARY};")
@@ -564,13 +612,20 @@ class AppStyle:
 
 
 
-## v32.7.0 Refactor Update
+## v32.7.0 → v32.7.1 Refactor Update
 
 ### Architecture Baseline
-- Entrypoint: `news_scraper_pro.py` (thin compatibility layer)
-- Core modules: `core/*`
-- UI modules: `ui/*`
+- Entrypoint: `news_scraper_pro.py` (thin compatibility layer + re-export)
+- Core modules: `core/*` (16개 모듈)
+- UI modules: `ui/*` (8개 모듈)
 - Compatibility wrappers: root-level `query_parser.py`, `config_store.py`, `backup_manager.py`, `worker_registry.py`, `workers.py`, `database_manager.py`, `styles.py`
+
+### v32.7.1 추가 변경사항
+- 단일 인스턴스 가드 (`QLockFile`) 추가
+- `sound_enabled`, `api_timeout` 설정 플러밍 보완
+- 설정 창 API 키 검증/데이터 정리 비동기 처리
+- 설정 가져오기 탭 중복 병합(dedupe) 강화
+- 자동 시작 최소화 옵션 변경 시 레지스트리 재등록
 
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
@@ -580,4 +635,5 @@ class AppStyle:
 ### Test Policy
 - Prefer behavior/contract tests over monolithic source-string checks.
 - Validate entrypoint and wrapper compatibility explicitly.
+- Tests: `tests/` 디렉터리에 11개 테스트 모듈 보유.
 

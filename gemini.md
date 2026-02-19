@@ -7,7 +7,7 @@
 | 항목 | 값 |
 |------|-----|
 | **프로젝트명** | 뉴스 스크래퍼 Pro |
-| **버전** | v32.7.0 |
+| **버전** | v32.7.1 |
 | **언어** | Python 3.8+ |
 | **GUI 프레임워크** | PyQt6 |
 | **주요 기능** | 네이버 뉴스 API 기반 탭 브라우징 뉴스 스크래퍼 |
@@ -19,20 +19,55 @@
 ### 파일 구조
 ```
 navernews-tabsearch/
-├── news_scraper_pro.py      # 메인 애플리케이션 (로직, 윈도우 관리)
-├── styles.py                # [NEW] 스타일 정의 (Colors, AppStyle, UIConstants)
-├── news_scraper_config.json # 사용자 설정 (API 키, 테마, 탭 목록)
-├── news_database.db         # SQLite 데이터베이스 (기사, 북마크)
-├── news_icon.ico            # 애플리케이션 아이콘
-├── news_scraper.log         # 로그 파일
-└── dist/                    # PyInstaller 빌드 결과물
+├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
+├── news_scraper_pro.spec        # PyInstaller 빌드 설정
+├── core/                        # 코어 로직 패키지
+│   ├── __init__.py
+│   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
+│   ├── constants.py             # 경로/버전/앱 상수
+│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
+│   ├── database.py              # DatabaseManager (연결 풀, CRUD)
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
+│   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
+│   ├── query_parser.py          # parse_tab_query/build_fetch_key
+│   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
+│   ├── backup_guard.py          # 리팩토링 백업 유틸리티
+│   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
+│   ├── keyword_groups.py        # KeywordGroupManager
+│   ├── logging_setup.py         # configure_logging
+│   ├── notifications.py         # NotificationSound
+│   ├── text_utils.py            # TextUtils, parse_date_string, perf_timer
+│   └── validation.py            # ValidationUtils
+├── ui/                          # UI 로직 패키지
+│   ├── __init__.py
+│   ├── main_window.py           # MainApp (메인 윈도우)
+│   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── settings_dialog.py       # SettingsDialog
+│   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
+│   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
+│   ├── toast.py                 # ToastQueue/ToastMessage
+│   └── widgets.py               # NewsBrowser/NoScrollComboBox
+├── tests/                       # 회귀/호환성/안정성 테스트 (11개 모듈)
+├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
+├── config_store.py              # 호환 래퍼 (→ core.config_store)
+├── backup_manager.py            # 호환 래퍼 (→ core.backup)
+├── worker_registry.py           # 호환 래퍼 (→ core.worker_registry)
+├── workers.py                   # 호환 래퍼 (→ core.workers)
+├── database_manager.py          # 호환 래퍼 (→ core.database)
+├── styles.py                    # 호환 래퍼 (→ ui.styles)
+├── news_scraper_config.json     # 사용자 설정 (API 키, 테마, 탭 목록)
+├── news_database.db             # SQLite 데이터베이스 (기사, 북마크)
+├── news_icon.ico                # 애플리케이션 아이콘
+├── news_scraper.log             # 로그 파일
+├── backups/                     # 백업 디렉터리
+└── dist/                        # PyInstaller 빌드 결과물
 ```
 
 ### 핵심 클래스 계층
 
 ```mermaid
 classDiagram
-    class NewsScraperApp {
+    class MainApp {
         +QMainWindow
         +탭 관리
         +설정 저장/로드
@@ -48,15 +83,27 @@ classDiagram
         +연결 풀 패턴
         +기사 CRUD
     }
-    class SearchWorker {
-        +QThread
+    class ApiWorker {
+        +QObject
         +네이버 API 호출
-        +비동기 검색
+        +재시도 로직
+        +비동기 DB 저장
+    }
+    class DBWorker {
+        +QThread
+        +비동기 DB 조회
+    }
+    class WorkerRegistry {
+        +요청 ID 기반 관리
+        +활성 워커 추적
     }
     
-    NewsScraperApp --> NewsTab
+    MainApp --> NewsTab
+    MainApp --> WorkerRegistry
     NewsTab --> DatabaseManager
-    NewsTab --> SearchWorker
+    NewsTab --> ApiWorker
+    NewsTab --> DBWorker
+    WorkerRegistry --> ApiWorker
 ```
 
 ---
@@ -175,10 +222,10 @@ params = {
 
 ### 하지 말아야 할 것
 
-1. **임의의 파일 분리 금지**: `news_scraper_pro.py`가 메인 로직을 포함. 스타일은 `styles.py`에 정의됨. 불필요한 파일 쪼개기 지양.
+1. **`news_scraper_pro.py` 직접 수정 금지**: `news_scraper_pro.py`는 thin entrypoint + re-export 레이어. 새 로직은 반드시 `core/` 또는 `ui/`에 추가.
 2. **HiDPI 설정 위치 변경 금지**: PyQt6 import 전에 환경변수 설정 필요
 3. **DB 스키마 변경 시 마이그레이션 필요**: 기존 사용자 데이터 보존
-4. **색상 하드코딩 금지**: `styles.Colors` 클래스 사용 권장
+4. **색상 하드코딩 금지**: `ui/styles.py`의 `Colors` 클래스 사용 권장
 
 ### 해야 할 것
 
@@ -186,6 +233,7 @@ params = {
 2. **스레드 안전성 확보**: DB 작업은 반드시 `DatabaseManager` 경유
 3. **PyInstaller 호환성**: `getattr(sys, 'frozen', False)` 체크
 4. **타입 힌트 사용**: `typing` 모듈 활용
+5. **새 모듈 추가 시 래퍼 고려**: `core/` 또는 `ui/`에 추가 후 필요시 루트 래퍼 생성
 
 ---
 
@@ -507,12 +555,19 @@ class StartupManager:
 
 
 
-## v32.7.0 Module Split Summary
+## v32.7.0 → v32.7.1 Module Split Summary
 
 ### Runtime Structure
-- `news_scraper_pro.py`: entrypoint and compatibility exports.
-- `core/`: non-UI runtime modules.
-- `ui/`: UI-specific classes and dialogs.
+- `news_scraper_pro.py`: thin entrypoint + compatibility re-exports.
+- `core/`: non-UI runtime modules (16개 파일).
+- `ui/`: UI-specific classes and dialogs (8개 파일).
+- Root wrappers: `query_parser.py`, `config_store.py`, `backup_manager.py`, `worker_registry.py`, `workers.py`, `database_manager.py`, `styles.py`
+
+### v32.7.1 추가 변경사항
+- 단일 인스턴스 가드 (`QLockFile`) 추가
+- `sound_enabled`, `api_timeout` 설정 플러밍 보완
+- 설정 창 API 키 검증/데이터 정리 비동기 처리
+- 설정 가져오기 탭 중복 병합(dedupe) 강화
 
 ### Migration Rules
 - Preserve public import paths for existing scripts/tests.
