@@ -116,7 +116,7 @@ class SettingsDialog(QDialog):
         form2 = QGridLayout()
         
         self.cb_time = NoScrollComboBox()
-        self.cb_time.addItems(["10분", "30분", "1시간", "3시간", "6시간", "자동 새로고침 안함"])
+        self.cb_time.addItems(["10분", "30분", "1시간", "2시간", "6시간", "자동 새로고침 안함"])
         idx = self.config.get('interval', 2)
         if isinstance(idx, int) and 0 <= idx <= 5:
             self.cb_time.setCurrentIndex(idx)
@@ -151,6 +151,11 @@ class SettingsDialog(QDialog):
         tray_layout = QVBoxLayout()
         
         # 트레이로 최소화 옵션
+        self.chk_minimize_to_tray = QCheckBox("최소화 버튼 클릭 시 트레이로 최소화")
+        self.chk_minimize_to_tray.setChecked(self.config.get('minimize_to_tray', True))
+        tray_layout.addWidget(self.chk_minimize_to_tray)
+
+        # 닫기(X) 동작 옵션
         self.chk_close_to_tray = QCheckBox("X 버튼 클릭 시 트레이로 최소화 (종료하지 않음)")
         self.chk_close_to_tray.setChecked(self.config.get('close_to_tray', True))
         tray_layout.addWidget(self.chk_close_to_tray)
@@ -382,7 +387,7 @@ class SettingsDialog(QDialog):
             <div class="section">
                 <h3>6️⃣ 자동 새로고침</h3>
                 <ul>
-                    <li>설정에서 간격 선택: 10분 / 30분 / 1시간 / 3시간 / 6시간</li>
+                    <li>설정에서 간격 선택: 10분 / 30분 / 1시간 / 2시간 / 6시간</li>
                     <li>백그라운드에서 자동으로 새 기사 수집</li>
                     <li>새 기사 발견 시 토스트 알림 표시</li>
                 </ul>
@@ -754,6 +759,7 @@ class SettingsDialog(QDialog):
             'notification_enabled': self.chk_notification.isChecked(),
             'alert_keywords': alert_keywords,
             'sound_enabled': self.chk_sound.isChecked(),
+            'minimize_to_tray': self.chk_minimize_to_tray.isChecked(),
             'close_to_tray': self.chk_close_to_tray.isChecked(),
             'auto_start_enabled': self.chk_auto_start.isChecked(),
             'start_minimized': self.chk_start_minimized.isChecked(),

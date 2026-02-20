@@ -33,6 +33,7 @@ class AppConfig(TypedDict):
     app_settings: AppSettings
     tabs: List[str]
     search_history: List[str]
+    keyword_groups: Dict[str, List[str]]
 
 
 DEFAULT_CONFIG: AppConfig = {
@@ -59,6 +60,7 @@ DEFAULT_CONFIG: AppConfig = {
     },
     "tabs": [],
     "search_history": [],
+    "keyword_groups": {},
 }
 
 
@@ -81,6 +83,26 @@ def _to_str_list(value: Any) -> List[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if isinstance(item, (str, int, float))]
+
+
+def _to_keyword_groups(value: Any) -> Dict[str, List[str]]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, List[str]] = {}
+    for key, raw_keywords in value.items():
+        if not isinstance(key, str):
+            continue
+        group_name = key.strip()
+        if not group_name:
+            continue
+        keywords = []
+        for keyword in _to_str_list(raw_keywords):
+            stripped = keyword.strip()
+            if stripped and stripped not in keywords:
+                keywords.append(stripped)
+        normalized[group_name] = keywords
+    return normalized
 
 
 def default_config() -> AppConfig:
@@ -124,6 +146,7 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
 
         cfg["tabs"] = _to_str_list(raw.get("tabs"))
         cfg["search_history"] = _to_str_list(raw.get("search_history"))
+        cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
         return cfg
 
     # Legacy flat schema
@@ -135,6 +158,7 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     app_cfg["api_timeout"] = _to_int(raw.get("api_timeout"), app_cfg["api_timeout"])
     cfg["tabs"] = _to_str_list(raw.get("tabs"))
     cfg["search_history"] = _to_str_list(raw.get("search_history"))
+    cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
     return cfg
 
 

@@ -1,4 +1,5 @@
 import csv
+from dataclasses import dataclass
 import html
 import inspect
 import json
@@ -13,12 +14,12 @@ import urllib.parse
 from collections import deque
 from datetime import datetime
 from functools import partial
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter
 
-from PyQt6.QtCore import QMutex, QMutexLocker, QThread, Qt, QTimer, QUrl
+from PyQt6.QtCore import QEvent, QMutex, QMutexLocker, QThread, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -66,7 +67,7 @@ from core.database import DatabaseManager
 from core.keyword_groups import KeywordGroupManager
 from core.logging_setup import configure_logging
 from core.notifications import NotificationSound
-from core.query_parser import build_fetch_key, parse_tab_query
+from core.query_parser import build_fetch_key, has_positive_keyword, parse_tab_query
 from core.startup import StartupManager
 from core.text_utils import RE_HTML_TAGS, perf_timer
 from core.validation import ValidationUtils
@@ -83,6 +84,11 @@ logger = logging.getLogger(__name__)
 
 PENDING_RESTORE_FILENAME = CORE_PENDING_RESTORE_FILENAME
 PENDING_RESTORE_FILE = os.path.join(APP_DIR, PENDING_RESTORE_FILENAME)
+
+
+@dataclass
+class TabFetchState:
+    last_api_start_index: int = 0
 
 
 class AutoBackup(CoreAutoBackup):
@@ -164,6 +170,8 @@ class MainApp(QMainWindow):
             self._fetch_dedupe_window_sec = 10.0
             self._badge_unread_cache: Dict[str, int] = {}
             self._badge_refresh_running = False
+            self._tab_fetch_state: Dict[str, TabFetchState] = {}
+            self._request_start_index: Dict[int, int] = {}
             
             # 알림 관련 설정
             self.notification_enabled = True  # 데스크톱 알림 활성화
@@ -172,7 +180,7 @@ class MainApp(QMainWindow):
             self.notify_on_refresh = False  # 자동 새로고침 완료 알림 (기본 비활성화)
             
             # 키워드 그룹 관리자
-            self.keyword_group_manager = KeywordGroupManager(os.path.join(APP_DIR, "keyword_groups.json"))
+            self.keyword_group_manager = KeywordGroupManager(CONFIG_FILE)
             
             # 자동 백업 관리자
             self.auto_backup = AutoBackup()
@@ -459,6 +467,7 @@ class MainApp(QMainWindow):
             "window_geometry": settings.get("window_geometry"),
             "search_history": loaded_cfg.get("search_history", []),
             "api_timeout": settings.get("api_timeout", 15),
+            "keyword_groups": loaded_cfg.get("keyword_groups", {}),
         }
 
         self.client_id = self.config["client_id"]
@@ -478,6 +487,9 @@ class MainApp(QMainWindow):
         self.notify_on_refresh = self.config.get("notify_on_refresh", False)
         self.search_history = self.config.get("search_history", [])
         self.api_timeout = self.config.get("api_timeout", 15)
+        self.keyword_group_manager.groups = self.keyword_group_manager._normalize_groups(
+            self.config.get("keyword_groups", {})
+        )
 
     def save_config(self):
         """설정 저장"""
@@ -511,6 +523,7 @@ class MainApp(QMainWindow):
             },
             "tabs": tab_names,
             "search_history": self.search_history,
+            "keyword_groups": self.keyword_group_manager.groups,
         }
         
         try:
@@ -829,14 +842,51 @@ class MainApp(QMainWindow):
         if hasattr(self, 'toast_queue') and self.toast_queue and self.toast_queue.current_toast:
             self.toast_queue.current_toast.update_position()
 
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        try:
+            if event.type() != QEvent.Type.WindowStateChange:
+                return
+            if self._force_close:
+                return
+            if not self.isMinimized():
+                return
+            if not self.minimize_to_tray:
+                return
+            if not hasattr(self, "tray") or not self.tray:
+                return
+
+            QTimer.singleShot(0, self.hide)
+            if not hasattr(self, "_tray_minimize_notified") or not self._tray_minimize_notified:
+                self.show_tray_notification(APP_NAME, "프로그램이 트레이로 최소화되었습니다.")
+                self._tray_minimize_notified = True
+            self.update_tray_tooltip()
+        except Exception as e:
+            logger.warning(f"최소화 이벤트 처리 오류: {e}")
+
     def close_current_tab(self):
         """현재 탭 닫기"""
         idx = self.tabs.currentIndex()
         if idx > 0:
             self.close_tab(idx)
 
+    def _normalize_tab_keyword(self, raw_keyword: str) -> Optional[str]:
+        if not isinstance(raw_keyword, str):
+            return None
+        keyword = ValidationUtils.sanitize_keyword(raw_keyword).strip()
+        if not keyword:
+            return None
+        if not has_positive_keyword(keyword):
+            return None
+        return keyword
+
     def add_news_tab(self, keyword: str):
         """뉴스 탭 추가"""
+        keyword = self._normalize_tab_keyword(keyword)
+        if not keyword:
+            logger.warning("유효하지 않은 탭 키워드로 add_news_tab 요청이 무시되었습니다.")
+            return
+
         for i in range(self.tabs.count()):
             widget = self.tabs.widget(i)
             if hasattr(widget, 'keyword') and widget.keyword == keyword:
@@ -844,7 +894,8 @@ class MainApp(QMainWindow):
                 return
         
         tab = NewsTab(keyword, self.db, self.theme_idx, self)
-        tab.btn_load.clicked.connect(lambda: self.fetch_news(keyword, is_more=True))
+        tab.btn_load.clicked.connect(lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True))
+        self._tab_fetch_state.setdefault(keyword, TabFetchState())
         icon_text = "📰" if not keyword.startswith("-") else "🚫"
         self.tabs.addTab(tab, f"{icon_text} {keyword}")
         
@@ -926,7 +977,14 @@ class MainApp(QMainWindow):
                 )
                 return
             
-            keyword = ValidationUtils.sanitize_keyword(raw_keyword)
+            keyword = self._normalize_tab_keyword(raw_keyword)
+            if not keyword:
+                QMessageBox.warning(
+                    self,
+                    "입력 오류",
+                    "최소 1개 이상의 일반 키워드를 포함해야 합니다.\n예: AI -광고",
+                )
+                return
             
             # 중복 탭 체크
             for i in range(1, self.tabs.count()):
@@ -957,7 +1015,10 @@ class MainApp(QMainWindow):
             return
         
         widget = self.tabs.widget(idx)
+        removed_keyword = None
         if widget:
+            if hasattr(widget, "keyword"):
+                removed_keyword = widget.keyword
             if hasattr(widget, "cleanup"):
                 try:
                     widget.cleanup()
@@ -965,6 +1026,8 @@ class MainApp(QMainWindow):
                     logger.warning(f"탭 정리 중 오류: {e}")
             widget.deleteLater()
         self.tabs.removeTab(idx)
+        if removed_keyword:
+            self._tab_fetch_state.pop(removed_keyword, None)
         self.save_config()
 
     def rename_tab(self, idx: int):
@@ -986,7 +1049,23 @@ class MainApp(QMainWindow):
         
         if ok and text.strip():
             old_keyword = w.keyword
-            new_keyword = ValidationUtils.sanitize_keyword(text)
+            new_keyword = self._normalize_tab_keyword(text)
+            if not new_keyword:
+                QMessageBox.warning(
+                    self,
+                    "입력 오류",
+                    "탭 이름에는 최소 1개 이상의 일반 키워드가 필요합니다.",
+                )
+                return
+
+            for i in range(1, self.tabs.count()):
+                if i == idx:
+                    continue
+                target = self.tabs.widget(i)
+                if target and hasattr(target, "keyword") and target.keyword == new_keyword:
+                    QMessageBox.information(self, "중복 탭", f"'{new_keyword}' 탭이 이미 존재합니다.")
+                    return
+
             w.keyword = new_keyword
             
             icon_text = "📰" if not new_keyword.startswith("-") else "🚫"
@@ -996,15 +1075,33 @@ class MainApp(QMainWindow):
             old_search_keyword, _ = parse_tab_query(old_keyword)
             new_search_keyword, _ = parse_tab_query(new_keyword)
             
-            conn = self.db.get_connection()
-            try:
-                with conn:
-                    conn.execute("UPDATE news_keywords SET keyword=? WHERE keyword=?", (new_search_keyword, old_search_keyword))
-                    conn.execute("UPDATE news SET keyword=? WHERE keyword=?", (new_search_keyword, old_search_keyword))
-            except Exception as e:
-                logger.error(f"탭 이름 변경 오류 (Rename error): {e}")
-            finally:
-                self.db.return_connection(conn)
+            if old_search_keyword and new_search_keyword:
+                conn = self.db.get_connection()
+                try:
+                    with conn:
+                        conn.execute("UPDATE news_keywords SET keyword=? WHERE keyword=?", (new_search_keyword, old_search_keyword))
+                        conn.execute("UPDATE news SET keyword=? WHERE keyword=?", (new_search_keyword, old_search_keyword))
+                except Exception as e:
+                    logger.error(f"탭 이름 변경 오류 (Rename error): {e}")
+                finally:
+                    self.db.return_connection(conn)
+
+            fetch_state = self._tab_fetch_state.pop(old_keyword, None)
+            if fetch_state is not None:
+                self._tab_fetch_state[new_keyword] = fetch_state
+
+            groups_changed = False
+            for group_name, keywords in self.keyword_group_manager.groups.items():
+                if old_keyword in keywords:
+                    keywords[:] = [new_keyword if keyword == old_keyword else keyword for keyword in keywords]
+                    deduped: List[str] = []
+                    for keyword in keywords:
+                        if keyword not in deduped:
+                            deduped.append(keyword)
+                    keywords[:] = deduped
+                    groups_changed = True
+            if groups_changed:
+                self.keyword_group_manager.save_groups()
             
             self.fetch_news(new_keyword)
             self.save_config()
@@ -1075,31 +1172,33 @@ class MainApp(QMainWindow):
                 return
             self._refresh_in_progress = True
         
+        started = False
         try:
-            self.refresh_all()
-            # 주의: refresh_all은 비동기 작업을 시작함
-            # _refresh_in_progress 플래그는 _finish_sequential_refresh에서 해제됨
+            started = self.refresh_all()
         except Exception as e:
             logger.error(f"자동 새로고침 오류: {e}")
-            # 오류 발생 시에만 여기서 플래그 해제
-            with QMutexLocker(self._refresh_mutex):
-                self._refresh_in_progress = False
+        finally:
+            if not started:
+                # 시작 실패/조기 종료 케이스에서는 락 플래그를 즉시 복구
+                # (시작 성공 시 플래그 해제는 _finish_sequential_refresh에서 처리)
+                with QMutexLocker(self._refresh_mutex):
+                    self._refresh_in_progress = False
 
-    def refresh_all(self):
+    def refresh_all(self) -> bool:
         """모든 탭 새로고침 - 완전한 순차 새로고침 버전"""
         logger.info("전체 새로고침 시작")
         
         # 이미 순차 새로고침 진행 중이면 무시
         if self._sequential_refresh_active:
             logger.warning("순차 새로고침이 이미 진행 중입니다. 건너킵니다.")
-            return
+            return False
         
         try:
             valid, msg = ValidationUtils.validate_api_credentials(self.client_id, self.client_secret)
             if not valid:
                 self.statusBar().showMessage(f"⚠ {msg}")
                 logger.warning(f"API 자격증명 오류: {msg}")
-                return
+                return False
 
             # 수동 새로고침 시 네트워크 오류 카운터 리셋 (자동 새로고침 재개)
             self._network_error_count = 0
@@ -1118,13 +1217,14 @@ class MainApp(QMainWindow):
                 try:
                     widget = self.tabs.widget(i)
                     if widget and hasattr(widget, 'keyword'):
-                        self._pending_refresh_keywords.append(widget.keyword)
+                        if has_positive_keyword(widget.keyword):
+                            self._pending_refresh_keywords.append(widget.keyword)
                 except Exception as e:
                     logger.error(f"탭 {i} 접근 오류: {e}")
             
             if not self._pending_refresh_keywords:
                 self.statusBar().showMessage("새로고침할 탭이 없습니다.")
-                return
+                return False
             
             # 순차 새로고침 상태 초기화
             self._sequential_refresh_active = True
@@ -1144,12 +1244,14 @@ class MainApp(QMainWindow):
             
             # 첫 번째 탭 새로고침 시작
             self._process_next_refresh()
+            return True
                     
         except Exception as e:
             logger.error(f"refresh_all 오류: {e}")
             traceback.print_exc()
             self.statusBar().showMessage(f"⚠ 새로고침 오류: {str(e)}")
             self._finish_sequential_refresh()
+            return False
 
     def _process_next_refresh(self):
         """순차 새로고침 체인: 다음 탭 처리"""
@@ -1238,7 +1340,9 @@ class MainApp(QMainWindow):
         """뉴스 가져오기 - 순차 새로고침 지원"""
         search_keyword, exclude_words = parse_tab_query(keyword)
         if not search_keyword:
-            search_keyword = keyword
+            if not is_sequential:
+                self.show_warning_toast("탭 키워드에 검색어가 없습니다. 탭 이름을 확인해주세요.")
+            return
         fetch_key = build_fetch_key(search_keyword, exclude_words)
 
         if not is_more and not is_sequential:
@@ -1251,9 +1355,16 @@ class MainApp(QMainWindow):
                 return
             self._last_fetch_request_ts[fetch_key] = now_ts
 
+        fetch_state = self._tab_fetch_state.setdefault(keyword, TabFetchState())
         start_idx = 1
         if is_more:
-            start_idx = self.db.get_counts(search_keyword) + 1
+            if fetch_state.last_api_start_index > 0:
+                start_idx = fetch_state.last_api_start_index + 100
+            else:
+                saved_count = max(0, int(self.db.get_counts(search_keyword)))
+                start_idx = 1 + ((saved_count // 100) * 100)
+                if start_idx <= 1:
+                    start_idx = 101
             if start_idx > 1000:
                 QMessageBox.information(
                     self,
@@ -1297,6 +1408,7 @@ class MainApp(QMainWindow):
             worker=worker,
             thread=thread,
         )
+        self._request_start_index[request_id] = start_idx
         self._worker_registry.register(handle)
         self.workers[keyword] = (worker, thread)
 
@@ -1345,6 +1457,12 @@ class MainApp(QMainWindow):
             # DB 저장은 Worker에서 이미 수행됨
             added_count = result.get('added_count', 0)
             dup_count = result.get('dup_count', 0)
+            if request_id is not None:
+                completed_start_idx = self._request_start_index.get(request_id)
+                if completed_start_idx is not None:
+                    self._tab_fetch_state.setdefault(keyword, TabFetchState()).last_api_start_index = (
+                        completed_start_idx
+                    )
             
             for i in range(1, self.tabs.count()):
                 w = self.tabs.widget(i)
@@ -1443,6 +1561,8 @@ class MainApp(QMainWindow):
             search_keyword = keyword
         fetch_key = build_fetch_key(search_keyword, exclude_words)
         self._last_fetch_request_ts.pop(fetch_key, None)
+        if request_id is not None:
+            self._request_start_index.pop(request_id, None)
 
         for i in range(1, self.tabs.count()):
             w = self.tabs.widget(i)
@@ -1531,6 +1651,7 @@ class MainApp(QMainWindow):
                 pass
 
             self.workers.pop(handle.tab_keyword, None)
+            self._request_start_index.pop(request_id, None)
             logger.info(f"워커 정리 완료: {handle.tab_keyword} (rid={request_id})")
         except Exception as e:
             logger.error(f"워커 정리 오류 (keyword={keyword}, rid={request_id}): {e}")
@@ -1601,6 +1722,7 @@ class MainApp(QMainWindow):
                     'notification_enabled': self.notification_enabled,
                     'alert_keywords': self.alert_keywords,
                     'sound_enabled': self.sound_enabled,
+                    'minimize_to_tray': self.minimize_to_tray,
                     'close_to_tray': self.close_to_tray,
                     'start_minimized': self.start_minimized,
                     'notify_on_refresh': self.notify_on_refresh,
@@ -1608,7 +1730,8 @@ class MainApp(QMainWindow):
                 },
                 'tabs': [self.tabs.widget(i).keyword 
                         for i in range(1, self.tabs.count()) 
-                        if hasattr(self.tabs.widget(i), 'keyword')]
+                        if hasattr(self.tabs.widget(i), 'keyword')],
+                'keyword_groups': self.keyword_group_manager.groups,
             }
             
             try:
@@ -1640,6 +1763,7 @@ class MainApp(QMainWindow):
                 self.notification_enabled = settings.get('notification_enabled', True)
                 self.alert_keywords = settings.get('alert_keywords', [])
                 self.sound_enabled = settings.get('sound_enabled', self.sound_enabled)
+                self.minimize_to_tray = settings.get('minimize_to_tray', self.minimize_to_tray)
                 self.close_to_tray = settings.get('close_to_tray', self.close_to_tray)
                 self.start_minimized = settings.get('start_minimized', self.start_minimized)
                 self.notify_on_refresh = settings.get('notify_on_refresh', self.notify_on_refresh)
@@ -1662,13 +1786,24 @@ class MainApp(QMainWindow):
                 }
                 
                 new_tabs = 0
+                skipped_invalid_tabs = 0
                 for keyword in imported_tabs:
                     if isinstance(keyword, str):
-                        keyword = keyword.strip()
+                        keyword = self._normalize_tab_keyword(keyword.strip())
+                    else:
+                        keyword = None
                     if keyword and keyword not in existing_keywords:
                         self.add_news_tab(keyword)
                         existing_keywords.add(keyword)
                         new_tabs += 1
+                    elif not keyword:
+                        skipped_invalid_tabs += 1
+
+                imported_groups = import_data.get("keyword_groups", {})
+                if isinstance(imported_groups, dict):
+                    normalized_groups = self.keyword_group_manager._normalize_groups(imported_groups)
+                    self.keyword_group_manager.groups = normalized_groups
+                    self.keyword_group_manager.save_groups()
                 
                 self.apply_refresh_interval()
                 self.save_config()
@@ -1676,6 +1811,8 @@ class MainApp(QMainWindow):
                 msg = "✓ 설정을 가져왔습니다."
                 if new_tabs > 0:
                     msg += f" ({new_tabs}개 탭 추가됨)"
+                if skipped_invalid_tabs > 0:
+                    msg += f" / 유효하지 않은 탭 {skipped_invalid_tabs}개 건너뜀"
                 self.show_toast(msg)
                 
             except Exception as e:
@@ -1859,6 +1996,7 @@ class MainApp(QMainWindow):
             'notification_enabled': self.notification_enabled,
             'alert_keywords': self.alert_keywords,
             'sound_enabled': self.sound_enabled,
+            'minimize_to_tray': self.minimize_to_tray,
             'close_to_tray': self.close_to_tray,
             'start_minimized': self.start_minimized,
             'auto_start_enabled': self.auto_start_enabled,
@@ -1881,6 +2019,7 @@ class MainApp(QMainWindow):
             self.api_timeout = data.get('api_timeout', 15)
             
             # 트레이 설정 적용
+            self.minimize_to_tray = data.get('minimize_to_tray', True)
             self.close_to_tray = data.get('close_to_tray', True)
             prev_start_minimized = self.start_minimized
             new_start_minimized = data.get('start_minimized', False)
@@ -1934,7 +2073,7 @@ class MainApp(QMainWindow):
             self.timer.stop()
             self._countdown_timer.stop()
             idx = self.interval_idx
-            minutes = [10, 30, 60, 180, 360]
+            minutes = [10, 30, 60, 120, 360]
             
             if 0 <= idx < len(minutes):
                 ms = minutes[idx] * 60 * 1000

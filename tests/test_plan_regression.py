@@ -18,6 +18,7 @@ class TestConfigStore(unittest.TestCase):
             payload['app_settings']['notify_on_refresh'] = True
             payload['app_settings']['api_timeout'] = 22
             payload['search_history'] = ['AI', 'ECON']
+            payload['keyword_groups'] = {'시장': ['AI', '경제']}
 
             config_store.save_config_file_atomic(str(cfg_path), payload)
             loaded = config_store.load_config_file(str(cfg_path))
@@ -27,6 +28,7 @@ class TestConfigStore(unittest.TestCase):
             self.assertEqual(loaded['app_settings']['notify_on_refresh'], True)
             self.assertEqual(loaded['app_settings']['api_timeout'], 22)
             self.assertEqual(loaded['search_history'], ['AI', 'ECON'])
+            self.assertEqual(loaded['keyword_groups'], {'시장': ['AI', '경제']})
 
     def test_atomic_save_failure_does_not_corrupt_existing_file(self):
         with tempfile.TemporaryDirectory() as td:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 class TestSettingsRoundtripContract(unittest.TestCase):
-    def test_get_data_contains_sound_and_api_timeout(self):
+    def test_get_data_contains_sound_api_timeout_and_minimize(self):
         src = Path("ui/settings_dialog.py").read_text(encoding="utf-8")
         module = ast.parse(src)
         cls = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "SettingsDialog")
@@ -19,9 +19,14 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         }
         self.assertIn("sound_enabled", keys)
         self.assertIn("api_timeout", keys)
+        self.assertIn("minimize_to_tray", keys)
 
     def test_api_timeout_spinbox_is_present(self):
         src = Path("ui/settings_dialog.py").read_text(encoding="utf-8")
         self.assertIn("QSpinBox", src)
         self.assertIn("setRange(5, 60)", src)
 
+    def test_interval_options_use_two_hours(self):
+        src = Path("ui/settings_dialog.py").read_text(encoding="utf-8")
+        self.assertIn("2시간", src)
+        self.assertNotIn("3시간", src)

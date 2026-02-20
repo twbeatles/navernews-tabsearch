@@ -1,5 +1,17 @@
 # Update History
 
+## v32.7.2 (Unreleased)
+- **Risk Remediation + Docs Alignment (2026-02-20)**:
+  - Added refresh lock recovery contract: `refresh_all()` now returns bool start status and `_safe_refresh_all()` restores lock on early-exit paths.
+  - Fixed load-more keyword binding after tab rename by using live tab state instead of creation-time closure value.
+  - Added positive-keyword validation path (`has_positive_keyword`) and blocked exclude-only tab inputs across add/rename/import flows.
+  - Introduced per-tab pagination state (`TabFetchState`) and request start-index tracking for more reliable incremental fetch.
+  - Unified keyword group storage into `news_scraper_config.json` (`keyword_groups`) with legacy `keyword_groups.json` migration support.
+  - Wired `minimize_to_tray` to actual minimize event handling and exposed it in settings export/import roundtrip.
+  - Normalized auto-refresh interval options to include `2시간` (replacing `3시간` in UI/runtime mapping).
+  - Added regression tests: `test_risk_fixes.py`, `test_keyword_groups_storage.py` and expanded existing guard tests.
+  - Synchronized docs (`README.md`, `claude.md`) with current runtime behavior and settings schema.
+
 ## v32.7.1 (Current)
 - **Stability + UX Hardening (2026-02-19)**:
   - Added single-instance guard at startup; second launch now shows "already running" message and exits.

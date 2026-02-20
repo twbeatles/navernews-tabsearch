@@ -44,7 +44,7 @@ navernews-tabsearch/
 │   ├── database.py              # DatabaseManager (연결 풀, CRUD)
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
-│   ├── query_parser.py          # parse_tab_query/build_fetch_key
+│   ├── query_parser.py          # parse_tab_query/has_positive_keyword/build_fetch_key
 │   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
@@ -73,7 +73,9 @@ navernews-tabsearch/
 │   ├── test_single_instance_guard.py
 │   ├── test_stability.py
 │   ├── test_startup_registry_command.py
-│   └── test_symbol_resolution.py
+│   ├── test_symbol_resolution.py
+│   ├── test_keyword_groups_storage.py
+│   └── test_risk_fixes.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -140,12 +142,15 @@ navernews-tabsearch/
         "theme_index": 0,              // 0=라이트, 1=다크
         "refresh_interval_index": 2,   // 콤보박스 인덱스
         "notification_enabled": true,
-        "minimize_to_tray": true,
-        "close_to_tray": true,
+        "minimize_to_tray": true,      // 최소화 버튼 → 트레이
+        "close_to_tray": true,         // 닫기(X) 버튼 → 트레이
         "api_timeout": 15
     },
     "tabs": ["키워드1", "키워드2"],
-    "search_history": []
+    "search_history": [],
+    "keyword_groups": {
+        "그룹명": ["키워드1", "키워드2"]
+    }
 }
 ```
 
@@ -223,6 +228,7 @@ db_keyword, exclude_words = parse_tab_query("IT 기술 -광고")
 
 - 조회/배지/리네임/수집 경로에서 동일한 파싱 함수를 사용해 동작 일관성을 유지합니다.
 - 신규 코드에서 `split()[0]` 직접 파싱은 사용하지 않습니다.
+- 탭 문자열은 최소 1개 이상의 양(+) 키워드를 포함해야 하며, 제외어-only 입력은 허용하지 않습니다.
 
 ---
 
@@ -630,10 +636,10 @@ class AppStyle:
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
 - Keep `import news_scraper_pro as app` compatibility.
-- Keep these exports: `parse_tab_query`, `build_fetch_key`, `DatabaseManager`, `AutoBackup`, `apply_pending_restore_if_any`, `PENDING_RESTORE_FILENAME`.
+- Keep these exports: `parse_tab_query`, `has_positive_keyword`, `build_fetch_key`, `DatabaseManager`, `AutoBackup`, `apply_pending_restore_if_any`, `PENDING_RESTORE_FILENAME`.
 
 ### Test Policy
 - Prefer behavior/contract tests over monolithic source-string checks.
 - Validate entrypoint and wrapper compatibility explicitly.
-- Tests: `tests/` 디렉터리에 11개 테스트 모듈 보유.
+- Tests: `tests/` 디렉터리에 13개 테스트 모듈 보유.
 

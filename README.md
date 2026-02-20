@@ -18,13 +18,19 @@
 - 단일 인스턴스 실행 보장(중복 실행 방지)
 - 설정/DB 자동 백업 및 재시작 적용형 복원(pending restore)
 
-## 안정화 포인트 (v32.7.1)
+## 안정화 포인트 (v32.7.1+ 작업 브랜치 반영)
 
 - 시작 시 단일 인스턴스 가드 적용
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
 - 설정 창의 API 키 검증/정리 작업 비동기 처리
 - 설정 가져오기 시 탭 중복 병합(dedupe) 강화
 - 자동 시작 최소화 옵션 변경 시 레지스트리 재등록
+- 자동 새로고침 조기 종료 경로에서 락 플래그 복구 보장
+- 탭 이름 변경 후 `더 불러오기`가 최신 탭 키워드를 사용하도록 보정
+- 제외어-only(예: `-광고 -코인`) 탭 입력 차단
+- `keyword_groups` 저장 위치를 `news_scraper_config.json`으로 일원화(레거시 마이그레이션 지원)
+- 최소화 시 트레이 동작(`minimize_to_tray`) 실제 반영
+- 자동 새로고침 간격을 `2시간` 기준으로 정렬
 
 ## 프로젝트 구조
 
@@ -69,7 +75,9 @@ navernews-tabsearch/
 │   ├── test_single_instance_guard.py
 │   ├── test_stability.py
 │   ├── test_startup_registry_command.py
-│   └── test_symbol_resolution.py
+│   ├── test_symbol_resolution.py
+│   ├── test_keyword_groups_storage.py
+│   └── test_risk_fixes.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -131,6 +139,14 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `news_database.db`
 - `news_scraper.log`
 - `pending_restore.json`
+
+참고:
+- `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
+
+## 키워드 입력 규칙
+
+- 최소 1개 이상의 일반 키워드가 필요합니다.
+- 제외어-only 입력(예: `-광고 -코인`)은 탭 추가/이름 변경/설정 가져오기에서 차단됩니다.
 
 ## 라이선스
 

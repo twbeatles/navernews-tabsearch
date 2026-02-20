@@ -17,7 +17,7 @@ from core.config_store import default_config, load_config_file, save_config_file
 from core.database import DatabaseManager
 from core.keyword_groups import KeywordGroupManager
 from core.notifications import NotificationSound
-from core.query_parser import build_fetch_key, parse_tab_query
+from core.query_parser import build_fetch_key, has_positive_keyword, parse_tab_query
 from core.startup import StartupManager
 from core.text_utils import (
     RE_BOLD_TAGS,
@@ -62,6 +62,7 @@ __all__ = [
     'load_config_file',
     'save_config_file_atomic',
     'parse_tab_query',
+    'has_positive_keyword',
     'build_fetch_key',
     'DatabaseManager',
     'AutoBackup',

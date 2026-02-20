@@ -19,6 +19,11 @@ def parse_tab_query(raw: str) -> Tuple[str, List[str]]:
     return db_keyword, exclude_words
 
 
+def has_positive_keyword(raw: str) -> bool:
+    db_keyword, _ = parse_tab_query(raw)
+    return bool(db_keyword)
+
+
 def build_fetch_key(search_keyword: str, exclude_words: List[str]) -> str:
     normalized_keyword = (search_keyword or "").strip().lower()
     normalized_excludes = sorted(
