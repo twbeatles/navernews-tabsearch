@@ -11,6 +11,16 @@
   - Normalized auto-refresh interval options to include `2시간` (replacing `3시간` in UI/runtime mapping).
   - Added regression tests: `test_risk_fixes.py`, `test_keyword_groups_storage.py` and expanded existing guard tests.
   - Synchronized docs (`README.md`, `claude.md`) with current runtime behavior and settings schema.
+- **Broad Stabilization Implementation (2026-02-21)**:
+  - Fixed duplicate statistics source: `get_statistics()['duplicates']` now counts distinct duplicate links from `news_keywords.is_duplicate`.
+  - Added `DatabaseManager.mark_links_as_read(links)` to support scoped read updates.
+  - Added import settings normalization utility in `core.config_store` with warning collection.
+  - Updated settings import flow to apply normalization, continue on correction, and log correction details.
+  - Changed imported `keyword_groups` handling from overwrite to merge+dedupe (existing-first, append-new).
+  - Hardened tab rename pagination state: reset `TabFetchState` and dedupe cache when fetch key semantics change.
+  - Expanded `모두 읽음` UX to two modes: `현재 표시 결과만` and `탭 전체`.
+  - Removed remaining `split()[0]` fallback path in `ui/main_window.py` and unified parsing via `parse_tab_query`.
+  - Added tests: `test_import_settings_normalization.py` and expanded DB/group/risk/import regression coverage.
 
 ## v32.7.1 (Current)
 - **Stability + UX Hardening (2026-02-19)**:

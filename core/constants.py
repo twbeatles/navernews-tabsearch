@@ -15,6 +15,6 @@ DB_FILE = os.path.join(APP_DIR, 'news_database.db')
 ICON_FILE = 'news_icon.ico'
 ICON_PNG = 'news_icon.png'
 APP_NAME = '\ub274\uc2a4 \uc2a4\ud06c\ub798\ud37c Pro'
-VERSION = '32.7.1'
+VERSION = '32.7.2'
 PENDING_RESTORE_FILENAME = 'pending_restore.json'
 PENDING_RESTORE_FILE = os.path.join(APP_DIR, PENDING_RESTORE_FILENAME)

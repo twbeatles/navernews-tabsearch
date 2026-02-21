@@ -39,7 +39,7 @@ navernews-tabsearch/
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
-│   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.1')
+│   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.2')
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
 │   ├── database.py              # DatabaseManager (연결 풀, CRUD)
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
@@ -633,6 +633,14 @@ class AppStyle:
 - 설정 가져오기 탭 중복 병합(dedupe) 강화
 - 자동 시작 최소화 옵션 변경 시 레지스트리 재등록
 
+### v32.7.2 추가 변경사항
+- `get_statistics()['duplicates']`를 `news_keywords.is_duplicate` 기준으로 보정
+- 설정 가져오기 시 타입/범위 정규화(`theme_index`, `refresh_interval_index`, `api_timeout`, bool 필드, `alert_keywords`)
+- 설정 가져오기 `keyword_groups` 정책을 덮어쓰기에서 병합+중복제거로 변경
+- 탭 리네임 시 fetch key 변경 여부에 따라 페이지네이션 상태 안전 초기화
+- `모두 읽음`을 `현재 표시 결과만`/`탭 전체` 2모드로 확장
+- `DatabaseManager.mark_links_as_read(links)` API 추가
+
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
 - Keep `import news_scraper_pro as app` compatibility.
@@ -641,5 +649,5 @@ class AppStyle:
 ### Test Policy
 - Prefer behavior/contract tests over monolithic source-string checks.
 - Validate entrypoint and wrapper compatibility explicitly.
-- Tests: `tests/` 디렉터리에 13개 테스트 모듈 보유.
+- Tests: `tests/` 디렉터리에 14개 테스트 모듈 보유.
 

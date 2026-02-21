@@ -13,7 +13,12 @@ from core.constants import (
     LOG_FILE,
     VERSION,
 )
-from core.config_store import default_config, load_config_file, save_config_file_atomic
+from core.config_store import (
+    default_config,
+    load_config_file,
+    normalize_import_settings,
+    save_config_file_atomic,
+)
 from core.database import DatabaseManager
 from core.keyword_groups import KeywordGroupManager
 from core.notifications import NotificationSound
@@ -61,6 +66,7 @@ __all__ = [
     'default_config',
     'load_config_file',
     'save_config_file_atomic',
+    'normalize_import_settings',
     'parse_tab_query',
     'has_positive_keyword',
     'build_fetch_key',

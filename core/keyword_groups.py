@@ -9,6 +9,27 @@ from core.logging_setup import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
+def merge_keyword_groups(
+    existing_groups: Dict[str, List[str]],
+    incoming_groups: Dict[str, List[str]],
+) -> Dict[str, List[str]]:
+    """그룹 병합 유틸리티: 기존 순서를 우선 유지하고 신규 키워드를 뒤에 추가."""
+    merged: Dict[str, List[str]] = {}
+
+    for group_name, keywords in existing_groups.items():
+        merged[group_name] = list(keywords)
+
+    for group_name, incoming_keywords in incoming_groups.items():
+        if group_name not in merged:
+            merged[group_name] = []
+        for keyword in incoming_keywords:
+            if keyword not in merged[group_name]:
+                merged[group_name].append(keyword)
+
+    return merged
+
+
 class KeywordGroupManager:
     """키워드 그룹(폴더) 관리"""
     
@@ -87,6 +108,15 @@ class KeywordGroupManager:
             save_config_file_atomic(self.config_file, config)
         except Exception as e:
             logger.error(f"키워드 그룹 저장 오류: {e}")
+
+    def merge_groups(self, incoming_groups: Dict[str, List[str]], save: bool = True) -> Dict[str, List[str]]:
+        """가져온 그룹과 현재 그룹을 병합한다."""
+        normalized_existing = self._normalize_groups(self.groups)
+        normalized_incoming = self._normalize_groups(incoming_groups or {})
+        self.groups = merge_keyword_groups(normalized_existing, normalized_incoming)
+        if save:
+            self.save_groups()
+        return self.groups
     
     def create_group(self, name: str) -> bool:
         """새 그룹 생성"""

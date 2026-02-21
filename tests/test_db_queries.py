@@ -98,3 +98,45 @@ class TestDbQueries(unittest.TestCase):
             self.assertIsNotNone(row)
         finally:
             conn.close()
+
+    def test_get_statistics_duplicates_uses_news_keywords(self):
+        same_title = "중복 기준 제목"
+        items = [
+            {
+                "title": same_title,
+                "description": "desc-a",
+                "link": "https://example.com/dup-a",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": same_title,
+                "description": "desc-b",
+                "link": "https://example.com/dup-b",
+                "pubDate": "2026-01-01T10:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI")
+
+        stats = self.mgr.get_statistics()
+        self.assertEqual(stats["duplicates"], 1)
+
+    def test_mark_links_as_read_updates_only_selected_links(self):
+        items = [
+            self._make_item(100, "2026-01-01T09:00:00"),
+            self._make_item(101, "2026-01-02T09:00:00"),
+            self._make_item(102, "2026-01-03T09:00:00"),
+        ]
+        self.mgr.upsert_news(items, "AI")
+
+        updated = self.mgr.mark_links_as_read(
+            ["https://example.com/100", "https://example.com/102"]
+        )
+        self.assertEqual(updated, 2)
+
+        rows = self.mgr.fetch_news("AI", sort_mode="최신순")
+        read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
+        self.assertEqual(read_by_link["https://example.com/100"], 1)
+        self.assertEqual(read_by_link["https://example.com/101"], 0)
+        self.assertEqual(read_by_link["https://example.com/102"], 1)

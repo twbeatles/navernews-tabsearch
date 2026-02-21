@@ -59,3 +59,29 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertIn("self.minimize_to_tray", block)
         self.assertIn("QTimer.singleShot(0, self.hide)", block)
 
+    def test_rename_tab_resets_fetch_state_when_fetch_key_changes(self):
+        src = self._read()
+        start = src.index("def rename_tab")
+        end = src.index("def on_tab_context_menu")
+        block = src[start:end]
+        self.assertIn("old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)", block)
+        self.assertIn("new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)", block)
+        self.assertIn("if old_fetch_key != new_fetch_key:", block)
+        self.assertIn("self._last_fetch_request_ts.pop(old_fetch_key, None)", block)
+        self.assertIn("self._tab_fetch_state[new_keyword] = TabFetchState()", block)
+
+    def test_main_window_has_no_split_index_fallback(self):
+        src = self._read()
+        self.assertNotIn("w.keyword.split()[0]", src)
+
+
+class TestNewsTabRiskFixes(unittest.TestCase):
+    def test_mark_all_read_supports_two_modes(self):
+        src = Path("ui/news_tab.py").read_text(encoding="utf-8")
+        start = src.index("def mark_all_read")
+        end = src.index("def _on_mark_all_read_done")
+        block = src[start:end]
+        self.assertIn("현재 표시 결과만", block)
+        self.assertIn("탭 전체", block)
+        self.assertIn("self.db.mark_links_as_read", block)
+

@@ -715,7 +715,9 @@ class DatabaseManager:
             stats['unread'] = conn.execute("SELECT COUNT(*) FROM news WHERE is_read=0").fetchone()[0]
             stats['bookmarked'] = conn.execute("SELECT COUNT(*) FROM news WHERE is_bookmarked=1").fetchone()[0]
             stats['with_notes'] = conn.execute("SELECT COUNT(*) FROM news WHERE notes IS NOT NULL AND notes != ''").fetchone()[0]
-            stats['duplicates'] = conn.execute("SELECT COUNT(*) FROM news WHERE is_duplicate=1").fetchone()[0]
+            stats['duplicates'] = conn.execute(
+                "SELECT COUNT(DISTINCT link) FROM news_keywords WHERE is_duplicate=1"
+            ).fetchone()[0]
             return stats
         except Exception as e:
             logger.error(f"get_statistics 오류: {e}")
@@ -751,6 +753,41 @@ class DatabaseManager:
             return []
         finally:
             self.return_connection(conn)
+
+    def mark_links_as_read(self, links: List[str]) -> int:
+        """지정한 링크 목록만 읽음 처리."""
+        if not links:
+            return 0
+
+        deduped_links: List[str] = []
+        for link in links:
+            if isinstance(link, str) and link and link not in deduped_links:
+                deduped_links.append(link)
+
+        if not deduped_links:
+            return 0
+
+        conn = self.get_connection()
+        updated_count = 0
+        chunk_size = 400  # SQLite variable limit(999) 대비 여유값
+        try:
+            with conn:
+                for idx in range(0, len(deduped_links), chunk_size):
+                    chunk = deduped_links[idx : idx + chunk_size]
+                    placeholders = ",".join(["?"] * len(chunk))
+                    cursor = conn.execute(
+                        f"UPDATE news SET is_read=1 WHERE is_read=0 AND link IN ({placeholders})",
+                        chunk,
+                    )
+                    if cursor.rowcount and cursor.rowcount > 0:
+                        updated_count += int(cursor.rowcount)
+        except Exception as e:
+            logger.error(f"mark_links_as_read 오류: {e}")
+            raise
+        finally:
+            self.return_connection(conn)
+
+        return updated_count
     
     def mark_all_as_read(self, keyword: str, only_bookmark: bool) -> int:
         """모든 기사 읽음 처리"""

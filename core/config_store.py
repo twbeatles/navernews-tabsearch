@@ -2,7 +2,7 @@ import copy
 import json
 import os
 import tempfile
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Tuple, TypedDict
 
 
 class WindowGeometry(TypedDict):
@@ -103,6 +103,179 @@ def _to_keyword_groups(value: Any) -> Dict[str, List[str]]:
                 keywords.append(stripped)
         normalized[group_name] = keywords
     return normalized
+
+
+def _normalize_alert_keywords(value: Any) -> Tuple[List[str], bool]:
+    changed = False
+    raw_keywords: List[str] = []
+
+    if isinstance(value, str):
+        changed = True
+        raw_keywords = [part.strip() for part in value.split(",")]
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, str):
+                raw_keywords.append(item.strip())
+            elif isinstance(item, (int, float)):
+                raw_keywords.append(str(item).strip())
+                changed = True
+            else:
+                changed = True
+    elif value is None:
+        raw_keywords = []
+    else:
+        changed = True
+        raw_keywords = []
+
+    deduped: List[str] = []
+    for keyword in raw_keywords:
+        if keyword and keyword not in deduped:
+            deduped.append(keyword)
+
+    if len(deduped) > 10:
+        deduped = deduped[:10]
+        changed = True
+
+    if len(deduped) != len(raw_keywords):
+        changed = True
+
+    return deduped, changed
+
+
+def _coerce_bool_for_import(value: Any, fallback: bool) -> Tuple[bool, bool]:
+    if isinstance(value, bool):
+        return value, False
+
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value), True
+
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "t", "yes", "y", "on"}:
+            return True, True
+        if lowered in {"0", "false", "f", "no", "n", "off"}:
+            return False, True
+
+    return fallback, True
+
+
+def _coerce_int_range_for_import(
+    value: Any, fallback: int, minimum: int, maximum: int
+) -> Tuple[int, bool]:
+    if isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+        changed = False
+    else:
+        try:
+            parsed = int(value)
+            changed = True
+        except (TypeError, ValueError):
+            return fallback, True
+
+    clamped = max(minimum, min(maximum, parsed))
+    if clamped != parsed:
+        changed = True
+    return clamped, changed
+
+
+def normalize_import_settings(
+    raw_settings: Any, fallback_settings: Dict[str, Any]
+) -> Tuple[Dict[str, Any], List[str]]:
+    """가져오기용 설정을 타입/범위 기준으로 정규화하고 보정 경고를 반환한다."""
+    warnings: List[str] = []
+    baseline = copy.deepcopy(DEFAULT_CONFIG["app_settings"])
+
+    if isinstance(fallback_settings, dict):
+        baseline["theme_index"] = _to_int(fallback_settings.get("theme_index"), baseline["theme_index"])
+        baseline["refresh_interval_index"] = _to_int(
+            fallback_settings.get("refresh_interval_index"),
+            baseline["refresh_interval_index"],
+        )
+        baseline["notification_enabled"] = _to_bool(
+            fallback_settings.get("notification_enabled"),
+            baseline["notification_enabled"],
+        )
+        baseline["alert_keywords"], _ = _normalize_alert_keywords(
+            fallback_settings.get("alert_keywords", baseline["alert_keywords"])
+        )
+        baseline["sound_enabled"] = _to_bool(
+            fallback_settings.get("sound_enabled"), baseline["sound_enabled"]
+        )
+        baseline["minimize_to_tray"] = _to_bool(
+            fallback_settings.get("minimize_to_tray"), baseline["minimize_to_tray"]
+        )
+        baseline["close_to_tray"] = _to_bool(
+            fallback_settings.get("close_to_tray"), baseline["close_to_tray"]
+        )
+        baseline["start_minimized"] = _to_bool(
+            fallback_settings.get("start_minimized"), baseline["start_minimized"]
+        )
+        baseline["notify_on_refresh"] = _to_bool(
+            fallback_settings.get("notify_on_refresh"), baseline["notify_on_refresh"]
+        )
+        baseline["api_timeout"] = _to_int(
+            fallback_settings.get("api_timeout"), baseline["api_timeout"]
+        )
+
+    normalized = {
+        "theme_index": max(0, min(1, int(baseline["theme_index"]))),
+        "refresh_interval_index": max(0, min(5, int(baseline["refresh_interval_index"]))),
+        "notification_enabled": bool(baseline["notification_enabled"]),
+        "alert_keywords": list(baseline["alert_keywords"]),
+        "sound_enabled": bool(baseline["sound_enabled"]),
+        "minimize_to_tray": bool(baseline["minimize_to_tray"]),
+        "close_to_tray": bool(baseline["close_to_tray"]),
+        "start_minimized": bool(baseline["start_minimized"]),
+        "notify_on_refresh": bool(baseline["notify_on_refresh"]),
+        "api_timeout": max(5, min(60, int(baseline["api_timeout"]))),
+    }
+
+    if not isinstance(raw_settings, dict):
+        warnings.append("settings 형식이 올바르지 않아 기존 설정을 유지했습니다.")
+        return normalized, warnings
+
+    int_fields = {
+        "theme_index": (0, 1),
+        "refresh_interval_index": (0, 5),
+        "api_timeout": (5, 60),
+    }
+    bool_fields = [
+        "notification_enabled",
+        "sound_enabled",
+        "minimize_to_tray",
+        "close_to_tray",
+        "start_minimized",
+        "notify_on_refresh",
+    ]
+
+    for field, (minimum, maximum) in int_fields.items():
+        coerced, changed = _coerce_int_range_for_import(
+            raw_settings.get(field), normalized[field], minimum, maximum
+        )
+        normalized[field] = coerced
+        if changed and field in raw_settings:
+            warnings.append(
+                f"{field} 값을 {coerced}(으)로 보정했습니다."
+            )
+
+    for field in bool_fields:
+        coerced, changed = _coerce_bool_for_import(raw_settings.get(field), normalized[field])
+        normalized[field] = coerced
+        if changed and field in raw_settings:
+            warnings.append(
+                f"{field} 값을 {coerced}(으)로 보정했습니다."
+            )
+
+    normalized_alert_keywords, changed_alert = _normalize_alert_keywords(
+        raw_settings.get("alert_keywords", normalized["alert_keywords"])
+    )
+    normalized["alert_keywords"] = normalized_alert_keywords
+    if changed_alert and "alert_keywords" in raw_settings:
+        warnings.append(
+            f"alert_keywords 값을 정규화했습니다. (최대 10개, 중복 제거)"
+        )
+
+    return normalized, warnings
 
 
 def default_config() -> AppConfig:

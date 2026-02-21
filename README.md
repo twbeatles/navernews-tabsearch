@@ -1,4 +1,4 @@
-﻿# 뉴스 스크래퍼 Pro v32.7.1
+﻿# 뉴스 스크래퍼 Pro v32.7.2
 
 네이버 뉴스 검색 API를 기반으로 동작하는 탭형 뉴스 수집/관리 도구입니다.
 
@@ -18,7 +18,7 @@
 - 단일 인스턴스 실행 보장(중복 실행 방지)
 - 설정/DB 자동 백업 및 재시작 적용형 복원(pending restore)
 
-## 안정화 포인트 (v32.7.1+ 작업 브랜치 반영)
+## 안정화 포인트 (v32.7.2+ 작업 브랜치 반영)
 
 - 시작 시 단일 인스턴스 가드 적용
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
@@ -31,6 +31,11 @@
 - `keyword_groups` 저장 위치를 `news_scraper_config.json`으로 일원화(레거시 마이그레이션 지원)
 - 최소화 시 트레이 동작(`minimize_to_tray`) 실제 반영
 - 자동 새로고침 간격을 `2시간` 기준으로 정렬
+- 설정 가져오기 정규화(타입/범위 보정) + 보정 항목 로그/알림
+- 설정 가져오기 시 `keyword_groups`를 덮어쓰기 대신 병합+중복 제거로 처리
+- 탭 리네임 시 fetch key 변경 여부에 따라 페이지네이션 상태를 안전하게 재설정
+- `모두 읽음`을 `현재 표시 결과만`/`탭 전체` 2모드로 확장
+- 통계의 `중복 기사` 집계를 `news_keywords.is_duplicate` 기준으로 보정
 
 ## 프로젝트 구조
 
@@ -68,6 +73,7 @@ navernews-tabsearch/
 │   ├── test_db_queries.py
 │   ├── test_entrypoint_bootstrap.py
 │   ├── test_import_settings_dedupe.py
+│   ├── test_import_settings_normalization.py
 │   ├── test_plan_regression.py
 │   ├── test_refactor_backup_guard.py
 │   ├── test_refactor_compat.py
@@ -151,3 +157,4 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 ## 라이선스
 
 MIT License
+

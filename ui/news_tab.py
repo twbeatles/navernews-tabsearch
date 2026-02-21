@@ -69,6 +69,8 @@ class NewsTab(QWidget):
         
         # Async DB Worker
         self.worker = None
+        self.job_worker = None
+        self._mark_all_mode_label = "탭 전체"
         
         self.setup_ui()
         self.load_data_from_db()
@@ -732,35 +734,62 @@ class NewsTab(QWidget):
 
     def mark_all_read(self):
         """모두 읽음으로 표시 (비동기)"""
-        reply = QMessageBox.question(
-            self,
-            "모두 읽음으로 표시",
-            "현재 표시된 모든 기사를 읽음으로 표시하시겠습니까?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+        mode_dialog = QMessageBox(self)
+        mode_dialog.setIcon(QMessageBox.Icon.Question)
+        mode_dialog.setWindowTitle("모두 읽음으로 표시")
+        mode_dialog.setText("읽음 처리 범위를 선택하세요.")
+        mode_dialog.setInformativeText(
+            "현재 표시 결과는 필터/기간/제외어 조건으로 계산된 전체 결과입니다."
         )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            self.lbl_status.setText("⏳ 처리 중...")
-            self.btn_read_all.setEnabled(False)
-            
-            # 비동기 워커 실행
-            # DB 검색용 키워드(db_keyword)를 사용
+
+        btn_visible_only = mode_dialog.addButton("현재 표시 결과만", QMessageBox.ButtonRole.AcceptRole)
+        btn_tab_all = mode_dialog.addButton("탭 전체", QMessageBox.ButtonRole.ActionRole)
+        mode_dialog.addButton(QMessageBox.StandardButton.Cancel)
+        mode_dialog.setDefaultButton(btn_visible_only)
+        mode_dialog.exec()
+
+        clicked = mode_dialog.clickedButton()
+        if clicked not in (btn_visible_only, btn_tab_all):
+            return
+
+        self.lbl_status.setText("⏳ 처리 중...")
+        self.btn_read_all.setEnabled(False)
+
+        if clicked == btn_visible_only:
+            target_links = []
+            for item in self.filtered_data_cache:
+                link = item.get("link", "")
+                if link and link not in target_links:
+                    target_links.append(link)
+
+            if not target_links:
+                self.btn_read_all.setEnabled(True)
+                self.lbl_status.setText("읽음 처리할 기사가 없습니다.")
+                if self.window():
+                    self.window().show_toast("읽음 처리할 기사가 없습니다.")
+                return
+
+            self._mark_all_mode_label = "현재 표시 결과"
+            self.job_worker = AsyncJobWorker(self.db.mark_links_as_read, target_links)
+        else:
+            self._mark_all_mode_label = "탭 전체"
             self.job_worker = AsyncJobWorker(
-                self.db.mark_all_as_read, 
-                self.db_keyword, 
-                self.is_bookmark_tab
+                self.db.mark_all_as_read,
+                self.db_keyword,
+                self.is_bookmark_tab,
             )
-            self.job_worker.finished.connect(self._on_mark_all_read_done)
-            self.job_worker.error.connect(self._on_mark_all_read_error)
-            self.job_worker.start()
-            
+
+        self.job_worker.finished.connect(self._on_mark_all_read_done)
+        self.job_worker.error.connect(self._on_mark_all_read_error)
+        self.job_worker.start()
+             
     def _on_mark_all_read_done(self, count):
         """모두 읽음 처리 완료"""
         self.btn_read_all.setEnabled(True)
         self.load_data_from_db() # UI 갱신
         if self.window():
-            self.window().show_toast(f"✓ {count}개의 기사를 읽음으로 표시했습니다.")
+            mode_label = getattr(self, "_mark_all_mode_label", "선택 범위")
+            self.window().show_toast(f"✓ {mode_label} {count}개의 기사를 읽음으로 표시했습니다.")
             
     def _on_mark_all_read_error(self, err_msg):
         """모두 읽음 처리 오류"""

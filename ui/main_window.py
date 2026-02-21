@@ -52,7 +52,12 @@ from core.backup import (
     PENDING_RESTORE_FILENAME as CORE_PENDING_RESTORE_FILENAME,
     apply_pending_restore_if_any as core_apply_pending_restore_if_any,
 )
-from core.config_store import default_config, load_config_file, save_config_file_atomic
+from core.config_store import (
+    default_config,
+    load_config_file,
+    normalize_import_settings,
+    save_config_file_atomic,
+)
 from core.constants import (
     APP_DIR,
     APP_NAME,
@@ -1072,8 +1077,8 @@ class MainApp(QMainWindow):
             self.tabs.setTabText(idx, f"{icon_text} {new_keyword}")
             
             # DB 업데이트: 검색 키워드(첫 번째 단어)만 사용
-            old_search_keyword, _ = parse_tab_query(old_keyword)
-            new_search_keyword, _ = parse_tab_query(new_keyword)
+            old_search_keyword, old_exclude_words = parse_tab_query(old_keyword)
+            new_search_keyword, new_exclude_words = parse_tab_query(new_keyword)
             
             if old_search_keyword and new_search_keyword:
                 conn = self.db.get_connection()
@@ -1086,9 +1091,19 @@ class MainApp(QMainWindow):
                 finally:
                     self.db.return_connection(conn)
 
+            old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)
+            new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)
+
             fetch_state = self._tab_fetch_state.pop(old_keyword, None)
-            if fetch_state is not None:
+            if old_fetch_key != new_fetch_key:
+                # 쿼리 의미가 바뀌면 페이지네이션/요청 dedupe 상태를 초기화한다.
+                self._last_fetch_request_ts.pop(old_fetch_key, None)
+                self._last_fetch_request_ts.pop(new_fetch_key, None)
+                self._tab_fetch_state[new_keyword] = TabFetchState()
+            elif fetch_state is not None:
                 self._tab_fetch_state[new_keyword] = fetch_state
+            else:
+                self._tab_fetch_state.setdefault(new_keyword, TabFetchState())
 
             groups_changed = False
             for group_name, keywords in self.keyword_group_manager.groups.items():
@@ -1756,18 +1771,34 @@ class MainApp(QMainWindow):
                 with open(fname, 'r', encoding='utf-8') as f:
                     import_data = json.load(f)
                 
-                # 설정 적용
+                # 설정 적용 (정규화 + 보정 경고)
                 settings = import_data.get('settings', {})
-                self.theme_idx = settings.get('theme_index', self.theme_idx)
-                self.interval_idx = settings.get('refresh_interval_index', self.interval_idx)
-                self.notification_enabled = settings.get('notification_enabled', True)
-                self.alert_keywords = settings.get('alert_keywords', [])
-                self.sound_enabled = settings.get('sound_enabled', self.sound_enabled)
-                self.minimize_to_tray = settings.get('minimize_to_tray', self.minimize_to_tray)
-                self.close_to_tray = settings.get('close_to_tray', self.close_to_tray)
-                self.start_minimized = settings.get('start_minimized', self.start_minimized)
-                self.notify_on_refresh = settings.get('notify_on_refresh', self.notify_on_refresh)
-                self.api_timeout = settings.get('api_timeout', self.api_timeout)
+                fallback_settings = {
+                    "theme_index": self.theme_idx,
+                    "refresh_interval_index": self.interval_idx,
+                    "notification_enabled": self.notification_enabled,
+                    "alert_keywords": self.alert_keywords,
+                    "sound_enabled": self.sound_enabled,
+                    "minimize_to_tray": self.minimize_to_tray,
+                    "close_to_tray": self.close_to_tray,
+                    "start_minimized": self.start_minimized,
+                    "notify_on_refresh": self.notify_on_refresh,
+                    "api_timeout": self.api_timeout,
+                }
+                normalized_settings, import_warnings = normalize_import_settings(
+                    settings, fallback_settings
+                )
+
+                self.theme_idx = normalized_settings["theme_index"]
+                self.interval_idx = normalized_settings["refresh_interval_index"]
+                self.notification_enabled = normalized_settings["notification_enabled"]
+                self.alert_keywords = normalized_settings["alert_keywords"]
+                self.sound_enabled = normalized_settings["sound_enabled"]
+                self.minimize_to_tray = normalized_settings["minimize_to_tray"]
+                self.close_to_tray = normalized_settings["close_to_tray"]
+                self.start_minimized = normalized_settings["start_minimized"]
+                self.notify_on_refresh = normalized_settings["notify_on_refresh"]
+                self.api_timeout = normalized_settings["api_timeout"]
                 
                 # 테마 적용
                 self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
@@ -1801,9 +1832,7 @@ class MainApp(QMainWindow):
 
                 imported_groups = import_data.get("keyword_groups", {})
                 if isinstance(imported_groups, dict):
-                    normalized_groups = self.keyword_group_manager._normalize_groups(imported_groups)
-                    self.keyword_group_manager.groups = normalized_groups
-                    self.keyword_group_manager.save_groups()
+                    self.keyword_group_manager.merge_groups(imported_groups, save=True)
                 
                 self.apply_refresh_interval()
                 self.save_config()
@@ -1813,6 +1842,9 @@ class MainApp(QMainWindow):
                     msg += f" ({new_tabs}개 탭 추가됨)"
                 if skipped_invalid_tabs > 0:
                     msg += f" / 유효하지 않은 탭 {skipped_invalid_tabs}개 건너뜀"
+                if import_warnings:
+                    logger.warning("설정 가져오기 보정 항목:\n- %s", "\n- ".join(import_warnings))
+                    msg += f" / 설정값 {len(import_warnings)}개 보정"
                 self.show_toast(msg)
                 
             except Exception as e:
@@ -1925,7 +1957,12 @@ class MainApp(QMainWindow):
             w = self.tabs.widget(i)
             if w and hasattr(w, 'keyword'):
                 # DB 조회용 키워드(db_keyword)를 data로 저장
-                db_kw = w.db_keyword if hasattr(w, 'db_keyword') else w.keyword.split()[0]
+                if hasattr(w, "db_keyword"):
+                    db_kw = w.db_keyword
+                else:
+                    db_kw, _ = parse_tab_query(w.keyword)
+                if not db_kw:
+                    continue
                 tab_combo.addItem(w.keyword, db_kw)
         analysis_layout.addWidget(tab_combo)
         
