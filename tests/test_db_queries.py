@@ -120,7 +120,59 @@ class TestDbQueries(unittest.TestCase):
         self.mgr.upsert_news(items, "AI")
 
         stats = self.mgr.get_statistics()
-        self.assertEqual(stats["duplicates"], 1)
+        self.assertEqual(stats["duplicates"], 2)
+
+    def test_same_link_reingest_is_not_counted_as_duplicate(self):
+        item = self._make_item(77, "2026-01-07T09:00:00")
+
+        first = self.mgr.upsert_news([item], "AI")
+        second = self.mgr.upsert_news([item], "AI")
+
+        self.assertEqual(first, (1, 0))
+        self.assertEqual(second, (0, 0))
+
+        rows = self.mgr.fetch_news("AI", sort_mode="최신순")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(int(rows[0]["is_duplicate"]), 0)
+
+        stats = self.mgr.get_statistics()
+        self.assertEqual(stats["duplicates"], 0)
+
+    def test_recalculate_duplicate_flags_repairs_wrong_values(self):
+        same_title = "재계산 검증 제목"
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": same_title,
+                    "description": "desc-1",
+                    "link": "https://example.com/fix-1",
+                    "pubDate": "2026-01-01T10:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": same_title,
+                    "description": "desc-2",
+                    "link": "https://example.com/fix-2",
+                    "pubDate": "2026-01-01T11:00:00",
+                    "publisher": "example.com",
+                },
+            ],
+            "AI",
+        )
+
+        conn = self.mgr.get_connection()
+        try:
+            with conn:
+                conn.execute("UPDATE news_keywords SET is_duplicate=0 WHERE keyword='AI'")
+        finally:
+            self.mgr.return_connection(conn)
+
+        updated = self.mgr.recalculate_duplicate_flags()
+        self.assertGreaterEqual(updated, 2)
+
+        rows = self.mgr.fetch_news("AI", sort_mode="최신순")
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(int(row["is_duplicate"]) == 1 for row in rows))
 
     def test_mark_links_as_read_updates_only_selected_links(self):
         items = [

@@ -69,6 +69,10 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertIn("if old_fetch_key != new_fetch_key:", block)
         self.assertIn("self._last_fetch_request_ts.pop(old_fetch_key, None)", block)
         self.assertIn("self._tab_fetch_state[new_keyword] = TabFetchState()", block)
+        self.assertNotIn("UPDATE news_keywords SET keyword=? WHERE keyword=?", block)
+        self.assertNotIn("UPDATE news SET keyword=? WHERE keyword=?", block)
+        self.assertIn("w.load_data_from_db()", block)
+        self.assertIn("self.fetch_news(new_keyword)", block)
 
     def test_main_window_has_no_split_index_fallback(self):
         src = self._read()

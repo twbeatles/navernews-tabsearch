@@ -212,10 +212,21 @@ def apply_pending_restore_if_any(
     if not os.path.exists(pending_file):
         return False
 
+    def _discard_invalid_pending(reason: str) -> None:
+        logger.warning(reason)
+        try:
+            os.remove(pending_file)
+        except OSError as remove_err:
+            logger.warning(f"무효 복원 예약 파일 삭제 실패: {remove_err}")
+
     try:
         with open(pending_file, "r", encoding="utf-8") as f:
             payload = json.load(f)
+    except Exception as e:
+        _discard_invalid_pending(f"무효 복원 예약 파일 파싱 실패: {e}")
+        return False
 
+    try:
         backup_name = payload.get("backup_name", "")
         restore_db = bool(payload.get("restore_db", True))
         backup_dir = payload.get("backup_dir") or os.path.join(
@@ -223,6 +234,9 @@ def apply_pending_restore_if_any(
         )
         backup_path = os.path.join(backup_dir, backup_name)
         if not backup_name or not os.path.isdir(backup_path):
+            _discard_invalid_pending(
+                f"무효 복원 예약 파일: backup_name/backup_path 확인 필요 ({backup_name})"
+            )
             return False
 
         cfg_backup = os.path.join(backup_path, os.path.basename(config_file))

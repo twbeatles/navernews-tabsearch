@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta
 from queue import Queue
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.logging_setup import configure_logging
 from core.text_utils import RE_WHITESPACE, parse_date_to_ts, perf_timer
@@ -256,8 +256,105 @@ class DatabaseManager:
                 WHERE keyword IS NOT NULL AND keyword != ''
                 """
             )
+            self._recalculate_duplicate_flags_with_conn(conn)
 
         conn.close()
+
+    def _recalculate_duplicate_flags_for_keyword_hashes(
+        self,
+        conn: sqlite3.Connection,
+        keyword: str,
+        title_hashes: List[str],
+    ) -> int:
+        """특정 키워드/해시 집합의 중복 플래그를 재계산."""
+        normalized_hashes = sorted(
+            {
+                str(value).strip()
+                for value in title_hashes
+                if isinstance(value, str) and value.strip()
+            }
+        )
+        if not normalized_hashes:
+            return 0
+
+        placeholders = ",".join(["?"] * len(normalized_hashes))
+        rows = conn.execute(
+            f"""
+            SELECT nk.link, n.title_hash
+            FROM news_keywords nk
+            JOIN news n ON n.link = nk.link
+            WHERE nk.keyword = ? AND n.title_hash IN ({placeholders})
+            """,
+            [keyword] + normalized_hashes,
+        ).fetchall()
+
+        if not rows:
+            return 0
+
+        links_by_hash: Dict[str, Set[str]] = {}
+        for row in rows:
+            link = str(row[0])
+            title_hash = str(row[1] or "")
+            links_by_hash.setdefault(title_hash, set()).add(link)
+
+        updates: List[Tuple[int, str, str]] = []
+        for row in rows:
+            link = str(row[0])
+            title_hash = str(row[1] or "")
+            is_dup = 1 if len(links_by_hash.get(title_hash, set())) > 1 else 0
+            updates.append((is_dup, link, keyword))
+
+        conn.executemany(
+            "UPDATE news_keywords SET is_duplicate=? WHERE link=? AND keyword=?",
+            updates,
+        )
+        return len(updates)
+
+    def _recalculate_duplicate_flags_with_conn(self, conn: sqlite3.Connection) -> int:
+        """전체 news_keywords.is_duplicate 값을 현재 기준으로 재계산."""
+        with perf_timer("db.recalculate_duplicate_flags", "scope=all"):
+            rows = conn.execute(
+                """
+                SELECT nk.keyword, nk.link, COALESCE(n.title_hash, '') AS title_hash
+                FROM news_keywords nk
+                JOIN news n ON n.link = nk.link
+                WHERE nk.keyword IS NOT NULL AND nk.keyword != ''
+                """
+            ).fetchall()
+
+            if not rows:
+                conn.execute("UPDATE news_keywords SET is_duplicate=0 WHERE is_duplicate != 0")
+                return 0
+
+            links_by_group: Dict[Tuple[str, str], Set[str]] = {}
+            for row in rows:
+                keyword = str(row[0])
+                link = str(row[1])
+                title_hash = str(row[2] or "")
+                links_by_group.setdefault((keyword, title_hash), set()).add(link)
+
+            updates: List[Tuple[int, str, str]] = []
+            for row in rows:
+                keyword = str(row[0])
+                link = str(row[1])
+                title_hash = str(row[2] or "")
+                is_dup = 1 if len(links_by_group.get((keyword, title_hash), set())) > 1 else 0
+                updates.append((is_dup, link, keyword))
+
+            conn.executemany(
+                "UPDATE news_keywords SET is_duplicate=? WHERE link=? AND keyword=?",
+                updates,
+            )
+            return len(updates)
+
+    def recalculate_duplicate_flags(self) -> int:
+        """중복 플래그 재계산 공개 메서드."""
+        conn = self.get_connection()
+        try:
+            with conn:
+                return self._recalculate_duplicate_flags_with_conn(conn)
+        finally:
+            self.return_connection(conn)
 
     def _calculate_title_hash(self, title: str) -> str:
         """제목의 해시 계산 (중복 감지용) - 프리컴파일된 정규식 사용"""
@@ -297,34 +394,73 @@ class DatabaseManager:
                     )
 
                 with conn:
-                    placeholders = ",".join(["?"] * len(hashes))
-                    cursor = conn.execute(
-                        f"""
-                        SELECT n.title_hash
-                        FROM news n
-                        JOIN news_keywords nk ON nk.link = n.link
-                        WHERE nk.keyword = ? AND n.title_hash IN ({placeholders})
-                        """,
-                        [keyword] + hashes,
+                    unique_hashes = sorted({h for h in hashes if h})
+                    incoming_links = sorted(
+                        {item.get("link", "") for item in prepared_items if item.get("link", "")}
                     )
-                    existing_hashes = {row[0] for row in cursor.fetchall()}
-                    seen_hashes = set(existing_hashes)
+
+                    existing_links_by_hash: Dict[str, Set[str]] = {}
+                    if unique_hashes:
+                        hash_placeholders = ",".join(["?"] * len(unique_hashes))
+                        hash_rows = conn.execute(
+                            f"""
+                            SELECT n.title_hash, nk.link
+                            FROM news n
+                            JOIN news_keywords nk ON nk.link = n.link
+                            WHERE nk.keyword = ? AND n.title_hash IN ({hash_placeholders})
+                            """,
+                            [keyword] + unique_hashes,
+                        ).fetchall()
+                        for row in hash_rows:
+                            title_hash = str(row[0] or "")
+                            link = str(row[1] or "")
+                            existing_links_by_hash.setdefault(title_hash, set()).add(link)
+
+                    existing_hash_by_link: Dict[str, str] = {}
+                    if incoming_links:
+                        link_placeholders = ",".join(["?"] * len(incoming_links))
+                        link_rows = conn.execute(
+                            f"""
+                            SELECT nk.link, COALESCE(n.title_hash, '')
+                            FROM news_keywords nk
+                            JOIN news n ON n.link = nk.link
+                            WHERE nk.keyword = ? AND nk.link IN ({link_placeholders})
+                            """,
+                            [keyword] + incoming_links,
+                        ).fetchall()
+                        for row in link_rows:
+                            existing_hash_by_link[str(row[0] or "")] = str(row[1] or "")
 
                     news_insert_data: List[Tuple[Any, ...]] = []
                     kw_insert_data: List[Tuple[Any, ...]] = []
+                    affected_hashes: Set[str] = set(unique_hashes)
 
                     for item in prepared_items:
+                        link = item.get("link", "")
                         title_hash = item["title_hash"]
-                        is_dup = title_hash in seen_hashes
-                        if is_dup:
-                            duplicate_count += 1
+                        if not isinstance(link, str) or not link:
+                            continue
+
+                        hash_links = existing_links_by_hash.setdefault(title_hash, set())
+                        previous_hash = existing_hash_by_link.get(link)
+                        same_link_exists = previous_hash is not None
+                        has_other_link = any(existing_link != link for existing_link in hash_links)
+
+                        if same_link_exists:
+                            is_dup = has_other_link
+                            if previous_hash and previous_hash != title_hash:
+                                affected_hashes.add(previous_hash)
                         else:
-                            added_count += 1
-                        seen_hashes.add(title_hash)
+                            if has_other_link:
+                                duplicate_count += 1
+                                is_dup = True
+                            else:
+                                added_count += 1
+                                is_dup = False
 
                         news_insert_data.append(
                             (
-                                item["link"],
+                                link,
                                 item["keyword"],
                                 item["title"],
                                 item["description"],
@@ -334,7 +470,12 @@ class DatabaseManager:
                                 item["title_hash"],
                             )
                         )
-                        kw_insert_data.append((item["link"], keyword, 1 if is_dup else 0))
+                        kw_insert_data.append((link, keyword, 1 if is_dup else 0))
+                        hash_links.add(link)
+                        existing_hash_by_link[link] = title_hash
+
+                    if not news_insert_data:
+                        return 0, 0
 
                     conn.executemany(
                         """
@@ -361,6 +502,11 @@ class DatabaseManager:
                             is_duplicate = excluded.is_duplicate
                         """,
                         kw_insert_data,
+                    )
+                    self._recalculate_duplicate_flags_for_keyword_hashes(
+                        conn,
+                        keyword,
+                        list(affected_hashes),
                     )
 
             return added_count, duplicate_count

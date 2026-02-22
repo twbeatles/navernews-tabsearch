@@ -133,6 +133,35 @@ class TestBackupAndRestore(unittest.TestCase):
             self.assertFalse(Path(str(db) + '-wal').exists())
             self.assertFalse(Path(str(db) + '-shm').exists())
 
+    def test_invalid_pending_restore_is_discarded(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            cfg = d / 'config.json'
+            db = d / 'db.sqlite'
+            pending = d / app.PENDING_RESTORE_FILENAME
+
+            cfg.write_text(json.dumps({'app_settings': {'x': 1}}, ensure_ascii=False), encoding='utf-8')
+            self._make_db(db, 1)
+            pending.write_text(
+                json.dumps(
+                    {
+                        'backup_name': 'missing-backup',
+                        'backup_dir': str(d / 'not-found'),
+                        'restore_db': True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding='utf-8',
+            )
+
+            applied = app.apply_pending_restore_if_any(
+                pending_file=str(pending),
+                config_file=str(cfg),
+                db_file=str(db),
+            )
+            self.assertFalse(applied)
+            self.assertFalse(pending.exists())
+
 
 class TestDatabaseManager(unittest.TestCase):
     def test_get_connection_after_close_raises(self):

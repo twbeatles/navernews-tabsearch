@@ -46,19 +46,7 @@ class StartupManager:
             return False
         
         try:
-            # 실행 파일 경로 가져오기
-            if getattr(sys, 'frozen', False):
-                # PyInstaller로 빌드된 경우
-                exe_path = sys.executable
-            else:
-                # 일반 Python 실행
-                entrypoint_path = os.path.join(APP_DIR, "news_scraper_pro.py")
-                exe_path = f'"{sys.executable}" "{entrypoint_path}"'
-            
-            # 최소화 옵션 추가
-            if start_minimized:
-                exe_path += ' --minimized'
-            
+            exe_path = cls.build_startup_command(start_minimized=start_minimized)
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, exe_path)
             
@@ -86,3 +74,16 @@ class StartupManager:
         except Exception as e:
             logger.error(f"시작프로그램 해제 오류: {e}")
             return False
+
+    @classmethod
+    def build_startup_command(cls, start_minimized: bool = False) -> str:
+        """시작프로그램 등록용 실행 명령 생성."""
+        if getattr(sys, 'frozen', False):
+            command = f'"{sys.executable}"'
+        else:
+            entrypoint_path = os.path.join(APP_DIR, "news_scraper_pro.py")
+            command = f'"{sys.executable}" "{entrypoint_path}"'
+
+        if start_minimized:
+            command += " --minimized"
+        return command

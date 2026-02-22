@@ -1076,20 +1076,8 @@ class MainApp(QMainWindow):
             icon_text = "📰" if not new_keyword.startswith("-") else "🚫"
             self.tabs.setTabText(idx, f"{icon_text} {new_keyword}")
             
-            # DB 업데이트: 검색 키워드(첫 번째 단어)만 사용
             old_search_keyword, old_exclude_words = parse_tab_query(old_keyword)
             new_search_keyword, new_exclude_words = parse_tab_query(new_keyword)
-            
-            if old_search_keyword and new_search_keyword:
-                conn = self.db.get_connection()
-                try:
-                    with conn:
-                        conn.execute("UPDATE news_keywords SET keyword=? WHERE keyword=?", (new_search_keyword, old_search_keyword))
-                        conn.execute("UPDATE news SET keyword=? WHERE keyword=?", (new_search_keyword, old_search_keyword))
-                except Exception as e:
-                    logger.error(f"탭 이름 변경 오류 (Rename error): {e}")
-                finally:
-                    self.db.return_connection(conn)
 
             old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)
             new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)
@@ -1117,7 +1105,13 @@ class MainApp(QMainWindow):
                     groups_changed = True
             if groups_changed:
                 self.keyword_group_manager.save_groups()
-            
+
+            # 기존 DB 데이터는 보존하고, 리네임된 탭은 새 키워드 기준으로 즉시 재조회한다.
+            try:
+                w.load_data_from_db()
+            except Exception as e:
+                logger.warning(f"리네임 직후 탭 재조회 실패: {e}")
+
             self.fetch_news(new_keyword)
             self.save_config()
 
