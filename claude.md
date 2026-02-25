@@ -66,7 +66,10 @@ navernews-tabsearch/
 │   ├── test_db_queries.py
 │   ├── test_entrypoint_bootstrap.py
 │   ├── test_import_settings_dedupe.py
+│   ├── test_import_settings_normalization.py
+│   ├── test_pagination_state_persistence.py
 │   ├── test_plan_regression.py
+│   ├── test_pending_restore_strict.py
 │   ├── test_refactor_backup_guard.py
 │   ├── test_refactor_compat.py
 │   ├── test_settings_roundtrip.py
@@ -150,6 +153,9 @@ navernews-tabsearch/
     "search_history": [],
     "keyword_groups": {
         "그룹명": ["키워드1", "키워드2"]
+    },
+    "pagination_state": {
+        "<fetch_key>": 301
     }
 }
 ```
@@ -431,6 +437,9 @@ css = AppStyle.HTML_TEMPLATE.format(**colors)
     "search_history": [],
     "keyword_groups": {                // KeywordGroupManager 관리
         "그룹명": ["키워드1", "키워드2"]
+    },
+    "pagination_state": {              // fetch_key -> 마지막 API start 인덱스
+        "<fetch_key>": 301
     }
 }
 ```
@@ -640,6 +649,10 @@ class AppStyle:
 - 탭 리네임 시 fetch key 변경 여부에 따라 페이지네이션 상태 안전 초기화
 - `모두 읽음`을 `현재 표시 결과만`/`탭 전체` 2모드로 확장
 - `DatabaseManager.mark_links_as_read(links)` API 추가
+- `DatabaseManager.delete_link(link)` API 추가 및 UI 삭제 경로 raw SQL 제거
+- 기사 삭제 후 duplicate flag 부분 재계산(`delete_old_news`, `delete_all_news`, `delete_link`)
+- pending restore 엄격 정책: `restore_db=true`인데 DB 백업 누락 시 실패 반환 + pending 유지
+- `pagination_state` 스키마 추가 및 fetch key 커서 영속화(`더 불러오기` DB count fallback 제거)
 
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
@@ -649,5 +662,5 @@ class AppStyle:
 ### Test Policy
 - Prefer behavior/contract tests over monolithic source-string checks.
 - Validate entrypoint and wrapper compatibility explicitly.
-- Tests: `tests/` 디렉터리에 14개 테스트 모듈 보유.
+- Tests: `tests/` 디렉터리에 16개 테스트 모듈 보유.
 

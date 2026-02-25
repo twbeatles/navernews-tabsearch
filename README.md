@@ -36,6 +36,11 @@
 - 탭 리네임 시 fetch key 변경 여부에 따라 페이지네이션 상태를 안전하게 재설정
 - `모두 읽음`을 `현재 표시 결과만`/`탭 전체` 2모드로 확장
 - 통계의 `중복 기사` 집계를 `news_keywords.is_duplicate` 기준으로 보정
+- 기사 단건/일괄 삭제 후 `news_keywords.is_duplicate`를 영향 집합 기준으로 재계산
+- 컨텍스트 메뉴 삭제를 raw SQL에서 `DatabaseManager.delete_link(link)`로 일원화
+- pending restore에서 `restore_db=true`인 경우 DB 백업 파일 누락 시 실패 처리 + pending 유지
+- 설정 로드 정규화 강화(`theme_index`, `refresh_interval_index`, `api_timeout`, bool 계열, `alert_keywords`)
+- fetch key 커서 영속화(`pagination_state`) 및 `더 불러오기` DB 건수 fallback 제거
 
 ## 프로젝트 구조
 
@@ -74,7 +79,9 @@ navernews-tabsearch/
 │   ├── test_entrypoint_bootstrap.py
 │   ├── test_import_settings_dedupe.py
 │   ├── test_import_settings_normalization.py
+│   ├── test_pagination_state_persistence.py
 │   ├── test_plan_regression.py
+│   ├── test_pending_restore_strict.py
 │   ├── test_refactor_backup_guard.py
 │   ├── test_refactor_compat.py
 │   ├── test_settings_roundtrip.py
@@ -118,6 +125,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 - 산출물: `dist/NewsScraperPro_Safe.exe`
 - 아이콘 리소스: `news_icon.ico`, `news_icon.png` 포함
+- v32.7.2 핵심 안정화 1차(2026-02-25)는 런타임 로직/스키마 변경만 포함하며 `.spec` 추가 수정은 필요하지 않습니다.
 
 ## 네이버 API 키 설정
 
@@ -148,6 +156,21 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 참고:
 - `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
+- `pagination_state`는 `fetch_key -> 마지막 API start index` 매핑이며, 필드가 없으면 기본값 `{}`로 로드됩니다.
+- `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
+
+예시:
+
+```json
+{
+  "pagination_state": {
+    "<fetch_key>": 301
+  }
+}
+```
+
+공개 API 참고:
+- `DatabaseManager.delete_link(link: str) -> bool`가 추가되어 UI 삭제 경로에서 중복 플래그 재계산을 일원화합니다.
 
 ## 키워드 입력 규칙
 

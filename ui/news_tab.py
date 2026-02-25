@@ -876,11 +876,10 @@ class NewsTab(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                conn = self.db.get_connection()
                 try:
-                    conn.execute("DELETE FROM news WHERE link=?", (link,))
-                    conn.execute("DELETE FROM news_keywords WHERE link=?", (link,))
-                    conn.commit()
+                    if not self.db.delete_link(link):
+                        QMessageBox.warning(self, "?ㅻ쪟", "??젣?좎긽 湲곗궗瑜??얠쓣 ???놁뒿?덈떎.")
+                        return
                     if not target.get("is_read", 0):
                         self._adjust_unread_cache(False, True)
                     if target in self.news_data_cache:
@@ -894,8 +893,6 @@ class NewsTab(QWidget):
                         self.window().show_toast("🗑 삭제되었습니다.")
                 except Exception as e:
                     QMessageBox.warning(self, "오류", f"삭제 실패: {e}")
-                finally:
-                    self.db.return_connection(conn)
 
     def cleanup(self):
         """탭 종료 시 리소스 정리"""

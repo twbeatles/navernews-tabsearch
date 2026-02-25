@@ -240,13 +240,22 @@ def apply_pending_restore_if_any(
             return False
 
         cfg_backup = os.path.join(backup_path, os.path.basename(config_file))
+        db_backup = os.path.join(backup_path, os.path.basename(db_file))
+
+        # Strict pre-validation: restore_db=True면 DB 백업 본체가 반드시 있어야 한다.
+        # 검증 실패 시 pending은 유지하여 사용자가 재시도/취소할 수 있게 한다.
+        if restore_db and not os.path.exists(db_backup):
+            logger.error(
+                "복원 예약 검증 실패: restore_db=true 이지만 DB 백업 파일이 없습니다. "
+                f"backup={db_backup}"
+            )
+            return False
+
         if os.path.exists(cfg_backup):
             shutil.copy2(cfg_backup, config_file)
 
         if restore_db:
-            db_backup = os.path.join(backup_path, os.path.basename(db_file))
-            if os.path.exists(db_backup):
-                shutil.copy2(db_backup, db_file)
+            shutil.copy2(db_backup, db_file)
 
             for suffix in ("-wal", "-shm"):
                 src_sidecar = f"{db_backup}{suffix}"

@@ -34,6 +34,7 @@ class AppConfig(TypedDict):
     tabs: List[str]
     search_history: List[str]
     keyword_groups: Dict[str, List[str]]
+    pagination_state: Dict[str, int]
 
 
 DEFAULT_CONFIG: AppConfig = {
@@ -61,12 +62,21 @@ DEFAULT_CONFIG: AppConfig = {
     "tabs": [],
     "search_history": [],
     "keyword_groups": {},
+    "pagination_state": {},
 }
 
 
 def _to_bool(value: Any, default: bool) -> bool:
     if isinstance(value, bool):
         return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "f", "no", "n", "off"}:
+            return False
     return default
 
 
@@ -102,6 +112,24 @@ def _to_keyword_groups(value: Any) -> Dict[str, List[str]]:
             if stripped and stripped not in keywords:
                 keywords.append(stripped)
         normalized[group_name] = keywords
+    return normalized
+
+
+def _to_pagination_state(value: Any) -> Dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, int] = {}
+    for key, raw_start in value.items():
+        if not isinstance(key, str):
+            continue
+        fetch_key = key.strip()
+        if not fetch_key:
+            continue
+        start_idx = _to_int(raw_start, 0)
+        if start_idx < 1:
+            continue
+        normalized[fetch_key] = max(1, min(1000, start_idx))
     return normalized
 
 
@@ -290,14 +318,20 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         app_cfg = cfg["app_settings"]
         app_cfg["client_id"] = str(app_raw.get("client_id", app_cfg["client_id"]))
         app_cfg["client_secret"] = str(app_raw.get("client_secret", app_cfg["client_secret"]))
-        app_cfg["theme_index"] = _to_int(app_raw.get("theme_index"), app_cfg["theme_index"])
-        app_cfg["refresh_interval_index"] = _to_int(
-            app_raw.get("refresh_interval_index"), app_cfg["refresh_interval_index"]
+        app_cfg["theme_index"] = max(0, min(1, _to_int(app_raw.get("theme_index"), app_cfg["theme_index"])))
+        app_cfg["refresh_interval_index"] = max(
+            0,
+            min(
+                5,
+                _to_int(
+                    app_raw.get("refresh_interval_index"), app_cfg["refresh_interval_index"]
+                ),
+            ),
         )
         app_cfg["notification_enabled"] = _to_bool(
             app_raw.get("notification_enabled"), app_cfg["notification_enabled"]
         )
-        app_cfg["alert_keywords"] = _to_str_list(app_raw.get("alert_keywords"))
+        app_cfg["alert_keywords"], _ = _normalize_alert_keywords(app_raw.get("alert_keywords"))
         app_cfg["sound_enabled"] = _to_bool(app_raw.get("sound_enabled"), app_cfg["sound_enabled"])
         app_cfg["minimize_to_tray"] = _to_bool(app_raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"])
         app_cfg["close_to_tray"] = _to_bool(app_raw.get("close_to_tray"), app_cfg["close_to_tray"])
@@ -306,7 +340,7 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
             app_raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"]
         )
         app_cfg["notify_on_refresh"] = _to_bool(app_raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
-        app_cfg["api_timeout"] = _to_int(app_raw.get("api_timeout"), app_cfg["api_timeout"])
+        app_cfg["api_timeout"] = max(5, min(60, _to_int(app_raw.get("api_timeout"), app_cfg["api_timeout"])))
 
         geom_raw = app_raw.get("window_geometry")
         if isinstance(geom_raw, dict):
@@ -320,18 +354,32 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         cfg["tabs"] = _to_str_list(raw.get("tabs"))
         cfg["search_history"] = _to_str_list(raw.get("search_history"))
         cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
+        cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
         return cfg
 
     # Legacy flat schema
     app_cfg = cfg["app_settings"]
     app_cfg["client_id"] = str(raw.get("id", app_cfg["client_id"]))
     app_cfg["client_secret"] = str(raw.get("secret", app_cfg["client_secret"]))
-    app_cfg["theme_index"] = _to_int(raw.get("theme"), app_cfg["theme_index"])
-    app_cfg["refresh_interval_index"] = _to_int(raw.get("interval"), app_cfg["refresh_interval_index"])
-    app_cfg["api_timeout"] = _to_int(raw.get("api_timeout"), app_cfg["api_timeout"])
+    app_cfg["theme_index"] = max(0, min(1, _to_int(raw.get("theme"), app_cfg["theme_index"])))
+    app_cfg["refresh_interval_index"] = max(
+        0, min(5, _to_int(raw.get("interval"), app_cfg["refresh_interval_index"]))
+    )
+    app_cfg["notification_enabled"] = _to_bool(
+        raw.get("notification_enabled"), app_cfg["notification_enabled"]
+    )
+    app_cfg["alert_keywords"], _ = _normalize_alert_keywords(raw.get("alert_keywords"))
+    app_cfg["sound_enabled"] = _to_bool(raw.get("sound_enabled"), app_cfg["sound_enabled"])
+    app_cfg["minimize_to_tray"] = _to_bool(raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"])
+    app_cfg["close_to_tray"] = _to_bool(raw.get("close_to_tray"), app_cfg["close_to_tray"])
+    app_cfg["start_minimized"] = _to_bool(raw.get("start_minimized"), app_cfg["start_minimized"])
+    app_cfg["auto_start_enabled"] = _to_bool(raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"])
+    app_cfg["notify_on_refresh"] = _to_bool(raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
+    app_cfg["api_timeout"] = max(5, min(60, _to_int(raw.get("api_timeout"), app_cfg["api_timeout"])))
     cfg["tabs"] = _to_str_list(raw.get("tabs"))
     cfg["search_history"] = _to_str_list(raw.get("search_history"))
     cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
+    cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
     return cfg
 
 

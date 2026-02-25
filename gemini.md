@@ -7,7 +7,7 @@
 | 항목 | 값 |
 |------|-----|
 | **프로젝트명** | 뉴스 스크래퍼 Pro |
-| **버전** | v32.7.1 |
+| **버전** | v32.7.2 |
 | **언어** | Python 3.8+ |
 | **GUI 프레임워크** | PyQt6 |
 | **주요 기능** | 네이버 뉴스 API 기반 탭 브라우징 뉴스 스크래퍼 |
@@ -47,7 +47,7 @@ navernews-tabsearch/
 │   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
 │   ├── toast.py                 # ToastQueue/ToastMessage
 │   └── widgets.py               # NewsBrowser/NoScrollComboBox
-├── tests/                       # 회귀/호환성/안정성 테스트 (11개 모듈)
+├── tests/                       # 회귀/호환성/안정성 테스트 (16개 모듈)
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -55,7 +55,7 @@ navernews-tabsearch/
 ├── workers.py                   # 호환 래퍼 (→ core.workers)
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
-├── news_scraper_config.json     # 사용자 설정 (API 키, 테마, 탭 목록)
+├── news_scraper_config.json     # 사용자 설정 (API 키, 테마, 탭 목록, pagination_state)
 ├── news_database.db             # SQLite 데이터베이스 (기사, 북마크)
 ├── news_icon.ico                # 애플리케이션 아이콘
 ├── news_scraper.log             # 로그 파일
@@ -321,6 +321,8 @@ class DatabaseManager:
     def fetch_news(keyword, filter_txt, sort_mode, ...) -> List[Dict]
     def upsert_news(items, keyword) -> Tuple[int, int]  # (added, duplicates)
     def update_status(link, field, value) -> bool
+    def delete_link(link) -> bool
+    def mark_links_as_read(links) -> int
     def get_counts(keyword) -> int
     def mark_all_as_read(keyword, only_bookmark) -> int
 ```
@@ -568,6 +570,14 @@ class StartupManager:
 - `sound_enabled`, `api_timeout` 설정 플러밍 보완
 - 설정 창 API 키 검증/데이터 정리 비동기 처리
 - 설정 가져오기 탭 중복 병합(dedupe) 강화
+
+### v32.7.2 추가 변경사항
+- 삭제 경로 중복 무결성 보정: `delete_link` 도입 + 삭제 후 duplicate flag 재계산
+- pending restore 엄격 정책: `restore_db=true` && DB 백업 누락 시 실패 + pending 유지
+- 설정 로드 정규화 강화: `theme_index`, `refresh_interval_index`, `api_timeout`, bool 필드, `alert_keywords`
+- `pagination_state` 스키마 추가: fetch key 기준 API 커서 영속화
+- `더 불러오기` DB count fallback 제거, 커서 미존재 시 `start_idx=101`
+- 회귀 테스트 확장: `test_pending_restore_strict.py`, `test_pagination_state_persistence.py`
 
 ### Migration Rules
 - Preserve public import paths for existing scripts/tests.

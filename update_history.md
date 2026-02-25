@@ -1,6 +1,31 @@
 # Update History
 
 ## v32.7.2 (Unreleased)
+- **Core Stabilization Pass 1 (2026-02-25)**:
+  - Added delete-path duplicate integrity fix:
+    - `DatabaseManager.delete_link(link)` public API introduced.
+    - `delete_old_news()` / `delete_all_news()` now collect affected duplicate groups before deletion and recalculate flags after deletion.
+    - UI context-menu delete path now uses `delete_link()` instead of raw SQL.
+  - Hardened pending restore strictness:
+    - `apply_pending_restore_if_any()` now fails when `restore_db=true` and DB backup file is missing.
+    - On strict-fail, pending restore file is preserved for retry/cancel.
+  - Strengthened runtime config normalization on load:
+    - Added clamp/safe coercion for `theme_index`, `refresh_interval_index`, `api_timeout`, boolean fields.
+    - Added `alert_keywords` dedupe + max 10.
+    - Added optional top-level `pagination_state` schema (`fetch_key -> last_api_start_index`), defaulting to `{}` when missing.
+  - Improved pagination cursor accuracy/persistence:
+    - Added fetch-key cursor map persistence in config.
+    - Removed DB-count-based fallback from load-more flow; default start index is `101` when no cursor exists.
+    - Cursor is updated from completed request start index.
+  - Added/expanded tests:
+    - `tests/test_pending_restore_strict.py`
+    - `tests/test_pagination_state_persistence.py`
+    - `tests/test_db_queries.py` duplicate-flag-on-delete coverage
+    - `tests/test_import_settings_normalization.py` load-time normalization coverage
+  - Validation:
+    - `python -m pytest -q` => `70 passed`
+  - Packaging note:
+    - `news_scraper_pro.spec` reviewed; no additional changes required for this pass.
 - **Risk Remediation + Docs Alignment (2026-02-20)**:
   - Added refresh lock recovery contract: `refresh_all()` now returns bool start status and `_safe_refresh_all()` restores lock on early-exit paths.
   - Fixed load-more keyword binding after tab rename by using live tab state instead of creation-time closure value.

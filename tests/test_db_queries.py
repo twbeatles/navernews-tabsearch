@@ -1,4 +1,4 @@
-import tempfile
+﻿import tempfile
 import unittest
 import sqlite3
 from pathlib import Path
@@ -35,8 +35,8 @@ class TestDbQueries(unittest.TestCase):
         ]
         self.mgr.upsert_news(items, "AI")
 
-        baseline = self.mgr.fetch_news("AI", sort_mode="최신순")
-        paged = self.mgr.fetch_news("AI", sort_mode="최신순", limit=2, offset=1)
+        baseline = self.mgr.fetch_news("AI")
+        paged = self.mgr.fetch_news("AI", limit=2, offset=1)
 
         self.assertEqual(len(baseline), 5)
         self.assertEqual(len(paged), 2)
@@ -56,22 +56,22 @@ class TestDbQueries(unittest.TestCase):
     def test_fetch_news_exclude_words_matches_in_memory_filter(self):
         items = [
             {
-                "title": "AI 신기술 발표",
-                "description": "핵심 내용 요약",
+                "title": "AI model launch",
+                "description": "summary update",
                 "link": "https://example.com/ai-1",
                 "pubDate": "2026-01-01T09:00:00",
                 "publisher": "example.com",
             },
             {
-                "title": "AI 광고 시장 분석",
-                "description": "광고 키워드 포함",
+                "title": "AI ad market analysis",
+                "description": "contains ad keyword",
                 "link": "https://example.com/ai-2",
                 "pubDate": "2026-01-02T09:00:00",
                 "publisher": "example.com",
             },
             {
-                "title": "AI 트렌드",
-                "description": "코인 관련 언급",
+                "title": "AI coin outlook",
+                "description": "contains coin keyword",
                 "link": "https://example.com/ai-3",
                 "pubDate": "2026-01-03T09:00:00",
                 "publisher": "example.com",
@@ -79,12 +79,12 @@ class TestDbQueries(unittest.TestCase):
         ]
         self.mgr.upsert_news(items, "AI")
 
-        all_rows = self.mgr.fetch_news("AI", sort_mode="최신순")
-        sql_filtered = self.mgr.fetch_news("AI", sort_mode="최신순", exclude_words=["광고", "코인"])
+        all_rows = self.mgr.fetch_news("AI")
+        sql_filtered = self.mgr.fetch_news("AI", exclude_words=["ad", "coin"])
 
         expected = [
             row for row in all_rows
-            if not any(ex in row.get("title", "") or ex in row.get("description", "") for ex in ["광고", "코인"])
+            if not any(ex in row.get("title", "") or ex in row.get("description", "") for ex in ["ad", "coin"])
         ]
         self.assertEqual([r["link"] for r in sql_filtered], [r["link"] for r in expected])
 
@@ -100,7 +100,7 @@ class TestDbQueries(unittest.TestCase):
             conn.close()
 
     def test_get_statistics_duplicates_uses_news_keywords(self):
-        same_title = "중복 기준 제목"
+        same_title = "以묐났 湲곗? ?쒕ぉ"
         items = [
             {
                 "title": same_title,
@@ -131,7 +131,7 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(first, (1, 0))
         self.assertEqual(second, (0, 0))
 
-        rows = self.mgr.fetch_news("AI", sort_mode="최신순")
+        rows = self.mgr.fetch_news("AI")
         self.assertEqual(len(rows), 1)
         self.assertEqual(int(rows[0]["is_duplicate"]), 0)
 
@@ -139,7 +139,7 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(stats["duplicates"], 0)
 
     def test_recalculate_duplicate_flags_repairs_wrong_values(self):
-        same_title = "재계산 검증 제목"
+        same_title = "?ш퀎??寃利??쒕ぉ"
         self.mgr.upsert_news(
             [
                 {
@@ -170,7 +170,7 @@ class TestDbQueries(unittest.TestCase):
         updated = self.mgr.recalculate_duplicate_flags()
         self.assertGreaterEqual(updated, 2)
 
-        rows = self.mgr.fetch_news("AI", sort_mode="최신순")
+        rows = self.mgr.fetch_news("AI")
         self.assertEqual(len(rows), 2)
         self.assertTrue(all(int(row["is_duplicate"]) == 1 for row in rows))
 
@@ -187,8 +187,71 @@ class TestDbQueries(unittest.TestCase):
         )
         self.assertEqual(updated, 2)
 
-        rows = self.mgr.fetch_news("AI", sort_mode="최신순")
+        rows = self.mgr.fetch_news("AI")
         read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
         self.assertEqual(read_by_link["https://example.com/100"], 1)
         self.assertEqual(read_by_link["https://example.com/101"], 0)
         self.assertEqual(read_by_link["https://example.com/102"], 1)
+
+    def test_delete_link_recalculates_duplicate_flags(self):
+        same_title = "delete-link-duplicate-title"
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": same_title,
+                    "description": "desc-1",
+                    "link": "https://example.com/del-1",
+                    "pubDate": "2026-01-01T09:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": same_title,
+                    "description": "desc-2",
+                    "link": "https://example.com/del-2",
+                    "pubDate": "2026-01-01T10:00:00",
+                    "publisher": "example.com",
+                },
+            ],
+            "AI",
+        )
+
+        self.assertTrue(self.mgr.delete_link("https://example.com/del-1"))
+
+        rows = self.mgr.fetch_news("AI")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["link"], "https://example.com/del-2")
+        self.assertEqual(int(rows[0]["is_duplicate"]), 0)
+        self.assertEqual(self.mgr.get_statistics()["duplicates"], 0)
+
+    def test_delete_all_news_recalculates_duplicates_for_bookmark_survivor(self):
+        same_title = "delete-all-duplicate-title"
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": same_title,
+                    "description": "desc-1",
+                    "link": "https://example.com/all-1",
+                    "pubDate": "2026-01-01T09:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": same_title,
+                    "description": "desc-2",
+                    "link": "https://example.com/all-2",
+                    "pubDate": "2026-01-01T10:00:00",
+                    "publisher": "example.com",
+                },
+            ],
+            "AI",
+        )
+        self.assertTrue(self.mgr.update_status("https://example.com/all-1", "is_bookmarked", 1))
+
+        deleted = self.mgr.delete_all_news()
+        self.assertEqual(deleted, 1)
+
+        rows = self.mgr.fetch_news("AI")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["link"], "https://example.com/all-1")
+        self.assertEqual(int(rows[0]["is_duplicate"]), 0)
+        self.assertEqual(self.mgr.get_statistics()["duplicates"], 0)
+

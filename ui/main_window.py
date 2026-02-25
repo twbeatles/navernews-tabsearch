@@ -176,6 +176,7 @@ class MainApp(QMainWindow):
             self._badge_unread_cache: Dict[str, int] = {}
             self._badge_refresh_running = False
             self._tab_fetch_state: Dict[str, TabFetchState] = {}
+            self._fetch_cursor_by_key: Dict[str, int] = {}
             self._request_start_index: Dict[int, int] = {}
             
             # 알림 관련 설정
@@ -473,6 +474,7 @@ class MainApp(QMainWindow):
             "search_history": loaded_cfg.get("search_history", []),
             "api_timeout": settings.get("api_timeout", 15),
             "keyword_groups": loaded_cfg.get("keyword_groups", {}),
+            "pagination_state": loaded_cfg.get("pagination_state", {}),
         }
 
         self.client_id = self.config["client_id"]
@@ -495,6 +497,12 @@ class MainApp(QMainWindow):
         self.keyword_group_manager.groups = self.keyword_group_manager._normalize_groups(
             self.config.get("keyword_groups", {})
         )
+        raw_pagination_state = self.config.get("pagination_state", {})
+        self._fetch_cursor_by_key = {
+            str(fetch_key): int(start_idx)
+            for fetch_key, start_idx in (raw_pagination_state.items() if isinstance(raw_pagination_state, dict) else [])
+            if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+        }
 
     def save_config(self):
         """설정 저장"""
@@ -529,6 +537,11 @@ class MainApp(QMainWindow):
             "tabs": tab_names,
             "search_history": self.search_history,
             "keyword_groups": self.keyword_group_manager.groups,
+            "pagination_state": {
+                str(fetch_key): max(1, min(1000, int(start_idx)))
+                for fetch_key, start_idx in self._fetch_cursor_by_key.items()
+                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+            },
         }
         
         try:
@@ -885,6 +898,23 @@ class MainApp(QMainWindow):
             return None
         return keyword
 
+    def _is_fetch_key_referenced(self, fetch_key: str, skip_keyword: Optional[str] = None) -> bool:
+        if not fetch_key:
+            return False
+        for i in range(1, self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if not widget or not hasattr(widget, "keyword"):
+                continue
+            tab_keyword = widget.keyword
+            if skip_keyword is not None and tab_keyword == skip_keyword:
+                continue
+            search_keyword, exclude_words = parse_tab_query(tab_keyword)
+            if not search_keyword:
+                continue
+            if build_fetch_key(search_keyword, exclude_words) == fetch_key:
+                return True
+        return False
+
     def add_news_tab(self, keyword: str):
         """뉴스 탭 추가"""
         keyword = self._normalize_tab_keyword(keyword)
@@ -900,7 +930,12 @@ class MainApp(QMainWindow):
         
         tab = NewsTab(keyword, self.db, self.theme_idx, self)
         tab.btn_load.clicked.connect(lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True))
-        self._tab_fetch_state.setdefault(keyword, TabFetchState())
+        search_keyword, exclude_words = parse_tab_query(keyword)
+        fetch_key = build_fetch_key(search_keyword, exclude_words)
+        fetch_state = self._tab_fetch_state.setdefault(keyword, TabFetchState())
+        persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
+        if persisted_cursor > fetch_state.last_api_start_index:
+            fetch_state.last_api_start_index = persisted_cursor
         icon_text = "📰" if not keyword.startswith("-") else "🚫"
         self.tabs.addTab(tab, f"{icon_text} {keyword}")
         
@@ -1033,6 +1068,10 @@ class MainApp(QMainWindow):
         self.tabs.removeTab(idx)
         if removed_keyword:
             self._tab_fetch_state.pop(removed_keyword, None)
+            removed_search_keyword, removed_exclude_words = parse_tab_query(removed_keyword)
+            removed_fetch_key = build_fetch_key(removed_search_keyword, removed_exclude_words)
+            if removed_fetch_key and not self._is_fetch_key_referenced(removed_fetch_key):
+                self._fetch_cursor_by_key.pop(removed_fetch_key, None)
         self.save_config()
 
     def rename_tab(self, idx: int):
@@ -1087,11 +1126,19 @@ class MainApp(QMainWindow):
                 # 쿼리 의미가 바뀌면 페이지네이션/요청 dedupe 상태를 초기화한다.
                 self._last_fetch_request_ts.pop(old_fetch_key, None)
                 self._last_fetch_request_ts.pop(new_fetch_key, None)
+                if old_fetch_key and not self._is_fetch_key_referenced(old_fetch_key, skip_keyword=new_keyword):
+                    self._fetch_cursor_by_key.pop(old_fetch_key, None)
                 self._tab_fetch_state[new_keyword] = TabFetchState()
+                persisted_cursor = int(self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0)
+                if persisted_cursor > 0:
+                    self._tab_fetch_state[new_keyword].last_api_start_index = persisted_cursor
             elif fetch_state is not None:
                 self._tab_fetch_state[new_keyword] = fetch_state
             else:
                 self._tab_fetch_state.setdefault(new_keyword, TabFetchState())
+                persisted_cursor = int(self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0)
+                if persisted_cursor > self._tab_fetch_state[new_keyword].last_api_start_index:
+                    self._tab_fetch_state[new_keyword].last_api_start_index = persisted_cursor
 
             groups_changed = False
             for group_name, keywords in self.keyword_group_manager.groups.items():
@@ -1367,13 +1414,13 @@ class MainApp(QMainWindow):
         fetch_state = self._tab_fetch_state.setdefault(keyword, TabFetchState())
         start_idx = 1
         if is_more:
+            persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
+            if persisted_cursor > fetch_state.last_api_start_index:
+                fetch_state.last_api_start_index = persisted_cursor
             if fetch_state.last_api_start_index > 0:
                 start_idx = fetch_state.last_api_start_index + 100
             else:
-                saved_count = max(0, int(self.db.get_counts(search_keyword)))
-                start_idx = 1 + ((saved_count // 100) * 100)
-                if start_idx <= 1:
-                    start_idx = 101
+                start_idx = 101
             if start_idx > 1000:
                 QMessageBox.information(
                     self,
@@ -1459,9 +1506,10 @@ class MainApp(QMainWindow):
                 logger.info(f"오래된 완료 콜백 무시 (stale on_fetch_done ignored): kw={keyword}, rid={request_id}")
                 return
 
-            search_keyword, _ = parse_tab_query(keyword)
+            search_keyword, exclude_words = parse_tab_query(keyword)
             if not search_keyword:
                 search_keyword = keyword
+            fetch_key = build_fetch_key(search_keyword, exclude_words)
             
             # DB 저장은 Worker에서 이미 수행됨
             added_count = result.get('added_count', 0)
@@ -1469,9 +1517,9 @@ class MainApp(QMainWindow):
             if request_id is not None:
                 completed_start_idx = self._request_start_index.get(request_id)
                 if completed_start_idx is not None:
-                    self._tab_fetch_state.setdefault(keyword, TabFetchState()).last_api_start_index = (
-                        completed_start_idx
-                    )
+                    self._tab_fetch_state.setdefault(keyword, TabFetchState()).last_api_start_index = completed_start_idx
+                    if completed_start_idx > 0:
+                        self._fetch_cursor_by_key[fetch_key] = int(completed_start_idx)
             
             for i in range(1, self.tabs.count()):
                 w = self.tabs.widget(i)

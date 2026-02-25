@@ -347,6 +347,58 @@ class DatabaseManager:
             )
             return len(updates)
 
+    def _collect_affected_keyword_hashes(
+        self,
+        conn: sqlite3.Connection,
+        news_where_clause: str = "",
+        params: Optional[List[Any]] = None,
+    ) -> Dict[str, Set[str]]:
+        """Collect duplicate groups (keyword + title_hash) impacted by deletion."""
+        where_sql = (
+            " AND (" + news_where_clause + ")"
+            if isinstance(news_where_clause, str) and news_where_clause.strip()
+            else ""
+        )
+        rows = conn.execute(
+            f"""
+            SELECT nk.keyword, COALESCE(n.title_hash, '')
+            FROM news_keywords nk
+            JOIN news n ON n.link = nk.link
+            WHERE nk.keyword IS NOT NULL AND nk.keyword != ''
+            {where_sql}
+            """,
+            list(params or []),
+        ).fetchall()
+
+        affected: Dict[str, Set[str]] = {}
+        for row in rows:
+            keyword = str(row[0] or "").strip()
+            if not keyword:
+                continue
+            title_hash = str(row[1] or "").strip()
+            affected.setdefault(keyword, set()).add(title_hash)
+        return affected
+
+    def _recalculate_duplicates_for_affected(
+        self,
+        conn: sqlite3.Connection,
+        affected: Dict[str, Set[str]],
+    ) -> int:
+        """Recalculate duplicate flags for affected groups, fallback to full recalc."""
+        if not affected:
+            return 0
+
+        for hashes in affected.values():
+            if any(not hash_value for hash_value in hashes):
+                return self._recalculate_duplicate_flags_with_conn(conn)
+
+        updated = 0
+        for keyword, hashes in affected.items():
+            updated += self._recalculate_duplicate_flags_for_keyword_hashes(
+                conn, keyword, sorted(hashes)
+            )
+        return updated
+
     def recalculate_duplicate_flags(self) -> int:
         """중복 플래그 재계산 공개 메서드."""
         conn = self.get_connection()
@@ -809,6 +861,27 @@ class DatabaseManager:
         """메모 저장"""
         return self.update_status(link, "notes", note)
     
+    def delete_link(self, link: str) -> bool:
+        """Delete a single article and repair duplicate flags."""
+        if not isinstance(link, str) or not link.strip():
+            return False
+
+        conn = self.get_connection()
+        try:
+            with conn:
+                affected = self._collect_affected_keyword_hashes(conn, "n.link = ?", [link])
+                cursor = conn.execute("DELETE FROM news WHERE link=?", (link,))
+                deleted = int(cursor.rowcount or 0)
+                if deleted <= 0:
+                    return False
+                self._recalculate_duplicates_for_affected(conn, affected)
+            return True
+        except Exception as e:
+            logger.error(f"delete_link 오류: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+
     def get_note(self, link: str) -> str:
         """메모 조회"""
         conn = self.get_connection()
@@ -828,11 +901,19 @@ class DatabaseManager:
         cutoff = (datetime.now() - timedelta(days=days)).timestamp()
         try:
             with conn:
+                affected = self._collect_affected_keyword_hashes(
+                    conn,
+                    "n.is_bookmarked=0 AND n.pubDate_ts < ?",
+                    [cutoff],
+                )
                 cur = conn.execute(
                     "DELETE FROM news WHERE is_bookmarked=0 AND pubDate_ts < ?", 
                     (cutoff,)
                 )
-                return cur.rowcount
+                deleted = int(cur.rowcount or 0)
+                if deleted > 0:
+                    self._recalculate_duplicates_for_affected(conn, affected)
+                return deleted
         except Exception as e:
             logger.error(f"delete_old_news 오류: {e}")
             return 0
@@ -844,8 +925,12 @@ class DatabaseManager:
         conn = self.get_connection()
         try:
             with conn:
+                affected = self._collect_affected_keyword_hashes(conn, "n.is_bookmarked=0", [])
                 cur = conn.execute("DELETE FROM news WHERE is_bookmarked=0")
-                return cur.rowcount
+                deleted = int(cur.rowcount or 0)
+                if deleted > 0:
+                    self._recalculate_duplicates_for_affected(conn, affected)
+                return deleted
         except Exception as e:
             logger.error(f"delete_all_news 오류: {e}")
             return 0
