@@ -48,6 +48,7 @@
 navernews-tabsearch/
 ├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
 ├── news_scraper_pro.spec        # PyInstaller 빌드 설정
+├── pytest.ini                   # pytest 진입점/수집 경로 고정
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
@@ -90,7 +91,11 @@ navernews-tabsearch/
 │   ├── test_startup_registry_command.py
 │   ├── test_symbol_resolution.py
 │   ├── test_keyword_groups_storage.py
-│   └── test_risk_fixes.py
+│   ├── test_risk_fixes.py
+│   ├── test_worker_cancellation.py
+│   ├── test_backup_collision_and_restore.py
+│   ├── test_load_more_total_guard.py
+│   └── test_news_tab_ext_read_policy.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -115,6 +120,20 @@ pip install PyQt6 requests
 python news_scraper_pro.py
 ```
 
+## 테스트 실행
+
+기본 권장 명령:
+
+```bash
+python -m pytest -q
+```
+
+`pytest.ini`가 추가되어 아래 명령도 동일하게 수집/실행됩니다.
+
+```bash
+pytest -q
+```
+
 ## PyInstaller 빌드 (onefile)
 
 현재 스펙(`news_scraper_pro.spec`)은 onefile 기준으로 구성되어 있습니다.
@@ -126,6 +145,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 산출물: `dist/NewsScraperPro_Safe.exe`
 - 아이콘 리소스: `news_icon.ico`, `news_icon.png` 포함
 - v32.7.2 핵심 안정화 1차(2026-02-25)는 런타임 로직/스키마 변경만 포함하며 `.spec` 추가 수정은 필요하지 않습니다.
+- v32.7.2 핵심+테스트 보강 2차(2026-02-28)도 런타임/테스트/문서 변경만 포함하며 `.spec` 수정은 필요하지 않습니다.
 
 ## 네이버 API 키 설정
 

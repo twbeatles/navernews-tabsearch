@@ -1392,6 +1392,23 @@ class MainApp(QMainWindow):
             return True
         return self._worker_registry.is_active(keyword, request_id)
 
+    def _compute_load_more_state(self, total: int, last_api_start_index: int) -> bool:
+        total = max(0, int(total or 0))
+        last_api_start_index = max(0, int(last_api_start_index or 0))
+        next_start = last_api_start_index + 100
+        has_more = next_start <= min(1000, total)
+        return has_more
+
+    def _apply_load_more_button_state(self, tab_widget, total: int, last_api_start_index: int) -> bool:
+        has_more = self._compute_load_more_state(total, last_api_start_index)
+        if has_more:
+            tab_widget.btn_load.setEnabled(True)
+            tab_widget.btn_load.setText("📥 더 불러오기")
+        else:
+            tab_widget.btn_load.setEnabled(False)
+            tab_widget.btn_load.setText("✅ 마지막 페이지")
+        return has_more
+
     def fetch_news(self, keyword: str, is_more: bool = False, is_sequential: bool = False):
         """뉴스 가져오기 - 순차 새로고침 지원"""
         search_keyword, exclude_words = parse_tab_query(keyword)
@@ -1450,7 +1467,6 @@ class MainApp(QMainWindow):
             self.db,
             start_idx,
             timeout=self.api_timeout,
-            session=self.session,
         )
         thread = QThread()
         worker.moveToThread(thread)
@@ -1514,6 +1530,7 @@ class MainApp(QMainWindow):
             # DB 저장은 Worker에서 이미 수행됨
             added_count = result.get('added_count', 0)
             dup_count = result.get('dup_count', 0)
+            completed_start_idx = None
             if request_id is not None:
                 completed_start_idx = self._request_start_index.get(request_id)
                 if completed_start_idx is not None:
@@ -1527,9 +1544,24 @@ class MainApp(QMainWindow):
                     w.total_api_count = result['total']
                     w.update_timestamp()
                     w.load_data_from_db()
-                    
-                    w.btn_load.setEnabled(True)
-                    w.btn_load.setText("📥 더 불러오기")
+
+                    last_api_start_index = completed_start_idx
+                    if last_api_start_index is None:
+                        last_api_start_index = self._tab_fetch_state.setdefault(
+                            keyword,
+                            TabFetchState(),
+                        ).last_api_start_index
+                    total = int(result.get('total', 0) or 0)
+                    self._apply_load_more_button_state(w, total, last_api_start_index)
+                    if getattr(w, "worker", None):
+                        w.worker.finished.connect(
+                            lambda *_args, tab_ref=w, total_ref=total, start_idx_ref=last_api_start_index:
+                            self._apply_load_more_button_state(tab_ref, total_ref, start_idx_ref)
+                        )
+                        w.worker.error.connect(
+                            lambda *_args, tab_ref=w, total_ref=total, start_idx_ref=last_api_start_index:
+                            self._apply_load_more_button_state(tab_ref, total_ref, start_idx_ref)
+                        )
                     
                     if not is_more and not is_sequential:
                         msg = f"✓ '{keyword}' 업데이트 완료 ({added_count}건 추가"

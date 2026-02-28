@@ -193,6 +193,13 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         src = Path('ui/main_window.py').read_text(encoding='utf-8')
         self.assertIn('HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=0)', src)
 
+    def test_fetch_worker_does_not_share_main_session(self):
+        src = Path('ui/main_window.py').read_text(encoding='utf-8')
+        start = src.index('def fetch_news')
+        end = src.index('def on_fetch_done')
+        block = src[start:end]
+        self.assertNotIn('session=self.session', block)
+
     def test_newstab_has_required_helper_methods(self):
         src = Path('ui/news_tab.py').read_text(encoding='utf-8')
         module = ast.parse(src)

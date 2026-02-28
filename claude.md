@@ -664,3 +664,40 @@ class AppStyle:
 - Validate entrypoint and wrapper compatibility explicitly.
 - Tests: `tests/` 디렉터리에 16개 테스트 모듈 보유.
 
+
+---
+
+## 2026-02-28 Addendum (Core Stabilization Pass 2)
+
+### Implemented
+- Risk 1~8 remediation completed.
+- Worker cancellation hardening in `core/workers.py`:
+  - cancellation checks after response and before DB upsert
+  - worker-owned session close on `stop()`
+  - cancellation-path exception silence (no user-facing error emit)
+  - case-insensitive exclude-word filtering in worker path
+- Session-sharing removed from fetch path in `ui/main_window.py` (`ApiWorker(..., session=self.session)` removed).
+- Backup hardening in `core/backup.py`:
+  - microsecond backup folder names + collision retry
+  - strict `restore_backup(restore_db=True)` DB-file requirement
+  - `-wal/-shm` sidecar sync policy aligned with pending-restore behavior
+- Load-more terminal-state guard in `ui/main_window.py`:
+  - `next_start = last_api_start_index + 100`
+  - `has_more = next_start <= min(1000, total)`
+- `ext` read policy unified in `ui/news_tab.py` via shared helper (open implies read).
+- Test entrypoint alignment:
+  - added `pytest.ini` (`pythonpath = .`, `testpaths = tests`)
+
+### Added Tests
+- `tests/test_worker_cancellation.py`
+- `tests/test_backup_collision_and_restore.py`
+- `tests/test_load_more_total_guard.py`
+- `tests/test_news_tab_ext_read_policy.py`
+- extension in `tests/test_stability.py`
+
+### Validation
+- `python -m pytest -q` => `83 passed`
+- `pytest -q` => `83 passed`
+
+### Packaging
+- `news_scraper_pro.spec` reviewed for this pass; no change required.

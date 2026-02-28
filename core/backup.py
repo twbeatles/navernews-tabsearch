@@ -66,10 +66,24 @@ class AutoBackup:
 
     def create_backup(self, include_db: bool = True) -> Optional[str]:
         try:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_name = f"backup_{timestamp}"
-            backup_path = os.path.join(self.backup_dir, backup_name)
-            os.makedirs(backup_path, exist_ok=True)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            base_backup_name = f"backup_{timestamp}"
+            backup_name = ""
+            backup_path = ""
+            for attempt in range(10):
+                suffix = "" if attempt == 0 else f"_{attempt:02d}"
+                candidate_name = f"{base_backup_name}{suffix}"
+                candidate_path = os.path.join(self.backup_dir, candidate_name)
+                try:
+                    os.makedirs(candidate_path, exist_ok=False)
+                    backup_name = candidate_name
+                    backup_path = candidate_path
+                    break
+                except FileExistsError:
+                    continue
+            if not backup_path:
+                logger.error("백업 폴더 생성 실패: 이름 충돌 재시도 한도 초과")
+                return None
 
             if os.path.exists(self.config_file):
                 shutil.copy2(self.config_file, os.path.join(backup_path, os.path.basename(self.config_file)))
@@ -193,8 +207,20 @@ class AutoBackup:
 
             if restore_db:
                 db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
-                if os.path.exists(db_backup):
-                    shutil.copy2(db_backup, self.db_file)
+                if not os.path.exists(db_backup):
+                    logger.error(
+                        "restore_backup 실패: restore_db=true 인데 DB 백업 파일이 없습니다. "
+                        f"backup={db_backup}"
+                    )
+                    return False
+                shutil.copy2(db_backup, self.db_file)
+                for suffix in ("-wal", "-shm"):
+                    src_sidecar = f"{db_backup}{suffix}"
+                    dst_sidecar = f"{self.db_file}{suffix}"
+                    if os.path.exists(src_sidecar):
+                        shutil.copy2(src_sidecar, dst_sidecar)
+                    elif os.path.exists(dst_sidecar):
+                        os.remove(dst_sidecar)
 
             logger.info(f"백업 복원 완료: {backup_name}")
             return True

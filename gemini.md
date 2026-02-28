@@ -584,3 +584,12 @@ class StartupManager:
 - Root modules remain as wrappers for backward compatibility.
 - Any new implementation should be added under `core/` or `ui/`, not into `news_scraper_pro.py`.
 
+
+---
+
+## 2026-02-28 Addendum
+
+- Core stabilization pass 2 completed (risk 1~8 scope, tests/docs alignment).
+- Added test entrypoint normalization (`pytest.ini`) and expanded regression tests.
+- Current validation baseline: `83 passed` on both `python -m pytest -q` and `pytest -q`.
+- Packaging spec (`news_scraper_pro.spec`) reviewed; no change needed for this pass.

@@ -223,3 +223,12 @@
 - 파일명은 `implementation_audit.md`로 확정.
 - 문서 범위는 "이슈+개선안"으로 확정.
 - 본 산출물은 코드 변경이 아닌 점검 문서 작성에 집중한다.
+
+---
+
+## 2026-02-28 Update
+
+- Follow-up implementation completed in `implementation_audit_2026-02-27.md` scope.
+- Core risks 1~8 and test/docs/runtime-path alignment were applied.
+- Validation: both `python -m pytest -q` and `pytest -q` pass (`83 passed`).
+- `news_scraper_pro.spec` reviewed: no additional changes required for this pass.

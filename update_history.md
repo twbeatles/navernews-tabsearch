@@ -1,6 +1,38 @@
 # Update History
 
 ## v32.7.2 (Unreleased)
+- **Core Stabilization Pass 2 (2026-02-28)**:
+  - Implemented worker cancellation hardening:
+    - `ApiWorker` now tracks request-session ownership (`_request_session`, `_owns_request_session`).
+    - Added cancellation re-check right after `session.get(...)` and right before `upsert_news(...)`.
+    - `stop()` now attempts immediate close of worker-owned session to unblock in-flight requests.
+    - Suppressed cancellation-path error surfacing (request/general exceptions while cancelled do not emit `error`).
+  - Removed fetch-path shared session usage:
+    - `MainApp.fetch_news()` no longer passes `session=self.session` into `ApiWorker`.
+    - Main global session object remains for other runtime paths (risk-minimized compatibility).
+  - Backup collision/restore policy hardening:
+    - `create_backup()` now uses microsecond timestamp and `exist_ok=False` with collision retry suffix.
+    - `restore_backup(restore_db=True)` now fails fast when DB backup file is missing.
+    - `restore_backup()` now aligns `-wal/-shm` sidecar copy/remove behavior with pending-restore policy.
+  - Load-more termination guard refinement:
+    - Added total-aware helper in `MainApp`.
+    - Formula fixed to `next_start = last_api_start_index + 100`, `has_more = next_start <= min(1000, total)`.
+    - Last page now reliably disables load-more button and shows terminal button text.
+  - Unified `ext` read-mark policy:
+    - Added shared helper in `NewsTab` and unified both click/context-menu `ext` paths to "open implies read".
+  - Test/entrypoint alignment:
+    - Added `pytest.ini` (`pythonpath = .`, `testpaths = tests`) to unify `pytest -q` and `python -m pytest -q`.
+    - Added tests:
+      - `tests/test_worker_cancellation.py`
+      - `tests/test_backup_collision_and_restore.py`
+      - `tests/test_load_more_total_guard.py`
+      - `tests/test_news_tab_ext_read_policy.py`
+      - plus stability guard extension in `tests/test_stability.py`.
+  - Validation:
+    - `python -m pytest -q` => `83 passed`
+    - `pytest -q` => `83 passed`
+  - Packaging note:
+    - `news_scraper_pro.spec` reviewed for this pass; no updates required.
 - **Core Stabilization Pass 1 (2026-02-25)**:
   - Added delete-path duplicate integrity fix:
     - `DatabaseManager.delete_link(link)` public API introduced.

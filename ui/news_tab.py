@@ -649,6 +649,22 @@ class NewsTab(QWidget):
             self.lbl_status.setText(status_text)
 
 
+    def _open_external_link_and_mark_read(self, target: Dict[str, Any]):
+        link = target.get("link", "")
+        if not link:
+            return
+
+        QDesktopServices.openUrl(QUrl(link))
+        if target.get("is_read"):
+            return
+
+        was_read = bool(target.get("is_read", 0))
+        if self.db.update_status(link, "is_read", 1):
+            target["is_read"] = 1
+            self._adjust_unread_cache(was_read, True)
+            self._refresh_after_local_change()
+            self._notify_badge_change()
+
     def on_link_clicked(self, url: QUrl):
         """링크 클릭 처리"""
         scheme = url.scheme()
@@ -729,7 +745,7 @@ class NewsTab(QWidget):
             return
 
         elif action == "ext":
-            QDesktopServices.openUrl(QUrl(link))
+            self._open_external_link_and_mark_read(target)
             return
 
     def mark_all_read(self):
@@ -811,14 +827,7 @@ class NewsTab(QWidget):
         link = target.get("link", "")
 
         if action == "ext":
-            QDesktopServices.openUrl(QUrl(link))
-            if not target.get("is_read"):
-                was_read = bool(target.get("is_read", 0))
-                self.db.update_status(link, "is_read", 1)
-                target["is_read"] = 1
-                self._adjust_unread_cache(was_read, True)
-                self._refresh_after_local_change()
-                self._notify_badge_change()
+            self._open_external_link_and_mark_read(target)
 
         elif action == "share":
             clip = f"{target.get('title', '')}\n{target.get('link', '')}"
