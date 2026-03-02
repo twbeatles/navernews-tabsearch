@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QSystemTrayIcon,
     QTabWidget,
     QTextBrowser,
     QTextEdit,
@@ -45,6 +46,7 @@ class SettingsDialog(QDialog):
         self.config = config
         self._api_validate_worker: Optional[AsyncJobWorker] = None
         self._data_task_worker: Optional[AsyncJobWorker] = None
+        self._is_closing = False
         # 테마 설정 (부모에서 가져오기)
         self.is_dark = False
         if parent and hasattr(parent, 'theme_idx'):
@@ -171,7 +173,12 @@ class SettingsDialog(QDialog):
         
         # 최소화 상태로 시작 옵션
         self.chk_start_minimized = QCheckBox("시작 시 최소화 상태로 시작 (트레이로)")
-        self.chk_start_minimized.setChecked(self.config.get('start_minimized', False))
+        tray_supported = QSystemTrayIcon.isSystemTrayAvailable()
+        configured_start_minimized = bool(self.config.get('start_minimized', False))
+        self.chk_start_minimized.setChecked(configured_start_minimized and tray_supported)
+        if not tray_supported:
+            self.chk_start_minimized.setEnabled(False)
+            self.chk_start_minimized.setToolTip("시스템 트레이를 사용할 수 없는 환경에서는 적용되지 않습니다.")
         tray_layout.addWidget(self.chk_start_minimized)
         
         # 자동 새로고침 완료 알림 옵션
@@ -180,7 +187,10 @@ class SettingsDialog(QDialog):
         tray_layout.addWidget(self.chk_notify_on_refresh)
         
         # 안내 메시지
-        tray_info = QLabel("💡 트레이로 최소화하면 백그라운드에서 뉴스를 계속 수집합니다.")
+        tray_info = QLabel(
+            "💡 트레이로 최소화하면 백그라운드에서 뉴스를 계속 수집합니다.\n"
+            "트레이 미지원 환경에서는 시작 최소화가 적용되지 않습니다."
+        )
         tray_info.setStyleSheet("color: #666; font-size: 9pt;")
         tray_layout.addWidget(tray_info)
         
@@ -343,7 +353,8 @@ class SettingsDialog(QDialog):
                     <li><strong>복합 검색:</strong> <code>인공지능 AI -광고 -채용</code></li>
                 </ul>
                 <div class="info">
-                    <strong>ℹ️ 정보:</strong> 제외 키워드는 '-' 기호로 시작하며, 여러 개 사용 가능합니다.
+                    <strong>ℹ️ 정보:</strong> API 검색은 양(+) 키워드를 모두 사용합니다.
+                    DB 그룹핑은 첫 번째 양(+) 키워드 기준으로 관리됩니다.
                 </div>
             </div>
             
@@ -550,9 +561,48 @@ class SettingsDialog(QDialog):
         </body>
         </html>
         """
+
+    def _detach_worker_signals(self, worker: Optional[AsyncJobWorker]):
+        if not worker:
+            return
+        try:
+            worker.finished.disconnect()
+        except Exception:
+            pass
+        try:
+            worker.error.disconnect()
+        except Exception:
+            pass
+
+    def _shutdown_worker(self, worker: Optional[AsyncJobWorker], wait_ms: int = 500):
+        if not worker:
+            return
+        self._detach_worker_signals(worker)
+        try:
+            worker.requestInterruption()
+        except Exception:
+            pass
+        try:
+            worker.quit()
+        except Exception:
+            pass
+        try:
+            worker.wait(wait_ms)
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        self._is_closing = True
+        self._shutdown_worker(self._api_validate_worker, wait_ms=400)
+        self._shutdown_worker(self._data_task_worker, wait_ms=800)
+        self._api_validate_worker = None
+        self._data_task_worker = None
+        super().closeEvent(event)
     
     def validate_api_key(self):
         """API 키 검증"""
+        if self._is_closing:
+            return
         client_id = self.txt_id.text().strip()
         client_secret = self.txt_sec.text().strip()
         
@@ -587,7 +637,7 @@ class SettingsDialog(QDialog):
                     payload["error_message"] = resp.text[:200] if resp.text else "응답 파싱 실패"
             return payload
 
-        self._api_validate_worker = AsyncJobWorker(validate_job)
+        self._api_validate_worker = AsyncJobWorker(validate_job, parent=self)
         self._api_validate_worker.finished.connect(self._on_validate_api_key_done)
         self._api_validate_worker.error.connect(self._on_validate_api_key_error)
         self._api_validate_worker.finished.connect(self._on_validate_api_key_finished)
@@ -595,6 +645,8 @@ class SettingsDialog(QDialog):
         self._api_validate_worker.start()
 
     def _on_validate_api_key_done(self, result: Dict[str, Any]):
+        if self._is_closing or not self.isVisible():
+            return
         status_code = int(result.get("status_code", 0))
         if status_code == 200:
             QMessageBox.information(self, "검증 성공", "✓ API 키가 정상적으로 작동합니다!")
@@ -607,6 +659,8 @@ class SettingsDialog(QDialog):
         )
 
     def _on_validate_api_key_error(self, error_msg: str):
+        if self._is_closing or not self.isVisible():
+            return
         QMessageBox.critical(
             self,
             "검증 오류",
@@ -614,6 +668,9 @@ class SettingsDialog(QDialog):
         )
 
     def _on_validate_api_key_finished(self, *_args):
+        if self._is_closing:
+            self._api_validate_worker = None
+            return
         self.btn_validate.setEnabled(True)
         self.btn_validate.setText("✓ API 키 검증")
         self._api_validate_worker = None
@@ -685,6 +742,8 @@ class SettingsDialog(QDialog):
         self._start_data_task(job_func, self._on_clean_all_done)
 
     def _start_data_task(self, job_func: Callable[[], int], done_handler: Callable[[Any], None]):
+        if self._is_closing:
+            return
         if self._data_task_worker and self._data_task_worker.isRunning():
             QMessageBox.information(self, "진행 중", "이미 데이터 정리 작업이 진행 중입니다.")
             return
@@ -694,7 +753,7 @@ class SettingsDialog(QDialog):
         self.btn_clean.setText("⏳ 작업 중...")
         self.btn_all.setText("⏳ 작업 중...")
 
-        self._data_task_worker = AsyncJobWorker(job_func)
+        self._data_task_worker = AsyncJobWorker(job_func, parent=self)
         self._data_task_worker.finished.connect(done_handler)
         self._data_task_worker.error.connect(self._on_data_task_error)
         self._data_task_worker.finished.connect(self._on_data_task_finished)
@@ -702,17 +761,26 @@ class SettingsDialog(QDialog):
         self._data_task_worker.start()
 
     def _on_clean_data_done(self, result: Any):
+        if self._is_closing or not self.isVisible():
+            return
         count = int(result)
         QMessageBox.information(self, "완료", f"✓ {count:,}개의 오래된 기사를 삭제했습니다.")
 
     def _on_clean_all_done(self, result: Any):
+        if self._is_closing or not self.isVisible():
+            return
         count = int(result)
         QMessageBox.information(self, "완료", f"✓ {count:,}개의 기사를 삭제했습니다.")
 
     def _on_data_task_error(self, error_msg: str):
+        if self._is_closing or not self.isVisible():
+            return
         QMessageBox.critical(self, "작업 오류", f"데이터 작업 중 오류가 발생했습니다:\n\n{error_msg}")
 
     def _on_data_task_finished(self, *_args):
+        if self._is_closing:
+            self._data_task_worker = None
+            return
         self.btn_clean.setEnabled(True)
         self.btn_all.setEnabled(True)
         self.btn_clean.setText("🧹 오래된 데이터 정리 (30일 이전)")

@@ -59,6 +59,33 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertIn("self.minimize_to_tray", block)
         self.assertIn("QTimer.singleShot(0, self.hide)", block)
 
+    def test_show_window_restores_hidden_or_minimized_window(self):
+        src = self._read()
+        start = src.index("def show_window")
+        end = src.index("def real_quit")
+        block = src[start:end]
+        self.assertIn("if self.isHidden():", block)
+        self.assertIn("if self.isMinimized():", block)
+        self.assertIn("self.showNormal()", block)
+        self.assertIn("self.raise_()", block)
+
+    def test_init_ui_uses_normalized_window_geometry(self):
+        src = self._read()
+        start = src.index("def init_ui")
+        end = src.index("def setup_shortcuts")
+        block = src[start:end]
+        self.assertIn("initial_geometry = self._normalize_window_geometry(self._saved_geometry)", block)
+        self.assertIn("self.setGeometry(", block)
+        self.assertIn("self.tabs.tabBar().setUsesScrollButtons(True)", block)
+        self.assertIn("self.tabs.tabBar().setElideMode(Qt.TextElideMode.ElideRight)", block)
+        self.assertNotIn("self.resize(1100, 850)", block)
+
+    def test_main_window_has_screen_aware_geometry_helpers(self):
+        src = self._read()
+        self.assertIn("def _get_available_screen_geometry", src)
+        self.assertIn("def _build_default_window_geometry", src)
+        self.assertIn("def _normalize_window_geometry", src)
+
     def test_rename_tab_resets_fetch_state_when_fetch_key_changes(self):
         src = self._read()
         start = src.index("def rename_tab")
@@ -77,6 +104,13 @@ class TestMainWindowRiskFixes(unittest.TestCase):
     def test_main_window_has_no_split_index_fallback(self):
         src = self._read()
         self.assertNotIn("w.keyword.split()[0]", src)
+
+
+class TestStyleRiskFixes(unittest.TestCase):
+    def test_tab_style_has_min_height_for_emoji_clipping(self):
+        src = Path("ui/styles.py").read_text(encoding="utf-8")
+        self.assertIn("QTabBar::tab {{", src)
+        self.assertIn("min-height: 30px;", src)
 
 
 class TestNewsTabRiskFixes(unittest.TestCase):

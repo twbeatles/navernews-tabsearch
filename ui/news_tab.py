@@ -887,7 +887,7 @@ class NewsTab(QWidget):
             if reply == QMessageBox.StandardButton.Yes:
                 try:
                     if not self.db.delete_link(link):
-                        QMessageBox.warning(self, "?ㅻ쪟", "??젣?좎긽 湲곗궗瑜??얠쓣 ???놁뒿?덈떎.")
+                        QMessageBox.warning(self, "오류", "삭제 대상 기사를 찾을 수 없습니다.")
                         return
                     if not target.get("is_read", 0):
                         self._adjust_unread_cache(False, True)

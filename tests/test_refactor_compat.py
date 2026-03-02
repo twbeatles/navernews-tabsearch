@@ -8,6 +8,7 @@ class TestRefactorCompat(unittest.TestCase):
     def test_public_exports_available(self):
         for name in [
             'parse_tab_query',
+            'parse_search_query',
             'build_fetch_key',
             'DatabaseManager',
             'AutoBackup',

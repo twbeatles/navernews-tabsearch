@@ -44,7 +44,7 @@ navernews-tabsearch/
 │   ├── database.py              # DatabaseManager (연결 풀, CRUD)
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
-│   ├── query_parser.py          # parse_tab_query/has_positive_keyword/build_fetch_key
+│   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
 │   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
@@ -657,7 +657,7 @@ class AppStyle:
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
 - Keep `import news_scraper_pro as app` compatibility.
-- Keep these exports: `parse_tab_query`, `has_positive_keyword`, `build_fetch_key`, `DatabaseManager`, `AutoBackup`, `apply_pending_restore_if_any`, `PENDING_RESTORE_FILENAME`.
+- Keep these exports: `parse_tab_query`, `parse_search_query`, `has_positive_keyword`, `build_fetch_key`, `DatabaseManager`, `AutoBackup`, `apply_pending_restore_if_any`, `PENDING_RESTORE_FILENAME`.
 
 ### Test Policy
 - Prefer behavior/contract tests over monolithic source-string checks.
@@ -701,3 +701,29 @@ class AppStyle:
 
 ### Packaging
 - `news_scraper_pro.spec` reviewed for this pass; no change required.
+
+---
+
+## 2026-03-02 Addendum (Audit Full Adoption)
+
+### Query Policy
+- `parse_search_query(raw)`:
+  - API request query and fetch-dedupe key
+  - all positive keywords joined with spaces
+- `parse_tab_query(raw)`:
+  - DB grouping key (`news_keywords.keyword`)
+  - first positive keyword only
+
+### Tray + Minimized Startup
+- `start_minimized` and `--minimized` are applied only when system tray is available.
+- In tray-unavailable environments, app startup must remain visible and show reason in UI.
+- Settings dialog must disable `start_minimized` option when tray is unavailable.
+
+### Version/History Guard
+- `update_history.md` is required project history source.
+- Any `VERSION` update requires a matching update in `update_history.md`.
+- Guard test: `tests/test_version_history_guard.py`.
+
+### Spec Sync
+- `news_scraper_pro.spec` must include `PyQt6.QtNetwork` when bootstrap imports `QLocalServer` / `QLocalSocket`.
+- Keep `PyQt6.QtNetwork` in `hiddenimports` and do not place it in `excludes`.

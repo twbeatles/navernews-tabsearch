@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from requests.adapters import HTTPAdapter
 
-from PyQt6.QtCore import QEvent, QMutex, QMutexLocker, QThread, Qt, QTimer, QUrl
+from PyQt6.QtCore import QEvent, QMutex, QMutexLocker, QRect, QThread, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -72,7 +72,12 @@ from core.database import DatabaseManager
 from core.keyword_groups import KeywordGroupManager
 from core.logging_setup import configure_logging
 from core.notifications import NotificationSound
-from core.query_parser import build_fetch_key, has_positive_keyword, parse_tab_query
+from core.query_parser import (
+    build_fetch_key,
+    has_positive_keyword,
+    parse_search_query,
+    parse_tab_query,
+)
 from core.startup import StartupManager
 from core.text_utils import RE_HTML_TAGS, perf_timer
 from core.validation import ValidationUtils
@@ -116,6 +121,11 @@ def apply_pending_restore_if_any(
         config_file=config_file,
         db_file=db_file,
     )
+
+
+def should_start_minimized(start_requested: bool, tray_available: bool) -> bool:
+    """트레이 사용 가능할 때만 시작 최소화 적용."""
+    return bool(start_requested and tray_available)
 
 class MainApp(QMainWindow):
     """메인 애플리케이션 윈도우 - 안정성 개선 버전"""
@@ -241,8 +251,23 @@ class MainApp(QMainWindow):
             self.setup_system_tray()
             
             # 최소화 상태로 시작 옵션 처리
-            if '--minimized' in sys.argv or self.config.get('start_minimized', False):
+            start_minimized_requested = '--minimized' in sys.argv or self.config.get('start_minimized', False)
+            tray_available = bool(getattr(self, "tray", None))
+            if should_start_minimized(start_minimized_requested, tray_available):
                 QTimer.singleShot(100, self.hide)
+            elif start_minimized_requested and not tray_available:
+                logger.warning("트레이 미지원 환경: 시작 최소화 요청을 무시합니다.")
+                QTimer.singleShot(
+                    150,
+                    lambda: self.statusBar().showMessage(
+                        "⚠ 트레이를 사용할 수 없어 최소화 시작이 적용되지 않았습니다.",
+                        5000,
+                    ),
+                )
+                QTimer.singleShot(
+                    200,
+                    lambda: self.show_warning_toast("트레이 미지원 환경에서는 최소화 시작을 사용할 수 없습니다."),
+                )
             
             logger.info("MainApp 초기화 완료")
         except Exception as e:
@@ -398,6 +423,13 @@ class MainApp(QMainWindow):
     
     def show_window(self):
         """창 표시 (트레이에서 복원)"""
+        if self.isHidden():
+            self.show()
+        if self.isMinimized():
+            self.setWindowState(
+                (self.windowState() & ~Qt.WindowState.WindowMinimized)
+                | Qt.WindowState.WindowActive
+            )
         self.showNormal()
         self.activateWindow()
         self.raise_()
@@ -559,24 +591,69 @@ class MainApp(QMainWindow):
             logger.error(f"설정 저장 오류 (Config Save Error): {e}")
             QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(e)}")
 
+    def _get_available_screen_geometry(self) -> QRect:
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen:
+            rect = screen.availableGeometry()
+            if rect.width() > 0 and rect.height() > 0:
+                return rect
+        return QRect(0, 0, 1366, 900)
+
+    def _build_default_window_geometry(self) -> Dict[str, int]:
+        screen_rect = self._get_available_screen_geometry()
+        min_width = min(980, screen_rect.width())
+        min_height = min(700, screen_rect.height())
+
+        width = int(screen_rect.width() * 0.92)
+        height = int(screen_rect.height() * 0.88)
+        width = max(min_width, min(width, screen_rect.width()))
+        height = max(min_height, min(height, screen_rect.height()))
+
+        x = screen_rect.x() + max(0, (screen_rect.width() - width) // 2)
+        y = screen_rect.y() + max(0, (screen_rect.height() - height) // 2)
+        return {"x": x, "y": y, "width": width, "height": height}
+
+    def _normalize_window_geometry(self, raw_geometry: Optional[Dict[str, Any]]) -> Dict[str, int]:
+        default_geometry = self._build_default_window_geometry()
+        if not isinstance(raw_geometry, dict):
+            return default_geometry
+
+        screen_rect = self._get_available_screen_geometry()
+
+        def _to_int(value: Any, fallback: int) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        width = _to_int(raw_geometry.get("width"), default_geometry["width"])
+        height = _to_int(raw_geometry.get("height"), default_geometry["height"])
+        x = _to_int(raw_geometry.get("x"), default_geometry["x"])
+        y = _to_int(raw_geometry.get("y"), default_geometry["y"])
+
+        min_width = min(600, screen_rect.width())
+        min_height = min(400, screen_rect.height())
+        width = max(min_width, min(width, screen_rect.width()))
+        height = max(min_height, min(height, screen_rect.height()))
+
+        max_x = screen_rect.x() + max(0, screen_rect.width() - width)
+        max_y = screen_rect.y() + max(0, screen_rect.height() - height)
+        x = max(screen_rect.x(), min(x, max_x))
+        y = max(screen_rect.y(), min(y, max_y))
+
+        return {"x": x, "y": y, "width": width, "height": height}
+
     def init_ui(self):
         """UI 초기화"""
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
-        
-        # 저장된 창 상태 복원
-        if self._saved_geometry:
-            try:
-                self.setGeometry(
-                    self._saved_geometry.get('x', 100),
-                    self._saved_geometry.get('y', 100),
-                    self._saved_geometry.get('width', 1100),
-                    self._saved_geometry.get('height', 850)
-                )
-            except Exception as e:
-                logger.warning(f"창 상태 복원 실패: {e}")
-                self.resize(1100, 850)
-        else:
-            self.resize(1100, 850)
+
+        initial_geometry = self._normalize_window_geometry(self._saved_geometry)
+        self.setGeometry(
+            initial_geometry["x"],
+            initial_geometry["y"],
+            initial_geometry["width"],
+            initial_geometry["height"],
+        )
         
         self.setMinimumSize(600, 400)  # 최소 창 크기 설정
         self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
@@ -637,6 +714,8 @@ class MainApp(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
+        self.tabs.tabBar().setUsesScrollButtons(True)
+        self.tabs.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.tabBar().tabBarDoubleClicked.connect(self.rename_tab)
         self.tabs.tabBar().tabMoved.connect(self.on_tab_moved)  # 탭 순서 저장
@@ -908,10 +987,10 @@ class MainApp(QMainWindow):
             tab_keyword = widget.keyword
             if skip_keyword is not None and tab_keyword == skip_keyword:
                 continue
-            search_keyword, exclude_words = parse_tab_query(tab_keyword)
-            if not search_keyword:
+            search_query, exclude_words = parse_search_query(tab_keyword)
+            if not search_query:
                 continue
-            if build_fetch_key(search_keyword, exclude_words) == fetch_key:
+            if build_fetch_key(search_query, exclude_words) == fetch_key:
                 return True
         return False
 
@@ -930,8 +1009,8 @@ class MainApp(QMainWindow):
         
         tab = NewsTab(keyword, self.db, self.theme_idx, self)
         tab.btn_load.clicked.connect(lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True))
-        search_keyword, exclude_words = parse_tab_query(keyword)
-        fetch_key = build_fetch_key(search_keyword, exclude_words)
+        search_query, exclude_words = parse_search_query(keyword)
+        fetch_key = build_fetch_key(search_query, exclude_words)
         fetch_state = self._tab_fetch_state.setdefault(keyword, TabFetchState())
         persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
         if persisted_cursor > fetch_state.last_api_start_index:
@@ -952,7 +1031,8 @@ class MainApp(QMainWindow):
         info_label = QLabel(
             "검색할 키워드를 입력하세요.\n"
             "제외 키워드는 '-'를 앞에 붙여주세요.\n\n"
-            "예시: 주식 -코인, 인공지능 AI -광고"
+            "예시: 주식 -코인, 인공지능 AI -광고\n"
+            "※ API 검색은 양키워드를 모두 사용하며, DB 그룹은 첫 키워드 기준입니다."
         )
         info_label.setStyleSheet("color: #666; font-size: 9pt;")
         layout.addWidget(info_label)
@@ -1068,8 +1148,8 @@ class MainApp(QMainWindow):
         self.tabs.removeTab(idx)
         if removed_keyword:
             self._tab_fetch_state.pop(removed_keyword, None)
-            removed_search_keyword, removed_exclude_words = parse_tab_query(removed_keyword)
-            removed_fetch_key = build_fetch_key(removed_search_keyword, removed_exclude_words)
+            removed_search_query, removed_exclude_words = parse_search_query(removed_keyword)
+            removed_fetch_key = build_fetch_key(removed_search_query, removed_exclude_words)
             if removed_fetch_key and not self._is_fetch_key_referenced(removed_fetch_key):
                 self._fetch_cursor_by_key.pop(removed_fetch_key, None)
         self.save_config()
@@ -1115,8 +1195,8 @@ class MainApp(QMainWindow):
             icon_text = "📰" if not new_keyword.startswith("-") else "🚫"
             self.tabs.setTabText(idx, f"{icon_text} {new_keyword}")
             
-            old_search_keyword, old_exclude_words = parse_tab_query(old_keyword)
-            new_search_keyword, new_exclude_words = parse_tab_query(new_keyword)
+            old_search_keyword, old_exclude_words = parse_search_query(old_keyword)
+            new_search_keyword, new_exclude_words = parse_search_query(new_keyword)
 
             old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)
             new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)
@@ -1411,11 +1491,14 @@ class MainApp(QMainWindow):
 
     def fetch_news(self, keyword: str, is_more: bool = False, is_sequential: bool = False):
         """뉴스 가져오기 - 순차 새로고침 지원"""
-        search_keyword, exclude_words = parse_tab_query(keyword)
+        search_keyword, exclude_words = parse_search_query(keyword)
         if not search_keyword:
             if not is_sequential:
                 self.show_warning_toast("탭 키워드에 검색어가 없습니다. 탭 이름을 확인해주세요.")
             return
+        db_keyword, _ = parse_tab_query(keyword)
+        if not db_keyword:
+            db_keyword = search_keyword
         fetch_key = build_fetch_key(search_keyword, exclude_words)
 
         if not is_more and not is_sequential:
@@ -1463,10 +1546,12 @@ class MainApp(QMainWindow):
             self.client_id,
             self.client_secret,
             search_keyword,
+            db_keyword,
             exclude_words,
             self.db,
             start_idx,
             timeout=self.api_timeout,
+            display_keyword=keyword,
         )
         thread = QThread()
         worker.moveToThread(thread)
@@ -1476,6 +1561,7 @@ class MainApp(QMainWindow):
             request_id=request_id,
             tab_keyword=keyword,
             search_keyword=search_keyword,
+            db_keyword=db_keyword,
             exclude_words=list(exclude_words),
             worker=worker,
             thread=thread,
@@ -1522,7 +1608,7 @@ class MainApp(QMainWindow):
                 logger.info(f"오래된 완료 콜백 무시 (stale on_fetch_done ignored): kw={keyword}, rid={request_id}")
                 return
 
-            search_keyword, exclude_words = parse_tab_query(keyword)
+            search_keyword, exclude_words = parse_search_query(keyword)
             if not search_keyword:
                 search_keyword = keyword
             fetch_key = build_fetch_key(search_keyword, exclude_words)
@@ -1645,7 +1731,7 @@ class MainApp(QMainWindow):
             logger.info(f"오래된 오류 콜백 무시 (stale on_fetch_error ignored): kw={keyword}, rid={request_id}")
             return
 
-        search_keyword, exclude_words = parse_tab_query(keyword)
+        search_keyword, exclude_words = parse_search_query(keyword)
         if not search_keyword:
             search_keyword = keyword
         fetch_key = build_fetch_key(search_keyword, exclude_words)
@@ -2134,6 +2220,10 @@ class MainApp(QMainWindow):
             self.close_to_tray = data.get('close_to_tray', True)
             prev_start_minimized = self.start_minimized
             new_start_minimized = data.get('start_minimized', False)
+            if new_start_minimized and not getattr(self, "tray", None):
+                logger.warning("트레이 미지원 환경: start_minimized 설정을 해제합니다.")
+                new_start_minimized = False
+                self.show_warning_toast("트레이를 사용할 수 없어 '시작 시 최소화'가 해제되었습니다.")
             self.start_minimized = new_start_minimized
             self.notify_on_refresh = data.get('notify_on_refresh', False)
             

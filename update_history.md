@@ -1,6 +1,41 @@
-# Update History
+﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Implementation Audit Full Adoption (2026-03-02)**:
+  - Single-instance guard hardening:
+    - Added stale-lock recovery flow (`notify -> removeStaleLockFile -> tryLock(0)`).
+    - Reduced stale lock timeout to 10 seconds.
+    - Added retry-capable conflict dialog and explicit status logging (`notify_success`, `stale_recovered`, `blocked`).
+    - IPC restore handling uses `readyRead` signal path (no blocking `waitForReadyRead`).
+  - Tray/minimized startup safety:
+    - Added tray-aware startup helper `should_start_minimized(...)`.
+    - `--minimized` / `start_minimized` now only hide on startup when tray is available.
+    - Added user-facing status/toast guidance when minimized startup is skipped.
+    - Settings dialog now disables `start_minimized` when system tray is unavailable.
+  - Query parsing policy split:
+    - Added `parse_search_query(raw)` for API/fetch-key path (all positive keywords).
+    - Kept `parse_tab_query(raw)` for DB grouping path (first positive keyword).
+    - `ApiWorker` now receives `search_query` and `db_keyword` separately.
+    - Updated fetch/dedupe/cursor flow to use `parse_search_query`.
+  - Settings dialog worker lifecycle safety:
+    - Added `closeEvent` shutdown path for `_api_validate_worker` and `_data_task_worker`.
+    - Detached signals and added interruption-friendly worker stop sequence.
+    - Prevented late callbacks from showing message boxes after dialog close.
+  - Encoding and quality:
+    - Restored broken delete-failure Korean message in `ui/news_tab.py`.
+    - Added encoding smoke tests (`?ㅻ쪟` token removal + replacement-char scan).
+  - Version/history guard:
+    - Restored `update_history.md`.
+    - Added `tests/test_version_history_guard.py` to enforce VERSION/history sync.
+  - Packaging/spec sync:
+    - Updated `news_scraper_pro.spec` to keep `PyQt6.QtNetwork` bundled.
+    - Added `PyQt6.QtNetwork` to `hiddenimports` and removed it from `excludes`.
+  - Added tests:
+    - `tests/test_query_parser_search_policy.py`
+    - `tests/test_start_minimized_guard.py`
+    - `tests/test_encoding_smoke.py`
+    - `tests/test_version_history_guard.py`
+    - `tests/test_single_instance_guard.py` behavior-level stale-lock/notify coverage
 - **Core Stabilization Pass 2 (2026-02-28)**:
   - Implemented worker cancellation hardening:
     - `ApiWorker` now tracks request-session ownership (`_request_session`, `_owns_request_session`).

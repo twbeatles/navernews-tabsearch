@@ -259,6 +259,7 @@ class AppStyle:
             font-size: 10pt; 
             color: {Colors.LIGHT_TEXT_MUTED}; 
             padding: 12px 20px; 
+            min-height: 30px;
             border: 1px solid transparent; 
             border-bottom: none; 
             background-color: transparent;
@@ -495,6 +496,7 @@ class AppStyle:
             font-size: 10pt; 
             color: {Colors.DARK_TEXT_MUTED}; 
             padding: 12px 20px; 
+            min-height: 30px;
             border: 1px solid transparent; 
             border-bottom: none; 
             background-color: transparent;

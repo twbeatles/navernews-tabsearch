@@ -41,6 +41,11 @@
 - pending restore에서 `restore_db=true`인 경우 DB 백업 파일 누락 시 실패 처리 + pending 유지
 - 설정 로드 정규화 강화(`theme_index`, `refresh_interval_index`, `api_timeout`, bool 계열, `alert_keywords`)
 - fetch key 커서 영속화(`pagination_state`) 및 `더 불러오기` DB 건수 fallback 제거
+- 단일 인스턴스 stale lock 복구(`notify -> stale 제거 -> 재시도`) 및 상태 로깅 강화
+- 트레이 미지원 환경에서 `--minimized`/`start_minimized` 요청 시 숨김 시작 차단
+- 검색어 정책 분리: API 검색어(`parse_search_query`)와 DB 그룹 키(`parse_tab_query`) 분리 적용
+- 설정 창 닫힘 시 백그라운드 워커 정리(콜백 안전 가드)
+- PyInstaller spec 동기화: `PyQt6.QtNetwork` 포함 보장(단일 인스턴스 IPC 런타임 안정화)
 
 ## 프로젝트 구조
 
@@ -57,7 +62,7 @@ navernews-tabsearch/
 │   ├── database.py              # DatabaseManager (연결 풀, CRUD)
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
-│   ├── query_parser.py          # parse_tab_query/build_fetch_key
+│   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
 │   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
@@ -77,16 +82,19 @@ navernews-tabsearch/
 │   └── widgets.py               # NewsBrowser/NoScrollComboBox
 ├── tests/                       # 회귀/호환성/안정성 테스트
 │   ├── test_db_queries.py
+│   ├── test_encoding_smoke.py
 │   ├── test_entrypoint_bootstrap.py
 │   ├── test_import_settings_dedupe.py
 │   ├── test_import_settings_normalization.py
 │   ├── test_pagination_state_persistence.py
 │   ├── test_plan_regression.py
 │   ├── test_pending_restore_strict.py
+│   ├── test_query_parser_search_policy.py
 │   ├── test_refactor_backup_guard.py
 │   ├── test_refactor_compat.py
 │   ├── test_settings_roundtrip.py
 │   ├── test_single_instance_guard.py
+│   ├── test_start_minimized_guard.py
 │   ├── test_stability.py
 │   ├── test_startup_registry_command.py
 │   ├── test_symbol_resolution.py
@@ -95,7 +103,8 @@ navernews-tabsearch/
 │   ├── test_worker_cancellation.py
 │   ├── test_backup_collision_and_restore.py
 │   ├── test_load_more_total_guard.py
-│   └── test_news_tab_ext_read_policy.py
+│   ├── test_news_tab_ext_read_policy.py
+│   └── test_version_history_guard.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -146,6 +155,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 아이콘 리소스: `news_icon.ico`, `news_icon.png` 포함
 - v32.7.2 핵심 안정화 1차(2026-02-25)는 런타임 로직/스키마 변경만 포함하며 `.spec` 추가 수정은 필요하지 않습니다.
 - v32.7.2 핵심+테스트 보강 2차(2026-02-28)도 런타임/테스트/문서 변경만 포함하며 `.spec` 수정은 필요하지 않습니다.
+- v32.7.2 감사 반영(2026-03-02)에서는 단일 인스턴스 IPC(`QLocalServer/QLocalSocket`) 경로 보호를 위해 `PyQt6.QtNetwork`를 `.spec`에 명시 반영했습니다.
 
 ## 네이버 API 키 설정
 
@@ -196,6 +206,14 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 - 최소 1개 이상의 일반 키워드가 필요합니다.
 - 제외어-only 입력(예: `-광고 -코인`)은 탭 추가/이름 변경/설정 가져오기에서 차단됩니다.
+- API 검색어는 모든 양(+) 키워드를 공백 결합해 사용합니다. 예: `인공지능 AI -광고` → API query: `인공지능 AI`
+- DB 저장/조회 그룹 키는 첫 번째 양(+) 키워드를 사용합니다. 예: `인공지능 AI -광고` → DB key: `인공지능`
+
+## 트레이/시작 최소화 규칙
+
+- `--minimized` 또는 `start_minimized=true`는 시스템 트레이를 사용할 수 있을 때만 적용됩니다.
+- 시스템 트레이를 사용할 수 없는 환경에서는 앱이 숨겨지지 않고 일반 창으로 시작합니다.
+- 트레이 미지원 환경에서는 설정 창의 `시작 시 최소화 상태로 시작` 옵션이 비활성화됩니다.
 
 ## 라이선스
 

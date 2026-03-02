@@ -69,7 +69,8 @@ class TestWorkerCancellation(unittest.TestCase):
         worker = ApiWorker(
             client_id="id",
             client_secret="secret",
-            keyword="AI",
+            search_query="AI",
+            db_keyword="AI",
             exclude_words=[],
             db_manager=db,
             start_idx=1,

@@ -3,12 +3,15 @@ import signal
 import sys
 import threading
 import traceback
+import hashlib
+import time
 from datetime import datetime
 
 os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
 os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
 
-from PyQt6.QtCore import QLockFile
+from PyQt6.QtCore import QLockFile, QTimer
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from core.backup import apply_pending_restore_if_any
@@ -22,6 +25,78 @@ logger = logging.getLogger(__name__)
 
 CRASH_LOG_FILE = os.path.join(APP_DIR, "crash_log.txt")
 INSTANCE_LOCK_FILE = os.path.join(APP_DIR, "news_scraper_pro.lock")
+INSTANCE_SERVER_NAME = f"news_scraper_pro_single_instance_{hashlib.sha1(APP_DIR.encode('utf-8')).hexdigest()[:12]}"
+INSTANCE_SHOW_COMMAND = "SHOW"
+
+
+def _notify_existing_instance(timeout_ms: int = 1200) -> bool:
+    """동일 앱의 기존 인스턴스에 창 복원 요청을 전달."""
+    deadline = time.time() + max(0.2, timeout_ms / 1000.0)
+    while time.time() < deadline:
+        socket = QLocalSocket()
+        socket.connectToServer(INSTANCE_SERVER_NAME)
+        if socket.waitForConnected(200):
+            try:
+                socket.write(INSTANCE_SHOW_COMMAND.encode("utf-8"))
+                socket.flush()
+                socket.waitForBytesWritten(200)
+            finally:
+                socket.disconnectFromServer()
+            return True
+        socket.abort()
+        time.sleep(0.08)
+    return False
+
+
+def _setup_instance_server(app: QApplication, activate_window):
+    """기존 인스턴스가 복원 요청을 받을 로컬 서버를 시작."""
+    QLocalServer.removeServer(INSTANCE_SERVER_NAME)
+    server = QLocalServer(app)
+    if not server.listen(INSTANCE_SERVER_NAME):
+        logger.warning(
+            "단일 인스턴스 IPC 서버 시작 실패: %s",
+            server.errorString(),
+        )
+        return None
+
+    def _consume_payload(socket):
+        if socket is None:
+            return
+        if bool(socket.property("_instance_payload_handled")):
+            return
+        payload = bytes(socket.readAll()).decode("utf-8", errors="ignore").strip().upper()
+        if not payload:
+            return
+        socket.setProperty("_instance_payload_handled", True)
+        if payload == INSTANCE_SHOW_COMMAND:
+            QTimer.singleShot(0, activate_window)
+
+    def on_new_connection():
+        while server.hasPendingConnections():
+            socket = server.nextPendingConnection()
+            if socket is None:
+                continue
+            socket.readyRead.connect(lambda s=socket: _consume_payload(s))
+            socket.disconnected.connect(socket.deleteLater)
+            _consume_payload(socket)
+
+    server.newConnection.connect(on_new_connection)
+    return server
+
+
+def _resolve_single_instance_conflict(instance_lock: QLockFile, notifier=_notify_existing_instance) -> str:
+    """중복 실행 충돌 해소를 시도하고 상태 코드를 반환."""
+    if notifier():
+        return "notify_success"
+
+    try:
+        instance_lock.removeStaleLockFile()
+    except Exception as e:
+        logger.warning("stale lock 파일 제거 시도 실패: %s", e)
+
+    if instance_lock.tryLock(0):
+        return "stale_recovered"
+    return "blocked"
 
 def main():
     """메인 함수 - 안정성 개선 버전 (종료 원인 추적 포함)"""
@@ -101,15 +176,34 @@ def main():
         
         app = QApplication(sys.argv)
         instance_lock = QLockFile(INSTANCE_LOCK_FILE)
-        instance_lock.setStaleLockTime(30000)
+        instance_lock.setStaleLockTime(10000)
         if not instance_lock.tryLock(0):
-            QMessageBox.information(
-                None,
-                "이미 실행 중",
-                "뉴스 스크래퍼 Pro가 이미 실행 중입니다.\n기존 창을 사용해주세요.",
-            )
-            logger.info("중복 실행 감지: 새 인스턴스를 종료합니다.")
-            sys.exit(0)
+            while True:
+                conflict_state = _resolve_single_instance_conflict(instance_lock)
+                logger.info("single_instance|status=%s", conflict_state)
+                if conflict_state == "notify_success":
+                    logger.info("중복 실행 감지: 기존 인스턴스에 창 복원 요청 전달 후 종료")
+                    sys.exit(0)
+                if conflict_state == "stale_recovered":
+                    logger.info("단일 인스턴스 락 복구 성공: stale lock 제거 후 실행 지속")
+                    break
+
+                message_box = QMessageBox()
+                message_box.setIcon(QMessageBox.Icon.Information)
+                message_box.setWindowTitle("이미 실행 중")
+                message_box.setText("뉴스 스크래퍼 Pro가 이미 실행 중이거나 잠금 파일이 남아 있습니다.")
+                message_box.setInformativeText(
+                    "기존 창 복원 요청에 실패했습니다.\n"
+                    "잠금 파일 문제일 수 있습니다. 다시 시도할까요?"
+                )
+                message_box.setStandardButtons(
+                    QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Close
+                )
+                message_box.setDefaultButton(QMessageBox.StandardButton.Retry)
+                reply = message_box.exec()
+                if reply != QMessageBox.StandardButton.Retry:
+                    logger.info("single_instance|status=blocked")
+                    sys.exit(0)
 
         app._instance_lock = instance_lock
         # app.setStyle("Fusion")
@@ -121,6 +215,11 @@ def main():
         app.setFont(font)
         
         window = MainApp()
+        instance_server = _setup_instance_server(
+            app,
+            lambda: window.show_window() if window else None,
+        )
+        app._instance_server = instance_server
         window.show()
         
         logger.info(f"{APP_NAME} v{VERSION} 시작됨")
@@ -129,6 +228,12 @@ def main():
         try:
             if hasattr(app, "_instance_lock") and app._instance_lock:
                 app._instance_lock.unlock()
+        except Exception:
+            pass
+        try:
+            if hasattr(app, "_instance_server") and app._instance_server:
+                app._instance_server.close()
+                QLocalServer.removeServer(INSTANCE_SERVER_NAME)
         except Exception:
             pass
         sys.exit(exit_code)
@@ -142,6 +247,13 @@ def main():
             app_instance = QApplication.instance()
             if app_instance and hasattr(app_instance, "_instance_lock") and app_instance._instance_lock:
                 app_instance._instance_lock.unlock()
+        except Exception:
+            pass
+        try:
+            app_instance = QApplication.instance()
+            if app_instance and hasattr(app_instance, "_instance_server") and app_instance._instance_server:
+                app_instance._instance_server.close()
+                QLocalServer.removeServer(INSTANCE_SERVER_NAME)
         except Exception:
             pass
         

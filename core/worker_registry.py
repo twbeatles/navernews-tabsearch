@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 class WorkerHandle:
     request_id: int
     tab_keyword: str
-    search_keyword: str
+    search_keyword: str  # API 검색어
+    db_keyword: str
     exclude_words: List[str]
     worker: object
     thread: object
