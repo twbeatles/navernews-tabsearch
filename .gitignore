@@ -15,6 +15,9 @@ dist/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+htmlcov/
+.coverage
+coverage.xml
 
 # IDE / OS files
 .idea/

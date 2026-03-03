@@ -711,6 +711,7 @@ class DatabaseManager:
         only_unread: bool = False,
         hide_duplicates: bool = False,
         filter_txt: str = "",
+        exclude_words: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> int:
@@ -746,6 +747,14 @@ class DatabaseManager:
                     query += " AND (n.title LIKE ? OR n.description LIKE ?)"
                     wildcard = f"%{filter_txt}%"
                     params.extend([wildcard, wildcard])
+
+                if exclude_words:
+                    for exclude_word in exclude_words:
+                        if not exclude_word:
+                            continue
+                        query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
+                        wildcard = f"%{exclude_word}%"
+                        params.extend([wildcard, wildcard])
 
                 if start_date:
                     try:

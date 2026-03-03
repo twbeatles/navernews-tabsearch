@@ -27,7 +27,6 @@ hiddenimports = [
     'requests',
     'email.utils',
     'charset_normalizer',
-    'chardet',
 ]
 hiddenimports += collect_submodules('requests')
 hiddenimports += collect_submodules('urllib3')

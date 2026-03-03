@@ -1,6 +1,33 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Implementation Audit Remediation Follow-up (2026-03-03)**:
+  - Backup restore mode auto detection:
+    - `BackupDialog` now persists backup item metadata (`backup_name`, `include_db`) in list payload.
+    - `restore_backup()` now derives `restore_db` from metadata.
+    - Legacy backup fallback added: when metadata is missing, `restore_db` is inferred by DB backup file presence.
+  - Read/unread UI-DB consistency hardening:
+    - Added `NewsTab._set_read_state(...)` shared helper.
+    - `open/unread/ext` flows now update UI/cache only when `db.update_status(...)` succeeds.
+    - On DB update failure, user-facing warning is shown and in-memory state is preserved.
+  - Settings dialog worker lifecycle safety:
+    - Added worker factory path (`_create_worker`) to unify worker creation/cleanup contract.
+    - `_shutdown_worker` now handles timeout path via parent-detach + deferred `deleteLater`.
+  - Badge accuracy:
+    - `DatabaseManager.count_news(...)` signature extended with `exclude_words`.
+    - `MainApp.update_all_tab_badges()` now computes per-tab unread count with exclude-word aware path.
+    - Badge cache key switched to tab keyword to avoid collisions on shared DB keyword.
+  - Packaging/spec sync:
+    - Removed forced `chardet` hidden import from `news_scraper_pro.spec` (requests optional dependency alignment).
+  - Added/updated tests:
+    - Added `tests/test_backup_restore_mode.py`
+    - Expanded:
+      - `tests/test_news_tab_ext_read_policy.py`
+      - `tests/test_settings_roundtrip.py`
+      - `tests/test_db_queries.py`
+      - `tests/test_risk_fixes.py`
+  - Validation:
+    - `python -m pytest -q` => `105 passed, 5 subtests passed`
 - **Implementation Audit Full Adoption (2026-03-02)**:
   - Single-instance guard hardening:
     - Added stale-lock recovery flow (`notify -> removeStaleLockFile -> tryLock(0)`).

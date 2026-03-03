@@ -655,15 +655,40 @@ class NewsTab(QWidget):
             return
 
         QDesktopServices.openUrl(QUrl(link))
-        if target.get("is_read"):
-            return
+        self._set_read_state(
+            target,
+            True,
+            failure_message="읽음 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+        )
+
+    def _set_read_state(
+        self,
+        target: Dict[str, Any],
+        new_read: bool,
+        failure_message: str = "",
+    ) -> bool:
+        """읽음 상태를 DB와 UI에 일관되게 반영한다."""
+        link = target.get("link", "")
+        if not link:
+            return False
 
         was_read = bool(target.get("is_read", 0))
-        if self.db.update_status(link, "is_read", 1):
-            target["is_read"] = 1
-            self._adjust_unread_cache(was_read, True)
-            self._refresh_after_local_change()
-            self._notify_badge_change()
+        now_read = bool(new_read)
+        if was_read == now_read:
+            return True
+
+        if not self.db.update_status(link, "is_read", 1 if now_read else 0):
+            if failure_message:
+                self.lbl_status.setText(f"⚠️ {failure_message}")
+                if self.window():
+                    self.window().show_warning_toast(failure_message)
+            return False
+
+        target["is_read"] = 1 if now_read else 0
+        self._adjust_unread_cache(was_read, now_read)
+        self._refresh_after_local_change()
+        self._notify_badge_change()
+        return True
 
     def on_link_clicked(self, url: QUrl):
         """링크 클릭 처리"""
@@ -685,13 +710,12 @@ class NewsTab(QWidget):
         link = target.get("link", "")
 
         if action == "open":
-            was_read = bool(target.get("is_read", 0))
-            self.db.update_status(link, "is_read", 1)
             QDesktopServices.openUrl(QUrl(link))
-            target["is_read"] = 1
-            self._adjust_unread_cache(was_read, True)
-            self._refresh_after_local_change()
-            self._notify_badge_change()
+            self._set_read_state(
+                target,
+                True,
+                failure_message="읽음 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+            )
 
         elif action == "bm":
             new_val = 0 if target.get("is_bookmarked") else 1
@@ -723,13 +747,11 @@ class NewsTab(QWidget):
             return
 
         elif action == "unread":
-            was_read = bool(target.get("is_read", 0))
-            self.db.update_status(link, "is_read", 0)
-            target["is_read"] = 0
-            self._adjust_unread_cache(was_read, False)
-            self._refresh_after_local_change()
-            self._notify_badge_change()
-            if self.window():
+            if self._set_read_state(
+                target,
+                False,
+                failure_message="안 읽음 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+            ) and self.window():
                 self.window().show_toast("📖 안 읽음으로 표시되었습니다.")
 
         elif action == "note":

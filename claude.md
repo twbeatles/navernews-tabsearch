@@ -78,6 +78,8 @@ navernews-tabsearch/
 │   ├── test_startup_registry_command.py
 │   ├── test_symbol_resolution.py
 │   ├── test_keyword_groups_storage.py
+│   ├── test_backup_restore_mode.py
+│   ├── test_news_tab_ext_read_policy.py
 │   └── test_risk_fixes.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
@@ -653,6 +655,11 @@ class AppStyle:
 - 기사 삭제 후 duplicate flag 부분 재계산(`delete_old_news`, `delete_all_news`, `delete_link`)
 - pending restore 엄격 정책: `restore_db=true`인데 DB 백업 누락 시 실패 반환 + pending 유지
 - `pagination_state` 스키마 추가 및 fetch key 커서 영속화(`더 불러오기` DB count fallback 제거)
+- 백업 복원 예약 시 backup metadata(`include_db`) 기반으로 복원 범위 자동 결정 (`설정만`/`설정+DB`)
+- `NewsTab` 읽음 상태 변경 공통 경로(`_set_read_state`)로 `open/unread/ext` 정책 일원화
+- 읽음 상태 DB 반영 실패 시 UI 캐시/배지 미갱신으로 상태 불일치 방지
+- `DatabaseManager.count_news(..., exclude_words=...)` 확장 및 탭 배지 제외어 반영 집계
+- 설정 창 워커 종료 안정화(대기 초과 시 parent 분리 + finish 시점 deleteLater 보장)
 
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
@@ -662,7 +669,7 @@ class AppStyle:
 ### Test Policy
 - Prefer behavior/contract tests over monolithic source-string checks.
 - Validate entrypoint and wrapper compatibility explicitly.
-- Tests: `tests/` 디렉터리에 16개 테스트 모듈 보유.
+- Tests: `tests/` 디렉터리의 최신 테스트 모듈 목록을 기준으로 유지/확장.
 
 
 ---
@@ -694,6 +701,7 @@ class AppStyle:
 - `tests/test_load_more_total_guard.py`
 - `tests/test_news_tab_ext_read_policy.py`
 - extension in `tests/test_stability.py`
+- `tests/test_backup_restore_mode.py`
 
 ### Validation
 - `python -m pytest -q` => `83 passed`
@@ -727,3 +735,34 @@ class AppStyle:
 ### Spec Sync
 - `news_scraper_pro.spec` must include `PyQt6.QtNetwork` when bootstrap imports `QLocalServer` / `QLocalSocket`.
 - Keep `PyQt6.QtNetwork` in `hiddenimports` and do not place it in `excludes`.
+
+---
+
+## 2026-03-03 Addendum (Audit Remediation Follow-up)
+
+### Implemented
+- Backup restore mode auto-detection:
+  - `BackupDialog` now stores backup metadata (`backup_name`, `include_db`) in list item payload.
+  - `schedule_restore(..., restore_db=...)` is derived from metadata; legacy fallback checks DB backup file presence.
+- Read/unread UI-DB consistency:
+  - `NewsTab._set_read_state(...)` added and shared by `open/unread/ext` flows.
+  - DB update failure no longer mutates in-memory state/badge counters.
+- Settings dialog worker lifecycle hardening:
+  - Worker creation unified in `_create_worker(...)`.
+  - `_shutdown_worker(...)` now handles wait timeout with parent detachment and deferred cleanup.
+- Badge accuracy for exclude words:
+  - `MainApp.update_all_tab_badges()` computes per-tab unread count with `exclude_words` when needed.
+  - cache key switched to tab keyword to avoid collision.
+- Packaging sync:
+  - `news_scraper_pro.spec` removed forced `chardet` hidden import to align with requests optional dependency path.
+
+### Added/Updated Tests
+- Added: `tests/test_backup_restore_mode.py`
+- Extended:
+  - `tests/test_news_tab_ext_read_policy.py`
+  - `tests/test_settings_roundtrip.py`
+  - `tests/test_db_queries.py`
+  - `tests/test_risk_fixes.py`
+
+### Validation
+- `python -m pytest -q` => `105 passed, 5 subtests passed`

@@ -105,6 +105,20 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         src = self._read()
         self.assertNotIn("w.keyword.split()[0]", src)
 
+    def test_badge_update_uses_tab_keyword_cache_and_exclude_aware_count(self):
+        src = self._read()
+        start = src.index("def update_all_tab_badges")
+        end = src.index("def update_tab_badge")
+        block = src[start:end]
+        self.assertIn("self.db.count_news(", block)
+        self.assertIn("exclude_words=exclude_words", block)
+        self.assertIn("self._badge_unread_cache[keyword]", block)
+
+        start = src.index("def update_tab_badge")
+        end = src.index("def switch_to_tab")
+        block = src[start:end]
+        self.assertIn("cached = self._badge_unread_cache.get(keyword)", block)
+
 
 class TestStyleRiskFixes(unittest.TestCase):
     def test_tab_style_has_min_height_for_emoji_clipping(self):

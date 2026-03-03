@@ -88,6 +88,36 @@ class TestDbQueries(unittest.TestCase):
         ]
         self.assertEqual([r["link"] for r in sql_filtered], [r["link"] for r in expected])
 
+    def test_count_news_supports_only_unread_with_exclude_words(self):
+        items = [
+            {
+                "title": "AI launch",
+                "description": "general",
+                "link": "https://example.com/cnt-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "AI coin outlook",
+                "description": "coin keyword",
+                "link": "https://example.com/cnt-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI")
+        self.mgr.update_status("https://example.com/cnt-1", "is_read", 1)
+
+        unread_all = self.mgr.count_news("AI", only_unread=True)
+        unread_excluding_coin = self.mgr.count_news(
+            "AI",
+            only_unread=True,
+            exclude_words=["coin"],
+        )
+
+        self.assertEqual(unread_all, 1)
+        self.assertEqual(unread_excluding_coin, 0)
+
     def test_init_db_creates_idx_nk_keyword_dup_idempotently(self):
         self.mgr.init_db()
         conn = sqlite3.connect(str(self.db_path))

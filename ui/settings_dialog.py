@@ -576,7 +576,7 @@ class SettingsDialog(QDialog):
 
     def _shutdown_worker(self, worker: Optional[AsyncJobWorker], wait_ms: int = 500):
         if not worker:
-            return
+            return True
         self._detach_worker_signals(worker)
         try:
             worker.requestInterruption()
@@ -587,9 +587,36 @@ class SettingsDialog(QDialog):
         except Exception:
             pass
         try:
-            worker.wait(wait_ms)
+            finished = worker.wait(wait_ms)
+        except Exception:
+            finished = False
+
+        if finished:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+            return True
+
+        # 종료 대기 초과 시 다이얼로그 수명과 분리하여 안전 정리.
+        try:
+            worker.setParent(None)
         except Exception:
             pass
+        try:
+            worker.finished.connect(worker.deleteLater)
+        except Exception:
+            pass
+        return False
+
+    def _create_worker(self, job_func: Callable[..., Any]) -> AsyncJobWorker:
+        """설정창 워커 생성 공통 경로 (수명 관리 일원화)."""
+        worker = AsyncJobWorker(job_func, parent=None)
+        try:
+            worker.finished.connect(worker.deleteLater)
+        except Exception:
+            pass
+        return worker
 
     def closeEvent(self, event):
         self._is_closing = True
@@ -637,7 +664,7 @@ class SettingsDialog(QDialog):
                     payload["error_message"] = resp.text[:200] if resp.text else "응답 파싱 실패"
             return payload
 
-        self._api_validate_worker = AsyncJobWorker(validate_job, parent=self)
+        self._api_validate_worker = self._create_worker(validate_job)
         self._api_validate_worker.finished.connect(self._on_validate_api_key_done)
         self._api_validate_worker.error.connect(self._on_validate_api_key_error)
         self._api_validate_worker.finished.connect(self._on_validate_api_key_finished)
@@ -753,7 +780,7 @@ class SettingsDialog(QDialog):
         self.btn_clean.setText("⏳ 작업 중...")
         self.btn_all.setText("⏳ 작업 중...")
 
-        self._data_task_worker = AsyncJobWorker(job_func, parent=self)
+        self._data_task_worker = self._create_worker(job_func)
         self._data_task_worker.finished.connect(done_handler)
         self._data_task_worker.error.connect(self._on_data_task_error)
         self._data_task_worker.finished.connect(self._on_data_task_finished)

@@ -804,26 +804,46 @@ class MainApp(QMainWindow):
 
         self._badge_refresh_running = True
         try:
-            tab_infos: List[Tuple[int, str, str]] = []
+            tab_infos: List[Tuple[int, str, str, List[str]]] = []
+            plain_db_keywords: List[str] = []
             for i in range(1, self.tabs.count()):
                 widget = self.tabs.widget(i)
                 if not widget or not hasattr(widget, "keyword"):
                     continue
                 keyword = widget.keyword
-                db_keyword, _ = parse_tab_query(keyword)
+                db_keyword, exclude_words = parse_tab_query(keyword)
                 if not db_keyword:
                     continue
-                tab_infos.append((i, keyword, db_keyword))
+                normalized_excludes = [
+                    ex for ex in exclude_words if isinstance(ex, str) and ex.strip()
+                ]
+                tab_infos.append((i, keyword, db_keyword, normalized_excludes))
+                if not normalized_excludes:
+                    plain_db_keywords.append(db_keyword)
 
             if not tab_infos:
                 return
 
             with perf_timer("ui.update_all_tab_badges", f"tabs={len(tab_infos)}"):
-                db_keywords = [db_kw for _, _, db_kw in tab_infos]
-                unread_by_kw = self.db.get_unread_counts_by_keywords(db_keywords)
-                for tab_index, keyword, db_keyword in tab_infos:
-                    unread_count = int(unread_by_kw.get(db_keyword, 0))
-                    self._badge_unread_cache[db_keyword] = unread_count
+                deduped_plain_keywords = list(dict.fromkeys(plain_db_keywords))
+                unread_by_kw = (
+                    self.db.get_unread_counts_by_keywords(deduped_plain_keywords)
+                    if deduped_plain_keywords
+                    else {}
+                )
+
+                for tab_index, keyword, db_keyword, exclude_words in tab_infos:
+                    if exclude_words:
+                        unread_count = int(
+                            self.db.count_news(
+                                keyword=db_keyword,
+                                only_unread=True,
+                                exclude_words=exclude_words,
+                            )
+                        )
+                    else:
+                        unread_count = int(unread_by_kw.get(db_keyword, 0))
+                    self._badge_unread_cache[keyword] = unread_count
                     self._set_tab_badge_text(tab_index, keyword, unread_count)
         except Exception as e:
             logger.warning(f"탭 배지 업데이트 오류: {e}")
@@ -833,11 +853,10 @@ class MainApp(QMainWindow):
     def update_tab_badge(self, keyword: str):
         """특정 탭의 배지 업데이트"""
         try:
-            db_keyword, _ = parse_tab_query(keyword)
             for i in range(1, self.tabs.count()):
                 widget = self.tabs.widget(i)
                 if widget and hasattr(widget, "keyword") and widget.keyword == keyword:
-                    cached = self._badge_unread_cache.get(db_keyword)
+                    cached = self._badge_unread_cache.get(keyword)
                     if cached is not None:
                         self._set_tab_badge_text(i, keyword, int(cached))
                     break

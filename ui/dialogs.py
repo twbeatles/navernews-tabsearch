@@ -508,7 +508,7 @@ class BackupDialog(QDialog):
         """백업 목록 로드"""
         self.backup_list.clear()
         backups = self.auto_backup.get_backup_list()
-        
+
         for backup in backups:
             timestamp = backup.get('timestamp', 'Unknown')
             version = backup.get('app_version', '?')
@@ -520,11 +520,15 @@ class BackupDialog(QDialog):
                 date_str = dt.strftime("%Y-%m-%d %H:%M:%S")
             except ValueError:
                 date_str = timestamp
-            
+
             item_text = f"📁 {date_str} (v{version}) {include_db}"
-            item = self.backup_list.addItem(item_text)
+            self.backup_list.addItem(item_text)
             self.backup_list.item(self.backup_list.count() - 1).setData(
-                Qt.ItemDataRole.UserRole, backup['name']
+                Qt.ItemDataRole.UserRole,
+                {
+                    "backup_name": backup.get("name", ""),
+                    "include_db": bool(backup.get("include_db", False)),
+                },
             )
     
     def create_backup(self):
@@ -544,19 +548,45 @@ class BackupDialog(QDialog):
         if not current_item:
             QMessageBox.information(self, "알림", "복원할 백업을 선택하세요.")
             return
-        
-        backup_name = current_item.data(Qt.ItemDataRole.UserRole)
-        
+
+        item_meta = current_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(item_meta, dict):
+            backup_name = str(item_meta.get("backup_name", "")).strip()
+            include_db_meta = item_meta.get("include_db")
+        else:
+            backup_name = str(item_meta or "").strip()
+            include_db_meta = None
+
+        if not backup_name:
+            QMessageBox.warning(self, "오류", "선택한 백업 정보를 읽을 수 없습니다.")
+            return
+
+        if isinstance(include_db_meta, bool):
+            restore_db = include_db_meta
+        else:
+            # 레거시/메타 누락 백업 fallback: 백업 폴더에 DB 파일 존재 여부로 판별.
+            db_name = os.path.basename(getattr(self.auto_backup, "db_file", "news_database.db"))
+            db_backup_path = os.path.join(self.auto_backup.backup_dir, backup_name, db_name)
+            restore_db = os.path.exists(db_backup_path)
+
+        restore_scope = "설정 + 데이터베이스" if restore_db else "설정만"
+        restore_notice = (
+            "⚠️ 현재 설정과 데이터가 덮어씌워집니다."
+            if restore_db
+            else "⚠️ 현재 설정이 덮어씌워집니다. 데이터베이스는 변경되지 않습니다."
+        )
+
         reply = QMessageBox.question(
             self, "백업 복원",
             f"'{backup_name}' 백업을 복원하시겠습니까?\n\n"
-            "⚠️ 현재 설정이 덮어씌워집니다.\n"
+            f"복원 범위: {restore_scope}\n"
+            f"{restore_notice}\n"
             "복원 후 프로그램을 재시작해야 합니다.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        
+
         if reply == QMessageBox.StandardButton.Yes:
-            if self.auto_backup.schedule_restore(backup_name, restore_db=True):
+            if self.auto_backup.schedule_restore(backup_name, restore_db=restore_db):
                 QMessageBox.information(
                     self, "완료", 
                     "복원이 예약되었습니다.\n프로그램을 재시작하면 백업이 적용됩니다."
@@ -569,9 +599,17 @@ class BackupDialog(QDialog):
         current_item = self.backup_list.currentItem()
         if not current_item:
             return
-        
-        backup_name = current_item.data(Qt.ItemDataRole.UserRole)
-        
+
+        item_meta = current_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(item_meta, dict):
+            backup_name = str(item_meta.get("backup_name", "")).strip()
+        else:
+            backup_name = str(item_meta or "").strip()
+
+        if not backup_name:
+            QMessageBox.warning(self, "오류", "선택한 백업 정보를 읽을 수 없습니다.")
+            return
+
         reply = QMessageBox.question(
             self, "백업 삭제",
             f"'{backup_name}' 백업을 삭제하시겠습니까?",

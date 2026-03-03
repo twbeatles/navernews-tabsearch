@@ -46,6 +46,10 @@
 - 검색어 정책 분리: API 검색어(`parse_search_query`)와 DB 그룹 키(`parse_tab_query`) 분리 적용
 - 설정 창 닫힘 시 백그라운드 워커 정리(콜백 안전 가드)
 - PyInstaller spec 동기화: `PyQt6.QtNetwork` 포함 보장(단일 인스턴스 IPC 런타임 안정화)
+- 백업 복원 예약 시 백업 메타(`include_db`) 기반으로 `설정만`/`설정+DB` 범위를 자동 판별
+- 기사 `열기`/`안읽음` 처리에서 DB 반영 실패 시 UI 캐시를 갱신하지 않도록 동기화 보강
+- 설정 창 워커 종료 경로 강화(종료 대기 초과 시 수명 분리 정리)
+- 탭 배지 미읽음 집계를 제외어 조건까지 반영하도록 보정
 
 ## 프로젝트 구조
 
@@ -102,6 +106,7 @@ navernews-tabsearch/
 │   ├── test_risk_fixes.py
 │   ├── test_worker_cancellation.py
 │   ├── test_backup_collision_and_restore.py
+│   ├── test_backup_restore_mode.py
 │   ├── test_load_more_total_guard.py
 │   ├── test_news_tab_ext_read_policy.py
 │   └── test_version_history_guard.py
@@ -156,6 +161,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 핵심 안정화 1차(2026-02-25)는 런타임 로직/스키마 변경만 포함하며 `.spec` 추가 수정은 필요하지 않습니다.
 - v32.7.2 핵심+테스트 보강 2차(2026-02-28)도 런타임/테스트/문서 변경만 포함하며 `.spec` 수정은 필요하지 않습니다.
 - v32.7.2 감사 반영(2026-03-02)에서는 단일 인스턴스 IPC(`QLocalServer/QLocalSocket`) 경로 보호를 위해 `PyQt6.QtNetwork`를 `.spec`에 명시 반영했습니다.
+- v32.7.2 감사 후속(2026-03-03)에서는 requests optional 경로와 정합성을 맞추기 위해 `.spec`의 강제 hidden import에서 `chardet`를 제거했습니다.
 
 ## 네이버 API 키 설정
 
@@ -188,6 +194,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
 - `pagination_state`는 `fetch_key -> 마지막 API start index` 매핑이며, 필드가 없으면 기본값 `{}`로 로드됩니다.
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
+- 백업 복원 예약은 선택한 백업의 `include_db` 메타를 기준으로 복원 범위(`설정만`/`설정+DB`)를 자동 적용합니다.
 
 예시:
 
@@ -201,6 +208,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 공개 API 참고:
 - `DatabaseManager.delete_link(link: str) -> bool`가 추가되어 UI 삭제 경로에서 중복 플래그 재계산을 일원화합니다.
+- `DatabaseManager.count_news(..., exclude_words: Optional[List[str]] = None)`가 확장되어 미읽음 배지 집계 시 제외어 조건을 반영할 수 있습니다.
 
 ## 키워드 입력 규칙
 

@@ -30,3 +30,18 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         src = Path("ui/settings_dialog.py").read_text(encoding="utf-8")
         self.assertIn("2시간", src)
         self.assertNotIn("3시간", src)
+
+    def test_worker_creation_uses_common_factory_and_parent_none(self):
+        src = Path("ui/settings_dialog.py").read_text(encoding="utf-8")
+        self.assertIn("def _create_worker", src)
+        self.assertIn("AsyncJobWorker(job_func, parent=None)", src)
+        self.assertIn("worker.finished.connect(worker.deleteLater)", src)
+
+    def test_shutdown_worker_detaches_parent_when_wait_times_out(self):
+        src = Path("ui/settings_dialog.py").read_text(encoding="utf-8")
+        start = src.index("def _shutdown_worker")
+        end = src.index("def _create_worker")
+        block = src[start:end]
+        self.assertIn("worker.wait(wait_ms)", block)
+        self.assertIn("worker.setParent(None)", block)
+        self.assertIn("worker.finished.connect(worker.deleteLater)", block)

@@ -47,7 +47,7 @@ navernews-tabsearch/
 │   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
 │   ├── toast.py                 # ToastQueue/ToastMessage
 │   └── widgets.py               # NewsBrowser/NoScrollComboBox
-├── tests/                       # 회귀/호환성/안정성 테스트 (16개 모듈)
+├── tests/                       # 회귀/호환성/안정성 테스트 (최신 목록은 tests/ 디렉터리 기준)
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -578,6 +578,9 @@ class StartupManager:
 - `pagination_state` 스키마 추가: fetch key 기준 API 커서 영속화
 - `더 불러오기` DB count fallback 제거, 커서 미존재 시 `start_idx=101`
 - 회귀 테스트 확장: `test_pending_restore_strict.py`, `test_pagination_state_persistence.py`
+- 백업 복원 모드 자동 감지: `include_db` 메타 기반 `설정만`/`설정+DB` 적용
+- 읽음/안읽음 UI-DB 동기화 강화: DB 실패 시 UI 캐시 미반영
+- 배지 집계 정확도 보강: 제외어가 있는 탭은 개별 unread 집계
 
 ### Migration Rules
 - Preserve public import paths for existing scripts/tests.
@@ -593,3 +596,23 @@ class StartupManager:
 - Added test entrypoint normalization (`pytest.ini`) and expanded regression tests.
 - Current validation baseline: `83 passed` on both `python -m pytest -q` and `pytest -q`.
 - Packaging spec (`news_scraper_pro.spec`) reviewed; no change needed for this pass.
+
+---
+
+## 2026-03-03 Addendum
+
+- Implementation audit follow-up completed:
+  - Backup restore mode auto detection (`include_db` metadata + legacy fallback)
+  - `NewsTab._set_read_state(...)` 도입으로 `open/unread/ext` 읽음 상태 정책 일원화
+  - Settings dialog worker lifecycle safety hardening (`_create_worker`, timeout path detach)
+  - Exclude-word aware tab badge unread counting
+- Added/expanded tests:
+  - `tests/test_backup_restore_mode.py`
+  - `tests/test_news_tab_ext_read_policy.py`
+  - `tests/test_settings_roundtrip.py`
+  - `tests/test_db_queries.py`
+  - `tests/test_risk_fixes.py`
+- Validation baseline updated:
+  - `python -m pytest -q` => `105 passed, 5 subtests passed`
+- Packaging spec:
+  - `news_scraper_pro.spec` removed forced `chardet` hidden import (requests optional dependency alignment).
