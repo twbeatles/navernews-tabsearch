@@ -36,7 +36,8 @@ class AutoBackup:
     """설정 및 데이터베이스 자동 백업"""
 
     BACKUP_DIR = "backups"
-    MAX_BACKUPS = 5
+    MAX_AUTO_BACKUPS = 5
+    MAX_MANUAL_BACKUPS = 20
 
     def __init__(
         self,
@@ -64,8 +65,11 @@ class AutoBackup:
             except Exception as e:
                 logger.error(f"백업 디렉토리 생성 실패: {e}")
 
-    def create_backup(self, include_db: bool = True) -> Optional[str]:
+    def create_backup(self, include_db: bool = True, trigger: str = "manual") -> Optional[str]:
         try:
+            normalized_trigger = str(trigger or "manual").strip().lower()
+            if normalized_trigger not in {"auto", "manual"}:
+                normalized_trigger = "manual"
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             base_backup_name = f"backup_{timestamp}"
             backup_name = ""
@@ -97,6 +101,7 @@ class AutoBackup:
                 "timestamp": timestamp,
                 "app_version": self.app_version,
                 "include_db": include_db,
+                "trigger": normalized_trigger,
                 "created_at": datetime.datetime.now().isoformat(),
             }
             with open(os.path.join(backup_path, "backup_info.json"), "w", encoding="utf-8") as f:
@@ -161,12 +166,24 @@ class AutoBackup:
     def _cleanup_old_backups(self):
         try:
             backups = self.get_backup_list()
-            if len(backups) > self.MAX_BACKUPS:
-                backups_to_delete = backups[self.MAX_BACKUPS :]
-                for backup in backups_to_delete:
+            manual_backups = [
+                backup for backup in backups if str(backup.get("trigger", "manual")).lower() == "manual"
+            ]
+            auto_backups = [
+                backup for backup in backups if str(backup.get("trigger", "manual")).lower() == "auto"
+            ]
+
+            if len(manual_backups) > self.MAX_MANUAL_BACKUPS:
+                for backup in manual_backups[self.MAX_MANUAL_BACKUPS :]:
                     backup_path = os.path.join(self.backup_dir, backup["name"])
                     shutil.rmtree(backup_path, ignore_errors=True)
-                    logger.info(f"오래된 백업 삭제: {backup['name']}")
+                    logger.info(f"오래된 수동 백업 삭제: {backup['name']}")
+
+            if len(auto_backups) > self.MAX_AUTO_BACKUPS:
+                for backup in auto_backups[self.MAX_AUTO_BACKUPS :]:
+                    backup_path = os.path.join(self.backup_dir, backup["name"])
+                    shutil.rmtree(backup_path, ignore_errors=True)
+                    logger.info(f"오래된 자동 백업 삭제: {backup['name']}")
         except Exception as e:
             logger.error(f"백업 정리 오류: {e}")
 

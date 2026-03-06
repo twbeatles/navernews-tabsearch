@@ -472,9 +472,10 @@ self.show_tray_notification(
 ```python
 class AutoBackup:
     BACKUP_DIR = "backups"
-    MAX_BACKUPS = 5  # 최대 보관 수
+    MAX_AUTO_BACKUPS = 5
+    MAX_MANUAL_BACKUPS = 20
     
-    def create_backup(include_db: bool = True) -> Optional[str]
+    def create_backup(include_db: bool = True, trigger: str = "manual") -> Optional[str]
     def get_backup_list() -> List[Dict]
     def restore_backup(backup_name: str, restore_db: bool = True) -> bool
 ```
@@ -616,3 +617,28 @@ class StartupManager:
   - `python -m pytest -q` => `105 passed, 5 subtests passed`
 - Packaging spec:
   - `news_scraper_pro.spec` removed forced `chardet` hidden import (requests optional dependency alignment).
+
+---
+
+## 2026-03-06 Addendum
+
+- Backup retention semantics:
+  - startup backup path now passes `trigger="auto"`
+  - automatic/manual backups retain independently
+  - backup list renders microsecond timestamps and source labels
+- Query semantics preservation:
+  - added `DatabaseManager.mark_query_as_read(...)`
+  - `탭 전체` read-all path now keeps `exclude_words`
+  - publisher analysis now supports `exclude_words`
+- Maintenance synchronization:
+  - settings dialog cleanup completion notifies main window
+  - open tabs / bookmark tab / badges / tray tooltip refresh after direct DB maintenance
+- Added/updated tests:
+  - `tests/test_settings_dialog_maintenance.py`
+  - expanded `tests/test_backup_restore_mode.py`
+  - expanded `tests/test_db_queries.py`
+  - expanded `tests/test_risk_fixes.py`
+- Validation:
+  - `python -m pytest -q` => `112 passed, 5 subtests passed`
+- Packaging:
+  - `news_scraper_pro.spec` re-reviewed for this pass; no additional change required.

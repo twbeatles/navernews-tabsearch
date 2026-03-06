@@ -80,6 +80,7 @@ navernews-tabsearch/
 │   ├── test_keyword_groups_storage.py
 │   ├── test_backup_restore_mode.py
 │   ├── test_news_tab_ext_read_policy.py
+│   ├── test_settings_dialog_maintenance.py
 │   └── test_risk_fixes.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
@@ -660,6 +661,11 @@ class AppStyle:
 - 읽음 상태 DB 반영 실패 시 UI 캐시/배지 미갱신으로 상태 불일치 방지
 - `DatabaseManager.count_news(..., exclude_words=...)` 확장 및 탭 배지 제외어 반영 집계
 - 설정 창 워커 종료 안정화(대기 초과 시 parent 분리 + finish 시점 deleteLater 보장)
+- 자동 시작 백업에 `trigger=auto` 메타 도입 + 자동/수동 백업 보존 정책 분리
+- `BackupDialog` 목록 표시에서 마이크로초 타임스탬프 파싱 + `자동`/`수동` 라벨 추가
+- 설정 창의 데이터 정리 완료 후 메인 UI 동기화 훅(`on_database_maintenance_completed`) 추가
+- `DatabaseManager.mark_query_as_read(...)` 추가로 `탭 전체` 읽음 처리 시 제외어 조건 보존
+- `DatabaseManager.get_top_publishers(..., exclude_words=...)` 확장으로 탭 분석 제외어 반영
 
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
@@ -766,3 +772,36 @@ class AppStyle:
 
 ### Validation
 - `python -m pytest -q` => `105 passed, 5 subtests passed`
+
+---
+
+## 2026-03-06 Addendum (Audit Adoption Follow-through)
+
+### Implemented
+- Backup retention policy split:
+  - Added `trigger` metadata (`auto` / `manual`) to backup creation.
+  - `core.backup.AutoBackup` now uses separate retention windows for automatic and manual backups.
+- Backup UI clarity:
+  - `BackupDialog.format_backup_timestamp(...)` supports microsecond timestamps.
+  - Backup list now shows source label (`자동` / `수동`) together with restore scope metadata.
+- Database maintenance synchronization:
+  - Settings dialog cleanup actions now notify parent window via `on_database_maintenance_completed(...)`.
+  - Main window refreshes open tabs, bookmark tab, badge cache, and tray tooltip after DB maintenance.
+- Query semantics preservation:
+  - Added `DatabaseManager.mark_query_as_read(...)` and wired `NewsTab.mark_all_read()` tab-wide path to preserve `exclude_words`.
+  - Extended `DatabaseManager.get_top_publishers(..., exclude_words=...)`.
+  - Stats analysis combo now stores raw tab query instead of collapsing to `db_keyword`.
+
+### Added/Updated Tests
+- Added:
+  - `tests/test_settings_dialog_maintenance.py`
+- Extended:
+  - `tests/test_backup_restore_mode.py`
+  - `tests/test_db_queries.py`
+  - `tests/test_risk_fixes.py`
+
+### Validation
+- `python -m pytest -q` => `112 passed, 5 subtests passed`
+
+### Packaging
+- `news_scraper_pro.spec` reviewed again after this pass; no additional changes required.

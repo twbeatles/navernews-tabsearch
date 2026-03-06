@@ -791,12 +791,14 @@ class SettingsDialog(QDialog):
         if self._is_closing or not self.isVisible():
             return
         count = int(result)
+        self._notify_parent_data_changed("delete_old_news", count)
         QMessageBox.information(self, "완료", f"✓ {count:,}개의 오래된 기사를 삭제했습니다.")
 
     def _on_clean_all_done(self, result: Any):
         if self._is_closing or not self.isVisible():
             return
         count = int(result)
+        self._notify_parent_data_changed("delete_all_news", count)
         QMessageBox.information(self, "완료", f"✓ {count:,}개의 기사를 삭제했습니다.")
 
     def _on_data_task_error(self, error_msg: str):
@@ -813,6 +815,14 @@ class SettingsDialog(QDialog):
         self.btn_clean.setText("🧹 오래된 데이터 정리 (30일 이전)")
         self.btn_all.setText("🗑 모든 기사 삭제 (북마크 제외)")
         self._data_task_worker = None
+
+    def _notify_parent_data_changed(self, operation: str, affected_count: int):
+        parent = self.parent()
+        if parent and hasattr(parent, "on_database_maintenance_completed"):
+            try:
+                parent.on_database_maintenance_completed(operation, affected_count)
+            except Exception:
+                pass
     
     def export_settings_dialog(self):
         """설정 내보내기 (부모 호출)"""

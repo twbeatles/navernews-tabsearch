@@ -965,28 +965,44 @@ class DatabaseManager:
         finally:
             self.return_connection(conn)
     
-    def get_top_publishers(self, keyword: Optional[str] = None, limit: int = 10) -> List[Tuple[str, int]]:
+    def get_top_publishers(
+        self,
+        keyword: Optional[str] = None,
+        limit: int = 10,
+        exclude_words: Optional[List[str]] = None,
+    ) -> List[Tuple[str, int]]:
         """주요 언론사 통계"""
         conn = self.get_connection()
         try:
+            params: List[Any] = []
             if keyword:
-                cursor = conn.execute("""
+                query = """
                     SELECT n.publisher, COUNT(*) as count 
                     FROM news n
                     JOIN news_keywords nk ON nk.link = n.link
                     WHERE nk.keyword=? 
-                    GROUP BY n.publisher 
-                    ORDER BY count DESC 
-                    LIMIT ?
-                """, (keyword, limit))
+                """
+                params.append(keyword)
             else:
-                cursor = conn.execute("""
-                    SELECT publisher, COUNT(*) as count 
-                    FROM news 
-                    GROUP BY publisher 
-                    ORDER BY count DESC 
-                    LIMIT ?
-                """, (limit,))
+                query = """
+                    SELECT n.publisher, COUNT(*) as count 
+                    FROM news n
+                    WHERE 1=1
+                """
+            if exclude_words:
+                for exclude_word in exclude_words:
+                    if not exclude_word:
+                        continue
+                    query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
+                    wildcard = f"%{exclude_word}%"
+                    params.extend([wildcard, wildcard])
+            query += """
+                GROUP BY n.publisher 
+                ORDER BY count DESC 
+                LIMIT ?
+            """
+            params.append(limit)
+            cursor = conn.execute(query, params)
             return [(row[0], row[1]) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"get_top_publishers 오류: {e}")
@@ -1054,6 +1070,48 @@ class DatabaseManager:
         finally:
             self.return_connection(conn)
         return count
+
+    def mark_query_as_read(
+        self,
+        keyword: str,
+        exclude_words: Optional[List[str]] = None,
+        only_bookmark: bool = False,
+    ) -> int:
+        """탭 쿼리 기준으로 읽지 않은 기사만 읽음 처리한다."""
+        conn = self.get_connection()
+        try:
+            params: List[Any] = []
+            if only_bookmark:
+                query = "SELECT n.link FROM news n WHERE n.is_bookmarked = 1 AND n.is_read = 0"
+            else:
+                query = (
+                    "SELECT n.link FROM news n "
+                    "JOIN news_keywords nk ON nk.link = n.link "
+                    "WHERE nk.keyword = ? AND n.is_read = 0"
+                )
+                params.append(keyword)
+
+            if exclude_words:
+                for exclude_word in exclude_words:
+                    if not exclude_word:
+                        continue
+                    query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
+                    wildcard = f"%{exclude_word}%"
+                    params.extend([wildcard, wildcard])
+
+            links = [
+                str(row[0])
+                for row in conn.execute(query, params).fetchall()
+                if row and row[0]
+            ]
+            if not links:
+                return 0
+            return self.mark_links_as_read(links)
+        except Exception as e:
+            logger.error(f"mark_query_as_read 오류: {e}")
+            raise
+        finally:
+            self.return_connection(conn)
 
     def close(self):
         """모든 연결 종료 - 안전한 버전"""

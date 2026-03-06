@@ -245,7 +245,10 @@ class MainApp(QMainWindow):
             
             # 시작 시 자동 백업 (설정 파일이 있으면)
             if os.path.exists(CONFIG_FILE):
-                QTimer.singleShot(2000, lambda: self.auto_backup.create_backup(include_db=False))
+                QTimer.singleShot(
+                    2000,
+                    lambda: self.auto_backup.create_backup(include_db=False, trigger="auto"),
+                )
             
             # 시스템 트레이 설정
             self.setup_system_tray()
@@ -1854,6 +1857,20 @@ class MainApp(QMainWindow):
         """북마크 탭 새로고침"""
         self.bm_tab.load_data_from_db()
 
+    def on_database_maintenance_completed(self, operation: str, affected_count: int = 0):
+        """DB 직접 변경 후 열린 탭/배지/UI 상태를 동기화한다."""
+        try:
+            for i in range(self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if widget and hasattr(widget, "load_data_from_db"):
+                    widget.load_data_from_db()
+            self._schedule_badge_refresh(delay_ms=0)
+            self.update_tray_tooltip()
+            QTimer.singleShot(300, self.update_tray_tooltip)
+            logger.info(f"DB 유지보수 후 UI 동기화 완료: op={operation}, count={affected_count}")
+        except Exception as e:
+            logger.warning(f"DB 유지보수 후 UI 동기화 오류: {e}")
+
     def export_data(self):
         """데이터 내보내기"""
         cur_widget = self.tabs.currentWidget()
@@ -2142,7 +2159,7 @@ class MainApp(QMainWindow):
                     db_kw, _ = parse_tab_query(w.keyword)
                 if not db_kw:
                     continue
-                tab_combo.addItem(w.keyword, db_kw)
+                tab_combo.addItem(w.keyword, w.keyword)
         analysis_layout.addWidget(tab_combo)
         
         result_label = QLabel("📈 언론사별 기사 수:")
@@ -2154,8 +2171,16 @@ class MainApp(QMainWindow):
         
         def update_analysis():
             result_list.clear()
-            keyword = tab_combo.currentData()
-            publishers = self.db.get_top_publishers(keyword, limit=20)
+            tab_query = tab_combo.currentData()
+            if isinstance(tab_query, str) and tab_query.strip():
+                db_keyword, exclude_words = parse_tab_query(tab_query)
+                publishers = self.db.get_top_publishers(
+                    db_keyword,
+                    exclude_words=exclude_words,
+                    limit=20,
+                )
+            else:
+                publishers = self.db.get_top_publishers(None, limit=20)
             
             if publishers:
                 for i, (pub, count) in enumerate(publishers, 1):

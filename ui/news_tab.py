@@ -81,6 +81,12 @@ class NewsTab(QWidget):
         db_keyword, _ = parse_tab_query(self.keyword)
         return db_keyword
 
+    @property
+    def exclude_words(self):
+        """탭 쿼리의 제외어 목록."""
+        _, exclude_words = parse_tab_query(self.keyword)
+        return exclude_words
+
     def _prepare_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
         link = item.get("link", "")
         title = item.get("title", "")
@@ -812,8 +818,9 @@ class NewsTab(QWidget):
         else:
             self._mark_all_mode_label = "탭 전체"
             self.job_worker = AsyncJobWorker(
-                self.db.mark_all_as_read,
+                self.db.mark_query_as_read,
                 self.db_keyword,
+                self.exclude_words,
                 self.is_bookmark_tab,
             )
 

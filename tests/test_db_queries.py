@@ -223,6 +223,55 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(read_by_link["https://example.com/101"], 0)
         self.assertEqual(read_by_link["https://example.com/102"], 1)
 
+    def test_mark_query_as_read_respects_exclude_words(self):
+        items = [
+            {
+                "title": "AI launch",
+                "description": "plain item",
+                "link": "https://example.com/mqr-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "AI ad market",
+                "description": "contains ad keyword",
+                "link": "https://example.com/mqr-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI")
+
+        updated = self.mgr.mark_query_as_read("AI", exclude_words=["ad"])
+        self.assertEqual(updated, 1)
+
+        rows = self.mgr.fetch_news("AI")
+        read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
+        self.assertEqual(read_by_link["https://example.com/mqr-1"], 1)
+        self.assertEqual(read_by_link["https://example.com/mqr-2"], 0)
+
+    def test_get_top_publishers_respects_exclude_words(self):
+        items = [
+            {
+                "title": "AI launch",
+                "description": "plain item",
+                "link": "https://example.com/pub-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "alpha.com",
+            },
+            {
+                "title": "AI ad market",
+                "description": "contains ad keyword",
+                "link": "https://example.com/pub-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "beta.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI")
+
+        publishers = self.mgr.get_top_publishers("AI", exclude_words=["ad"], limit=10)
+        self.assertEqual(publishers, [("alpha.com", 1)])
+
     def test_delete_link_recalculates_duplicate_flags(self):
         same_title = "delete-link-duplicate-title"
         self.mgr.upsert_news(

@@ -1,6 +1,33 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Implementation Audit Adoption (2026-03-06)**:
+  - Backup retention policy refinement:
+    - `AutoBackup.create_backup(..., trigger=...)` now records `auto` / `manual` source metadata.
+    - Retention cleanup split into `MAX_AUTO_BACKUPS` and `MAX_MANUAL_BACKUPS`.
+    - Startup auto-backup no longer evicts user-created manual restore snapshots on the same short horizon.
+  - Backup UI clarity:
+    - `BackupDialog` now formats microsecond backup timestamps correctly.
+    - Backup list items display `자동` / `수동` source labels.
+  - Database maintenance UI sync:
+    - Settings dialog cleanup / delete-all completions now notify `MainApp`.
+    - Open tabs, bookmark tab, badge counters, and tray tooltip are refreshed after direct DB maintenance operations.
+  - Query semantics preservation:
+    - Added `DatabaseManager.mark_query_as_read(...)` so `탭 전체` read-all respects `exclude_words`.
+    - Extended `DatabaseManager.get_top_publishers(..., exclude_words=...)` so tab analysis reflects exclude-word conditions.
+    - Stats-analysis tab now passes raw tab query instead of collapsing to `db_keyword` only.
+  - Documentation/spec alignment:
+    - Synced `README.md`, `claude.md`, `gemini.md` with the current backup policy, analysis behavior, and new test coverage.
+    - Replaced the prior audit snapshot with `implementation_audit_2026-03-06.md`.
+    - `news_scraper_pro.spec` re-reviewed; no additional packaging changes required for this pass.
+  - Added/updated tests:
+    - Added `tests/test_settings_dialog_maintenance.py`
+    - Expanded:
+      - `tests/test_backup_restore_mode.py`
+      - `tests/test_db_queries.py`
+      - `tests/test_risk_fixes.py`
+  - Validation:
+    - `python -m pytest -q` => `112 passed, 5 subtests passed`
 - **Implementation Audit Remediation Follow-up (2026-03-03)**:
   - Backup restore mode auto detection:
     - `BackupDialog` now persists backup item metadata (`backup_name`, `include_db`) in list payload.

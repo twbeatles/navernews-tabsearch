@@ -37,7 +37,9 @@ crash_log.txt
 *.db
 *.db-*
 *.sqlite
+*.sqlite-*
 *.sqlite3
+*.sqlite3-*
 *.json
 
 # Backups and temporary files

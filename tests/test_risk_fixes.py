@@ -136,4 +136,14 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         self.assertIn("현재 표시 결과만", block)
         self.assertIn("탭 전체", block)
         self.assertIn("self.db.mark_links_as_read", block)
+        self.assertIn("self.db.mark_query_as_read", block)
+
+    def test_stats_analysis_uses_raw_tab_query_data(self):
+        src = Path("ui/main_window.py").read_text(encoding="utf-8")
+        start = src.index("def show_stats_analysis")
+        end = src.index("def show_analysis")
+        block = src[start:end]
+        self.assertIn("tab_combo.addItem(w.keyword, w.keyword)", block)
+        self.assertIn("db_keyword, exclude_words = parse_tab_query(tab_query)", block)
+        self.assertIn("exclude_words=exclude_words", block)
 

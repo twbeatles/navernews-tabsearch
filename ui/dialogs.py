@@ -457,6 +457,26 @@ class BackupDialog(QDialog):
         self.auto_backup = auto_backup
         self.setup_ui()
         self.load_backups()
+
+    @staticmethod
+    def format_backup_timestamp(timestamp: str, created_at: Optional[str] = None) -> str:
+        raw_timestamp = str(timestamp or "").strip()
+        for fmt in ("%Y%m%d_%H%M%S_%f", "%Y%m%d_%H%M%S"):
+            try:
+                dt = datetime.strptime(raw_timestamp, fmt)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+
+        raw_created_at = str(created_at or "").strip()
+        if raw_created_at:
+            try:
+                dt = datetime.fromisoformat(raw_created_at)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                pass
+
+        return raw_timestamp or "Unknown"
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -513,21 +533,20 @@ class BackupDialog(QDialog):
             timestamp = backup.get('timestamp', 'Unknown')
             version = backup.get('app_version', '?')
             include_db = "📊 DB포함" if backup.get('include_db') else "⚙ 설정만"
-            
-            # 날짜 포맷팅
-            try:
-                dt = datetime.strptime(timestamp, "%Y%m%d_%H%M%S")
-                date_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                date_str = timestamp
+            trigger_label = "🤖 자동" if str(backup.get("trigger", "manual")).lower() == "auto" else "👤 수동"
+            date_str = self.format_backup_timestamp(
+                str(timestamp),
+                created_at=str(backup.get("created_at", "")),
+            )
 
-            item_text = f"📁 {date_str} (v{version}) {include_db}"
+            item_text = f"📁 {date_str} (v{version}) {include_db} {trigger_label}"
             self.backup_list.addItem(item_text)
             self.backup_list.item(self.backup_list.count() - 1).setData(
                 Qt.ItemDataRole.UserRole,
                 {
                     "backup_name": backup.get("name", ""),
                     "include_db": bool(backup.get("include_db", False)),
+                    "trigger": str(backup.get("trigger", "manual")).lower(),
                 },
             )
     
