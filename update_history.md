@@ -1,6 +1,40 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Implementation Audit Adoption (2026-03-07)**:
+  - Worker lifecycle and tab transition hardening:
+    - `close_tab()` / `rename_tab()` now proactively cancel active fetch workers via `cleanup_worker(...)`.
+    - Rename flow now enforces: old worker cleanup -> tab state/key refresh -> new fetch.
+    - Tab title rendering unified through `_format_tab_title(...)` so icon + unread badge stay consistent.
+  - Restore atomicity and backup list durability:
+    - `apply_pending_restore_if_any()` switched to staging + rollback semantics.
+    - Validation/apply failure keeps pending restore file and rolls back already-touched files.
+    - `AutoBackup.get_backup_list()` now tolerates per-entry `backup_info.json` corruption and still returns healthy items.
+    - Backup entries now expose `is_corrupt` / `error`, and BackupDialog surfaces `손상됨` with `삭제/무시` branching.
+  - DB usage and cleanup safety:
+    - Added `DatabaseManager.connection(timeout=...)` official context manager.
+    - `mark_query_as_read(...)` no longer acquires nested DB connections; it now uses a single-connection path.
+    - Added `DatabaseManager.get_total_unread_count()` and switched tray unread tooltip to DB-total aggregation.
+    - `delete_old_news(...)` now excludes `pubDate_ts <= 0` rows to avoid deleting parse-failure records.
+  - Secret storage and config recovery:
+    - `app_settings` schema extended with `client_secret_enc` and `client_secret_storage`.
+    - On Windows, client secret is persisted with DPAPI-encrypted payload and plaintext is cleared.
+    - Legacy plaintext is auto-migrated on load; encrypted payload is preferred for runtime resolution.
+    - `load_config_file(...)` now supports `.backup` fallback recovery for damaged primary config.
+  - Documentation sync:
+    - Updated `README.md`, `claude.md`, and `gemini.md` for new DB access pattern, restore semantics, and secret storage fields.
+  - Packaging / repo hygiene:
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude changes were required for this pass.
+    - Updated `.gitignore` for runtime recovery leftovers (`.restore_stage_*/`, `*.db.corrupt_*`) to prevent accidental commits.
+  - Added/updated tests:
+    - Added `tests/test_config_secret_storage.py`
+    - Expanded:
+      - `tests/test_db_queries.py`
+      - `tests/test_pending_restore_strict.py`
+      - `tests/test_backup_restore_mode.py`
+      - `tests/test_risk_fixes.py`
+  - Validation:
+    - `python -m pytest -q` => `128 passed, 5 subtests passed`
 - **Implementation Audit Adoption (2026-03-06)**:
   - Backup retention policy refinement:
     - `AutoBackup.create_backup(..., trigger=...)` now records `auto` / `manual` source metadata.

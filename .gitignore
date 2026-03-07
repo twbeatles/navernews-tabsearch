@@ -49,3 +49,7 @@ backups/
 *.tmp
 *.temp
 *.swp
+
+# Runtime recovery leftovers
+.restore_stage_*/
+*.db.corrupt_*

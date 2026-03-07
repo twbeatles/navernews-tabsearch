@@ -4,6 +4,7 @@ import logging
 import os
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from queue import Queue
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -66,7 +67,16 @@ class DatabaseManager:
             with self._lock:
                 self._emergency_connections.add(id(conn))
             return conn
-    
+
+    @contextmanager
+    def connection(self, timeout: float = 10.0):
+        """Official context manager for pooled DB connection lifecycle."""
+        conn = self.get_connection(timeout=timeout)
+        try:
+            yield conn
+        finally:
+            self.return_connection(conn)
+
     def return_connection(self, conn):
         """연결 풀에 연결 반환 - 비상 연결 처리 개선"""
         if conn is None:
@@ -815,6 +825,19 @@ class DatabaseManager:
         finally:
             self.return_connection(conn)
 
+    def get_total_unread_count(self) -> int:
+        """Get unread count across all rows in news."""
+        conn = self.get_connection()
+        try:
+            with perf_timer("db.get_total_unread_count", "scope=all"):
+                row = conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()
+                return int(row[0]) if row else 0
+        except Exception as e:
+            logger.error(f"get_total_unread_count 오류: {e}")
+            return 0
+        finally:
+            self.return_connection(conn)
+
     def get_unread_counts_by_keywords(self, keywords: List[str]) -> Dict[str, int]:
         """여러 키워드의 미읽음 기사 개수를 한 번에 조회."""
         if not keywords:
@@ -912,11 +935,11 @@ class DatabaseManager:
             with conn:
                 affected = self._collect_affected_keyword_hashes(
                     conn,
-                    "n.is_bookmarked=0 AND n.pubDate_ts < ?",
+                    "n.is_bookmarked=0 AND n.pubDate_ts > 0 AND n.pubDate_ts < ?",
                     [cutoff],
                 )
                 cur = conn.execute(
-                    "DELETE FROM news WHERE is_bookmarked=0 AND pubDate_ts < ?", 
+                    "DELETE FROM news WHERE is_bookmarked=0 AND pubDate_ts > 0 AND pubDate_ts < ?",
                     (cutoff,)
                 )
                 deleted = int(cur.rowcount or 0)
@@ -1010,40 +1033,45 @@ class DatabaseManager:
         finally:
             self.return_connection(conn)
 
-    def mark_links_as_read(self, links: List[str]) -> int:
-        """지정한 링크 목록만 읽음 처리."""
-        if not links:
-            return 0
-
+    def _dedupe_links(self, links: List[str]) -> List[str]:
         deduped_links: List[str] = []
         for link in links:
             if isinstance(link, str) and link and link not in deduped_links:
                 deduped_links.append(link)
+        return deduped_links
 
+    def _mark_links_as_read_with_conn(self, conn: sqlite3.Connection, links: List[str]) -> int:
+        deduped_links = self._dedupe_links(links)
         if not deduped_links:
             return 0
 
-        conn = self.get_connection()
         updated_count = 0
-        chunk_size = 400  # SQLite variable limit(999) 대비 여유값
+        chunk_size = 400  # SQLite variable limit(999) safety margin
+        for idx in range(0, len(deduped_links), chunk_size):
+            chunk = deduped_links[idx : idx + chunk_size]
+            placeholders = ",".join(["?"] * len(chunk))
+            cursor = conn.execute(
+                f"UPDATE news SET is_read=1 WHERE is_read=0 AND link IN ({placeholders})",
+                chunk,
+            )
+            if cursor.rowcount and cursor.rowcount > 0:
+                updated_count += int(cursor.rowcount)
+        return updated_count
+
+    def mark_links_as_read(self, links: List[str]) -> int:
+        """Mark selected links as read."""
+        if not links:
+            return 0
+
+        conn = self.get_connection()
         try:
             with conn:
-                for idx in range(0, len(deduped_links), chunk_size):
-                    chunk = deduped_links[idx : idx + chunk_size]
-                    placeholders = ",".join(["?"] * len(chunk))
-                    cursor = conn.execute(
-                        f"UPDATE news SET is_read=1 WHERE is_read=0 AND link IN ({placeholders})",
-                        chunk,
-                    )
-                    if cursor.rowcount and cursor.rowcount > 0:
-                        updated_count += int(cursor.rowcount)
+                return self._mark_links_as_read_with_conn(conn, links)
         except Exception as e:
             logger.error(f"mark_links_as_read 오류: {e}")
             raise
         finally:
             self.return_connection(conn)
-
-        return updated_count
     
     def mark_all_as_read(self, keyword: str, only_bookmark: bool) -> int:
         """모든 기사 읽음 처리"""
@@ -1106,7 +1134,8 @@ class DatabaseManager:
             ]
             if not links:
                 return 0
-            return self.mark_links_as_read(links)
+            with conn:
+                return self._mark_links_as_read_with_conn(conn, links)
         except Exception as e:
             logger.error(f"mark_query_as_read 오류: {e}")
             raise

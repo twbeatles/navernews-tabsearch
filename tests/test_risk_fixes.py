@@ -119,6 +119,31 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         block = src[start:end]
         self.assertIn("cached = self._badge_unread_cache.get(keyword)", block)
 
+    def test_update_tray_tooltip_uses_db_total_unread_count(self):
+        src = self._read()
+        start = src.index("def update_tray_tooltip")
+        end = src.index("def show_window")
+        block = src[start:end]
+        self.assertIn("self.db.get_total_unread_count()", block)
+
+    def test_rename_tab_cleans_active_worker_and_uses_common_title_formatter(self):
+        src = self._read()
+        start = src.index("def rename_tab")
+        end = src.index("def on_tab_context_menu")
+        block = src[start:end]
+        self.assertIn("self._worker_registry.get_active_request_id(old_keyword)", block)
+        self.assertIn("self.cleanup_worker(", block)
+        self.assertIn("self._format_tab_title(new_keyword, unread_count=0)", block)
+
+    def test_close_tab_cleans_active_worker_before_widget_cleanup(self):
+        src = self._read()
+        start = src.index("def close_tab")
+        end = src.index("def rename_tab")
+        block = src[start:end]
+        self.assertIn("self._worker_registry.get_active_request_id(removed_keyword)", block)
+        self.assertIn("self.cleanup_worker(", block)
+        self.assertLess(block.index("self.cleanup_worker("), block.index("widget.cleanup()"))
+
 
 class TestStyleRiskFixes(unittest.TestCase):
     def test_tab_style_has_min_height_for_emoji_clipping(self):

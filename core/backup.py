@@ -6,7 +6,7 @@ import shutil
 import sqlite3
 import tempfile
 import traceback
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,46 @@ def _write_json_atomic(path: str, payload: Dict) -> None:
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def _atomic_copy_replace(src_path: str, dst_path: str) -> None:
+    directory = os.path.dirname(os.path.abspath(dst_path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".restore_", suffix=".tmp", dir=directory)
+    try:
+        os.close(fd)
+        shutil.copy2(src_path, tmp_path)
+        os.replace(tmp_path, dst_path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _snapshot_files_for_rollback(paths: List[str], staging_dir: str) -> Dict[str, Optional[str]]:
+    snapshots: Dict[str, Optional[str]] = {}
+    os.makedirs(staging_dir, exist_ok=True)
+    for idx, path in enumerate(paths):
+        if os.path.exists(path):
+            snapshot_path = os.path.join(staging_dir, f"rollback_{idx:03d}")
+            shutil.copy2(path, snapshot_path)
+            snapshots[path] = snapshot_path
+        else:
+            snapshots[path] = None
+    return snapshots
+
+
+def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
+    for target, snapshot in snapshots.items():
+        try:
+            if snapshot and os.path.exists(snapshot):
+                _atomic_copy_replace(snapshot, target)
+            elif os.path.exists(target):
+                os.remove(target)
+        except Exception as rollback_error:
+            logger.error("rollback failed for %s: %s", target, rollback_error)
 
 
 class AutoBackup:
@@ -188,26 +228,59 @@ class AutoBackup:
             logger.error(f"백업 정리 오류: {e}")
 
     def get_backup_list(self) -> List[Dict]:
-        backups = []
+        backups: List[Dict[str, Any]] = []
+        if not os.path.exists(self.backup_dir):
+            return backups
+
         try:
-            if not os.path.exists(self.backup_dir):
-                return backups
-
-            for name in os.listdir(self.backup_dir):
-                backup_path = os.path.join(self.backup_dir, name)
-                if os.path.isdir(backup_path):
-                    info_file = os.path.join(backup_path, "backup_info.json")
-                    if os.path.exists(info_file):
-                        with open(info_file, "r", encoding="utf-8") as f:
-                            info = json.load(f)
-                        info["name"] = name
-                        info["path"] = backup_path
-                        backups.append(info)
-
-            backups.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            backup_names = sorted(os.listdir(self.backup_dir), reverse=True)
         except Exception as e:
-            logger.error(f"백업 목록 조회 오류: {e}")
+            logger.error(f"failed to list backup directory: {e}")
+            return backups
 
+        for name in backup_names:
+            backup_path = os.path.join(self.backup_dir, name)
+            if not os.path.isdir(backup_path):
+                continue
+
+            item: Dict[str, Any] = {
+                "name": name,
+                "path": backup_path,
+                "timestamp": "",
+                "app_version": self.app_version,
+                "include_db": False,
+                "trigger": "manual",
+                "created_at": "",
+                "is_corrupt": False,
+                "error": "",
+            }
+            info_file = os.path.join(backup_path, "backup_info.json")
+            try:
+                if not os.path.exists(info_file):
+                    raise FileNotFoundError("backup_info.json is missing")
+
+                with open(info_file, "r", encoding="utf-8") as f:
+                    raw_info = json.load(f)
+                if not isinstance(raw_info, dict):
+                    raise ValueError("backup_info.json root is not a JSON object")
+
+                item["timestamp"] = str(raw_info.get("timestamp", "") or "")
+                item["app_version"] = str(raw_info.get("app_version", self.app_version) or self.app_version)
+                item["include_db"] = bool(raw_info.get("include_db", False))
+                trigger = str(raw_info.get("trigger", "manual") or "manual").strip().lower()
+                item["trigger"] = trigger if trigger in {"auto", "manual"} else "manual"
+                item["created_at"] = str(raw_info.get("created_at", "") or "")
+            except Exception as item_error:
+                item["is_corrupt"] = True
+                item["error"] = str(item_error)
+                logger.warning("corrupt backup metadata detected: %s (%s)", name, item_error)
+
+            backups.append(item)
+
+        backups.sort(
+            key=lambda x: str(x.get("timestamp", "")) or str(x.get("name", "")),
+            reverse=True,
+        )
         return backups
 
     def restore_backup(self, backup_name: str, restore_db: bool = True) -> bool:
@@ -246,7 +319,6 @@ class AutoBackup:
             traceback.print_exc()
             return False
 
-
 def apply_pending_restore_if_any(
     pending_file: str,
     config_file: str,
@@ -255,61 +327,77 @@ def apply_pending_restore_if_any(
     if not os.path.exists(pending_file):
         return False
 
-    def _discard_invalid_pending(reason: str) -> None:
-        logger.warning(reason)
-        try:
-            os.remove(pending_file)
-        except OSError as remove_err:
-            logger.warning(f"무효 복원 예약 파일 삭제 실패: {remove_err}")
-
     try:
         with open(pending_file, "r", encoding="utf-8") as f:
             payload = json.load(f)
     except Exception as e:
-        _discard_invalid_pending(f"무효 복원 예약 파일 파싱 실패: {e}")
+        logger.error("pending restore payload parse failed (file is kept): %s", e)
+        return False
+
+    if not isinstance(payload, dict):
+        logger.error("pending restore payload is not a JSON object (file is kept)")
+        return False
+
+    backup_name = str(payload.get("backup_name", "") or "").strip()
+    restore_db = bool(payload.get("restore_db", True))
+    backup_dir = payload.get("backup_dir") or os.path.join(
+        os.path.dirname(os.path.abspath(config_file)), AutoBackup.BACKUP_DIR
+    )
+    backup_path = os.path.join(str(backup_dir), backup_name)
+
+    if not backup_name or not os.path.isdir(backup_path):
+        logger.error("pending restore validation failed: backup path is invalid (file is kept)")
+        return False
+
+    cfg_backup = os.path.join(backup_path, os.path.basename(config_file))
+    db_backup = os.path.join(backup_path, os.path.basename(db_file))
+
+    if not os.path.exists(cfg_backup):
+        logger.error("pending restore validation failed: config backup missing (file is kept)")
+        return False
+
+    if restore_db and not os.path.exists(db_backup):
+        logger.error(
+            "pending restore validation failed: restore_db=true but DB backup missing (file is kept). backup=%s",
+            db_backup,
+        )
+        return False
+
+    rollback_targets = [config_file]
+    if restore_db:
+        rollback_targets.extend([db_file, f"{db_file}-wal", f"{db_file}-shm"])
+
+    staging_parent = os.path.dirname(os.path.abspath(config_file)) or "."
+    try:
+        with tempfile.TemporaryDirectory(prefix=".restore_stage_", dir=staging_parent) as staging_dir:
+            snapshots = _snapshot_files_for_rollback(
+                rollback_targets,
+                os.path.join(staging_dir, "snapshots"),
+            )
+
+            try:
+                _atomic_copy_replace(cfg_backup, config_file)
+
+                if restore_db:
+                    _atomic_copy_replace(db_backup, db_file)
+                    for suffix in ("-wal", "-shm"):
+                        src_sidecar = f"{db_backup}{suffix}"
+                        dst_sidecar = f"{db_file}{suffix}"
+                        if os.path.exists(src_sidecar):
+                            _atomic_copy_replace(src_sidecar, dst_sidecar)
+                        elif os.path.exists(dst_sidecar):
+                            os.remove(dst_sidecar)
+            except Exception as apply_error:
+                logger.error("pending restore apply failed, rolling back (file is kept): %s", apply_error)
+                _rollback_files_from_snapshot(snapshots)
+                return False
+    except Exception as e:
+        logger.error("pending restore staging failed (file is kept): %s", e)
         return False
 
     try:
-        backup_name = payload.get("backup_name", "")
-        restore_db = bool(payload.get("restore_db", True))
-        backup_dir = payload.get("backup_dir") or os.path.join(
-            os.path.dirname(os.path.abspath(config_file)), AutoBackup.BACKUP_DIR
-        )
-        backup_path = os.path.join(backup_dir, backup_name)
-        if not backup_name or not os.path.isdir(backup_path):
-            _discard_invalid_pending(
-                f"무효 복원 예약 파일: backup_name/backup_path 확인 필요 ({backup_name})"
-            )
-            return False
-
-        cfg_backup = os.path.join(backup_path, os.path.basename(config_file))
-        db_backup = os.path.join(backup_path, os.path.basename(db_file))
-
-        # Strict pre-validation: restore_db=True면 DB 백업 본체가 반드시 있어야 한다.
-        # 검증 실패 시 pending은 유지하여 사용자가 재시도/취소할 수 있게 한다.
-        if restore_db and not os.path.exists(db_backup):
-            logger.error(
-                "복원 예약 검증 실패: restore_db=true 이지만 DB 백업 파일이 없습니다. "
-                f"backup={db_backup}"
-            )
-            return False
-
-        if os.path.exists(cfg_backup):
-            shutil.copy2(cfg_backup, config_file)
-
-        if restore_db:
-            shutil.copy2(db_backup, db_file)
-
-            for suffix in ("-wal", "-shm"):
-                src_sidecar = f"{db_backup}{suffix}"
-                dst_sidecar = f"{db_file}{suffix}"
-                if os.path.exists(src_sidecar):
-                    shutil.copy2(src_sidecar, dst_sidecar)
-                elif os.path.exists(dst_sidecar):
-                    os.remove(dst_sidecar)
-
         os.remove(pending_file)
-        return True
-    except Exception as e:
-        logger.error(f"예약 복원 적용 실패 (apply_pending_restore_if_any failed): {e}")
-        return False
+    except OSError as remove_err:
+        logger.warning("restore applied but pending file delete failed: %s", remove_err)
+
+    return True

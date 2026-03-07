@@ -133,7 +133,7 @@ class TestBackupAndRestore(unittest.TestCase):
             self.assertFalse(Path(str(db) + '-wal').exists())
             self.assertFalse(Path(str(db) + '-shm').exists())
 
-    def test_invalid_pending_restore_is_discarded(self):
+    def test_invalid_pending_restore_is_kept_for_retry(self):
         with tempfile.TemporaryDirectory() as td:
             d = Path(td)
             cfg = d / 'config.json'
@@ -160,7 +160,7 @@ class TestBackupAndRestore(unittest.TestCase):
                 db_file=str(db),
             )
             self.assertFalse(applied)
-            self.assertFalse(pending.exists())
+            self.assertTrue(pending.exists())
 
 
 class TestDatabaseManager(unittest.TestCase):

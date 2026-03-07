@@ -523,23 +523,26 @@ class BackupDialog(QDialog):
         btn_close = QPushButton("닫기")
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
-    
     def load_backups(self):
         """백업 목록 로드"""
         self.backup_list.clear()
         backups = self.auto_backup.get_backup_list()
 
         for backup in backups:
-            timestamp = backup.get('timestamp', 'Unknown')
-            version = backup.get('app_version', '?')
-            include_db = "📊 DB포함" if backup.get('include_db') else "⚙ 설정만"
-            trigger_label = "🤖 자동" if str(backup.get("trigger", "manual")).lower() == "auto" else "👤 수동"
+            timestamp = backup.get("timestamp", "Unknown")
+            version = backup.get("app_version", "?")
+            include_db = "DB 포함" if backup.get("include_db") else "설정만"
+            trigger_label = "자동" if str(backup.get("trigger", "manual")).lower() == "auto" else "수동"
             date_str = self.format_backup_timestamp(
                 str(timestamp),
                 created_at=str(backup.get("created_at", "")),
             )
 
-            item_text = f"📁 {date_str} (v{version}) {include_db} {trigger_label}"
+            is_corrupt = bool(backup.get("is_corrupt", False))
+            if is_corrupt:
+                item_text = f"[손상됨] {date_str} (v{version})"
+            else:
+                item_text = f"{date_str} (v{version}) {include_db} {trigger_label}"
             self.backup_list.addItem(item_text)
             self.backup_list.item(self.backup_list.count() - 1).setData(
                 Qt.ItemDataRole.UserRole,
@@ -547,9 +550,11 @@ class BackupDialog(QDialog):
                     "backup_name": backup.get("name", ""),
                     "include_db": bool(backup.get("include_db", False)),
                     "trigger": str(backup.get("trigger", "manual")).lower(),
+                    "is_corrupt": is_corrupt,
+                    "error": str(backup.get("error", "") or ""),
                 },
             )
-    
+
     def create_backup(self):
         """백업 생성"""
         include_db = self.chk_include_db.isChecked()
@@ -560,7 +565,6 @@ class BackupDialog(QDialog):
             self.load_backups()
         else:
             QMessageBox.warning(self, "오류", "백업 생성에 실패했습니다.")
-    
     def restore_backup(self):
         """백업 복원 예약 (재시작 시 적용)"""
         current_item = self.backup_list.currentItem()
@@ -572,47 +576,73 @@ class BackupDialog(QDialog):
         if isinstance(item_meta, dict):
             backup_name = str(item_meta.get("backup_name", "")).strip()
             include_db_meta = item_meta.get("include_db")
+            is_corrupt = bool(item_meta.get("is_corrupt", False))
+            corrupt_error = str(item_meta.get("error", "") or "")
         else:
             backup_name = str(item_meta or "").strip()
             include_db_meta = None
+            is_corrupt = False
+            corrupt_error = ""
 
         if not backup_name:
             QMessageBox.warning(self, "오류", "선택한 백업 정보를 읽을 수 없습니다.")
             return
 
+        if is_corrupt:
+            dialog = QMessageBox(self)
+            dialog.setWindowTitle("손상된 백업")
+            dialog.setIcon(QMessageBox.Icon.Warning)
+            detail = f"\n\n오류 정보: {corrupt_error}" if corrupt_error else ""
+            dialog.setText(f"'{backup_name}' 항목은 손상되어 복원할 수 없습니다.{detail}")
+            btn_delete = dialog.addButton("삭제", QMessageBox.ButtonRole.AcceptRole)
+            dialog.addButton("무시", QMessageBox.ButtonRole.RejectRole)
+            dialog.exec()
+
+            if dialog.clickedButton() == btn_delete:
+                backup_path = os.path.join(self.auto_backup.backup_dir, backup_name)
+                try:
+                    import shutil
+                    shutil.rmtree(backup_path, ignore_errors=True)
+                    self.load_backups()
+                    QMessageBox.information(self, "완료", "손상된 백업 항목을 삭제했습니다.")
+                except Exception as e:
+                    QMessageBox.warning(self, "오류", f"삭제 실패: {str(e)}")
+            return
+
         if isinstance(include_db_meta, bool):
             restore_db = include_db_meta
         else:
-            # 레거시/메타 누락 백업 fallback: 백업 폴더에 DB 파일 존재 여부로 판별.
             db_name = os.path.basename(getattr(self.auto_backup, "db_file", "news_database.db"))
             db_backup_path = os.path.join(self.auto_backup.backup_dir, backup_name, db_name)
             restore_db = os.path.exists(db_backup_path)
 
         restore_scope = "설정 + 데이터베이스" if restore_db else "설정만"
         restore_notice = (
-            "⚠️ 현재 설정과 데이터가 덮어씌워집니다."
+            "주의: 현재 설정과 데이터가 덮어써집니다."
             if restore_db
-            else "⚠️ 현재 설정이 덮어씌워집니다. 데이터베이스는 변경되지 않습니다."
+            else "주의: 현재 설정만 덮어써집니다. 데이터베이스는 변경되지 않습니다."
         )
 
         reply = QMessageBox.question(
-            self, "백업 복원",
+            self,
+            "백업 복원",
             f"'{backup_name}' 백업을 복원하시겠습니까?\n\n"
             f"복원 범위: {restore_scope}\n"
             f"{restore_notice}\n"
-            "복원 후 프로그램을 재시작해야 합니다.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            "복원은 프로그램을 재시작해야 적용됩니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
             if self.auto_backup.schedule_restore(backup_name, restore_db=restore_db):
                 QMessageBox.information(
-                    self, "완료", 
-                    "복원이 예약되었습니다.\n프로그램을 재시작하면 백업이 적용됩니다."
+                    self,
+                    "완료",
+                    "복원을 예약했습니다.\n프로그램을 재시작하면 백업이 적용됩니다.",
                 )
             else:
                 QMessageBox.warning(self, "오류", "백업 복원 예약에 실패했습니다.")
-    
+
     def delete_backup(self):
         """백업 삭제"""
         current_item = self.backup_list.currentItem()
@@ -630,11 +660,12 @@ class BackupDialog(QDialog):
             return
 
         reply = QMessageBox.question(
-            self, "백업 삭제",
+            self,
+            "백업 삭제",
             f"'{backup_name}' 백업을 삭제하시겠습니까?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        
+
         if reply == QMessageBox.StandardButton.Yes:
             backup_path = os.path.join(self.auto_backup.backup_dir, backup_name)
             try:
@@ -643,7 +674,7 @@ class BackupDialog(QDialog):
                 self.load_backups()
             except Exception as e:
                 QMessageBox.warning(self, "오류", f"삭제 실패: {str(e)}")
-    
+
     def open_backup_folder(self):
         """백업 폴더 열기"""
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.auto_backup.backup_dir))

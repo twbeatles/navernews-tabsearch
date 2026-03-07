@@ -16,6 +16,9 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
     if icon_path.exists():
         datas.append((str(icon_path), '.'))
 
+# 2026-03-07 review:
+# - DPAPI-based secret storage uses stdlib (`ctypes`, `base64`) only.
+# - No additional hidden import/exclude change is required for this pass.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [
     'PyQt6.QtWidgets',

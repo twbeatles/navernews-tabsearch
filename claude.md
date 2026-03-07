@@ -145,6 +145,8 @@ navernews-tabsearch/
     "app_settings": {
         "client_id": "네이버 API Client ID",
         "client_secret": "네이버 API Client Secret",
+        "client_secret_enc": "",
+        "client_secret_storage": "plain",   // plain | dpapi
         "theme_index": 0,              // 0=라이트, 1=다크
         "refresh_interval_index": 2,   // 콤보박스 인덱스
         "notification_enabled": true,
@@ -200,8 +202,8 @@ self.toast_queue.add("API 키를 확인하세요", ToastType.WARNING)
 ### DatabaseManager 사용
 
 ```python
-# ✅ 안전한 DB 접근
-with self.db_manager.get_connection() as conn:
+# ✅ 안전한 DB 접근 (권장)
+with self.db_manager.connection() as conn:
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM articles WHERE keyword=?", (keyword,))
     results = cursor.fetchall()
@@ -297,10 +299,12 @@ self.setOpenLinks(False)
 ### 새 기능 추가 시
 1. 관련 클래스 위치 파악 (위 테이블 참조)
 2. 시그널/슬롯 패턴 준수
-3. 설정 항목이 필요하면 `news_scraper_config.json` 스키마 확장
+3. 설정 항목이 필요하면 
+ews_scraper_config.json` 스키마 확장
 
 ### 버그 수정 시
-1. `news_scraper.log` 확인
+1. 
+ews_scraper.log` 확인
 2. 관련 예외 처리 강화
 3. 토스트 메시지로 사용자 알림
 
@@ -420,6 +424,8 @@ css = AppStyle.HTML_TEMPLATE.format(**colors)
     "app_settings": {
         "client_id": "네이버 클라이언트 ID",
         "client_secret": "네이버 클라이언트 시크릿",
+        "client_secret_enc": "",
+        "client_secret_storage": "plain",   // plain | dpapi
         "theme_index": 0,              // 0=라이트, 1=다크
         "refresh_interval_index": 2,   // 0=10분, 1=30분, 2=1시간...
         "notification_enabled": true,  // 데스크톱 알림
@@ -622,7 +628,8 @@ class AppStyle:
 
 ## 💡 팁
 
-1. **중간 모듈 분리 구조**: 엔트리포인트는 `news_scraper_pro.py`이며 핵심 로직은 `query_parser.py`, `config_store.py`, `backup_manager.py`, `workers.py`, `worker_registry.py`로 분리됨
+1. **중간 모듈 분리 구조**: 엔트리포인트는 
+ews_scraper_pro.py`이며 핵심 로직은 `query_parser.py`, `config_store.py`, `backup_manager.py`, `workers.py`, `worker_registry.py`로 분리됨
 2. **한국어 환경**: UI 텍스트, 로그, 주석 모두 한국어
 3. **Windows 특화**: 시스템 트레이, 자동 시작 등 Windows 전용 기능 포함
 4. **성능 최적화**: LRU 캐시, 연결 풀, 비동기 처리, 디바운싱 적용됨
@@ -633,7 +640,8 @@ class AppStyle:
 ## v32.7.0 → v32.7.1 Refactor Update
 
 ### Architecture Baseline
-- Entrypoint: `news_scraper_pro.py` (thin compatibility layer + re-export)
+- Entrypoint: 
+ews_scraper_pro.py` (thin compatibility layer + re-export)
 - Core modules: `core/*` (16개 모듈)
 - UI modules: `ui/*` (8개 모듈)
 - Compatibility wrappers: root-level `query_parser.py`, `config_store.py`, `backup_manager.py`, `worker_registry.py`, `workers.py`, `database_manager.py`, `styles.py`
@@ -646,7 +654,8 @@ class AppStyle:
 - 자동 시작 최소화 옵션 변경 시 레지스트리 재등록
 
 ### v32.7.2 추가 변경사항
-- `get_statistics()['duplicates']`를 `news_keywords.is_duplicate` 기준으로 보정
+- `get_statistics()['duplicates']`를 
+ews_keywords.is_duplicate` 기준으로 보정
 - 설정 가져오기 시 타입/범위 정규화(`theme_index`, `refresh_interval_index`, `api_timeout`, bool 필드, `alert_keywords`)
 - 설정 가져오기 `keyword_groups` 정책을 덮어쓰기에서 병합+중복제거로 변경
 - 탭 리네임 시 fetch key 변경 여부에 따라 페이지네이션 상태 안전 초기화
@@ -666,7 +675,11 @@ class AppStyle:
 - 설정 창의 데이터 정리 완료 후 메인 UI 동기화 훅(`on_database_maintenance_completed`) 추가
 - `DatabaseManager.mark_query_as_read(...)` 추가로 `탭 전체` 읽음 처리 시 제외어 조건 보존
 - `DatabaseManager.get_top_publishers(..., exclude_words=...)` 확장으로 탭 분석 제외어 반영
-
+- DatabaseManager.connection(timeout=...) 공식 컨텍스트 매니저 추가로 문서/구현 접근 패턴 일치
+- DatabaseManager.get_total_unread_count() 추가로 트레이 미읽음 집계를 DB 총계 기준으로 계산
+- pending restore 적용을 스테이징+롤백 방식으로 강화 (검증/적용 실패 시 pending 유지)
+- AutoBackup.get_backup_list() 항목 메타 확장: is_corrupt, error 필드 제공
+- BackupDialog에서 손상 백업 항목을 손상됨으로 표시하고 삭제/무시 분기 제공
 ### Compatibility Contract
 - Keep `python news_scraper_pro.py` launch behavior.
 - Keep `import news_scraper_pro as app` compatibility.
@@ -695,7 +708,8 @@ class AppStyle:
   - strict `restore_backup(restore_db=True)` DB-file requirement
   - `-wal/-shm` sidecar sync policy aligned with pending-restore behavior
 - Load-more terminal-state guard in `ui/main_window.py`:
-  - `next_start = last_api_start_index + 100`
+  - 
+ext_start = last_api_start_index + 100`
   - `has_more = next_start <= min(1000, total)`
 - `ext` read policy unified in `ui/news_tab.py` via shared helper (open implies read).
 - Test entrypoint alignment:
@@ -714,7 +728,8 @@ class AppStyle:
 - `pytest -q` => `83 passed`
 
 ### Packaging
-- `news_scraper_pro.spec` reviewed for this pass; no change required.
+- 
+ews_scraper_pro.spec` reviewed for this pass; no change required.
 
 ---
 
@@ -725,7 +740,8 @@ class AppStyle:
   - API request query and fetch-dedupe key
   - all positive keywords joined with spaces
 - `parse_tab_query(raw)`:
-  - DB grouping key (`news_keywords.keyword`)
+  - DB grouping key (
+ews_keywords.keyword`)
   - first positive keyword only
 
 ### Tray + Minimized Startup
@@ -739,7 +755,8 @@ class AppStyle:
 - Guard test: `tests/test_version_history_guard.py`.
 
 ### Spec Sync
-- `news_scraper_pro.spec` must include `PyQt6.QtNetwork` when bootstrap imports `QLocalServer` / `QLocalSocket`.
+- 
+ews_scraper_pro.spec` must include `PyQt6.QtNetwork` when bootstrap imports `QLocalServer` / `QLocalSocket`.
 - Keep `PyQt6.QtNetwork` in `hiddenimports` and do not place it in `excludes`.
 
 ---
@@ -760,7 +777,8 @@ class AppStyle:
   - `MainApp.update_all_tab_badges()` computes per-tab unread count with `exclude_words` when needed.
   - cache key switched to tab keyword to avoid collision.
 - Packaging sync:
-  - `news_scraper_pro.spec` removed forced `chardet` hidden import to align with requests optional dependency path.
+  - 
+ews_scraper_pro.spec` removed forced `chardet` hidden import to align with requests optional dependency path.
 
 ### Added/Updated Tests
 - Added: `tests/test_backup_restore_mode.py`
@@ -804,4 +822,38 @@ class AppStyle:
 - `python -m pytest -q` => `112 passed, 5 subtests passed`
 
 ### Packaging
-- `news_scraper_pro.spec` reviewed again after this pass; no additional changes required.
+- 
+ews_scraper_pro.spec` reviewed again after this pass; no additional changes required.
+
+---
+
+## 2026-03-07 Addendum (Audit Plan Full Implementation)
+
+### Implemented
+- Worker/tab lifecycle hardening:
+  - `close_tab()` and `rename_tab()` now clean up active workers before tab state mutation.
+  - Tab title rendering unified via `_format_tab_title(...)` to keep icon + unread badge consistent.
+- Restore/backup durability:
+  - `apply_pending_restore_if_any(...)` now applies staged copy + rollback semantics.
+  - Corrupt backup metadata entries are exposed with `is_corrupt` / `error` and handled in UI (`손상됨`, `삭제/무시`).
+- DB safety updates:
+  - `DatabaseManager.connection(timeout=...)` context manager added.
+  - `mark_query_as_read(...)` moved to single-connection path (no nested acquisition).
+  - `delete_old_news(...)` excludes `pubDate_ts <= 0`.
+  - Tray unread tooltip now uses `DatabaseManager.get_total_unread_count()`.
+- Secret storage / config recovery:
+  - Added `client_secret_enc`, `client_secret_storage` schema fields.
+  - Windows path uses DPAPI encrypted payload with plaintext migration on load.
+  - Config load now supports `.backup` fallback recovery.
+
+### Packaging / Spec Review
+- `news_scraper_pro.spec` re-reviewed for this pass.
+- No new hidden import/exclude changes required; DPAPI path relies on stdlib (`ctypes`, `base64`).
+
+### Repo Hygiene
+- `.gitignore` updated to ignore runtime recovery leftovers:
+  - `.restore_stage_*/`
+  - `*.db.corrupt_*`
+
+### Validation
+- `python -m pytest -q` => `128 passed, 5 subtests passed`

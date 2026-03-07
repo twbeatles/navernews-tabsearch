@@ -1,8 +1,14 @@
+import base64
 import copy
+import ctypes
 import json
+import logging
 import os
+import sys
 import tempfile
 from typing import Any, Dict, List, Tuple, TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 class WindowGeometry(TypedDict):
@@ -15,6 +21,8 @@ class WindowGeometry(TypedDict):
 class AppSettings(TypedDict):
     client_id: str
     client_secret: str
+    client_secret_enc: str
+    client_secret_storage: str
     theme_index: int
     refresh_interval_index: int
     notification_enabled: bool
@@ -41,6 +49,8 @@ DEFAULT_CONFIG: AppConfig = {
     "app_settings": {
         "client_id": "",
         "client_secret": "",
+        "client_secret_enc": "",
+        "client_secret_storage": "plain",
         "theme_index": 0,
         "refresh_interval_index": 2,
         "notification_enabled": True,
@@ -64,6 +74,179 @@ DEFAULT_CONFIG: AppConfig = {
     "keyword_groups": {},
     "pagination_state": {},
 }
+
+
+def _is_windows_platform() -> bool:
+    return sys.platform == "win32"
+
+
+def _normalize_secret_storage(value: Any) -> str:
+    storage = str(value or "").strip().lower()
+    if storage == "dpapi":
+        return "dpapi"
+    return "plain"
+
+
+def _dpapi_encrypt_text(text: str) -> str:
+    if not _is_windows_platform():
+        return ""
+
+    plain = str(text or "")
+    if not plain:
+        return ""
+
+    try:
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_byte)),
+            ]
+
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+
+        source = plain.encode("utf-8")
+        source_buffer = (ctypes.c_byte * len(source)).from_buffer_copy(source)
+        in_blob = DATA_BLOB(
+            len(source),
+            ctypes.cast(source_buffer, ctypes.POINTER(ctypes.c_byte)),
+        )
+        out_blob = DATA_BLOB()
+
+        ok = crypt32.CryptProtectData(
+            ctypes.byref(in_blob),
+            None,
+            None,
+            None,
+            None,
+            0,
+            ctypes.byref(out_blob),
+        )
+        if not ok:
+            return ""
+
+        try:
+            encrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+            return base64.b64encode(encrypted).decode("ascii")
+        finally:
+            if out_blob.pbData:
+                kernel32.LocalFree(out_blob.pbData)
+    except Exception as e:
+        logger.warning("DPAPI 암호화 실패: %s", e)
+        return ""
+
+
+def _dpapi_decrypt_text(payload: str) -> str:
+    if not _is_windows_platform():
+        return ""
+
+    encoded = str(payload or "").strip()
+    if not encoded:
+        return ""
+
+    try:
+        raw = base64.b64decode(encoded)
+    except Exception:
+        return ""
+
+    if not raw:
+        return ""
+
+    try:
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_byte)),
+            ]
+
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+
+        source_buffer = (ctypes.c_byte * len(raw)).from_buffer_copy(raw)
+        in_blob = DATA_BLOB(
+            len(raw),
+            ctypes.cast(source_buffer, ctypes.POINTER(ctypes.c_byte)),
+        )
+        out_blob = DATA_BLOB()
+
+        ok = crypt32.CryptUnprotectData(
+            ctypes.byref(in_blob),
+            None,
+            None,
+            None,
+            None,
+            0,
+            ctypes.byref(out_blob),
+        )
+        if not ok:
+            return ""
+
+        try:
+            decrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+            return decrypted.decode("utf-8")
+        finally:
+            if out_blob.pbData:
+                kernel32.LocalFree(out_blob.pbData)
+    except Exception as e:
+        logger.warning("DPAPI 복호화 실패: %s", e)
+        return ""
+
+
+def encode_client_secret_for_storage(client_secret: str) -> Dict[str, str]:
+    plain = str(client_secret or "").strip()
+    if not plain:
+        return {
+            "client_secret": "",
+            "client_secret_enc": "",
+            "client_secret_storage": "plain",
+        }
+
+    if _is_windows_platform():
+        encrypted = _dpapi_encrypt_text(plain)
+        if encrypted:
+            return {
+                "client_secret": "",
+                "client_secret_enc": encrypted,
+                "client_secret_storage": "dpapi",
+            }
+
+    return {
+        "client_secret": plain,
+        "client_secret_enc": "",
+        "client_secret_storage": "plain",
+    }
+
+
+def resolve_client_secret_for_runtime(settings: Dict[str, Any]) -> Tuple[str, bool]:
+    plain = str(settings.get("client_secret", "") or "")
+    encrypted = str(settings.get("client_secret_enc", "") or "")
+    storage = _normalize_secret_storage(settings.get("client_secret_storage", "plain"))
+
+    if _is_windows_platform() and encrypted:
+        if storage == "dpapi":
+            decrypted = _dpapi_decrypt_text(encrypted)
+            if decrypted:
+                # Encrypted secret exists; clear legacy plaintext on next save.
+                return decrypted, bool(plain)
+            # Decryption failed: fallback to legacy plaintext when available.
+            if plain:
+                return plain, True
+            return "", False
+
+        # Unknown storage metadata with encrypted payload: try decrypting defensively.
+        decrypted = _dpapi_decrypt_text(encrypted)
+        if decrypted:
+            return decrypted, True
+
+    if _is_windows_platform() and plain:
+        # Legacy plaintext on Windows should migrate to DPAPI.
+        return plain, True
+
+    return plain, False
 
 
 def _to_bool(value: Any, default: bool) -> bool:
@@ -318,6 +501,12 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         app_cfg = cfg["app_settings"]
         app_cfg["client_id"] = str(app_raw.get("client_id", app_cfg["client_id"]))
         app_cfg["client_secret"] = str(app_raw.get("client_secret", app_cfg["client_secret"]))
+        app_cfg["client_secret_enc"] = str(
+            app_raw.get("client_secret_enc", app_cfg["client_secret_enc"])
+        )
+        app_cfg["client_secret_storage"] = _normalize_secret_storage(
+            app_raw.get("client_secret_storage", app_cfg["client_secret_storage"])
+        )
         app_cfg["theme_index"] = max(0, min(1, _to_int(app_raw.get("theme_index"), app_cfg["theme_index"])))
         app_cfg["refresh_interval_index"] = max(
             0,
@@ -361,6 +550,10 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     app_cfg = cfg["app_settings"]
     app_cfg["client_id"] = str(raw.get("id", app_cfg["client_id"]))
     app_cfg["client_secret"] = str(raw.get("secret", app_cfg["client_secret"]))
+    app_cfg["client_secret_enc"] = str(raw.get("client_secret_enc", app_cfg["client_secret_enc"]))
+    app_cfg["client_secret_storage"] = _normalize_secret_storage(
+        raw.get("client_secret_storage", app_cfg["client_secret_storage"])
+    )
     app_cfg["theme_index"] = max(0, min(1, _to_int(raw.get("theme"), app_cfg["theme_index"])))
     app_cfg["refresh_interval_index"] = max(
         0, min(5, _to_int(raw.get("interval"), app_cfg["refresh_interval_index"]))
@@ -387,11 +580,50 @@ def load_config_file(path: str) -> AppConfig:
     if not os.path.exists(path):
         return default_config()
 
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    if not isinstance(raw, dict):
-        return default_config()
-    return normalize_loaded_config(raw)
+    def _load_raw_json(file_path: str) -> Dict[str, Any]:
+        with open(file_path, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        if not isinstance(loaded, dict):
+            raise ValueError(f"config root is not dict: {type(loaded).__name__}")
+        return loaded
+
+    raw: Dict[str, Any]
+    try:
+        raw = _load_raw_json(path)
+    except Exception as original_error:
+        backup_path = f"{path}.backup"
+        if os.path.exists(backup_path):
+            try:
+                backup_raw = _load_raw_json(backup_path)
+                recovered = normalize_loaded_config(backup_raw)
+                save_config_file_atomic(path, recovered)
+                raw = backup_raw
+                logger.warning(
+                    "설정 파일 복구 fallback 적용: %s -> %s",
+                    backup_path,
+                    path,
+                )
+            except Exception as backup_error:
+                logger.error(
+                    "설정 파일 복구 fallback 실패: original=%s, backup=%s",
+                    original_error,
+                    backup_error,
+                )
+                raise original_error
+        else:
+            raise
+
+    cfg = normalize_loaded_config(raw)
+    app_settings = cfg.get("app_settings", {})
+    secret_value, needs_migration = resolve_client_secret_for_runtime(app_settings)
+    if needs_migration and secret_value and _is_windows_platform():
+        encoded_secret = encode_client_secret_for_storage(secret_value)
+        app_settings.update(encoded_secret)
+        try:
+            save_config_file_atomic(path, cfg)
+        except Exception as e:
+            logger.warning("DPAPI 마이그레이션 저장 실패: %s", e)
+    return cfg
 
 
 def save_config_file_atomic(path: str, config: AppConfig) -> None:

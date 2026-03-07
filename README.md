@@ -55,6 +55,15 @@
 - 설정 창의 데이터 정리/전체 삭제 완료 후 열린 탭/북마크/배지/트레이 툴팁을 즉시 동기화
 - `모두 읽음 -> 탭 전체`가 제외어(`exclude_words`)를 포함한 현재 탭 의미를 유지하도록 보정
 - 언론사 분석이 탭의 제외어 조건까지 반영하도록 집계 경로를 확장
+- 탭 닫기/리네임 시 활성 fetch 워커를 먼저 정리하여 stale 콜백 반영을 방지
+- 탭 타이틀 구성(아이콘+배지)을 `_format_tab_title(...)`로 일원화
+- pending restore 적용을 스테이징+롤백 방식으로 전환하여 부분 적용을 방지
+- 손상된 백업 메타(`backup_info.json`)가 있어도 정상 백업 항목은 계속 표시
+- 손상 백업 항목은 UI에서 `손상됨`으로 표시하고 `삭제/무시` 선택 제공
+- 설정의 `client_secret` 저장은 Windows에서 DPAPI 암호화(`client_secret_enc`) 우선 사용
+- 설정 로드 실패 시 `news_scraper_config.json.backup` 자동 복구 fallback 지원
+- 자동 정리(`delete_old_news`)는 `pubDate_ts <= 0` 레코드를 삭제 대상에서 제외
+- 트레이 미읽음 수는 탭 캐시 합산 대신 DB 총계(`get_total_unread_count`) 기준으로 계산
 
 ## 프로젝트 구조
 
@@ -169,6 +178,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 감사 반영(2026-03-02)에서는 단일 인스턴스 IPC(`QLocalServer/QLocalSocket`) 경로 보호를 위해 `PyQt6.QtNetwork`를 `.spec`에 명시 반영했습니다.
 - v32.7.2 감사 후속(2026-03-03)에서는 requests optional 경로와 정합성을 맞추기 위해 `.spec`의 강제 hidden import에서 `chardet`를 제거했습니다.
 - v32.7.2 감사 후속 2차(2026-03-06)에서는 백업 정책/탭 의미 보존/문서 정합성 보강만 포함하며 `.spec` 추가 수정은 필요하지 않습니다.
+- v32.7.2 감사 후속 3차(2026-03-07)에서도 `.spec`을 재검토했으며, DPAPI 비밀값 저장 전환은 표준 라이브러리 기반(`ctypes`, `base64`)이라 추가 hidden import 수정이 필요하지 않습니다.
 
 ## 네이버 API 키 설정
 
@@ -203,6 +213,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
 - 백업 복원 예약은 선택한 백업의 `include_db` 메타를 기준으로 복원 범위(`설정만`/`설정+DB`)를 자동 적용합니다.
 - 백업 메타의 `trigger`는 `auto`/`manual` 값을 가지며, 자동 시작 백업은 수동 백업과 별도 보존 정책으로 관리됩니다.
+- `app_settings`는 `client_secret_enc`, `client_secret_storage` 필드를 지원하며 Windows에서는 평문 `client_secret`를 비우고 암호문을 저장합니다.
+- pending restore 실패(검증/적용 실패) 시 pending 파일은 유지되며, 적용 중 오류가 나면 변경 파일을 롤백합니다.
 
 예시:
 
@@ -215,10 +227,13 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 ```
 
 공개 API 참고:
+- `DatabaseManager.connection(timeout: float = 10.0)` 컨텍스트 매니저를 제공하며, 권장 DB 접근 패턴입니다.
+- `DatabaseManager.get_total_unread_count() -> int`를 통해 전체 미읽음 수를 직접 조회할 수 있습니다.
 - `DatabaseManager.delete_link(link: str) -> bool`가 추가되어 UI 삭제 경로에서 중복 플래그 재계산을 일원화합니다.
 - `DatabaseManager.count_news(..., exclude_words: Optional[List[str]] = None)`가 확장되어 미읽음 배지 집계 시 제외어 조건을 반영할 수 있습니다.
 - `DatabaseManager.mark_query_as_read(keyword: str, exclude_words: Optional[List[str]] = None, only_bookmark: bool = False) -> int`가 추가되어 탭 전체 읽음 처리 시 제외어 조건을 보존합니다.
 - `DatabaseManager.get_top_publishers(keyword: Optional[str] = None, limit: int = 10, exclude_words: Optional[List[str]] = None)`가 확장되어 탭 분석에서 제외어 조건을 반영할 수 있습니다.
+- `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error` 메타를 포함해 UI가 손상 항목을 분리 표시할 수 있습니다.
 
 ## 키워드 입력 규칙
 

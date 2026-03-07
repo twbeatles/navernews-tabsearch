@@ -1,7 +1,8 @@
-﻿import tempfile
+import tempfile
 import unittest
 import sqlite3
 from pathlib import Path
+from unittest import mock
 
 import news_scraper_pro as app
 
@@ -333,4 +334,60 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(rows[0]["link"], "https://example.com/all-1")
         self.assertEqual(int(rows[0]["is_duplicate"]), 0)
         self.assertEqual(self.mgr.get_statistics()["duplicates"], 0)
+
+    def test_connection_context_manager_releases_connection(self):
+        with self.mgr.connection() as conn:
+            row = conn.execute("SELECT 1").fetchone()
+            self.assertEqual(int(row[0]), 1)
+
+        conn = self.mgr.get_connection()
+        try:
+            row = conn.execute("SELECT 1").fetchone()
+            self.assertEqual(int(row[0]), 1)
+        finally:
+            self.mgr.return_connection(conn)
+
+    def test_mark_query_as_read_does_not_call_mark_links_as_read(self):
+        self.mgr.upsert_news([self._make_item(300, "2026-01-03T09:00:00")], "AI")
+
+        with mock.patch.object(
+            self.mgr,
+            "mark_links_as_read",
+            side_effect=AssertionError("mark_links_as_read should not be called"),
+        ):
+            updated = self.mgr.mark_query_as_read("AI")
+        self.assertEqual(updated, 1)
+
+    def test_delete_old_news_skips_pubdate_parse_failure_rows(self):
+        stale = {
+            "title": "stale",
+            "description": "old",
+            "link": "https://example.com/stale",
+            "pubDate": "2020-01-01T09:00:00",
+            "publisher": "example.com",
+        }
+        bad_date = {
+            "title": "bad-date",
+            "description": "parse failed",
+            "link": "https://example.com/bad-date",
+            "pubDate": "invalid-date-value",
+            "publisher": "example.com",
+        }
+        self.mgr.upsert_news([stale, bad_date], "AI")
+
+        deleted = self.mgr.delete_old_news(30)
+        self.assertEqual(deleted, 1)
+
+        rows = self.mgr.fetch_news("AI")
+        links = {row["link"] for row in rows}
+        self.assertIn("https://example.com/bad-date", links)
+        self.assertNotIn("https://example.com/stale", links)
+
+    def test_get_total_unread_count_matches_read_updates(self):
+        self.mgr.upsert_news([self._make_item(401, "2026-01-01T09:00:00")], "AI")
+        self.mgr.upsert_news([self._make_item(402, "2026-01-02T09:00:00")], "ECON")
+        self.assertEqual(self.mgr.get_total_unread_count(), 2)
+
+        self.assertTrue(self.mgr.update_status("https://example.com/401", "is_read", 1))
+        self.assertEqual(self.mgr.get_total_unread_count(), 1)
 

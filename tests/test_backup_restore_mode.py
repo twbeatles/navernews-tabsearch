@@ -148,11 +148,114 @@ class TestBackupRestoreMode(unittest.TestCase):
 
         self.assertEqual(dialog.backup_list.count(), 1)
         self.assertIn("2026-03-06 10:15:30", dialog.backup_list.item(0).text)
-        self.assertIn("🤖 자동", dialog.backup_list.item(0).text)
+        self.assertIn("자동", dialog.backup_list.item(0).text)
         self.assertEqual(
             dialog.backup_list.item(0).data(None),
-            {"backup_name": "backup_1", "include_db": True, "trigger": "auto"},
+            {
+                "backup_name": "backup_1",
+                "include_db": True,
+                "trigger": "auto",
+                "is_corrupt": False,
+                "error": "",
+            },
         )
+
+    def test_get_backup_list_keeps_valid_entries_when_one_is_corrupt(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "news.sqlite"
+            cfg.write_text("{}", encoding="utf-8")
+            db.write_text("", encoding="utf-8")
+
+            auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
+            valid_path = auto_backup.create_backup(include_db=False, trigger="manual")
+            self.assertIsNotNone(valid_path)
+
+            corrupt_dir = Path(auto_backup.backup_dir) / "backup_corrupt_meta"
+            corrupt_dir.mkdir(parents=True, exist_ok=True)
+            (corrupt_dir / "backup_info.json").write_text("{broken-json", encoding="utf-8")
+
+            backups = auto_backup.get_backup_list()
+            by_name = {entry["name"]: entry for entry in backups}
+
+            self.assertIn(Path(valid_path).name, by_name)
+            self.assertFalse(bool(by_name[Path(valid_path).name].get("is_corrupt")))
+            self.assertIn("backup_corrupt_meta", by_name)
+            self.assertTrue(bool(by_name["backup_corrupt_meta"].get("is_corrupt")))
+            self.assertIn("error", by_name["backup_corrupt_meta"])
+
+    def test_load_backups_marks_corrupt_items(self):
+        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        auto_backup.backups = [
+            {
+                "name": "backup_broken",
+                "timestamp": "20260307_010203_000000",
+                "app_version": "32.7.2",
+                "include_db": False,
+                "trigger": "manual",
+                "created_at": "2026-03-07T01:02:03",
+                "is_corrupt": True,
+                "error": "invalid json",
+            }
+        ]
+        dialog = _DummyDialog(_FakeListWidget(), auto_backup)
+
+        BackupDialog.load_backups(dialog)
+
+        self.assertEqual(dialog.backup_list.count(), 1)
+        self.assertIn("손상됨", dialog.backup_list.item(0).text)
+        self.assertEqual(
+            dialog.backup_list.item(0).data(None),
+            {
+                "backup_name": "backup_broken",
+                "include_db": False,
+                "trigger": "manual",
+                "is_corrupt": True,
+                "error": "invalid json",
+            },
+        )
+
+    def test_restore_backup_corrupt_item_delete_branch(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            backup_name = "backup_broken"
+            backup_path = root / backup_name
+            backup_path.mkdir(parents=True, exist_ok=True)
+
+            auto_backup = _FakeAutoBackup(backup_dir=str(root), db_file=str(root / "news_database.db"))
+            dialog = _DummyDialog(
+                _FakeBackupList(
+                    _FakeItem(
+                        {
+                            "backup_name": backup_name,
+                            "include_db": False,
+                            "is_corrupt": True,
+                            "error": "bad metadata",
+                        }
+                    )
+                ),
+                auto_backup,
+            )
+            dialog.load_backups = mock.Mock()
+
+            delete_button = object()
+            ignore_button = object()
+            fake_message_box = mock.Mock()
+            fake_message_box.addButton.side_effect = [delete_button, ignore_button]
+            fake_message_box.clickedButton.return_value = delete_button
+
+            with mock.patch("ui.dialogs.QMessageBox") as msgbox_cls:
+                msgbox_cls.return_value = fake_message_box
+                msgbox_cls.Icon = mock.Mock(Warning=1)
+                msgbox_cls.ButtonRole = mock.Mock(AcceptRole=1, RejectRole=2)
+                msgbox_cls.information = mock.Mock()
+                msgbox_cls.warning = mock.Mock()
+
+                BackupDialog.restore_backup(dialog)
+
+            self.assertFalse(backup_path.exists())
+            dialog.load_backups.assert_called_once()
 
 
 if __name__ == "__main__":

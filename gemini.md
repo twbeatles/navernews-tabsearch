@@ -642,3 +642,26 @@ class StartupManager:
   - `python -m pytest -q` => `112 passed, 5 subtests passed`
 - Packaging:
   - `news_scraper_pro.spec` re-reviewed for this pass; no additional change required.
+
+---
+
+## 2026-03-07 Addendum
+
+- Full implementation of `implementation_audit_2026-03-07.md` plan completed.
+- Core deltas:
+  - Worker cleanup ordering fixed for close/rename tab flows.
+  - Pending restore now uses staging + rollback; failed apply keeps pending file.
+  - Backup list now keeps healthy entries even when some metadata files are corrupt.
+  - `DatabaseManager.connection(...)` and `get_total_unread_count()` added.
+  - Auto-cleanup excludes `pubDate_ts <= 0` records.
+  - Secret storage migrated to Windows DPAPI (`client_secret_enc`, `client_secret_storage`).
+  - Config load adds `.backup` fallback recovery.
+- Spec review:
+  - `news_scraper_pro.spec` re-checked for this pass.
+  - No additional hidden import/exclude change was required.
+- Repo hygiene:
+  - `.gitignore` updated for runtime recovery leftovers:
+    - `.restore_stage_*/`
+    - `*.db.corrupt_*`
+- Validation baseline:
+  - `python -m pytest -q` => `128 passed, 5 subtests passed`

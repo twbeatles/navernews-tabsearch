@@ -54,8 +54,10 @@ from core.backup import (
 )
 from core.config_store import (
     default_config,
+    encode_client_secret_for_storage,
     load_config_file,
     normalize_import_settings,
+    resolve_client_secret_for_runtime,
     save_config_file_atomic,
 )
 from core.constants import (
@@ -406,13 +408,7 @@ class MainApp(QMainWindow):
             return
         
         try:
-            unread_count = 0
-            for i in range(1, self.tabs.count()):
-                tab_widget = self.tabs.widget(i)
-                if tab_widget and hasattr(tab_widget, 'news_data_cache'):
-                    for news_item in tab_widget.news_data_cache:
-                        if not news_item.get('is_read', False):
-                            unread_count += 1
+            unread_count = int(self.db.get_total_unread_count()) if self.db else 0
             
             if unread_count > 0:
                 tooltip = f"{APP_NAME}\n📬 읽지 않은 기사: {unread_count:,}개"
@@ -491,9 +487,12 @@ class MainApp(QMainWindow):
             loaded_cfg = default_config()
 
         settings = loaded_cfg.get("app_settings", {})
+        resolved_client_secret, _ = resolve_client_secret_for_runtime(settings)
         self.config = {
             "client_id": settings.get("client_id", ""),
-            "client_secret": settings.get("client_secret", ""),
+            "client_secret": resolved_client_secret,
+            "client_secret_enc": settings.get("client_secret_enc", ""),
+            "client_secret_storage": settings.get("client_secret_storage", "plain"),
             "theme": settings.get("theme_index", 0),
             "interval": settings.get("refresh_interval_index", 2),
             "tabs": loaded_cfg.get("tabs", []),
@@ -546,11 +545,14 @@ class MainApp(QMainWindow):
             tab_widget = self.tabs.widget(i)
             if tab_widget and hasattr(tab_widget, 'keyword'):
                 tab_names.append(tab_widget.keyword)
-        
+
+        secret_payload = encode_client_secret_for_storage(self.client_secret)
         data = {
             "app_settings": {
                 "client_id": self.client_id,
-                "client_secret": self.client_secret,
+                "client_secret": secret_payload.get("client_secret", ""),
+                "client_secret_enc": secret_payload.get("client_secret_enc", ""),
+                "client_secret_storage": secret_payload.get("client_secret_storage", "plain"),
                 "theme_index": self.theme_idx,
                 "refresh_interval_index": self.interval_idx,
                 "notification_enabled": self.notification_enabled,
@@ -786,11 +788,18 @@ class MainApp(QMainWindow):
                 self.open_settings()
     
     def _set_tab_badge_text(self, tab_index: int, keyword: str, unread_count: int):
-        if unread_count > 0:
-            badge = " (99+)" if unread_count > 99 else f" ({unread_count})"
-            self.tabs.setTabText(tab_index, f"{keyword}{badge}")
-        else:
-            self.tabs.setTabText(tab_index, keyword)
+        self.tabs.setTabText(tab_index, self._format_tab_title(keyword, unread_count=unread_count))
+
+    def _tab_icon_for_keyword(self, keyword: str) -> str:
+        return "📰" if not str(keyword or "").startswith("-") else "🚫"
+
+    def _format_tab_title(self, keyword: str, unread_count: int = 0) -> str:
+        normalized_keyword = str(keyword or "").strip()
+        badge = ""
+        count = max(0, int(unread_count or 0))
+        if count > 0:
+            badge = " (99+)" if count > 99 else f" ({count})"
+        return f"{self._tab_icon_for_keyword(normalized_keyword)} {normalized_keyword}{badge}"
 
     def _schedule_badge_refresh(self, delay_ms: int = 200):
         if not hasattr(self, "_badge_refresh_timer"):
@@ -1037,8 +1046,7 @@ class MainApp(QMainWindow):
         persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
         if persisted_cursor > fetch_state.last_api_start_index:
             fetch_state.last_api_start_index = persisted_cursor
-        icon_text = "📰" if not keyword.startswith("-") else "🚫"
-        self.tabs.addTab(tab, f"{icon_text} {keyword}")
+        self.tabs.addTab(tab, self._format_tab_title(keyword, unread_count=0))
         
         # 탭 추가 직후 캐시 로드 (오프라인 모드 지원 및 즉각적인 UI 표시)
 
@@ -1161,6 +1169,13 @@ class MainApp(QMainWindow):
         if widget:
             if hasattr(widget, "keyword"):
                 removed_keyword = widget.keyword
+                active_request_id = self._worker_registry.get_active_request_id(removed_keyword)
+                if active_request_id is not None:
+                    self.cleanup_worker(
+                        keyword=removed_keyword,
+                        request_id=active_request_id,
+                        only_if_active=False,
+                    )
             if hasattr(widget, "cleanup"):
                 try:
                     widget.cleanup()
@@ -1195,6 +1210,13 @@ class MainApp(QMainWindow):
         
         if ok and text.strip():
             old_keyword = w.keyword
+            active_request_id = self._worker_registry.get_active_request_id(old_keyword)
+            if active_request_id is not None:
+                self.cleanup_worker(
+                    keyword=old_keyword,
+                    request_id=active_request_id,
+                    only_if_active=False,
+                )
             new_keyword = self._normalize_tab_keyword(text)
             if not new_keyword:
                 QMessageBox.warning(
@@ -1214,8 +1236,7 @@ class MainApp(QMainWindow):
 
             w.keyword = new_keyword
             
-            icon_text = "📰" if not new_keyword.startswith("-") else "🚫"
-            self.tabs.setTabText(idx, f"{icon_text} {new_keyword}")
+            self.tabs.setTabText(idx, self._format_tab_title(new_keyword, unread_count=0))
             
             old_search_keyword, old_exclude_words = parse_search_query(old_keyword)
             new_search_keyword, new_exclude_words = parse_search_query(new_keyword)
