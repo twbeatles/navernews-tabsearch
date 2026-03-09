@@ -76,8 +76,9 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         block = src[start:end]
         self.assertIn("initial_geometry = self._normalize_window_geometry(self._saved_geometry)", block)
         self.assertIn("self.setGeometry(", block)
-        self.assertIn("self.tabs.tabBar().setUsesScrollButtons(True)", block)
-        self.assertIn("self.tabs.tabBar().setElideMode(Qt.TextElideMode.ElideRight)", block)
+        self.assertIn("tab_bar = self._tab_bar()", block)
+        self.assertIn("tab_bar.setUsesScrollButtons(True)", block)
+        self.assertIn("tab_bar.setElideMode(Qt.TextElideMode.ElideRight)", block)
         self.assertNotIn("self.resize(1100, 850)", block)
 
     def test_main_window_has_screen_aware_geometry_helpers(self):
@@ -110,7 +111,8 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         start = src.index("def update_all_tab_badges")
         end = src.index("def update_tab_badge")
         block = src[start:end]
-        self.assertIn("self.db.count_news(", block)
+        self.assertIn("self._require_db().count_news(", block)
+        self.assertIn("self._require_db().get_unread_counts_by_keywords(", block)
         self.assertIn("exclude_words=exclude_words", block)
         self.assertIn("self._badge_unread_cache[keyword]", block)
 

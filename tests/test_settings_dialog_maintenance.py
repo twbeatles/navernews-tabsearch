@@ -1,4 +1,5 @@
 import unittest
+from typing import Any, cast
 from unittest import mock
 
 from ui.settings_dialog import SettingsDialog
@@ -11,6 +12,18 @@ class _DummyParent:
     def on_database_maintenance_completed(self, operation, affected_count):
         self.calls.append((operation, affected_count))
 
+    def export_settings(self):
+        pass
+
+    def import_settings(self):
+        pass
+
+    def show_log_viewer(self):
+        pass
+
+    def show_keyword_groups(self):
+        pass
+
 
 class _DummySettingsDialog:
     _notify_parent_data_changed = SettingsDialog._notify_parent_data_changed
@@ -22,6 +35,9 @@ class _DummySettingsDialog:
     def parent(self):
         return self._parent
 
+    def _typed_parent(self):
+        return self._parent
+
     def isVisible(self):
         return True
 
@@ -31,7 +47,7 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
         dialog = _DummySettingsDialog()
 
         with mock.patch("ui.settings_dialog.QMessageBox.information"):
-            SettingsDialog._on_clean_data_done(dialog, 3)
+            SettingsDialog._on_clean_data_done(cast(Any, dialog), 3)
 
         self.assertEqual(dialog._parent.calls, [("delete_old_news", 3)])
 
@@ -39,7 +55,7 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
         dialog = _DummySettingsDialog()
 
         with mock.patch("ui.settings_dialog.QMessageBox.information"):
-            SettingsDialog._on_clean_all_done(dialog, 7)
+            SettingsDialog._on_clean_all_done(cast(Any, dialog), 7)
 
         self.assertEqual(dialog._parent.calls, [("delete_all_news", 7)])
 

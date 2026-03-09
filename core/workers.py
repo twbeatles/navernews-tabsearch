@@ -7,11 +7,12 @@ import time
 import traceback
 import urllib.parse
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
+from core.protocols import ClosableProtocol, RequestGetProtocol
 from core.query_parser import parse_tab_query
 
 
@@ -75,7 +76,7 @@ class ApiWorker(QObject):
         start_idx: int = 1,
         max_retries: int = 3,
         timeout: int = 15,
-        session: Optional[requests.Session] = None,
+        session: Optional[RequestGetProtocol] = None,
         display_keyword: Optional[str] = None,
     ):
         super().__init__()
@@ -93,7 +94,7 @@ class ApiWorker(QObject):
         self._is_running = True
         self._lock = threading.Lock()
         self._destroyed = False
-        self._request_session: Optional[requests.Session] = None
+        self._request_session: Optional[ClosableProtocol] = None
         self._owns_request_session = False
 
     @property
@@ -131,9 +132,9 @@ class ApiWorker(QObject):
             "X-Naver-Client-Secret": self.csec.strip(),
         }
         url = "https://openapi.naver.com/v1/search/news.json"
-        session = self.session or requests.Session()
+        session: RequestGetProtocol = self.session or requests.Session()
         owns_session = self.session is None
-        self._request_session = session
+        self._request_session = cast(ClosableProtocol, session) if hasattr(session, "close") else None
         self._owns_request_session = owns_session
 
         try:
@@ -295,9 +296,9 @@ class ApiWorker(QObject):
                         self._safe_emit(self.error, f"오류 발생: {str(e)}")
                         return
         finally:
-            if owns_session:
+            if owns_session and self._request_session is not None:
                 try:
-                    session.close()
+                    self._request_session.close()
                 except Exception:
                     pass
             self._request_session = None

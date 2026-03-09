@@ -1,0 +1,17 @@
+{
+  "include": [
+    "*.py",
+    "core",
+    "ui",
+    "tests"
+  ],
+  "exclude": [
+    "build",
+    "dist",
+    "__pycache__",
+    ".pytest_cache"
+  ],
+  "pythonVersion": "3.14",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "basic"
+}

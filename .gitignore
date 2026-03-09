@@ -15,8 +15,12 @@ dist/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+.pyrightcache/
+.ruff_cache/
+.hypothesis/
 htmlcov/
 .coverage
+.coverage.*
 coverage.xml
 
 # IDE / OS files
@@ -30,17 +34,15 @@ Thumbs.db
 logs/
 crash_log.txt
 
-# Text files (request: do not upload .txt)
-*.txt
-
-# Local database and config data (request: exclude db/json)
+# Local database and config data
 *.db
 *.db-*
 *.sqlite
 *.sqlite-*
 *.sqlite3
 *.sqlite3-*
-*.json
+news_scraper_config.json
+pending_restore.json
 
 # Backups and temporary files
 backups/

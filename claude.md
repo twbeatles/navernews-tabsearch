@@ -20,11 +20,12 @@
 ## 🛠️ 기술 스택
 
 ```yaml
-언어: Python 3.8+
+언어: Python 3.10+ (개발/검증 기준 3.14)
 GUI: PyQt6 (Qt 6.x)
 데이터베이스: SQLite3
 HTTP: requests
 패키징: PyInstaller
+정적 분석: Pyright / Pylance
 ```
 
 ---
@@ -36,12 +37,14 @@ navernews-tabsearch/
 │
 ├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
 ├── news_scraper_pro.spec        # PyInstaller 빌드 설정
+├── pyrightconfig.json           # Pyright/Pylance 기준 설정
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.2')
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
 │   ├── database.py              # DatabaseManager (연결 풀, CRUD)
+│   ├── protocols.py             # lock/session Protocol 계약
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
@@ -57,6 +60,7 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── main_window.py           # MainApp (메인 윈도우)
 │   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog
 │   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
 │   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
@@ -100,6 +104,14 @@ navernews-tabsearch/
 
 ---
 
+## ✅ 현재 검증 기준
+
+- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `pytest -q` => `128 passed, 5 subtests passed`
+- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
+
+---
+
 ## 🔍 코드 탐색 가이드
 
 ### 주요 클래스 위치
@@ -120,15 +132,20 @@ navernews-tabsearch/
 | `AsyncJobWorker` | 단발성 비동기 작업 워커 | `core/workers.py` |
 | `WorkerRegistry` | 요청 ID 기반 워커 레지스트리 | `core/worker_registry.py` |
 | `WorkerHandle` | 워커 핸들 데이터클래스 | `core/worker_registry.py` |
+| `LockFileProtocol` | 단일 인스턴스 lock capability 계약 | `core/protocols.py` |
+| `RequestGetProtocol` / `ClosableProtocol` | requests 세션 계약 | `core/protocols.py` |
 | `AutoBackup` | 설정/DB 자동 백업 | `core/backup.py` |
 | `KeywordGroupManager` | 키워드 그룹(폴더) 관리 | `core/keyword_groups.py` |
 | `StartupManager` | Windows 시작프로그램 레지스트리 | `core/startup.py` |
 | `NotificationSound` | 시스템 알림 소리 재생 | `core/notifications.py` |
 | `ValidationUtils` | API 키/키워드 입력 검증 | `core/validation.py` |
 | `TextUtils` | 텍스트 처리 (하이라이팅 등) | `core/text_utils.py` |
+| `AppConfig` | 설정 파일 TypedDict 스키마 | `core/config_store.py` |
 | `MainApp` | 메인 윈도우 | `ui/main_window.py` |
+| `MainWindowProtocol` | `NewsTab`이 의존하는 메인 윈도우 capability | `ui/protocols.py` |
 | `NewsTab` | 개별 뉴스 탭 위젯 | `ui/news_tab.py` |
 | `SettingsDialog` | 설정 다이얼로그 | `ui/settings_dialog.py` |
+| `SettingsDialogParentProtocol` | `SettingsDialog` 부모 capability | `ui/protocols.py` |
 | `NoteDialog` | 메모 편집 다이얼로그 | `ui/dialogs.py` |
 | `LogViewerDialog` | 로그 뷰어 다이얼로그 | `ui/dialogs.py` |
 | `KeywordGroupDialog` | 키워드 그룹 관리 다이얼로그 | `ui/dialogs.py` |
@@ -321,9 +338,10 @@ class ApiWorker(QObject):
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
     
-    def __init__(self, client_id, client_secret, keyword, 
-                 exclude_words, db_manager, start_idx=1, 
-                 max_retries=3, timeout=15, session=None):
+    def __init__(self, client_id, client_secret, search_query,
+                 db_keyword, exclude_words, db_manager, start_idx=1,
+                 max_retries=3, timeout=15, session=None,
+                 display_keyword=None):
         ...
     
     def run(self):
@@ -822,8 +840,7 @@ ews_scraper_pro.spec` removed forced `chardet` hidden import to align with reque
 - `python -m pytest -q` => `112 passed, 5 subtests passed`
 
 ### Packaging
-- 
-ews_scraper_pro.spec` reviewed again after this pass; no additional changes required.
+- `news_scraper_pro.spec` reviewed again after this pass; no additional changes required.
 
 ---
 
@@ -857,3 +874,18 @@ ews_scraper_pro.spec` reviewed again after this pass; no additional changes requ
 
 ### Validation
 - `python -m pytest -q` => `128 passed, 5 subtests passed`
+
+---
+
+## 2026-03-09 Addendum (Type + Encoding Consistency)
+
+### Implemented
+- Added `pyrightconfig.json` (Windows / Python 3.14 / app+tests scope).
+- Added `core/protocols.py` and `ui/protocols.py` to make lock/session/window-parent contracts explicit.
+- Resolved repo-wide Pylance/Pyright issues without global ignores.
+- Expanded UTF-8 smoke coverage from selected Python files to repository text assets.
+- Refined `.gitignore` so runtime JSON/DB files stay ignored but tracked repo config such as `pyrightconfig.json` remains committable.
+
+### Validation
+- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `pytest -q` => `128 passed, 5 subtests passed`

@@ -1,4 +1,3 @@
-import datetime
 import hashlib
 import logging
 import os
@@ -136,7 +135,7 @@ class DatabaseManager:
             # 기존 연결 풀 닫기 (이 시점엔 아직 생성 안됐지만 혹시 모르니)
             
             # 파일 백업
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_name = f"{self.db_file}.corrupt_{timestamp}"
             
             if os.path.exists(self.db_file):

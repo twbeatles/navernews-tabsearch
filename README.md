@@ -6,6 +6,12 @@
 
 이 문서는 UTF-8로 작성되어 있습니다.
 
+## 개발/검증 기준
+
+- 개발/정적 분석 기준: Windows, Python 3.14, PyQt6
+- 소스 실행 최소 기준: Python 3.10+
+- 품질 게이트: `pyright`(`pyrightconfig.json`) + `pytest -q`
+
 ## 주요 기능
 
 - 탭 기반 키워드 검색 및 독립 관리
@@ -64,6 +70,8 @@
 - 설정 로드 실패 시 `news_scraper_config.json.backup` 자동 복구 fallback 지원
 - 자동 정리(`delete_old_news`)는 `pubDate_ts <= 0` 레코드를 삭제 대상에서 제외
 - 트레이 미읽음 수는 탭 캐시 합산 대신 DB 총계(`get_total_unread_count`) 기준으로 계산
+- `pyrightconfig.json`을 추가하고 `core.protocols`/`ui.protocols` 기반 타입 계약을 도입해 `pyright` 기준 0 errors를 유지
+- UTF-8 인코딩 스모크 테스트를 리포지토리 주요 텍스트 자산 전체로 확장
 
 ## 프로젝트 구조
 
@@ -71,6 +79,7 @@
 navernews-tabsearch/
 ├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
 ├── news_scraper_pro.spec        # PyInstaller 빌드 설정
+├── pyrightconfig.json           # Pyright/Pylance 기준 설정 (Windows, Python 3.14)
 ├── pytest.ini                   # pytest 진입점/수집 경로 고정
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
@@ -78,6 +87,7 @@ navernews-tabsearch/
 │   ├── constants.py             # 경로/버전/앱 상수
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
 │   ├── database.py              # DatabaseManager (연결 풀, CRUD)
+│   ├── protocols.py             # lock/session capability Protocol 정의
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
@@ -93,6 +103,7 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── main_window.py           # MainApp (메인 윈도우)
 │   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── protocols.py             # 메인 윈도우/부모 capability Protocol 정의
 │   ├── settings_dialog.py       # SettingsDialog
 │   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
 │   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
@@ -163,6 +174,16 @@ python -m pytest -q
 pytest -q
 ```
 
+정적 타입 검사는 아래 명령을 사용합니다.
+
+```bash
+pyright
+```
+
+참고:
+- `pyrightconfig.json`은 루트 Python 파일, `core/`, `ui/`, `tests/`를 검사 대상으로 고정합니다.
+- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산(`.py`, `.md`, `.json`, `.ini`, `.spec`, `.txt`, `.yml`, `.yaml`)의 UTF-8 decode 실패, `\ufffd`, 알려진 깨진 토큰 재등장을 함께 감시합니다.
+
 ## PyInstaller 빌드 (onefile)
 
 현재 스펙(`news_scraper_pro.spec`)은 onefile 기준으로 구성되어 있습니다.
@@ -179,6 +200,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 감사 후속(2026-03-03)에서는 requests optional 경로와 정합성을 맞추기 위해 `.spec`의 강제 hidden import에서 `chardet`를 제거했습니다.
 - v32.7.2 감사 후속 2차(2026-03-06)에서는 백업 정책/탭 의미 보존/문서 정합성 보강만 포함하며 `.spec` 추가 수정은 필요하지 않습니다.
 - v32.7.2 감사 후속 3차(2026-03-07)에서도 `.spec`을 재검토했으며, DPAPI 비밀값 저장 전환은 표준 라이브러리 기반(`ctypes`, `base64`)이라 추가 hidden import 수정이 필요하지 않습니다.
+- v32.7.2 타입/인코딩 정리(2026-03-09)에서는 개발용 `pyrightconfig.json`, 문서, `.gitignore`만 동기화했으며 `.spec` 추가 수정은 필요하지 않습니다.
 
 ## 네이버 API 키 설정
 

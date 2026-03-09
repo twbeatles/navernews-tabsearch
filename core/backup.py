@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 PENDING_RESTORE_FILENAME = "pending_restore.json"
 
 
-def _write_json_atomic(path: str, payload: Dict) -> None:
+def _write_json_atomic(path: str, payload: Dict[str, Any]) -> None:
     directory = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(directory, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(prefix=".pending_", suffix=".tmp", dir=directory)
@@ -75,9 +75,9 @@ def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
 class AutoBackup:
     """설정 및 데이터베이스 자동 백업"""
 
-    BACKUP_DIR = "backups"
-    MAX_AUTO_BACKUPS = 5
-    MAX_MANUAL_BACKUPS = 20
+    BACKUP_DIR: str = "backups"
+    MAX_AUTO_BACKUPS: int = 5
+    MAX_MANUAL_BACKUPS: int = 20
 
     def __init__(
         self,

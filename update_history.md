@@ -35,6 +35,15 @@
       - `tests/test_risk_fixes.py`
   - Validation:
     - `python -m pytest -q` => `128 passed, 5 subtests passed`
+- **Type + Encoding Consistency Pass (2026-03-09)**:
+  - Added `pyrightconfig.json` for repo-wide Pyright/Pylance checks (`Windows`, `Python 3.14`, app+tests scope).
+  - Added `core/protocols.py` and `ui/protocols.py` to formalize lock/session/window-parent capability contracts.
+  - Cleared repo-wide Pylance/Pyright issues without global ignores (`pyright` => `0 errors`).
+  - Expanded UTF-8 smoke coverage from selected Python files to repository text assets.
+  - Synced `README.md`, `claude.md`, `gemini.md`, `.gitignore`, and re-reviewed `news_scraper_pro.spec`.
+  - Validation:
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `pytest -q` => `128 passed, 5 subtests passed`
 - **Implementation Audit Adoption (2026-03-06)**:
   - Backup retention policy refinement:
     - `AutoBackup.create_backup(..., trigger=...)` now records `auto` / `manual` source metadata.
@@ -52,7 +61,7 @@
     - Stats-analysis tab now passes raw tab query instead of collapsing to `db_keyword` only.
   - Documentation/spec alignment:
     - Synced `README.md`, `claude.md`, `gemini.md` with the current backup policy, analysis behavior, and new test coverage.
-    - Replaced the prior audit snapshot with `implementation_audit_2026-03-06.md`.
+    - Consolidated the audit follow-through into repository documentation/history.
     - `news_scraper_pro.spec` re-reviewed; no additional packaging changes required for this pass.
   - Added/updated tests:
     - Added `tests/test_settings_dialog_maintenance.py`
@@ -111,7 +120,7 @@
     - Prevented late callbacks from showing message boxes after dialog close.
   - Encoding and quality:
     - Restored broken delete-failure Korean message in `ui/news_tab.py`.
-    - Added encoding smoke tests (`?ㅻ쪟` token removal + replacement-char scan).
+    - Added encoding smoke tests (known broken token removal + replacement-char scan).
   - Version/history guard:
     - Restored `update_history.md`.
     - Added `tests/test_version_history_guard.py` to enforce VERSION/history sync.

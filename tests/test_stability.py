@@ -54,8 +54,10 @@ class TestBackupAndRestore(unittest.TestCase):
             ab = app.AutoBackup(config_file=str(cfg), db_file=str(db))
             backup_path = ab.create_backup(include_db=True)
             self.assertIsNotNone(backup_path)
+            assert backup_path is not None
+            backup_path_str = backup_path
 
-            backup_db = Path(backup_path) / db.name
+            backup_db = Path(backup_path_str) / db.name
             conn = sqlite3.connect(str(backup_db))
             try:
                 ok = conn.execute('PRAGMA integrity_check').fetchone()[0]
@@ -78,12 +80,14 @@ class TestBackupAndRestore(unittest.TestCase):
             (Path(str(db) + '-shm')).write_text('fake', encoding='utf-8')
 
             ab = app.AutoBackup(config_file=str(cfg), db_file=str(db))
-            ab._snapshot_db = lambda _dst: False
+            ab._snapshot_db = lambda dst_db_path: False
 
             backup_path = ab.create_backup(include_db=True)
             self.assertIsNotNone(backup_path)
+            assert backup_path is not None
+            backup_path_str = backup_path
 
-            backup_db = Path(backup_path) / db.name
+            backup_db = Path(backup_path_str) / db.name
             self.assertTrue(Path(str(backup_db) + '-wal').exists())
             self.assertTrue(Path(str(backup_db) + '-shm').exists())
 

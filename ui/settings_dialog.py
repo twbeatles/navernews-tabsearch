@@ -1,10 +1,10 @@
 import json
 import os
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 import requests
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QCloseEvent, QDesktopServices
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,6 +34,7 @@ from core.notifications import NotificationSound
 from core.startup import StartupManager
 from core.validation import ValidationUtils
 from core.workers import AsyncJobWorker
+from ui.protocols import SettingsDialogParentProtocol
 from ui.widgets import NoScrollComboBox
 
 class SettingsDialog(QDialog):
@@ -52,6 +53,21 @@ class SettingsDialog(QDialog):
         if parent and hasattr(parent, 'theme_idx'):
             self.is_dark = parent.theme_idx == 1
         self.setup_ui()
+
+    def _typed_parent(self) -> Optional[SettingsDialogParentProtocol]:
+        candidate = self.parent()
+        if candidate is None:
+            return None
+        required_attrs = (
+            "on_database_maintenance_completed",
+            "export_settings",
+            "import_settings",
+            "show_log_viewer",
+            "show_keyword_groups",
+        )
+        if not all(hasattr(candidate, attr) for attr in required_attrs):
+            return None
+        return cast(SettingsDialogParentProtocol, candidate)
 
     def setup_ui(self):
         """테마 적용 UI 설정"""
@@ -618,13 +634,13 @@ class SettingsDialog(QDialog):
             pass
         return worker
 
-    def closeEvent(self, event):
+    def closeEvent(self, a0: Optional[QCloseEvent]):
         self._is_closing = True
         self._shutdown_worker(self._api_validate_worker, wait_ms=400)
         self._shutdown_worker(self._data_task_worker, wait_ms=800)
         self._api_validate_worker = None
         self._data_task_worker = None
-        super().closeEvent(event)
+        super().closeEvent(a0)
     
     def validate_api_key(self):
         """API 키 검증"""
@@ -817,8 +833,8 @@ class SettingsDialog(QDialog):
         self._data_task_worker = None
 
     def _notify_parent_data_changed(self, operation: str, affected_count: int):
-        parent = self.parent()
-        if parent and hasattr(parent, "on_database_maintenance_completed"):
+        parent = self._typed_parent()
+        if parent is not None:
             try:
                 parent.on_database_maintenance_completed(operation, affected_count)
             except Exception:
@@ -826,18 +842,21 @@ class SettingsDialog(QDialog):
     
     def export_settings_dialog(self):
         """설정 내보내기 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'export_settings'):
-            self.parent().export_settings()
+        parent = self._typed_parent()
+        if parent is not None:
+            parent.export_settings()
     
     def import_settings_dialog(self):
         """설정 가져오기 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'import_settings'):
-            self.parent().import_settings()
+        parent = self._typed_parent()
+        if parent is not None:
+            parent.import_settings()
     
     def show_log_dialog(self):
         """로그 뷰어 표시 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'show_log_viewer'):
-            self.parent().show_log_viewer()
+        parent = self._typed_parent()
+        if parent is not None:
+            parent.show_log_viewer()
     
     def open_data_folder(self):
         """데이터 폴더 열기"""
@@ -845,8 +864,9 @@ class SettingsDialog(QDialog):
     
     def show_groups_dialog(self):
         """키워드 그룹 관리 (부모 호출)"""
-        if self.parent() and hasattr(self.parent(), 'show_keyword_groups'):
-            self.parent().show_keyword_groups()
+        parent = self._typed_parent()
+        if parent is not None:
+            parent.show_keyword_groups()
 
     def get_data(self) -> Dict:
         """설정 데이터 반환"""

@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 from PyQt6.QtCore import QUrl
@@ -36,6 +37,12 @@ class _DummyWindow:
     def show_toast(self, message):
         self.toast_calls.append(message)
 
+    def update_tab_badge(self, _keyword):
+        pass
+
+    def refresh_bookmark_tab(self):
+        pass
+
 
 class _DummyNewsTab:
     _set_read_state = NewsTab._set_read_state
@@ -64,6 +71,9 @@ class _DummyNewsTab:
     def window(self):
         return self._window
 
+    def _main_window(self):
+        return self._window
+
 
 class TestNewsTabExtReadPolicy(unittest.TestCase):
     def test_ext_helper_marks_unread_item_as_read(self):
@@ -71,7 +81,7 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         target = {"link": "https://example.com/news-1", "is_read": 0}
 
         with mock.patch("ui.news_tab.QDesktopServices.openUrl") as open_mock:
-            NewsTab._open_external_link_and_mark_read(tab, target)
+            NewsTab._open_external_link_and_mark_read(cast(Any, tab), target)
 
         open_mock.assert_called_once()
         self.assertEqual(tab.db.calls, [("https://example.com/news-1", "is_read", 1)])
@@ -85,7 +95,7 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         target = {"link": "https://example.com/news-2", "is_read": 1}
 
         with mock.patch("ui.news_tab.QDesktopServices.openUrl") as open_mock:
-            NewsTab._open_external_link_and_mark_read(tab, target)
+            NewsTab._open_external_link_and_mark_read(cast(Any, tab), target)
 
         open_mock.assert_called_once()
         self.assertEqual(tab.db.calls, [])
@@ -98,7 +108,7 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         tab.target = {"link": "https://example.com/news-open", "is_read": 0, "is_bookmarked": 0}
 
         with mock.patch("ui.news_tab.QDesktopServices.openUrl") as open_mock:
-            NewsTab.on_link_clicked(tab, QUrl("app://open/hash"))
+            NewsTab.on_link_clicked(cast(Any, tab), QUrl("app://open/hash"))
 
         open_mock.assert_called_once()
         self.assertEqual(tab.target["is_read"], 0)
@@ -111,7 +121,7 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         tab = _DummyNewsTab(update_result=False)
         tab.target = {"link": "https://example.com/news-unread", "is_read": 1, "is_bookmarked": 0}
 
-        NewsTab.on_link_clicked(tab, QUrl("app://unread/hash"))
+        NewsTab.on_link_clicked(cast(Any, tab), QUrl("app://unread/hash"))
 
         self.assertEqual(tab.target["is_read"], 1)
         self.assertEqual(tab.adjust_calls, 0)

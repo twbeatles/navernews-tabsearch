@@ -33,9 +33,13 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
 
             self.assertIsNotNone(p1)
             self.assertIsNotNone(p2)
-            self.assertNotEqual(Path(p1).name, Path(p2).name)
-            self.assertTrue(Path(p1).exists())
-            self.assertTrue(Path(p2).exists())
+            assert p1 is not None
+            assert p2 is not None
+            path1 = Path(p1)
+            path2 = Path(p2)
+            self.assertNotEqual(path1.name, path2.name)
+            self.assertTrue(path1.exists())
+            self.assertTrue(path2.exists())
 
     def test_restore_backup_fails_when_db_backup_missing(self):
         with tempfile.TemporaryDirectory() as td:

@@ -8,9 +8,10 @@
 |------|-----|
 | **프로젝트명** | 뉴스 스크래퍼 Pro |
 | **버전** | v32.7.2 |
-| **언어** | Python 3.8+ |
+| **언어** | Python 3.10+ (개발/검증 기준 3.14) |
 | **GUI 프레임워크** | PyQt6 |
 | **주요 기능** | 네이버 뉴스 API 기반 탭 브라우징 뉴스 스크래퍼 |
+| **정적 분석** | Pyright / Pylance |
 
 ---
 
@@ -21,15 +22,17 @@
 navernews-tabsearch/
 ├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
 ├── news_scraper_pro.spec        # PyInstaller 빌드 설정
+├── pyrightconfig.json           # Pyright/Pylance 기준 설정
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # 경로/버전/앱 상수
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
 │   ├── database.py              # DatabaseManager (연결 풀, CRUD)
+│   ├── protocols.py             # lock/session capability Protocol
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
-│   ├── query_parser.py          # parse_tab_query/build_fetch_key
+│   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
 │   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
@@ -42,6 +45,7 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── main_window.py           # MainApp (메인 윈도우)
 │   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog
 │   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
 │   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
@@ -62,6 +66,12 @@ navernews-tabsearch/
 ├── backups/                     # 백업 디렉터리
 └── dist/                        # PyInstaller 빌드 결과물
 ```
+
+### 현재 검증 기준
+
+- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `pytest -q` => `128 passed, 5 subtests passed`
+- `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
 
 ### 핵심 클래스 계층
 
@@ -323,8 +333,11 @@ class DatabaseManager:
     def update_status(link, field, value) -> bool
     def delete_link(link) -> bool
     def mark_links_as_read(links) -> int
+    def mark_query_as_read(keyword, exclude_words=None, only_bookmark=False) -> int
     def get_counts(keyword) -> int
     def mark_all_as_read(keyword, only_bookmark) -> int
+    def count_news(keyword, only_unread=False, exclude_words=None) -> int
+    def get_unread_counts_by_keywords(keywords) -> Dict[str, int]
 ```
 
 ---
@@ -406,10 +419,13 @@ def _on_filter_changed(self):
 ### 3. HTTP 세션 풀링
 
 ```python
-# 공유 세션으로 연결 재사용
-adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=3)
+# 메인 UI 세션은 연결 재사용만 담당하고 재시도는 비활성화
+adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=0)
 session.mount('https://', adapter)
 ```
+
+- `MainApp.fetch_news()` 경로는 `ApiWorker(..., session=self.session)`를 넘기지 않습니다.
+- fetch worker는 자체 세션을 소유하고 취소 시 즉시 닫을 수 있어야 합니다.
 
 ### 4. LRU 캐시 활용
 
@@ -665,3 +681,13 @@ class StartupManager:
     - `*.db.corrupt_*`
 - Validation baseline:
   - `python -m pytest -q` => `128 passed, 5 subtests passed`
+
+## 2026-03-09 Addendum
+
+- Added `pyrightconfig.json` and formalized capability contracts via `core/protocols.py`, `ui/protocols.py`.
+- Repo-wide Pylance/Pyright baseline is now `0 errors`.
+- UTF-8 smoke coverage expanded to repository text assets instead of only selected Python files.
+- `.gitignore` now ignores runtime JSON/DB artifacts without hiding tracked repo config such as `pyrightconfig.json`.
+- Validation:
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `pytest -q` => `128 passed, 5 subtests passed`

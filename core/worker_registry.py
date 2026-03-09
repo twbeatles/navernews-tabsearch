@@ -1,5 +1,10 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+from PyQt6.QtCore import QThread
+
+if TYPE_CHECKING:
+    from core.workers import ApiWorker
 
 
 @dataclass
@@ -9,8 +14,8 @@ class WorkerHandle:
     search_keyword: str  # API 검색어
     db_keyword: str
     exclude_words: List[str]
-    worker: object
-    thread: object
+    worker: "ApiWorker"
+    thread: QThread
 
 
 class WorkerRegistry:

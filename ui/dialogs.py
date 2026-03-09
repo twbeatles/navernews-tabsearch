@@ -1,9 +1,8 @@
-import hashlib
 import html
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -28,7 +27,6 @@ from PyQt6.QtWidgets import (
 from core.backup import AutoBackup
 from core.keyword_groups import KeywordGroupManager
 from core.logging_setup import configure_logging
-from core.text_utils import parse_date_string
 from core.constants import LOG_FILE
 
 configure_logging()
@@ -199,9 +197,9 @@ class LogViewerDialog(QDialog):
             
             # 자동 스크롤
             if self.chk_auto_scroll.isChecked():
-                self.log_browser.verticalScrollBar().setValue(
-                    self.log_browser.verticalScrollBar().maximum()
-                )
+                scroll_bar = self.log_browser.verticalScrollBar()
+                if scroll_bar is not None:
+                    scroll_bar.setValue(scroll_bar.maximum())
             
             self.lbl_status.setText(f"총 {len(lines)}줄 중 {len(filtered_lines)}줄 표시")
             
@@ -249,43 +247,6 @@ class KeywordGroupDialog(QDialog):
         self.setup_ui()
         self.load_groups()
     
-    def _prepare_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
-        link = item.get("link", "")
-        title = item.get("title", "")
-        desc = item.get("description", "")
-        if not item.get("_link_hash"):
-            item["_link_hash"] = hashlib.md5(link.encode()).hexdigest() if link else ""
-        item["_title_lc"] = title.lower()
-        item["_desc_lc"] = desc.lower()
-        item["_date_fmt"] = parse_date_string(item.get("pubDate", ""))
-        return item
-
-    def _rebuild_item_indexes(self):
-        self._item_by_hash = {}
-        for item in self.news_data_cache:
-            prepared = self._prepare_item(item)
-            link_hash = prepared.get("_link_hash")
-            if link_hash:
-                self._item_by_hash[link_hash] = prepared
-
-    def _target_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
-        return self._item_by_hash.get(link_hash)
-
-    def _refresh_after_local_change(self, requires_refilter: bool = False):
-        if requires_refilter:
-            self.apply_filter()
-        else:
-            self.render_html()
-            self.update_status_label()
-
-    def _notify_badge_change(self):
-        parent = self.window()
-        if parent and hasattr(parent, "update_tab_badge"):
-            try:
-                parent.update_tab_badge(self.keyword)
-            except Exception:
-                pass
-
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
@@ -544,16 +505,18 @@ class BackupDialog(QDialog):
             else:
                 item_text = f"{date_str} (v{version}) {include_db} {trigger_label}"
             self.backup_list.addItem(item_text)
-            self.backup_list.item(self.backup_list.count() - 1).setData(
-                Qt.ItemDataRole.UserRole,
-                {
-                    "backup_name": backup.get("name", ""),
-                    "include_db": bool(backup.get("include_db", False)),
-                    "trigger": str(backup.get("trigger", "manual")).lower(),
-                    "is_corrupt": is_corrupt,
-                    "error": str(backup.get("error", "") or ""),
-                },
-            )
+            item = self.backup_list.item(self.backup_list.count() - 1)
+            if item is not None:
+                item.setData(
+                    Qt.ItemDataRole.UserRole,
+                    {
+                        "backup_name": backup.get("name", ""),
+                        "include_db": bool(backup.get("include_db", False)),
+                        "trigger": str(backup.get("trigger", "manual")).lower(),
+                        "is_corrupt": is_corrupt,
+                        "error": str(backup.get("error", "") or ""),
+                    },
+                )
 
     def create_backup(self):
         """백업 생성"""

@@ -1,4 +1,5 @@
 import unittest
+from typing import Optional
 
 import requests
 
@@ -25,9 +26,10 @@ class _FakeDB:
 
 class _CancelAfterGetSession:
     def __init__(self):
-        self.worker = None
+        self.worker: Optional[ApiWorker] = None
 
     def get(self, *_args, **_kwargs):
+        assert self.worker is not None
         self.worker.stop()
         return _FakeResponse(
             200,
@@ -48,9 +50,10 @@ class _CancelAfterGetSession:
 
 class _CancelThenErrorSession:
     def __init__(self):
-        self.worker = None
+        self.worker: Optional[ApiWorker] = None
 
     def get(self, *_args, **_kwargs):
+        assert self.worker is not None
         self.worker.stop()
         raise requests.ConnectionError("cancelled")
 

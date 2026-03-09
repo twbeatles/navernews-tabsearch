@@ -1,16 +1,17 @@
 from collections import deque
+from typing import Deque, Optional, Tuple
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PyQt6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel
+from PyQt6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QWidget
 
 from ui.styles import ToastType, UIConstants
 
 class ToastQueue:
     """토스트 메시지 큐 관리 - 유형별 스타일 지원"""
-    def __init__(self, parent):
+    def __init__(self, parent: QWidget):
         self.parent = parent
-        self.queue = deque()
-        self.current_toast = None
+        self.queue: Deque[Tuple[str, ToastType]] = deque()
+        self.current_toast: Optional["ToastMessage"] = None
         self.y_offset = 100
         
     def add(self, message: str, toast_type: ToastType = ToastType.INFO):
@@ -73,7 +74,7 @@ class ToastMessage(QLabel):
         ToastType.ERROR: "✗",
     }
     
-    def __init__(self, parent, message: str, queue: ToastQueue, toast_type: ToastType = ToastType.INFO):
+    def __init__(self, parent: QWidget, message: str, queue: ToastQueue, toast_type: ToastType = ToastType.INFO):
         # 아이콘 추가 (SUCCESS 메시지에는 이미 ✓가 있을 수 있으므로 조건부)
         display_message = message
         if toast_type == ToastType.ERROR and not message.startswith("✗"):
@@ -123,8 +124,9 @@ class ToastMessage(QLabel):
     
     def update_position(self):
         """부모 크기 변경에 대응하는 위치 업데이트"""
-        if self.parent():
-            p_rect = self.parent().rect()
+        parent = self.parentWidget()
+        if parent is not None:
+            p_rect = parent.rect()
             self.move(
                 p_rect.center().x() - self.width() // 2,
                 p_rect.bottom() - self.queue.y_offset

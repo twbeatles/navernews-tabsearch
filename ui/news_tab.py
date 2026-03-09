@@ -2,10 +2,10 @@ import html
 import hashlib
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 from PyQt6.QtCore import QDate, Qt, QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QClipboard, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QDateEdit,
     QToolButton,
     QVBoxLayout,
+    QScrollBar,
     QWidget,
 )
 
@@ -27,6 +28,7 @@ from core.query_parser import parse_tab_query
 from core.text_utils import TextUtils, parse_date_string, perf_timer
 from core.workers import AsyncJobWorker, DBWorker
 from ui.dialogs import NoteDialog
+from ui.protocols import MainWindowProtocol
 from ui.styles import AppStyle, Colors
 from ui.widgets import NewsBrowser, NoScrollComboBox
 
@@ -68,8 +70,8 @@ class NewsTab(QWidget):
         self._is_loading_more = False      # 추가 로딩 중 여부
         
         # Async DB Worker
-        self.worker = None
-        self.job_worker = None
+        self.worker: Optional[DBWorker] = None
+        self.job_worker: Optional[AsyncJobWorker] = None
         self._mark_all_mode_label = "탭 전체"
         
         self.setup_ui()
@@ -110,6 +112,27 @@ class NewsTab(QWidget):
     def _target_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
         return self._item_by_hash.get(link_hash)
 
+    def _main_window(self) -> Optional[MainWindowProtocol]:
+        candidate = self.window()
+        if candidate is None:
+            return None
+        required_attrs = ("update_tab_badge", "refresh_bookmark_tab", "show_toast", "show_warning_toast")
+        if not all(hasattr(candidate, attr) for attr in required_attrs):
+            return None
+        return cast(MainWindowProtocol, candidate)
+
+    def _browser_scroll_bar(self) -> QScrollBar:
+        scroll_bar = self.browser.verticalScrollBar()
+        if scroll_bar is None:
+            raise RuntimeError("News browser scrollbar is unavailable")
+        return scroll_bar
+
+    def _clipboard(self) -> QClipboard:
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            raise RuntimeError("Clipboard is unavailable")
+        return clipboard
+
     def _refresh_after_local_change(self, requires_refilter: bool = False):
         self._data_version += 1
         self._last_render_signature = None
@@ -120,8 +143,8 @@ class NewsTab(QWidget):
             self.update_status_label()
 
     def _notify_badge_change(self):
-        parent = self.window()
-        if parent and hasattr(parent, "update_tab_badge"):
+        parent = self._main_window()
+        if parent is not None:
             try:
                 parent.update_tab_badge(self.keyword)
             except Exception:
@@ -278,7 +301,7 @@ class NewsTab(QWidget):
         btm_layout.addWidget(self.lbl_status)
         layout.addLayout(btm_layout)
 
-        self.btn_top.clicked.connect(lambda: self.browser.verticalScrollBar().setValue(0))
+        self.btn_top.clicked.connect(lambda: self._browser_scroll_bar().setValue(0))
         self.btn_read_all.clicked.connect(self.mark_all_read)
     
     def _toggle_date_filter(self, checked: bool):
@@ -532,7 +555,7 @@ class NewsTab(QWidget):
     def render_html(self):
         """HTML 렌더링 - Colors 헬퍼 사용 버전"""
         with perf_timer("ui.render_html", f"kw={self.keyword}|rows={len(self.filtered_data_cache)}"):
-            scroll_pos = self.browser.verticalScrollBar().value()
+            scroll_pos = self._browser_scroll_bar().value()
             is_dark = self.theme == 1
             filter_word = self.inp_filter.text().strip()
 
@@ -593,7 +616,7 @@ class NewsTab(QWidget):
             )
 
             if scroll_pos > 0:
-                QTimer.singleShot(0, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
+                QTimer.singleShot(0, lambda: self._browser_scroll_bar().setValue(scroll_pos))
             self.update_status_label()
 
     def append_items(self):
@@ -609,12 +632,12 @@ class NewsTab(QWidget):
         self._rendered_count = end_idx
         
         # 스크롤 위치 저장 후 렌더링
-        scroll_pos = self.browser.verticalScrollBar().value()
+        scroll_pos = self._browser_scroll_bar().value()
         self.render_html()
         
         # 스크롤 위치 복원 (약간의 지연 필요)
         if scroll_pos > 0:
-            QTimer.singleShot(10, lambda: self.browser.verticalScrollBar().setValue(scroll_pos))
+            QTimer.singleShot(10, lambda: self._browser_scroll_bar().setValue(scroll_pos))
 
 
     def update_status_label(self):
@@ -686,8 +709,9 @@ class NewsTab(QWidget):
         if not self.db.update_status(link, "is_read", 1 if now_read else 0):
             if failure_message:
                 self.lbl_status.setText(f"⚠️ {failure_message}")
-                if self.window():
-                    self.window().show_warning_toast(failure_message)
+                parent = self._main_window()
+                if parent is not None:
+                    parent.show_warning_toast(failure_message)
             return False
 
         target["is_read"] = 1 if now_read else 0
@@ -739,17 +763,18 @@ class NewsTab(QWidget):
                     requires_refilter = True
                 self._refresh_after_local_change(requires_refilter=requires_refilter)
                 self._notify_badge_change()
-                if self.window() and hasattr(self.window(), 'refresh_bookmark_tab'):
-                    self.window().refresh_bookmark_tab()
-                if self.window():
+                parent = self._main_window()
+                if parent is not None:
+                    parent.refresh_bookmark_tab()
                     msg = "⭐ 북마크에 추가되었습니다." if new_val else "북마크가 해제되었습니다."
-                    self.window().show_toast(msg)
+                    parent.show_toast(msg)
 
         elif action == "share":
             clip = f"{target.get('title', '')}\n{target.get('link', '')}"
-            QApplication.clipboard().setText(clip)
-            if self.window():
-                self.window().show_toast("📋 링크와 제목이 복사되었습니다!")
+            self._clipboard().setText(clip)
+            parent = self._main_window()
+            if parent is not None:
+                parent.show_toast("📋 링크와 제목이 복사되었습니다!")
             return
 
         elif action == "unread":
@@ -757,8 +782,10 @@ class NewsTab(QWidget):
                 target,
                 False,
                 failure_message="안 읽음 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
-            ) and self.window():
-                self.window().show_toast("📖 안 읽음으로 표시되었습니다.")
+            ):
+                parent = self._main_window()
+                if parent is not None:
+                    parent.show_toast("📖 안 읽음으로 표시되었습니다.")
 
         elif action == "note":
             current_note = self.db.get_note(link)
@@ -768,8 +795,9 @@ class NewsTab(QWidget):
                 if self.db.save_note(link, new_note):
                     target["notes"] = new_note
                     self._refresh_after_local_change()
-                    if self.window():
-                        self.window().show_toast("📝 메모가 저장되었습니다.")
+                    parent = self._main_window()
+                    if parent is not None:
+                        parent.show_toast("📝 메모가 저장되었습니다.")
             return
 
         elif action == "ext":
@@ -809,8 +837,9 @@ class NewsTab(QWidget):
             if not target_links:
                 self.btn_read_all.setEnabled(True)
                 self.lbl_status.setText("읽음 처리할 기사가 없습니다.")
-                if self.window():
-                    self.window().show_toast("읽음 처리할 기사가 없습니다.")
+                parent = self._main_window()
+                if parent is not None:
+                    parent.show_toast("읽음 처리할 기사가 없습니다.")
                 return
 
             self._mark_all_mode_label = "현재 표시 결과"
@@ -832,9 +861,10 @@ class NewsTab(QWidget):
         """모두 읽음 처리 완료"""
         self.btn_read_all.setEnabled(True)
         self.load_data_from_db() # UI 갱신
-        if self.window():
+        parent = self._main_window()
+        if parent is not None:
             mode_label = getattr(self, "_mark_all_mode_label", "선택 범위")
-            self.window().show_toast(f"✓ {mode_label} {count}개의 기사를 읽음으로 표시했습니다.")
+            parent.show_toast(f"✓ {mode_label} {count}개의 기사를 읽음으로 표시했습니다.")
             
     def _on_mark_all_read_error(self, err_msg):
         """모두 읽음 처리 오류"""
@@ -860,9 +890,10 @@ class NewsTab(QWidget):
 
         elif action == "share":
             clip = f"{target.get('title', '')}\n{target.get('link', '')}"
-            QApplication.clipboard().setText(clip)
-            if self.window():
-                self.window().show_toast("📋 링크와 제목이 복사되었습니다!")
+            self._clipboard().setText(clip)
+            parent = self._main_window()
+            if parent is not None:
+                parent.show_toast("📋 링크와 제목이 복사되었습니다!")
 
         elif action == "bm":
             new_val = 0 if target.get("is_bookmarked") else 1
@@ -880,11 +911,11 @@ class NewsTab(QWidget):
                     requires_refilter = True
                 self._refresh_after_local_change(requires_refilter=requires_refilter)
                 self._notify_badge_change()
-                if self.window():
-                    if hasattr(self.window(), 'refresh_bookmark_tab'):
-                        self.window().refresh_bookmark_tab()
+                parent = self._main_window()
+                if parent is not None:
+                    parent.refresh_bookmark_tab()
                     msg = "⭐ 북마크됨" if new_val else "북마크 해제됨"
-                    self.window().show_toast(msg)
+                    parent.show_toast(msg)
 
         elif action == "toggle_read":
             was_read = bool(target.get("is_read", 0))
@@ -903,8 +934,9 @@ class NewsTab(QWidget):
                 if self.db.save_note(link, new_note):
                     target["notes"] = new_note
                     self._refresh_after_local_change()
-                    if self.window():
-                        self.window().show_toast("📝 메모가 저장되었습니다.")
+                    parent = self._main_window()
+                    if parent is not None:
+                        parent.show_toast("📝 메모가 저장되었습니다.")
 
         elif action == "delete":
             reply = QMessageBox.question(
@@ -927,8 +959,9 @@ class NewsTab(QWidget):
                     self._item_by_hash.pop(link_hash, None)
                     self._refresh_after_local_change(requires_refilter=True)
                     self._notify_badge_change()
-                    if self.window():
-                        self.window().show_toast("🗑 삭제되었습니다.")
+                    parent = self._main_window()
+                    if parent is not None:
+                        parent.show_toast("🗑 삭제되었습니다.")
                 except Exception as e:
                     QMessageBox.warning(self, "오류", f"삭제 실패: {e}")
 

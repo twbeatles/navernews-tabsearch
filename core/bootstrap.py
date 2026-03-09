@@ -6,6 +6,7 @@ import traceback
 import hashlib
 import time
 from datetime import datetime
+from typing import Callable, Optional
 
 os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
 os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from core.backup import apply_pending_restore_if_any
 from core.constants import APP_DIR, APP_NAME, CONFIG_FILE, DB_FILE, PENDING_RESTORE_FILE, VERSION
 from core.logging_setup import configure_logging
+from core.protocols import LockFileProtocol
 from ui.main_window import MainApp
 
 configure_logging()
@@ -48,7 +50,10 @@ def _notify_existing_instance(timeout_ms: int = 1200) -> bool:
     return False
 
 
-def _setup_instance_server(app: QApplication, activate_window):
+def _setup_instance_server(
+    app: QApplication,
+    activate_window: Callable[[], object | None],
+) -> Optional[QLocalServer]:
     """기존 인스턴스가 복원 요청을 받을 로컬 서버를 시작."""
     QLocalServer.removeServer(INSTANCE_SERVER_NAME)
     server = QLocalServer(app)
@@ -84,7 +89,10 @@ def _setup_instance_server(app: QApplication, activate_window):
     return server
 
 
-def _resolve_single_instance_conflict(instance_lock: QLockFile, notifier=_notify_existing_instance) -> str:
+def _resolve_single_instance_conflict(
+    instance_lock: LockFileProtocol,
+    notifier: Callable[[], bool] = _notify_existing_instance,
+) -> str:
     """중복 실행 충돌 해소를 시도하고 상태 코드를 반환."""
     if notifier():
         return "notify_success"
@@ -100,6 +108,27 @@ def _resolve_single_instance_conflict(instance_lock: QLockFile, notifier=_notify
 
 def main():
     """메인 함수 - 안정성 개선 버전 (종료 원인 추적 포함)"""
+    app: Optional[QApplication] = None
+    window: Optional[MainApp] = None
+    instance_lock: Optional[QLockFile] = None
+    instance_server: Optional[QLocalServer] = None
+
+    def cleanup_instance_state() -> None:
+        nonlocal instance_lock, instance_server
+        try:
+            if instance_lock is not None:
+                instance_lock.unlock()
+        except Exception:
+            pass
+        try:
+            if instance_server is not None:
+                instance_server.close()
+                QLocalServer.removeServer(INSTANCE_SERVER_NAME)
+        except Exception:
+            pass
+        instance_lock = None
+        instance_server = None
+
     # 전역 예외 처리기
     def exception_hook(exc_type, exc_value, exc_tb):
         logger.critical("처리되지 않은 예외 발생:")
@@ -134,8 +163,6 @@ def main():
         threading.excepthook = thread_exception_hook
     
     # 윈도우 참조 저장 (시그널 핸들러에서 사용)
-    window = None
-    
     # SIGTERM/SIGINT 핸들러 (외부에서 프로세스 종료 시)
     def signal_handler(signum, frame):
         sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
@@ -205,7 +232,6 @@ def main():
                     logger.info("single_instance|status=blocked")
                     sys.exit(0)
 
-        app._instance_lock = instance_lock
         # app.setStyle("Fusion")
         app.setApplicationName(APP_NAME)
         app.setApplicationVersion(VERSION)
@@ -219,43 +245,19 @@ def main():
             app,
             lambda: window.show_window() if window else None,
         )
-        app._instance_server = instance_server
         window.show()
         
         logger.info(f"{APP_NAME} v{VERSION} 시작됨")
         
         exit_code = app.exec()
-        try:
-            if hasattr(app, "_instance_lock") and app._instance_lock:
-                app._instance_lock.unlock()
-        except Exception:
-            pass
-        try:
-            if hasattr(app, "_instance_server") and app._instance_server:
-                app._instance_server.close()
-                QLocalServer.removeServer(INSTANCE_SERVER_NAME)
-        except Exception:
-            pass
+        cleanup_instance_state()
         sys.exit(exit_code)
         
     except Exception as e:
         error_msg = f"애플리케이션 시작 오류: {e}"
         logger.error(error_msg)
         traceback.print_exc()
-
-        try:
-            app_instance = QApplication.instance()
-            if app_instance and hasattr(app_instance, "_instance_lock") and app_instance._instance_lock:
-                app_instance._instance_lock.unlock()
-        except Exception:
-            pass
-        try:
-            app_instance = QApplication.instance()
-            if app_instance and hasattr(app_instance, "_instance_server") and app_instance._instance_server:
-                app_instance._instance_server.close()
-                QLocalServer.removeServer(INSTANCE_SERVER_NAME)
-        except Exception:
-            pass
+        cleanup_instance_state()
         
         # 크래시 로그 파일에 기록
         try:
@@ -271,7 +273,8 @@ def main():
         try:
             # QApplication은 이미 전역으로 import 되어 있음
             # 만약 QApplication이 없다면 이 부분도 실패하겠지만, main 진입했다면 import는 성공한 상태임
-            app = QApplication.instance() or QApplication(sys.argv)
+            app_instance = QApplication.instance()
+            app = app_instance if isinstance(app_instance, QApplication) else QApplication(sys.argv)
             QMessageBox.critical(
                 None,
                 "시작 오류",

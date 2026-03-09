@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 import news_scraper_pro as app
@@ -66,6 +67,7 @@ class _DummyDialog:
         self.backup_list = backup_list
         self.auto_backup = auto_backup
         self.format_backup_timestamp = BackupDialog.format_backup_timestamp
+        self.load_backups = lambda: None
 
 
 class TestBackupRestoreMode(unittest.TestCase):
@@ -78,7 +80,7 @@ class TestBackupRestoreMode(unittest.TestCase):
 
         with mock.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
             with mock.patch.object(QMessageBox, "information"):
-                BackupDialog.restore_backup(dialog)
+                BackupDialog.restore_backup(cast(Any, dialog))
 
         self.assertEqual(auto_backup.calls, [("backup_meta", False)])
 
@@ -101,7 +103,7 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             with mock.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
                 with mock.patch.object(QMessageBox, "information"):
-                    BackupDialog.restore_backup(dialog)
+                    BackupDialog.restore_backup(cast(Any, dialog))
 
             self.assertEqual(auto_backup.calls, [(backup_name, True)])
 
@@ -144,7 +146,7 @@ class TestBackupRestoreMode(unittest.TestCase):
         ]
         dialog = _DummyDialog(_FakeListWidget(), auto_backup)
 
-        BackupDialog.load_backups(dialog)
+        BackupDialog.load_backups(cast(Any, dialog))
 
         self.assertEqual(dialog.backup_list.count(), 1)
         self.assertIn("2026-03-06 10:15:30", dialog.backup_list.item(0).text)
@@ -171,6 +173,7 @@ class TestBackupRestoreMode(unittest.TestCase):
             auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
             valid_path = auto_backup.create_backup(include_db=False, trigger="manual")
             self.assertIsNotNone(valid_path)
+            assert valid_path is not None
 
             corrupt_dir = Path(auto_backup.backup_dir) / "backup_corrupt_meta"
             corrupt_dir.mkdir(parents=True, exist_ok=True)
@@ -201,7 +204,7 @@ class TestBackupRestoreMode(unittest.TestCase):
         ]
         dialog = _DummyDialog(_FakeListWidget(), auto_backup)
 
-        BackupDialog.load_backups(dialog)
+        BackupDialog.load_backups(cast(Any, dialog))
 
         self.assertEqual(dialog.backup_list.count(), 1)
         self.assertIn("손상됨", dialog.backup_list.item(0).text)
@@ -252,7 +255,7 @@ class TestBackupRestoreMode(unittest.TestCase):
                 msgbox_cls.information = mock.Mock()
                 msgbox_cls.warning = mock.Mock()
 
-                BackupDialog.restore_backup(dialog)
+                BackupDialog.restore_backup(cast(Any, dialog))
 
             self.assertFalse(backup_path.exists())
             dialog.load_backups.assert_called_once()

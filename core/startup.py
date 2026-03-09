@@ -1,16 +1,26 @@
 import logging
 import os
 import sys
+from types import ModuleType
+from typing import Optional
 
 from core.constants import APP_DIR
 
 try:
     import winreg
+    _WINREG: Optional[ModuleType] = winreg
     WINREG_AVAILABLE = True
 except ImportError:
+    _WINREG = None
     WINREG_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _get_winreg() -> ModuleType:
+    if _WINREG is None:
+        raise RuntimeError("winreg is unavailable on this platform")
+    return _WINREG
 
 class StartupManager:
     """Windows 시작프로그램 레지스트리 관리"""
@@ -29,9 +39,15 @@ class StartupManager:
             return False
         
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_READ) as key:
+            winreg_mod = _get_winreg()
+            with winreg_mod.OpenKey(
+                winreg_mod.HKEY_CURRENT_USER,
+                cls.REGISTRY_KEY,
+                0,
+                winreg_mod.KEY_READ,
+            ) as key:
                 try:
-                    winreg.QueryValueEx(key, cls.APP_NAME)
+                    winreg_mod.QueryValueEx(key, cls.APP_NAME)
                     return True
                 except FileNotFoundError:
                     return False
@@ -47,8 +63,14 @@ class StartupManager:
         
         try:
             exe_path = cls.build_startup_command(start_minimized=start_minimized)
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_SET_VALUE) as key:
-                winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, exe_path)
+            winreg_mod = _get_winreg()
+            with winreg_mod.OpenKey(
+                winreg_mod.HKEY_CURRENT_USER,
+                cls.REGISTRY_KEY,
+                0,
+                winreg_mod.KEY_SET_VALUE,
+            ) as key:
+                winreg_mod.SetValueEx(key, cls.APP_NAME, 0, winreg_mod.REG_SZ, exe_path)
             
             logger.info(f"시작프로그램 등록 완료: {exe_path}")
             return True
@@ -63,9 +85,15 @@ class StartupManager:
             return False
         
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.REGISTRY_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            winreg_mod = _get_winreg()
+            with winreg_mod.OpenKey(
+                winreg_mod.HKEY_CURRENT_USER,
+                cls.REGISTRY_KEY,
+                0,
+                winreg_mod.KEY_SET_VALUE,
+            ) as key:
                 try:
-                    winreg.DeleteValue(key, cls.APP_NAME)
+                    winreg_mod.DeleteValue(key, cls.APP_NAME)
                     logger.info("시작프로그램 등록 해제 완료")
                     return True
                 except FileNotFoundError:

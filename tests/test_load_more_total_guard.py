@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 from ui.main_window import MainApp
 
@@ -36,11 +37,11 @@ class TestLoadMoreTotalGuard(unittest.TestCase):
         app = _MainWindowShim()
         tab = _DummyTab()
 
-        has_more = app._apply_load_more_button_state(tab, total=250, last_api_start_index=101)
+        has_more = app._apply_load_more_button_state(cast(Any, tab), total=250, last_api_start_index=101)
         self.assertTrue(has_more)
         self.assertTrue(tab.btn_load.enabled)
 
-        has_more = app._apply_load_more_button_state(tab, total=180, last_api_start_index=101)
+        has_more = app._apply_load_more_button_state(cast(Any, tab), total=180, last_api_start_index=101)
         self.assertFalse(has_more)
         self.assertFalse(tab.btn_load.enabled)
 

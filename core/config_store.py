@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 import tempfile
-from typing import Any, Dict, List, Tuple, TypedDict
+from typing import Any, Dict, List, Mapping, Tuple, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +221,7 @@ def encode_client_secret_for_storage(client_secret: str) -> Dict[str, str]:
     }
 
 
-def resolve_client_secret_for_runtime(settings: Dict[str, Any]) -> Tuple[str, bool]:
+def resolve_client_secret_for_runtime(settings: Mapping[str, Any]) -> Tuple[str, bool]:
     plain = str(settings.get("client_secret", "") or "")
     encrypted = str(settings.get("client_secret_enc", "") or "")
     storage = _normalize_secret_storage(settings.get("client_secret_storage", "plain"))
@@ -618,7 +618,9 @@ def load_config_file(path: str) -> AppConfig:
     secret_value, needs_migration = resolve_client_secret_for_runtime(app_settings)
     if needs_migration and secret_value and _is_windows_platform():
         encoded_secret = encode_client_secret_for_storage(secret_value)
-        app_settings.update(encoded_secret)
+        app_settings["client_secret"] = encoded_secret["client_secret"]
+        app_settings["client_secret_enc"] = encoded_secret["client_secret_enc"]
+        app_settings["client_secret_storage"] = encoded_secret["client_secret_storage"]
         try:
             save_config_file_atomic(path, cfg)
         except Exception as e:

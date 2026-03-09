@@ -11,10 +11,14 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         get_data = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "get_data")
 
         return_node = next(node for node in ast.walk(get_data) if isinstance(node, ast.Return))
+        self.assertIsNotNone(return_node.value)
         self.assertIsInstance(return_node.value, ast.Dict)
+        assert return_node.value is not None
+        assert isinstance(return_node.value, ast.Dict)
+        return_value = return_node.value
         keys = {
             key.value
-            for key in return_node.value.keys
+            for key in return_value.keys
             if isinstance(key, ast.Constant) and isinstance(key.value, str)
         }
         self.assertIn("sound_enabled", keys)
