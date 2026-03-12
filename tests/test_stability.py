@@ -1,4 +1,5 @@
 import ast
+import inspect
 import json
 import os
 import sqlite3
@@ -7,6 +8,7 @@ import unittest
 from pathlib import Path
 
 import news_scraper_pro as app
+from ui.main_window import MainApp
 
 
 class TestParseTabQuery(unittest.TestCase):
@@ -198,10 +200,7 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         self.assertIn('HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=0)', src)
 
     def test_fetch_worker_does_not_share_main_session(self):
-        src = Path('ui/main_window.py').read_text(encoding='utf-8')
-        start = src.index('def fetch_news')
-        end = src.index('def on_fetch_done')
-        block = src[start:end]
+        block = inspect.getsource(MainApp.fetch_news)
         self.assertNotIn('session=self.session', block)
 
     def test_newstab_has_required_helper_methods(self):
@@ -219,10 +218,7 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
             self.assertIn(required, method_names)
 
     def test_close_tab_calls_cleanup_before_delete_later(self):
-        src = Path('ui/main_window.py').read_text(encoding='utf-8')
-        start = src.index('def close_tab')
-        end = src.index('def rename_tab')
-        block = src[start:end]
+        block = inspect.getsource(MainApp.close_tab)
         self.assertIn('widget.cleanup()', block)
         self.assertIn('widget.deleteLater()', block)
         self.assertLess(block.index('widget.cleanup()'), block.index('widget.deleteLater()'))

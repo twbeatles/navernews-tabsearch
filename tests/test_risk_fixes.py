@@ -1,7 +1,9 @@
+import inspect
 import unittest
 from pathlib import Path
 
 from core.query_parser import has_positive_keyword
+from ui.main_window import MainApp
 
 
 class TestKeywordValidation(unittest.TestCase):
@@ -17,53 +19,40 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         return Path("ui/main_window.py").read_text(encoding="utf-8")
 
     def test_safe_refresh_all_recovers_lock_when_not_started(self):
-        src = self._read()
-        start = src.index("def _safe_refresh_all")
-        end = src.index("def refresh_all")
-        block = src[start:end]
+        block = inspect.getsource(MainApp._safe_refresh_all)
         self.assertIn("started = False", block)
         self.assertIn("started = self.refresh_all()", block)
         self.assertIn("if not started:", block)
         self.assertIn("self._refresh_in_progress = False", block)
 
     def test_refresh_all_returns_bool_contract(self):
-        src = self._read()
-        start = src.index("def refresh_all")
-        end = src.index("def _process_next_refresh")
-        block = src[start:end]
-        self.assertIn("def refresh_all(self) -> bool", block)
+        block = inspect.getsource(MainApp.refresh_all)
+        self.assertIn("def refresh_all(", block)
+        self.assertIn("-> bool", block)
         self.assertIn("return True", block)
         self.assertIn("return False", block)
 
     def test_add_news_tab_load_more_uses_live_tab_keyword(self):
-        src = self._read()
-        start = src.index("def add_news_tab")
-        end = src.index("def add_tab_dialog")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.add_news_tab)
         self.assertIn("lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True)", block)
         self.assertNotIn("self.fetch_news(keyword, is_more=True)", block)
 
     def test_fetch_tracks_tab_pagination_state(self):
-        src = self._read()
+        src = Path("ui/main_window.py").read_text(encoding="utf-8")
+        fetch_src = inspect.getsource(MainApp.fetch_news)
         self.assertIn("class TabFetchState", src)
         self.assertIn("self._tab_fetch_state", src)
         self.assertIn("self._request_start_index", src)
-        self.assertIn("fetch_state.last_api_start_index + 100", src)
+        self.assertIn("fetch_state.last_api_start_index + 100", fetch_src)
 
     def test_minimize_to_tray_is_handled_in_change_event(self):
-        src = self._read()
-        start = src.index("def changeEvent")
-        end = src.index("def close_current_tab")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.changeEvent)
         self.assertIn("QEvent.Type.WindowStateChange", block)
         self.assertIn("self.minimize_to_tray", block)
         self.assertIn("QTimer.singleShot(0, self.hide)", block)
 
     def test_show_window_restores_hidden_or_minimized_window(self):
-        src = self._read()
-        start = src.index("def show_window")
-        end = src.index("def real_quit")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.show_window)
         self.assertIn("if self.isHidden():", block)
         self.assertIn("if self.isMinimized():", block)
         self.assertIn("self.showNormal()", block)
@@ -88,22 +77,19 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertIn("def _normalize_window_geometry", src)
 
     def test_rename_tab_resets_fetch_state_when_fetch_key_changes(self):
-        src = self._read()
-        start = src.index("def rename_tab")
-        end = src.index("def on_tab_context_menu")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.rename_tab)
         self.assertIn("old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)", block)
         self.assertIn("new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)", block)
         self.assertIn("if old_fetch_key != new_fetch_key:", block)
         self.assertIn("self._last_fetch_request_ts.pop(old_fetch_key, None)", block)
-        self.assertIn("self._tab_fetch_state[new_keyword] = TabFetchState()", block)
+        self.assertIn("self._tab_fetch_state[new_keyword] = self._make_tab_fetch_state()", block)
         self.assertNotIn("UPDATE news_keywords SET keyword=? WHERE keyword=?", block)
         self.assertNotIn("UPDATE news SET keyword=? WHERE keyword=?", block)
         self.assertIn("w.load_data_from_db()", block)
         self.assertIn("self.fetch_news(new_keyword)", block)
 
     def test_main_window_has_no_split_index_fallback(self):
-        src = self._read()
+        src = inspect.getsource(MainApp.on_fetch_done)
         self.assertNotIn("w.keyword.split()[0]", src)
 
     def test_badge_update_uses_tab_keyword_cache_and_exclude_aware_count(self):
@@ -122,26 +108,17 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertIn("cached = self._badge_unread_cache.get(keyword)", block)
 
     def test_update_tray_tooltip_uses_db_total_unread_count(self):
-        src = self._read()
-        start = src.index("def update_tray_tooltip")
-        end = src.index("def show_window")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.update_tray_tooltip)
         self.assertIn("self.db.get_total_unread_count()", block)
 
     def test_rename_tab_cleans_active_worker_and_uses_common_title_formatter(self):
-        src = self._read()
-        start = src.index("def rename_tab")
-        end = src.index("def on_tab_context_menu")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.rename_tab)
         self.assertIn("self._worker_registry.get_active_request_id(old_keyword)", block)
         self.assertIn("self.cleanup_worker(", block)
         self.assertIn("self._format_tab_title(new_keyword, unread_count=0)", block)
 
     def test_close_tab_cleans_active_worker_before_widget_cleanup(self):
-        src = self._read()
-        start = src.index("def close_tab")
-        end = src.index("def rename_tab")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.close_tab)
         self.assertIn("self._worker_registry.get_active_request_id(removed_keyword)", block)
         self.assertIn("self.cleanup_worker(", block)
         self.assertLess(block.index("self.cleanup_worker("), block.index("widget.cleanup()"))
@@ -166,10 +143,7 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         self.assertIn("self.db.mark_query_as_read", block)
 
     def test_stats_analysis_uses_raw_tab_query_data(self):
-        src = Path("ui/main_window.py").read_text(encoding="utf-8")
-        start = src.index("def show_stats_analysis")
-        end = src.index("def show_analysis")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.show_stats_analysis)
         self.assertIn("tab_combo.addItem(w.keyword, w.keyword)", block)
         self.assertIn("db_keyword, exclude_words = parse_tab_query(tab_query)", block)
         self.assertIn("exclude_words=exclude_words", block)

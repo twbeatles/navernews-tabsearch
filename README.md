@@ -86,7 +86,12 @@ navernews-tabsearch/
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # 경로/버전/앱 상수
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
-│   ├── database.py              # DatabaseManager (연결 풀, CRUD)
+│   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
+│   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
+│   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
+│   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
+│   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
+│   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session capability Protocol 정의
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
@@ -101,10 +106,18 @@ navernews-tabsearch/
 │   └── validation.py            # ValidationUtils
 ├── ui/                          # UI 로직 패키지
 │   ├── __init__.py
-│   ├── main_window.py           # MainApp (메인 윈도우)
+│   ├── main_window.py           # MainApp facade / composition root
+│   ├── _main_window_tabs.py     # 탭 추가/닫기/리네임/그룹 연결
+│   ├── _main_window_fetch.py    # fetch orchestration / worker 수명 주기
+│   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
+│   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
+│   ├── _main_window_analysis.py # 통계 / 언론사 분석 UI
 │   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol 정의
-│   ├── settings_dialog.py       # SettingsDialog
+│   ├── settings_dialog.py       # SettingsDialog facade
+│   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
+│   ├── _settings_dialog_docs.py # 도움말 / 단축키 HTML
+│   ├── _settings_dialog_tasks.py # API 검증 / 데이터 정리 / 워커 정리
 │   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
 │   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
 │   ├── toast.py                 # ToastQueue/ToastMessage
@@ -183,6 +196,7 @@ pyright
 참고:
 - `pyrightconfig.json`은 루트 Python 파일, `core/`, `ui/`, `tests/`를 검사 대상으로 고정합니다.
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산(`.py`, `.md`, `.json`, `.ini`, `.spec`, `.txt`, `.yml`, `.yaml`)의 UTF-8 decode 실패, `\ufffd`, 알려진 깨진 토큰 재등장을 함께 감시합니다.
+- facade 공개 경로(`ui.main_window.MainApp`, `core.database.DatabaseManager`, `ui.settings_dialog.SettingsDialog`)는 유지하고, 내부 구현만 private helper module로 분리했습니다.
 
 ## PyInstaller 빌드 (onefile)
 

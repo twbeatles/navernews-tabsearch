@@ -1,3 +1,4 @@
+import inspect
 import json
 import tempfile
 import unittest
@@ -6,6 +7,7 @@ from unittest import mock
 
 import config_store
 from query_parser import build_fetch_key
+from ui.main_window import MainApp
 
 
 class TestConfigStore(unittest.TestCase):
@@ -97,10 +99,7 @@ class TestPlanSourceGuards(unittest.TestCase):
         self.assertIn('hasattr(self, "lbl_tilde")', block)
 
     def test_fetch_dedupe_uses_build_fetch_key(self):
-        src = self._read('ui/main_window.py')
-        start = src.index('def fetch_news')
-        end = src.index('def on_fetch_done')
-        block = src[start:end]
+        block = inspect.getsource(MainApp.fetch_news)
         self.assertIn('fetch_key = build_fetch_key(search_keyword, exclude_words)', block)
         self.assertIn('self._last_fetch_request_ts[fetch_key] = now_ts', block)
 

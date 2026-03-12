@@ -1,5 +1,5 @@
+import inspect
 import unittest
-from pathlib import Path
 from typing import Any, cast
 
 from ui.main_window import MainApp
@@ -23,13 +23,13 @@ class _DummyTab:
 
 
 class _MainWindowShim:
-    _compute_load_more_state = MainApp._compute_load_more_state
-    _apply_load_more_button_state = MainApp._apply_load_more_button_state
+    _compute_load_more_state = cast(Any, MainApp._compute_load_more_state)
+    _apply_load_more_button_state = cast(Any, MainApp._apply_load_more_button_state)
 
 
 class TestLoadMoreTotalGuard(unittest.TestCase):
     def test_helper_formula_source_guard(self):
-        src = Path("ui/main_window.py").read_text(encoding="utf-8")
+        src = inspect.getsource(MainApp._compute_load_more_state)
         self.assertIn("next_start = last_api_start_index + 100", src)
         self.assertIn("has_more = next_start <= min(1000, total)", src)
 
@@ -46,8 +46,5 @@ class TestLoadMoreTotalGuard(unittest.TestCase):
         self.assertFalse(tab.btn_load.enabled)
 
     def test_on_fetch_done_uses_total_based_button_update(self):
-        src = Path("ui/main_window.py").read_text(encoding="utf-8")
-        start = src.index("def on_fetch_done")
-        end = src.index("def on_fetch_error")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.on_fetch_done)
         self.assertIn("self._apply_load_more_button_state(w, total, last_api_start_index)", block)

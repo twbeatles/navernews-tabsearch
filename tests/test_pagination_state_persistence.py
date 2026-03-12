@@ -1,8 +1,10 @@
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
 
 from core.config_store import default_config, load_config_file, save_config_file_atomic
+from ui.main_window import MainApp
 
 
 class TestPaginationStatePersistence(unittest.TestCase):
@@ -21,10 +23,7 @@ class TestPaginationStatePersistence(unittest.TestCase):
             self.assertEqual(loaded["pagination_state"]["economy|ad"], 901)
 
     def test_fetch_more_uses_cursor_or_default_without_db_count_fallback(self):
-        src = Path("ui/main_window.py").read_text(encoding="utf-8")
-        start = src.index("def fetch_news")
-        end = src.index("def on_fetch_done")
-        block = src[start:end]
+        block = inspect.getsource(MainApp.fetch_news)
 
         self.assertIn("self._fetch_cursor_by_key.get(fetch_key, 0)", block)
         self.assertIn("start_idx = 101", block)
