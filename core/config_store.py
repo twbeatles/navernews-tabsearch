@@ -43,6 +43,7 @@ class AppConfig(TypedDict):
     search_history: List[str]
     keyword_groups: Dict[str, List[str]]
     pagination_state: Dict[str, int]
+    pagination_totals: Dict[str, int]
 
 
 DEFAULT_CONFIG: AppConfig = {
@@ -73,6 +74,7 @@ DEFAULT_CONFIG: AppConfig = {
     "search_history": [],
     "keyword_groups": {},
     "pagination_state": {},
+    "pagination_totals": {},
 }
 
 
@@ -316,6 +318,24 @@ def _to_pagination_state(value: Any) -> Dict[str, int]:
     return normalized
 
 
+def _to_pagination_totals(value: Any) -> Dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, int] = {}
+    for key, raw_total in value.items():
+        if not isinstance(key, str):
+            continue
+        fetch_key = key.strip()
+        if not fetch_key:
+            continue
+        total = _to_int(raw_total, 0)
+        if total < 0:
+            continue
+        normalized[fetch_key] = total
+    return normalized
+
+
 def _normalize_alert_keywords(value: Any) -> Tuple[List[str], bool]:
     changed = False
     raw_keywords: List[str] = []
@@ -544,6 +564,7 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         cfg["search_history"] = _to_str_list(raw.get("search_history"))
         cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
         cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
+        cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
         return cfg
 
     # Legacy flat schema
@@ -573,6 +594,7 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     cfg["search_history"] = _to_str_list(raw.get("search_history"))
     cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
     cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
+    cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
     return cfg
 
 

@@ -25,17 +25,22 @@ logger = logging.getLogger(__name__)
 
 class _MainWindowFetchMixin:
     def _safe_refresh_all(self: MainApp):
-        """안전한 자동 새로고침 래퍼 (타이머에서 호출)"""
+        """Timer-safe refresh wrapper."""
         if self._network_error_count >= self._max_network_errors:
             if self._network_available:
-                logger.warning(f"네트워크 연속 오류 {self._network_error_count}회. 자동 새로고침 일시 중지.")
+                logger.warning(
+                    "Automatic refresh paused after %s consecutive network errors",
+                    self._network_error_count,
+                )
                 self._network_available = False
-                self._status_bar().showMessage("⚠ 네트워크 오류로 자동 새로고침 일시 중지 (수동 새로고침으로 재개)")
+                self._status_bar().showMessage(
+                    "네트워크 오류로 자동 새로고침을 잠시 중지했습니다. 수동 새로고침으로 다시 확인해주세요."
+                )
             return
 
         with QMutexLocker(self._refresh_mutex):
             if self._refresh_in_progress or self._sequential_refresh_active:
-                logger.warning("새로고침이 이미 진행 중입니다. 건너킵니다.")
+                logger.warning("Refresh skipped because another refresh is already running")
                 return
             self._refresh_in_progress = True
 
@@ -43,25 +48,25 @@ class _MainWindowFetchMixin:
         try:
             started = self.refresh_all()
         except Exception as e:
-            logger.error(f"자동 새로고침 오류: {e}")
+            logger.error("Automatic refresh failed: %s", e)
         finally:
             if not started:
                 with QMutexLocker(self._refresh_mutex):
                     self._refresh_in_progress = False
 
     def refresh_all(self: MainApp) -> bool:
-        """모든 탭 새로고침 - 완전한 순차 새로고침 버전"""
-        logger.info("전체 새로고침 시작")
+        """Refresh all tabs sequentially."""
+        logger.info("Starting refresh_all")
 
         if self._sequential_refresh_active:
-            logger.warning("순차 새로고침이 이미 진행 중입니다. 건너킵니다.")
+            logger.warning("Sequential refresh is already running")
             return False
 
         try:
             valid, msg = self._validate_api_credentials()
             if not valid:
                 self._status_bar().showMessage(f"⚠ {msg}")
-                logger.warning(f"API 자격증명 오류: {msg}")
+                logger.warning("API credentials invalid: %s", msg)
                 return False
 
             self._network_error_count = 0
@@ -70,15 +75,15 @@ class _MainWindowFetchMixin:
             try:
                 self.bm_tab.load_data_from_db()
             except Exception as e:
-                logger.error(f"북마크 탭 로드 오류: {e}")
+                logger.error("Bookmark tab reload failed: %s", e)
 
             self._pending_refresh_keywords = []
-            for _i, widget in self._iter_news_tabs(start_index=1):
+            for _index, widget in self._iter_news_tabs(start_index=1):
                 try:
                     if has_positive_keyword(widget.keyword):
                         self._pending_refresh_keywords.append(widget.keyword)
                 except Exception as e:
-                    logger.error(f"탭 접근 오류: {e}")
+                    logger.error("Failed to inspect tab keyword: %s", e)
 
             if not self._pending_refresh_keywords:
                 self._status_bar().showMessage("새로고침할 탭이 없습니다.")
@@ -93,23 +98,22 @@ class _MainWindowFetchMixin:
             self.progress.setVisible(True)
             self.progress.setRange(0, self._total_refresh_count)
             self.progress.setValue(0)
-            self._status_bar().showMessage(f"🔄 순차 새로고침 중... (0/{self._total_refresh_count})")
+            self._status_bar().showMessage(
+                f"새로고침 중... (0/{self._total_refresh_count})"
+            )
             self.btn_refresh.setEnabled(False)
-
-            logger.info(f"순차 새로고침 시작: {self._total_refresh_count}개 탭")
 
             self._process_next_refresh()
             return True
-
         except Exception as e:
-            logger.error(f"refresh_all 오류: {e}")
+            logger.error("refresh_all failed: %s", e)
             traceback.print_exc()
-            self._status_bar().showMessage(f"⚠ 새로고침 오류: {str(e)}")
+            self._status_bar().showMessage(f"❌ 새로고침 오류: {e}")
             self._finish_sequential_refresh()
             return False
 
     def _process_next_refresh(self: MainApp):
-        """순차 새로고침 체인: 다음 탭 처리"""
+        """Run the next queued tab refresh."""
         if not self._sequential_refresh_active:
             return
 
@@ -118,22 +122,27 @@ class _MainWindowFetchMixin:
             return
 
         keyword = self._pending_refresh_keywords[self._current_refresh_idx]
-        logger.info(f"순차 새로고침: [{self._current_refresh_idx + 1}/{self._total_refresh_count}] '{keyword}'")
+        logger.info(
+            "Sequential refresh: [%s/%s] %s",
+            self._current_refresh_idx + 1,
+            self._total_refresh_count,
+            keyword,
+        )
 
         self.progress.setValue(self._current_refresh_idx)
         self._status_bar().showMessage(
-            f"🔄 '{keyword}' 새로고침 중... ({self._current_refresh_idx + 1}/{self._total_refresh_count})"
+            f"'{keyword}' 새로고침 중... ({self._current_refresh_idx + 1}/{self._total_refresh_count})"
         )
 
         try:
             self.fetch_news(keyword, is_sequential=True)
         except Exception as e:
-            logger.error(f"'{keyword}' 새로고침 오류: {e}")
+            logger.error("Refresh failed for '%s': %s", keyword, e)
             self._current_refresh_idx += 1
             QTimer.singleShot(500, self._process_next_refresh)
 
     def _on_sequential_fetch_done(self: MainApp, keyword: str):
-        """순차 새로고침에서 하나의 fetch 완료 시 호출"""
+        """Advance the sequential refresh chain."""
         if not self._sequential_refresh_active:
             return
 
@@ -141,7 +150,7 @@ class _MainWindowFetchMixin:
         QTimer.singleShot(300, self._process_next_refresh)
 
     def _finish_sequential_refresh(self: MainApp):
-        """순차 새로고침 완료 처리"""
+        """Reset sequential refresh state and surface the result."""
         self._sequential_refresh_active = False
         self._pending_refresh_keywords = []
         self._last_refresh_time = datetime.now()
@@ -156,20 +165,19 @@ class _MainWindowFetchMixin:
         added = self._sequential_added_count
         dup = self._sequential_dup_count
 
-        logger.info(f"순차 새로고침 완료 ({self._total_refresh_count}개 탭, {added}건 추가, {dup}건 중복)")
-
-        toast_msg = f"✓ {self._total_refresh_count}개 탭 새로고침 완료 ({added}건 추가"
+        toast_msg = f"총 {self._total_refresh_count}개 탭 새로고침 완료 ({added}건 추가"
         if dup > 0:
             toast_msg += f", {dup}건 중복"
         toast_msg += ")"
 
+        logger.info("Sequential refresh finished: %s", toast_msg)
         self._status_bar().showMessage(toast_msg, 5000)
         self.show_toast(toast_msg)
 
         if self.notify_on_refresh and added > 0:
             self.show_tray_notification(
-                "📰 자동 새로고침 완료",
-                f"{added}건의 새 뉴스가 업데이트되었습니다."
+                "뉴스 자동 새로고침 완료",
+                f"{added}건의 새 기사가 업데이트되었습니다.",
             )
 
         self.apply_refresh_interval()
@@ -189,28 +197,30 @@ class _MainWindowFetchMixin:
 
     def _compute_load_more_state(
         self: MainApp,
-        total: int,
+        total: Optional[int],
         last_api_start_index: int,
     ) -> bool:
-        total = max(0, int(total or 0))
         last_api_start_index = max(0, int(last_api_start_index or 0))
         next_start = last_api_start_index + 100
-        has_more = next_start <= min(1000, total)
-        return has_more
+        if next_start > 1000:
+            return False
+        if total is None:
+            return True
+        return next_start <= min(1000, max(0, int(total or 0)))
 
     def _apply_load_more_button_state(
         self: MainApp,
         tab_widget,
-        total: int,
+        total: Optional[int],
         last_api_start_index: int,
     ) -> bool:
         has_more = self._compute_load_more_state(total, last_api_start_index)
         if has_more:
             tab_widget.btn_load.setEnabled(True)
-            tab_widget.btn_load.setText("📥 더 불러오기")
+            tab_widget.btn_load.setText("📄 더 불러오기")
         else:
             tab_widget.btn_load.setEnabled(False)
-            tab_widget.btn_load.setText("✅ 마지막 페이지")
+            tab_widget.btn_load.setText("📄 마지막 페이지")
         return has_more
 
     def fetch_news(
@@ -219,23 +229,27 @@ class _MainWindowFetchMixin:
         is_more: bool = False,
         is_sequential: bool = False,
     ):
-        """뉴스 가져오기 - 순차 새로고침 지원"""
+        """Fetch news for a tab."""
         search_keyword, exclude_words = parse_search_query(keyword)
         if not search_keyword:
             if not is_sequential:
-                self.show_warning_toast("탭 키워드에 검색어가 없습니다. 탭 이름을 확인해주세요.")
+                self.show_warning_toast("탭 검색어에 일반 키워드가 없습니다. 탭 이름을 확인해주세요.")
             return
+
         db_keyword, _ = parse_tab_query(keyword)
         if not db_keyword:
             db_keyword = search_keyword
         fetch_key = build_fetch_key(search_keyword, exclude_words)
+        query_key = fetch_key
 
         if not is_more and not is_sequential:
             now_ts = time.time()
             last_ts = self._last_fetch_request_ts.get(fetch_key, 0.0)
             if (now_ts - last_ts) < self._fetch_dedupe_window_sec:
                 logger.info(
-                    f"PERF|net.fetch_deduped|0.00ms|kw={fetch_key}|window={self._fetch_dedupe_window_sec}s"
+                    "PERF|net.fetch_deduped|0.00ms|kw=%s|window=%ss",
+                    fetch_key,
+                    self._fetch_dedupe_window_sec,
                 )
                 return
             self._last_fetch_request_ts[fetch_key] = now_ts
@@ -254,7 +268,7 @@ class _MainWindowFetchMixin:
                 QMessageBox.information(
                     self,
                     "알림",
-                    "네이버 검색 API는 최대 1,000개까지만 조회할 수 있습니다.",
+                    "네이버 검색 API는 최대 1,000건까지만 조회할 수 있습니다.",
                 )
                 if is_sequential:
                     self._on_sequential_fetch_done(keyword)
@@ -266,9 +280,9 @@ class _MainWindowFetchMixin:
 
         located_tab = self._find_news_tab(keyword)
         if located_tab is not None:
-            _tab_index, w = located_tab
-            w.btn_load.setEnabled(False)
-            w.btn_load.setText("⏳ 로딩 중...")
+            _tab_index, tab_widget = located_tab
+            tab_widget.btn_load.setEnabled(False)
+            tab_widget.btn_load.setText("📄 로딩 중...")
 
         worker = ApiWorker(
             self.client_id,
@@ -277,7 +291,8 @@ class _MainWindowFetchMixin:
             db_keyword,
             exclude_words,
             self._require_db(),
-            start_idx,
+            query_key=query_key,
+            start_idx=start_idx,
             timeout=self.api_timeout,
             display_keyword=keyword,
         )
@@ -315,7 +330,9 @@ class _MainWindowFetchMixin:
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(
             lambda rid=request_id, kw=keyword: self.cleanup_worker(
-                keyword=kw, request_id=rid, only_if_active=False
+                keyword=kw,
+                request_id=rid,
+                only_if_active=False,
             )
         )
 
@@ -330,10 +347,10 @@ class _MainWindowFetchMixin:
         is_sequential: bool = False,
         request_id: Optional[int] = None,
     ):
-        """뉴스 가져오기 완료 - 순차 새로고침 지원"""
+        """Handle a successful fetch result."""
         try:
             if not self._is_active_worker_request(keyword, request_id):
-                logger.info(f"오래된 완료 콜백 무시 (stale on_fetch_done ignored): kw={keyword}, rid={request_id}")
+                logger.info("stale on_fetch_done ignored: kw=%s, rid=%s", keyword, request_id)
                 return
 
             search_keyword, exclude_words = parse_search_query(keyword)
@@ -341,22 +358,28 @@ class _MainWindowFetchMixin:
                 search_keyword = keyword
             fetch_key = build_fetch_key(search_keyword, exclude_words)
 
-            added_count = result.get("added_count", 0)
-            dup_count = result.get("dup_count", 0)
+            added_count = int(result.get("added_count", 0) or 0)
+            dup_count = int(result.get("dup_count", 0) or 0)
+            total = int(result.get("total", 0) or 0)
+
             completed_start_idx = None
             if request_id is not None:
                 completed_start_idx = self._request_start_index.get(request_id)
                 if completed_start_idx is not None:
-                    self._tab_fetch_state.setdefault(keyword, self._make_tab_fetch_state()).last_api_start_index = completed_start_idx
+                    self._tab_fetch_state.setdefault(
+                        keyword,
+                        self._make_tab_fetch_state(),
+                    ).last_api_start_index = completed_start_idx
                     if completed_start_idx > 0:
                         self._fetch_cursor_by_key[fetch_key] = int(completed_start_idx)
 
+            self._fetch_total_by_key[fetch_key] = total
+
             located_tab = self._find_news_tab(keyword)
             if located_tab is not None:
-                _tab_index, w = located_tab
-                w.total_api_count = result["total"]
-                w.update_timestamp()
-                w.load_data_from_db()
+                _tab_index, tab_widget = located_tab
+                tab_widget.total_api_count = total
+                tab_widget.update_timestamp()
 
                 last_api_start_index = completed_start_idx
                 if last_api_start_index is None:
@@ -364,26 +387,18 @@ class _MainWindowFetchMixin:
                         keyword,
                         self._make_tab_fetch_state(),
                     ).last_api_start_index
-                total = int(result.get("total", 0) or 0)
-                self._apply_load_more_button_state(w, total, last_api_start_index)
-                if w.worker is not None:
-                    w.worker.finished.connect(
-                        lambda *_args, tab_ref=w, total_ref=total, start_idx_ref=last_api_start_index:
-                        self._apply_load_more_button_state(tab_ref, total_ref, start_idx_ref)
-                    )
-                    w.worker.error.connect(
-                        lambda *_args, tab_ref=w, total_ref=total, start_idx_ref=last_api_start_index:
-                        self._apply_load_more_button_state(tab_ref, total_ref, start_idx_ref)
-                    )
+                self._apply_load_more_button_state(tab_widget, total, last_api_start_index)
+                tab_widget.load_data_from_db()
 
                 if not is_more and not is_sequential:
-                    msg = f"✓ '{keyword}' 업데이트 완료 ({added_count}건 추가"
+                    msg = f"✅ '{keyword}' 업데이트 완료 ({added_count}건 추가"
                     if dup_count > 0:
                         msg += f", {dup_count}건 중복"
-                    if result.get("filtered", 0) > 0:
-                        msg += f", {result['filtered']}건 필터링"
+                    filtered_count = int(result.get("filtered", 0) or 0)
+                    if filtered_count > 0:
+                        msg += f", {filtered_count}건 제외"
                     msg += ")"
-                    w.lbl_status.setText(msg)
+                    tab_widget.lbl_status.setText(msg)
 
             if not is_sequential:
                 self.progress.setVisible(False)
@@ -391,7 +406,7 @@ class _MainWindowFetchMixin:
                 self.btn_refresh.setEnabled(True)
 
                 if not is_more:
-                    toast_msg = f"✓ '{keyword}' 업데이트 완료 ({added_count}건 추가"
+                    toast_msg = f"✅ '{keyword}' 업데이트 완료 ({added_count}건 추가"
                     if dup_count > 0:
                         toast_msg += f", {dup_count}건 유사"
                     toast_msg += ")"
@@ -401,37 +416,35 @@ class _MainWindowFetchMixin:
                     if added_count > 0:
                         self.show_desktop_notification(
                             f"📰 {keyword}",
-                            f"{added_count}건의 새 뉴스가 있습니다."
+                            f"{added_count}건의 새 뉴스가 있습니다.",
                         )
                         if not self.isVisible():
                             self.show_tray_notification(
                                 f"📰 {keyword}",
-                                f"{added_count}건의 새 뉴스가 도착했습니다."
+                                f"{added_count}건의 새 뉴스가 도착했습니다.",
                             )
                         self.update_tray_tooltip()
 
-                    matched = self.check_alert_keywords(result["items"])
+                    matched = self.check_alert_keywords(result.get("items", []))
                     if matched:
-                        for item, kw in matched[:3]:
+                        for item, alert_keyword in matched[:3]:
                             title = html.unescape(RE_HTML_TAGS.sub("", item.get("title", "")))
                             self.show_desktop_notification(
-                                f"🔔 알림 키워드: {kw}",
-                                title[:50]
+                                f"🔔 알림 키워드: {alert_keyword}",
+                                title[:50],
                             )
             else:
                 self._sequential_added_count += added_count
                 self._sequential_dup_count += dup_count
-                logger.info(f"순차 새로고침 완료: '{keyword}' ({added_count}건 추가)")
                 self._on_sequential_fetch_done(keyword)
 
             self._network_error_count = 0
             self._network_available = True
             self.update_tab_badge(keyword)
-
         except Exception as e:
-            logger.error(f"가져오기 완료 처리 오류 (Fetch Done Error): {e}")
+            logger.error("on_fetch_done failed: %s", e)
             traceback.print_exc()
-            self._status_bar().showMessage(f"⚠ 처리 중 오류: {str(e)}")
+            self._status_bar().showMessage(f"❌ 처리 중 오류: {e}")
             if not is_sequential:
                 self.progress.setVisible(False)
                 self.btn_refresh.setEnabled(True)
@@ -445,9 +458,9 @@ class _MainWindowFetchMixin:
         is_sequential: bool = False,
         request_id: Optional[int] = None,
     ):
-        """뉴스 가져오기 오류 - 순차 새로고침 지원"""
+        """Handle a failed fetch."""
         if not self._is_active_worker_request(keyword, request_id):
-            logger.info(f"오래된 오류 콜백 무시 (stale on_fetch_error ignored): kw={keyword}, rid={request_id}")
+            logger.info("stale on_fetch_error ignored: kw=%s, rid=%s", keyword, request_id)
             return
 
         search_keyword, exclude_words = parse_search_query(keyword)
@@ -458,33 +471,34 @@ class _MainWindowFetchMixin:
         if request_id is not None:
             self._request_start_index.pop(request_id, None)
 
-        located_tab = self._find_news_tab(keyword)
-        if located_tab is not None:
-            _tab_index, w = located_tab
-            w.btn_load.setEnabled(True)
-            w.btn_load.setText("📥 더 불러오기")
+        if self._find_news_tab(keyword) is not None:
+            self.sync_tab_load_more_state(keyword)
 
         if not is_sequential:
             self.progress.setVisible(False)
             self.progress.setRange(0, 100)
             self.btn_refresh.setEnabled(True)
 
-            self._status_bar().showMessage(f"⚠ '{keyword}' 오류: {error_msg}", 5000)
+            self._status_bar().showMessage(f"❌ '{keyword}' 오류: {error_msg}", 5000)
             QMessageBox.critical(
                 self,
                 "API 오류",
                 f"'{keyword}' 검색 중 오류가 발생했습니다:\n\n{error_msg}\n\n"
-                "API 키가 올바른지, 네트워크 연결 상태를 확인해주세요."
+                "API 키와 네트워크 연결 상태를 확인해주세요.",
             )
         else:
-            logger.warning(f"순차 새로고침 중 오류: '{keyword}' - {error_msg}")
+            logger.warning("Sequential refresh failed for '%s': %s", keyword, error_msg)
             self._on_sequential_fetch_done(keyword)
 
         network_error_keywords = ["네트워크", "timeout", "연결", "connection", "Timeout", "Network"]
-        is_network_error = any(kw in error_msg for kw in network_error_keywords)
+        is_network_error = any(token in error_msg for token in network_error_keywords)
         if is_network_error:
             self._network_error_count += 1
-            logger.warning(f"네트워크 오류 카운트: {self._network_error_count}/{self._max_network_errors}")
+            logger.warning(
+                "Network error count: %s/%s",
+                self._network_error_count,
+                self._max_network_errors,
+            )
         else:
             self._network_error_count = 0
 
@@ -494,7 +508,7 @@ class _MainWindowFetchMixin:
         request_id: Optional[int] = None,
         only_if_active: bool = False,
     ):
-        """워커 정리 - request_id 기반 안정성 개선"""
+        """Dispose a worker/thread pair by request id."""
         try:
             if request_id is None and keyword:
                 request_id = self._worker_registry.get_active_request_id(keyword)
@@ -541,9 +555,9 @@ class _MainWindowFetchMixin:
 
             self.workers.pop(handle.tab_keyword, None)
             self._request_start_index.pop(request_id, None)
-            logger.info(f"워커 정리 완료: {handle.tab_keyword} (rid={request_id})")
+            logger.info("Worker cleaned up: %s (rid=%s)", handle.tab_keyword, request_id)
         except Exception as e:
-            logger.error(f"워커 정리 오류 (keyword={keyword}, rid={request_id}): {e}")
+            logger.error("cleanup_worker failed (keyword=%s, rid=%s): %s", keyword, request_id, e)
 
     def _validate_api_credentials(self: MainApp):
         from core.validation import ValidationUtils

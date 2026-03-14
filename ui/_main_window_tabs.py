@@ -63,6 +63,19 @@ class _MainWindowTabsMixin:
                 return True
         return False
 
+    def _prune_fetch_key_state(
+        self: MainApp,
+        fetch_key: str,
+        skip_keyword: Optional[str] = None,
+    ) -> None:
+        if not fetch_key:
+            return
+        if self._is_fetch_key_referenced(fetch_key, skip_keyword=skip_keyword):
+            return
+        self._fetch_cursor_by_key.pop(fetch_key, None)
+        self._fetch_total_by_key.pop(fetch_key, None)
+        self._last_fetch_request_ts.pop(fetch_key, None)
+
     def add_news_tab(self: MainApp, keyword: str):
         """뉴스 탭 추가"""
         normalized_keyword = self._normalize_tab_keyword(keyword)
@@ -85,7 +98,9 @@ class _MainWindowTabsMixin:
         persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
         if persisted_cursor > fetch_state.last_api_start_index:
             fetch_state.last_api_start_index = persisted_cursor
+        tab.total_api_count = int(self._fetch_total_by_key.get(fetch_key, 0) or 0)
         self.tabs.addTab(tab, self._format_tab_title(keyword, unread_count=0))
+        self.sync_tab_load_more_state(keyword)
 
     def add_tab_dialog(self: MainApp):
         """새 탭 추가 다이얼로그 - 검색 히스토리 지원"""
@@ -215,8 +230,7 @@ class _MainWindowTabsMixin:
             self._tab_fetch_state.pop(removed_keyword, None)
             removed_search_query, removed_exclude_words = parse_search_query(removed_keyword)
             removed_fetch_key = build_fetch_key(removed_search_query, removed_exclude_words)
-            if removed_fetch_key and not self._is_fetch_key_referenced(removed_fetch_key):
-                self._fetch_cursor_by_key.pop(removed_fetch_key, None)
+            self._prune_fetch_key_state(removed_fetch_key)
         self.save_config()
 
     def rename_tab(self: MainApp, idx: int):
@@ -272,21 +286,23 @@ class _MainWindowTabsMixin:
 
             fetch_state = self._tab_fetch_state.pop(old_keyword, None)
             if old_fetch_key != new_fetch_key:
-                self._last_fetch_request_ts.pop(old_fetch_key, None)
                 self._last_fetch_request_ts.pop(new_fetch_key, None)
-                if old_fetch_key and not self._is_fetch_key_referenced(old_fetch_key, skip_keyword=new_keyword):
-                    self._fetch_cursor_by_key.pop(old_fetch_key, None)
+                self._prune_fetch_key_state(old_fetch_key, skip_keyword=new_keyword)
                 self._tab_fetch_state[new_keyword] = self._make_tab_fetch_state()
                 persisted_cursor = int(self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0)
                 if persisted_cursor > 0:
                     self._tab_fetch_state[new_keyword].last_api_start_index = persisted_cursor
+                w.total_api_count = int(self._fetch_total_by_key.get(new_fetch_key, 0) or 0)
+                w.last_update = None
             elif fetch_state is not None:
                 self._tab_fetch_state[new_keyword] = fetch_state
+                w.total_api_count = int(self._fetch_total_by_key.get(new_fetch_key, w.total_api_count) or 0)
             else:
                 self._tab_fetch_state.setdefault(new_keyword, self._make_tab_fetch_state())
                 persisted_cursor = int(self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0)
                 if persisted_cursor > self._tab_fetch_state[new_keyword].last_api_start_index:
                     self._tab_fetch_state[new_keyword].last_api_start_index = persisted_cursor
+                w.total_api_count = int(self._fetch_total_by_key.get(new_fetch_key, 0) or 0)
 
             groups_changed = False
             for group_name, keywords in self.keyword_group_manager.groups.items():

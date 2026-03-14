@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
+from core.query_parser import build_fetch_key
 from core.text_utils import parse_date_to_ts, perf_timer
 
 if TYPE_CHECKING:
@@ -18,21 +19,48 @@ logger = logging.getLogger(__name__)
 class _DatabaseMutationsMixin:
     ALLOWED_UPDATE_FIELDS = {"is_read", "is_bookmarked", "notes", "is_duplicate"}
 
+    def _resolve_query_key(self: DatabaseManager, keyword: str, query_key: Optional[str]) -> str:
+        normalized_query_key = str(query_key or "").strip()
+        if normalized_query_key:
+            return normalized_query_key
+        return build_fetch_key(str(keyword or "").strip(), [])
+
+    def _append_query_scope_sql(
+        self: DatabaseManager,
+        params: List[Any],
+        keyword: str,
+        query_key: Optional[str],
+        alias: str = "nk",
+    ) -> str:
+        resolved_query_key = self._resolve_query_key(keyword, query_key)
+        clause = f"{alias}.query_key = ?"
+        params.append(resolved_query_key)
+        normalized_keyword = str(keyword or "").strip()
+        if normalized_keyword:
+            clause += f" AND {alias}.keyword = ?"
+            params.append(normalized_keyword)
+        return clause
+
     def upsert_news(
         self: DatabaseManager,
         items: List[Dict[str, Any]],
         keyword: str,
+        query_key: Optional[str] = None,
     ) -> Tuple[int, int]:
-        """뉴스 삽입 및 중복 감지 (배치 처리 최적화)"""
+        """Insert or update rows and maintain query-scoped duplicate flags."""
         if not items:
             return 0, 0
 
+        scope_query_key = self._resolve_query_key(keyword, query_key)
         conn = self.get_connection()
         added_count = 0
         duplicate_count = 0
 
         try:
-            with perf_timer("db.upsert_news", f"kw={keyword}|items={len(items)}"):
+            with perf_timer(
+                "db.upsert_news",
+                f"kw={keyword}|query_key={scope_query_key}|items={len(items)}",
+            ):
                 prepared_items: List[Dict[str, Any]] = []
                 hashes: List[str] = []
 
@@ -45,6 +73,7 @@ class _DatabaseMutationsMixin:
                         {
                             "link": item.get("link", ""),
                             "keyword": keyword,
+                            "query_key": scope_query_key,
                             "title": title,
                             "description": item.get("description", ""),
                             "pubDate": pub_date,
@@ -68,9 +97,9 @@ class _DatabaseMutationsMixin:
                             SELECT n.title_hash, nk.link
                             FROM news n
                             JOIN news_keywords nk ON nk.link = n.link
-                            WHERE nk.keyword = ? AND n.title_hash IN ({hash_placeholders})
+                            WHERE nk.query_key = ? AND n.title_hash IN ({hash_placeholders})
                             """,
-                            [keyword] + unique_hashes,
+                            [scope_query_key] + unique_hashes,
                         ).fetchall()
                         for row in hash_rows:
                             title_hash = str(row[0] or "")
@@ -85,15 +114,15 @@ class _DatabaseMutationsMixin:
                             SELECT nk.link, COALESCE(n.title_hash, '')
                             FROM news_keywords nk
                             JOIN news n ON n.link = nk.link
-                            WHERE nk.keyword = ? AND nk.link IN ({link_placeholders})
+                            WHERE nk.query_key = ? AND nk.link IN ({link_placeholders})
                             """,
-                            [keyword] + incoming_links,
+                            [scope_query_key] + incoming_links,
                         ).fetchall()
                         for row in link_rows:
                             existing_hash_by_link[str(row[0] or "")] = str(row[1] or "")
 
                     news_insert_data: List[Tuple[Any, ...]] = []
-                    kw_insert_data: List[Tuple[Any, ...]] = []
+                    scope_insert_data: List[Tuple[Any, ...]] = []
                     affected_hashes: Set[str] = set(unique_hashes)
 
                     for item in prepared_items:
@@ -131,7 +160,9 @@ class _DatabaseMutationsMixin:
                                 item["title_hash"],
                             )
                         )
-                        kw_insert_data.append((link, keyword, 1 if is_dup else 0))
+                        scope_insert_data.append(
+                            (link, keyword, scope_query_key, 1 if is_dup else 0)
+                        )
                         hash_links.add(link)
                         existing_hash_by_link[link] = title_hash
 
@@ -144,12 +175,18 @@ class _DatabaseMutationsMixin:
                         (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(link) DO UPDATE SET
-                            keyword = CASE WHEN keyword IS NULL OR keyword = '' THEN excluded.keyword ELSE keyword END,
+                            keyword = CASE
+                                WHEN keyword IS NULL OR keyword = '' THEN excluded.keyword
+                                ELSE keyword
+                            END,
                             title = excluded.title,
                             description = excluded.description,
                             pubDate = excluded.pubDate,
                             publisher = excluded.publisher,
-                            pubDate_ts = CASE WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts ELSE pubDate_ts END,
+                            pubDate_ts = CASE
+                                WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts
+                                ELSE pubDate_ts
+                            END,
                             title_hash = excluded.title_hash
                         """,
                         news_insert_data,
@@ -157,30 +194,32 @@ class _DatabaseMutationsMixin:
 
                     conn.executemany(
                         """
-                        INSERT INTO news_keywords (link, keyword, is_duplicate)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(link, keyword) DO UPDATE SET
+                        INSERT INTO news_keywords (link, keyword, query_key, is_duplicate)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(link, query_key) DO UPDATE SET
+                            keyword = excluded.keyword,
                             is_duplicate = excluded.is_duplicate
                         """,
-                        kw_insert_data,
+                        scope_insert_data,
                     )
-                    self._recalculate_duplicate_flags_for_keyword_hashes(
+
+                    self._recalculate_duplicate_flags_for_query_key_hashes(
                         conn,
-                        keyword,
+                        scope_query_key,
                         list(affected_hashes),
                     )
 
             return added_count, duplicate_count
         except sqlite3.Error as e:
-            logger.error(f"DB Batch Upsert Error: {e}")
+            logger.error("DB batch upsert failed: %s", e)
             return 0, 0
         finally:
             self.return_connection(conn)
 
     def update_status(self: DatabaseManager, link: str, field: str, value) -> bool:
-        """뉴스 상태 업데이트 - SQL Injection 방지 버전"""
+        """Update a safe allow-listed status field."""
         if field not in self.ALLOWED_UPDATE_FIELDS:
-            logger.error(f"허용되지 않은 필드: {field}")
+            logger.error("Rejected update for unsupported field: %s", field)
             return False
 
         conn = self.get_connection()
@@ -189,13 +228,12 @@ class _DatabaseMutationsMixin:
                 conn.execute(f"UPDATE news SET {field} = ? WHERE link = ?", (value, link))
             return True
         except sqlite3.Error as e:
-            logger.error(f"DB Update Error: {e}")
+            logger.error("DB update failed: %s", e)
             return False
         finally:
             self.return_connection(conn)
 
     def save_note(self: DatabaseManager, link: str, note: str) -> bool:
-        """메모 저장"""
         return self.update_status(link, "notes", note)
 
     def delete_link(self: DatabaseManager, link: str) -> bool:
@@ -206,70 +244,68 @@ class _DatabaseMutationsMixin:
         conn = self.get_connection()
         try:
             with conn:
-                affected = self._collect_affected_keyword_hashes(conn, "n.link = ?", [link])
-                cursor = conn.execute("DELETE FROM news WHERE link=?", (link,))
+                affected = self._collect_affected_query_key_hashes(conn, "n.link = ?", [link])
+                cursor = conn.execute("DELETE FROM news WHERE link = ?", (link,))
                 deleted = int(cursor.rowcount or 0)
                 if deleted <= 0:
                     return False
                 self._recalculate_duplicates_for_affected(conn, affected)
             return True
         except Exception as e:
-            logger.error(f"delete_link 오류: {e}")
+            logger.error("delete_link failed: %s", e)
             return False
         finally:
             self.return_connection(conn)
 
     def get_note(self: DatabaseManager, link: str) -> str:
-        """메모 조회"""
         conn = self.get_connection()
         try:
-            cursor = conn.execute("SELECT notes FROM news WHERE link=?", (link,))
-            result = cursor.fetchone()
-            return result[0] if result and result[0] else ""
+            result = conn.execute("SELECT notes FROM news WHERE link = ?", (link,)).fetchone()
+            return str(result[0]) if result and result[0] else ""
         except Exception as e:
-            logger.error(f"get_note 오류: {e}")
+            logger.error("get_note failed: %s", e)
             return ""
         finally:
             self.return_connection(conn)
 
     def delete_old_news(self: DatabaseManager, days: int) -> int:
-        """오래된 뉴스 삭제"""
+        """Delete old non-bookmarked rows and repair duplicates."""
         conn = self.get_connection()
         cutoff = (datetime.now() - timedelta(days=days)).timestamp()
         try:
             with conn:
-                affected = self._collect_affected_keyword_hashes(
+                affected = self._collect_affected_query_key_hashes(
                     conn,
-                    "n.is_bookmarked=0 AND n.pubDate_ts > 0 AND n.pubDate_ts < ?",
+                    "n.is_bookmarked = 0 AND n.pubDate_ts > 0 AND n.pubDate_ts < ?",
                     [cutoff],
                 )
                 cur = conn.execute(
-                    "DELETE FROM news WHERE is_bookmarked=0 AND pubDate_ts > 0 AND pubDate_ts < ?",
-                    (cutoff,)
+                    "DELETE FROM news WHERE is_bookmarked = 0 AND pubDate_ts > 0 AND pubDate_ts < ?",
+                    (cutoff,),
                 )
                 deleted = int(cur.rowcount or 0)
                 if deleted > 0:
                     self._recalculate_duplicates_for_affected(conn, affected)
                 return deleted
         except Exception as e:
-            logger.error(f"delete_old_news 오류: {e}")
+            logger.error("delete_old_news failed: %s", e)
             return 0
         finally:
             self.return_connection(conn)
 
     def delete_all_news(self: DatabaseManager) -> int:
-        """모든 뉴스 삭제 (북마크 제외)"""
+        """Delete all non-bookmarked rows and repair duplicates."""
         conn = self.get_connection()
         try:
             with conn:
-                affected = self._collect_affected_keyword_hashes(conn, "n.is_bookmarked=0", [])
-                cur = conn.execute("DELETE FROM news WHERE is_bookmarked=0")
+                affected = self._collect_affected_query_key_hashes(conn, "n.is_bookmarked = 0", [])
+                cur = conn.execute("DELETE FROM news WHERE is_bookmarked = 0")
                 deleted = int(cur.rowcount or 0)
                 if deleted > 0:
                     self._recalculate_duplicates_for_affected(conn, affected)
                 return deleted
         except Exception as e:
-            logger.error(f"delete_all_news 오류: {e}")
+            logger.error("delete_all_news failed: %s", e)
             return 0
         finally:
             self.return_connection(conn)
@@ -296,7 +332,7 @@ class _DatabaseMutationsMixin:
             chunk = deduped_links[idx: idx + chunk_size]
             placeholders = ",".join(["?"] * len(chunk))
             cursor = conn.execute(
-                f"UPDATE news SET is_read=1 WHERE is_read=0 AND link IN ({placeholders})",
+                f"UPDATE news SET is_read = 1 WHERE is_read = 0 AND link IN ({placeholders})",
                 chunk,
             )
             if cursor.rowcount and cursor.rowcount > 0:
@@ -313,7 +349,7 @@ class _DatabaseMutationsMixin:
             with conn:
                 return self._mark_links_as_read_with_conn(conn, links)
         except Exception as e:
-            logger.error(f"mark_links_as_read 오류: {e}")
+            logger.error("mark_links_as_read failed: %s", e)
             raise
         finally:
             self.return_connection(conn)
@@ -322,39 +358,46 @@ class _DatabaseMutationsMixin:
         self: DatabaseManager,
         keyword: str,
         only_bookmark: bool,
+        query_key: Optional[str] = None,
     ) -> int:
-        """모든 기사 읽음 처리"""
+        """Mark the entire scope as read."""
         conn = self.get_connection()
-        count = 0
         try:
             with conn:
                 if only_bookmark:
-                    cursor = conn.execute("UPDATE news SET is_read=1 WHERE is_bookmarked=1 AND is_read=0")
+                    cursor = conn.execute(
+                        "UPDATE news SET is_read = 1 WHERE is_bookmarked = 1 AND is_read = 0"
+                    )
                 else:
+                    params: List[Any] = []
                     cursor = conn.execute(
                         """
                         UPDATE news
-                        SET is_read=1
-                        WHERE is_read=0
-                          AND link IN (SELECT link FROM news_keywords WHERE keyword=?)
-                        """,
-                        (keyword,),
+                        SET is_read = 1
+                        WHERE is_read = 0
+                          AND link IN (
+                              SELECT link FROM news_keywords nk
+                              WHERE
+                        """
+                        + self._append_query_scope_sql(params, keyword, query_key)
+                        + ")",
+                        params,
                     )
-                count = cursor.rowcount
+                return int(cursor.rowcount or 0)
         except Exception as e:
-            logger.error(f"일괄 읽음 처리 오류: {e}")
+            logger.error("mark_all_as_read failed: %s", e)
             raise
         finally:
             self.return_connection(conn)
-        return count
 
     def mark_query_as_read(
         self: DatabaseManager,
         keyword: str,
         exclude_words: Optional[List[str]] = None,
         only_bookmark: bool = False,
+        query_key: Optional[str] = None,
     ) -> int:
-        """탭 쿼리 기준으로 읽지 않은 기사만 읽음 처리한다."""
+        """Mark unread rows in the current query scope as read."""
         conn = self.get_connection()
         try:
             params: List[Any] = []
@@ -364,9 +407,10 @@ class _DatabaseMutationsMixin:
                 query = (
                     "SELECT n.link FROM news n "
                     "JOIN news_keywords nk ON nk.link = n.link "
-                    "WHERE nk.keyword = ? AND n.is_read = 0"
+                    "WHERE "
+                    + self._append_query_scope_sql(params, keyword, query_key)
+                    + " AND n.is_read = 0"
                 )
-                params.append(keyword)
 
             if exclude_words:
                 for exclude_word in exclude_words:
@@ -383,10 +427,11 @@ class _DatabaseMutationsMixin:
             ]
             if not links:
                 return 0
+
             with conn:
                 return self._mark_links_as_read_with_conn(conn, links)
         except Exception as e:
-            logger.error(f"mark_query_as_read 오류: {e}")
+            logger.error("mark_query_as_read failed: %s", e)
             raise
         finally:
             self.return_connection(conn)

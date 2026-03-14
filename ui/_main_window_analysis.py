@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.query_parser import parse_tab_query
+from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
@@ -142,10 +142,13 @@ class _MainWindowAnalysisMixin:
             tab_query = tab_combo.currentData()
             if isinstance(tab_query, str) and tab_query.strip():
                 db_keyword, exclude_words = parse_tab_query(tab_query)
+                search_keyword, _ = parse_search_query(tab_query)
+                query_key = build_fetch_key(search_keyword, exclude_words)
                 publishers = self._require_db().get_top_publishers(
                     db_keyword,
                     exclude_words=exclude_words,
                     limit=20,
+                    query_key=query_key,
                 )
             else:
                 publishers = self._require_db().get_top_publishers(None, limit=20)

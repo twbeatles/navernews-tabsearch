@@ -902,3 +902,31 @@ ews_scraper_pro.spec` removed forced `chardet` hidden import to align with reque
 ### Validation
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `pytest -q` => `128 passed, 5 subtests passed`
+
+---
+
+## 2026-03-14 Addendum (Implementation Audit Completion)
+
+### Query Scope
+- `parse_tab_query(raw)` should now be read as the representative-keyword helper only.
+- Actual tab membership, unread badges, analytics, duplicate tracking, and pagination scope use `query_key = build_fetch_key(parse_search_query(raw_tab_query))`.
+- `news_keywords` now uses `PRIMARY KEY (link, query_key)`, so the same article link can belong to multiple tab scopes while `news.is_read`, `news.is_bookmarked`, `news.notes`, and delete state remain global per article.
+- Legacy multi-keyword tabs may require one refresh after migration before the new `query_key` scope is fully populated.
+
+### Pagination / Settings I/O
+- Added top-level `pagination_totals` schema alongside `pagination_state`.
+- Load-more enable/disable state is restored from `cursor + total`, not from DB-count fallback.
+- Settings export/import format is now `1.1` and includes `search_history`, `pagination_state`, `pagination_totals`, and `window_geometry` in addition to prior payloads.
+- Imported `start_minimized=true` is forced to `False` when system tray support is unavailable.
+
+### Restore / Notification Behavior
+- `restore_backup(...)` and `apply_pending_restore_if_any(...)` now share the same atomic restore helper (`preflight -> snapshot -> staged copy -> rollback`).
+- `show_desktop_notification()` remains tray-first, but falls back to toast + sound when tray support is unavailable.
+
+### Packaging / Repo Hygiene
+- `news_scraper_pro.spec` was re-reviewed for this pass; no additional hidden import/exclude change was required.
+- `.gitignore` was re-reviewed for this pass; existing rules already cover the generated/runtime artifacts involved here.
+
+### Validation
+- `pytest -q` => `136 passed, 5 subtests passed`
+- `pyright` => `0 errors, 0 warnings, 0 informations`

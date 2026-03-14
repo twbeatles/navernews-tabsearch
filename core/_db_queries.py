@@ -15,6 +15,27 @@ logger = logging.getLogger(__name__)
 
 
 class _DatabaseQueriesMixin:
+    def _append_news_scope_clause(
+        self: DatabaseManager,
+        params: List[Any],
+        keyword: str,
+        query_key: Optional[str],
+        alias: str = "nk",
+    ) -> str:
+        normalized_query_key = str(query_key or "").strip()
+        if normalized_query_key:
+            clause = f"{alias}.query_key = ?"
+            params.append(normalized_query_key)
+            normalized_keyword = str(keyword or "").strip()
+            if normalized_keyword:
+                clause += f" AND {alias}.keyword = ?"
+                params.append(normalized_keyword)
+            return clause
+
+        clause = f"{alias}.keyword = ?"
+        params.append(keyword)
+        return clause
+
     def fetch_news(
         self: DatabaseManager,
         keyword: str,
@@ -28,14 +49,15 @@ class _DatabaseQueriesMixin:
         end_date: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
+        query_key: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """뉴스 조회 - 안전한 버전 (날짜 필터 추가)"""
+        """Fetch rows for a tab or bookmark view."""
         conn = self.get_connection()
         news_items: List[Dict[str, Any]] = []
         scope_meta = (
-            f"kw={keyword}|bookmark={int(only_bookmark)}|unread={int(only_unread)}|"
-            f"hide_dup={int(hide_duplicates)}|ex={len(exclude_words) if exclude_words else 0}|"
-            f"limit={limit}|offset={offset}"
+            f"kw={keyword}|query_key={query_key or ''}|bookmark={int(only_bookmark)}|"
+            f"unread={int(only_unread)}|hide_dup={int(hide_duplicates)}|"
+            f"ex={len(exclude_words) if exclude_words else 0}|limit={limit}|offset={offset}"
         )
         try:
             with perf_timer("db.fetch_news", scope_meta):
@@ -85,17 +107,20 @@ class _DatabaseQueriesMixin:
                             nk.is_duplicate AS is_duplicate
                         FROM news n
                         JOIN news_keywords nk ON nk.link = n.link
-                        WHERE nk.keyword = ?
+                        WHERE
                         """
+                        + self._append_news_scope_clause(params, keyword, query_key)
                     )
-                    params.append(keyword)
 
                 if only_unread:
                     query += " AND n.is_read = 0"
 
                 if hide_duplicates:
                     if only_bookmark:
-                        query += " AND NOT EXISTS (SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
+                        query += (
+                            " AND NOT EXISTS ("
+                            "SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
+                        )
                     else:
                         query += " AND nk.is_duplicate = 0"
 
@@ -118,7 +143,7 @@ class _DatabaseQueriesMixin:
                         query += " AND n.pubDate_ts >= ?"
                         params.append(s_ts)
                     except ValueError:
-                        logger.warning(f"Invalid start_date format: {start_date}")
+                        logger.warning("Invalid start_date format: %s", start_date)
 
                 if end_date:
                     try:
@@ -126,7 +151,7 @@ class _DatabaseQueriesMixin:
                         query += " AND n.pubDate_ts < ?"
                         params.append(e_ts)
                     except ValueError:
-                        logger.warning(f"Invalid end_date format: {end_date}")
+                        logger.warning("Invalid end_date format: %s", end_date)
 
                 if sort_mode == "최신순":
                     query += " ORDER BY n.pubDate_ts DESC"
@@ -145,7 +170,7 @@ class _DatabaseQueriesMixin:
                 for row in cursor.fetchall():
                     news_items.append(dict(zip(columns, row)))
         except Exception as e:
-            logger.error(f"뉴스 조회 오류: {e}")
+            logger.error("fetch_news failed: %s", e)
         finally:
             self.return_connection(conn)
 
@@ -161,12 +186,13 @@ class _DatabaseQueriesMixin:
         exclude_words: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        query_key: Optional[str] = None,
     ) -> int:
-        """뉴스 개수 조회 (필터 적용)."""
+        """Count rows for a tab or bookmark view."""
         conn = self.get_connection()
         scope_meta = (
-            f"kw={keyword}|bookmark={int(only_bookmark)}|unread={int(only_unread)}|"
-            f"hide_dup={int(hide_duplicates)}"
+            f"kw={keyword}|query_key={query_key or ''}|bookmark={int(only_bookmark)}|"
+            f"unread={int(only_unread)}|hide_dup={int(hide_duplicates)}"
         )
         try:
             with perf_timer("db.count_news", scope_meta):
@@ -177,16 +203,19 @@ class _DatabaseQueriesMixin:
                     query = (
                         "SELECT COUNT(*) FROM news n "
                         "JOIN news_keywords nk ON nk.link = n.link "
-                        "WHERE nk.keyword = ?"
+                        "WHERE "
+                        + self._append_news_scope_clause(params, keyword, query_key)
                     )
-                    params.append(keyword)
 
                 if only_unread:
                     query += " AND n.is_read = 0"
 
                 if hide_duplicates:
                     if only_bookmark:
-                        query += " AND NOT EXISTS (SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
+                        query += (
+                            " AND NOT EXISTS ("
+                            "SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
+                        )
                     else:
                         query += " AND nk.is_duplicate = 0"
 
@@ -209,7 +238,7 @@ class _DatabaseQueriesMixin:
                         query += " AND n.pubDate_ts >= ?"
                         params.append(s_ts)
                     except ValueError:
-                        logger.warning(f"Invalid start_date format: {start_date}")
+                        logger.warning("Invalid start_date format: %s", start_date)
 
                 if end_date:
                     try:
@@ -217,47 +246,64 @@ class _DatabaseQueriesMixin:
                         query += " AND n.pubDate_ts < ?"
                         params.append(e_ts)
                     except ValueError:
-                        logger.warning(f"Invalid end_date format: {end_date}")
+                        logger.warning("Invalid end_date format: %s", end_date)
 
-                cursor = conn.execute(query, params)
-                row = cursor.fetchone()
+                row = conn.execute(query, params).fetchone()
                 return int(row[0]) if row else 0
         except Exception as e:
-            logger.error(f"count_news 오류: {e}")
+            logger.error("count_news failed: %s", e)
             return 0
         finally:
             self.return_connection(conn)
 
-    def get_counts(self: DatabaseManager, keyword: str) -> int:
-        """특정 키워드 뉴스 개수"""
+    def get_counts(
+        self: DatabaseManager,
+        keyword: str,
+        query_key: Optional[str] = None,
+    ) -> int:
+        """Count memberships for a keyword or a full query scope."""
         conn = self.get_connection()
         try:
-            with perf_timer("db.get_counts", f"kw={keyword}"):
-                cursor = conn.execute("SELECT COUNT(*) FROM news_keywords WHERE keyword=?", (keyword,))
-                return cursor.fetchone()[0] or 0
+            with perf_timer("db.get_counts", f"kw={keyword}|query_key={query_key or ''}"):
+                if query_key:
+                    row = conn.execute(
+                        "SELECT COUNT(*) FROM news_keywords WHERE query_key = ?",
+                        (query_key,),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT COUNT(*) FROM news_keywords WHERE keyword = ?",
+                        (keyword,),
+                    ).fetchone()
+                return int(row[0]) if row else 0
         except Exception as e:
-            logger.error(f"get_counts 오류: {e}")
+            logger.error("get_counts failed: %s", e)
             return 0
         finally:
             self.return_connection(conn)
 
-    def get_unread_count(self: DatabaseManager, keyword: str) -> int:
-        """안 읽은 뉴스 개수"""
+    def get_unread_count(
+        self: DatabaseManager,
+        keyword: str,
+        query_key: Optional[str] = None,
+    ) -> int:
+        """Count unread rows for a keyword or a full query scope."""
         conn = self.get_connection()
         try:
-            with perf_timer("db.get_unread_count", f"kw={keyword}"):
-                cursor = conn.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM news n
-                    JOIN news_keywords nk ON nk.link = n.link
-                    WHERE nk.keyword = ? AND n.is_read = 0
-                    """,
-                    (keyword,),
+            with perf_timer("db.get_unread_count", f"kw={keyword}|query_key={query_key or ''}"):
+                params: List[Any] = []
+                query = (
+                    "SELECT COUNT(*) "
+                    "FROM news n "
+                    "JOIN news_keywords nk ON nk.link = n.link "
+                    "WHERE "
+                    + self._append_news_scope_clause(params, keyword, query_key)
+                    + " AND n.is_read = 0"
                 )
-                return cursor.fetchone()[0] or 0
+                row = conn.execute(query, params).fetchone()
+                return int(row[0]) if row else 0
         except Exception as e:
-            logger.error(f"get_unread_count 오류: {e}")
+            logger.error("get_unread_count failed: %s", e)
             return 0
         finally:
             self.return_connection(conn)
@@ -270,8 +316,42 @@ class _DatabaseQueriesMixin:
                 row = conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()
                 return int(row[0]) if row else 0
         except Exception as e:
-            logger.error(f"get_total_unread_count 오류: {e}")
+            logger.error("get_total_unread_count failed: %s", e)
             return 0
+        finally:
+            self.return_connection(conn)
+
+    def _get_grouped_unread_counts(
+        self: DatabaseManager,
+        column_name: str,
+        raw_values: List[str],
+    ) -> Dict[str, int]:
+        if not raw_values:
+            return {}
+
+        cleaned = [value for value in raw_values if isinstance(value, str) and value.strip()]
+        if not cleaned:
+            return {}
+
+        conn = self.get_connection()
+        try:
+            with perf_timer(f"db.get_unread_counts_by_{column_name}", f"count={len(cleaned)}"):
+                placeholders = ",".join(["?"] * len(cleaned))
+                query = f"""
+                    SELECT nk.{column_name}, COUNT(*) AS unread_count
+                    FROM news_keywords nk
+                    JOIN news n ON n.link = nk.link
+                    WHERE nk.{column_name} IN ({placeholders}) AND n.is_read = 0
+                    GROUP BY nk.{column_name}
+                """
+                rows = conn.execute(query, cleaned).fetchall()
+                unread_by_value: Dict[str, int] = {value: 0 for value in cleaned}
+                for row in rows:
+                    unread_by_value[str(row[0])] = int(row[1])
+                return unread_by_value
+        except Exception as e:
+            logger.error("Grouped unread count lookup failed: %s", e)
+            return {value: 0 for value in cleaned}
         finally:
             self.return_connection(conn)
 
@@ -279,32 +359,12 @@ class _DatabaseQueriesMixin:
         self: DatabaseManager,
         keywords: List[str],
     ) -> Dict[str, int]:
-        """여러 키워드의 미읽음 기사 개수를 한 번에 조회."""
-        if not keywords:
-            return {}
+        """Legacy unread-count batch lookup keyed by representative keyword."""
+        return self._get_grouped_unread_counts("keyword", keywords)
 
-        cleaned = [k for k in keywords if isinstance(k, str) and k.strip()]
-        if not cleaned:
-            return {}
-
-        conn = self.get_connection()
-        try:
-            with perf_timer("db.get_unread_counts_by_keywords", f"kw_count={len(cleaned)}"):
-                placeholders = ",".join(["?"] * len(cleaned))
-                query = f"""
-                    SELECT nk.keyword, COUNT(*) AS unread_count
-                    FROM news_keywords nk
-                    JOIN news n ON n.link = nk.link
-                    WHERE nk.keyword IN ({placeholders}) AND n.is_read = 0
-                    GROUP BY nk.keyword
-                """
-                rows = conn.execute(query, cleaned).fetchall()
-                unread_by_kw: Dict[str, int] = {k: 0 for k in cleaned}
-                for row in rows:
-                    unread_by_kw[str(row[0])] = int(row[1])
-                return unread_by_kw
-        except Exception as e:
-            logger.error(f"get_unread_counts_by_keywords 오류: {e}")
-            return {k: 0 for k in cleaned}
-        finally:
-            self.return_connection(conn)
+    def get_unread_counts_by_query_keys(
+        self: DatabaseManager,
+        query_keys: List[str],
+    ) -> Dict[str, int]:
+        """Unread-count batch lookup keyed by full query scope."""
+        return self._get_grouped_unread_counts("query_key", query_keys)

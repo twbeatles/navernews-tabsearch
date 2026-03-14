@@ -1,6 +1,32 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Implementation Audit Completion (2026-03-14)**:
+  - Query-key scoped tab independence:
+    - `news_keywords` migrated to `PRIMARY KEY (link, query_key)`.
+    - Runtime tab membership, badge counts, analytics, duplicate tracking, and load-more state now follow `query_key = build_fetch_key(parse_search_query(raw_tab_query))`.
+    - Legacy representative keyword (`parse_tab_query(...)`) remains for compatibility metadata only.
+    - Multi-keyword tabs migrated from legacy data show a one-time refresh guidance toast until the new `query_key` scope is populated.
+  - DB/query surface expansion:
+    - `DatabaseManager.upsert_news(...)` now accepts `query_key`.
+    - `fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, and `get_top_publishers(...)` support scoped `query_key` queries.
+    - Added `DatabaseManager.get_unread_counts_by_query_keys(...)` for batch badge aggregation.
+  - Pagination/load-more durability:
+    - Added top-level `pagination_totals` config schema (`fetch_key -> last_api_total`).
+    - Load-more enable/disable state is recalculated from `cursor + total` after restart, reload, rename, and filter changes.
+    - Unknown totals remain conservative, but `next_start > 1000` still disables further fetches immediately.
+  - Restore/import/notification consistency:
+    - `restore_backup(...)` and `apply_pending_restore_if_any(...)` now share the same preflight -> snapshot -> staged copy -> rollback helper.
+    - Export/import format bumped to `1.1` and now includes `search_history`, `pagination_state`, `pagination_totals`, and `window_geometry`.
+    - Tray-unavailable imports force `start_minimized=false`.
+    - `show_desktop_notification()` now falls back to toast + sound when tray is unavailable.
+  - Documentation/spec review:
+    - Synced `README.md`, `claude.md`, `gemini.md`, and `implementation_audit_2026-03-14.md` to the new semantics.
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude change was required.
+    - Re-reviewed `.gitignore`; existing runtime/build ignore rules already cover this pass.
+  - Validation:
+    - `pytest -q` => `136 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
 - **Implementation Audit Adoption (2026-03-07)**:
   - Worker lifecycle and tab transition hardening:
     - `close_tab()` / `rename_tab()` now proactively cancel active fetch workers via `cleanup_worker(...)`.

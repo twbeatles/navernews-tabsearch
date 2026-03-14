@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 import news_scraper_pro as app
+from core.query_parser import build_fetch_key
 
 
 class TestDbQueries(unittest.TestCase):
@@ -53,6 +54,51 @@ class TestDbQueries(unittest.TestCase):
         batch = self.mgr.get_unread_counts_by_keywords(["AI", "ECON"])
         self.assertEqual(batch["AI"], self.mgr.get_unread_count("AI"))
         self.assertEqual(batch["ECON"], self.mgr.get_unread_count("ECON"))
+
+    def test_query_key_scopes_same_db_keyword_independently(self):
+        q1 = build_fetch_key("AI finance", [])
+        q2 = build_fetch_key("AI robotics", [])
+        self.mgr.upsert_news(
+            [self._make_item(110, "2026-01-10T09:00:00")],
+            "AI",
+            query_key=q1,
+        )
+        self.mgr.upsert_news(
+            [self._make_item(120, "2026-01-11T09:00:00")],
+            "AI",
+            query_key=q2,
+        )
+
+        rows_q1 = self.mgr.fetch_news("AI", query_key=q1)
+        rows_q2 = self.mgr.fetch_news("AI", query_key=q2)
+
+        self.assertEqual([row["link"] for row in rows_q1], ["https://example.com/110"])
+        self.assertEqual([row["link"] for row in rows_q2], ["https://example.com/120"])
+        self.assertEqual(self.mgr.get_counts("AI", query_key=q1), 1)
+        self.assertEqual(self.mgr.get_counts("AI", query_key=q2), 1)
+
+    def test_same_link_can_exist_in_two_query_keys(self):
+        shared = self._make_item(130, "2026-01-10T09:00:00")
+        q1 = build_fetch_key("AI finance", [])
+        q2 = build_fetch_key("AI robotics", [])
+
+        self.mgr.upsert_news([shared], "AI", query_key=q1)
+        self.mgr.upsert_news([shared], "AI", query_key=q2)
+
+        self.assertEqual(self.mgr.count_news("AI", query_key=q1), 1)
+        self.assertEqual(self.mgr.count_news("AI", query_key=q2), 1)
+
+    def test_get_unread_counts_by_query_keys_matches_single_queries(self):
+        q1 = build_fetch_key("AI finance", [])
+        q2 = build_fetch_key("AI robotics", [])
+        self.mgr.upsert_news([self._make_item(140, "2026-01-10T09:00:00")], "AI", query_key=q1)
+        self.mgr.upsert_news([self._make_item(141, "2026-01-11T09:00:00")], "AI", query_key=q2)
+
+        self.mgr.update_status("https://example.com/141", "is_read", 1)
+
+        batch = self.mgr.get_unread_counts_by_query_keys([q1, q2])
+        self.assertEqual(batch[q1], self.mgr.get_unread_count("AI", query_key=q1))
+        self.assertEqual(batch[q2], self.mgr.get_unread_count("AI", query_key=q2))
 
     def test_fetch_news_exclude_words_matches_in_memory_filter(self):
         items = [
@@ -251,6 +297,20 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(read_by_link["https://example.com/mqr-1"], 1)
         self.assertEqual(read_by_link["https://example.com/mqr-2"], 0)
 
+    def test_mark_query_as_read_is_limited_to_query_key_membership(self):
+        q1 = build_fetch_key("AI finance", [])
+        q2 = build_fetch_key("AI robotics", [])
+        self.mgr.upsert_news([self._make_item(201, "2026-01-01T09:00:00")], "AI", query_key=q1)
+        self.mgr.upsert_news([self._make_item(202, "2026-01-02T09:00:00")], "AI", query_key=q2)
+
+        updated = self.mgr.mark_query_as_read("AI", query_key=q1)
+        self.assertEqual(updated, 1)
+
+        rows_q1 = self.mgr.fetch_news("AI", query_key=q1)
+        rows_q2 = self.mgr.fetch_news("AI", query_key=q2)
+        self.assertEqual(int(rows_q1[0]["is_read"]), 1)
+        self.assertEqual(int(rows_q2[0]["is_read"]), 0)
+
     def test_get_top_publishers_respects_exclude_words(self):
         items = [
             {
@@ -272,6 +332,39 @@ class TestDbQueries(unittest.TestCase):
 
         publishers = self.mgr.get_top_publishers("AI", exclude_words=["ad"], limit=10)
         self.assertEqual(publishers, [("alpha.com", 1)])
+
+    def test_get_top_publishers_is_limited_to_query_key(self):
+        q1 = build_fetch_key("AI finance", [])
+        q2 = build_fetch_key("AI robotics", [])
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": "finance title",
+                    "description": "finance",
+                    "link": "https://example.com/pub-q1",
+                    "pubDate": "2026-01-01T09:00:00",
+                    "publisher": "finance.com",
+                }
+            ],
+            "AI",
+            query_key=q1,
+        )
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": "robotics title",
+                    "description": "robotics",
+                    "link": "https://example.com/pub-q2",
+                    "pubDate": "2026-01-02T09:00:00",
+                    "publisher": "robotics.com",
+                }
+            ],
+            "AI",
+            query_key=q2,
+        )
+
+        publishers = self.mgr.get_top_publishers("AI", query_key=q1, limit=10)
+        self.assertEqual(publishers, [("finance.com", 1)])
 
     def test_delete_link_recalculates_duplicate_flags(self):
         same_title = "delete-link-duplicate-title"
@@ -390,4 +483,85 @@ class TestDbQueries(unittest.TestCase):
 
         self.assertTrue(self.mgr.update_status("https://example.com/401", "is_read", 1))
         self.assertEqual(self.mgr.get_total_unread_count(), 1)
+
+
+class TestDbSchemaMigration(unittest.TestCase):
+    def test_init_db_migrates_legacy_news_keywords_to_query_key_schema(self):
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "legacy.sqlite"
+            conn = sqlite3.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE news (
+                        link TEXT PRIMARY KEY,
+                        keyword TEXT,
+                        title TEXT,
+                        description TEXT,
+                        pubDate TEXT,
+                        publisher TEXT,
+                        is_read INTEGER DEFAULT 0,
+                        is_bookmarked INTEGER DEFAULT 0,
+                        pubDate_ts REAL,
+                        created_at REAL,
+                        notes TEXT,
+                        title_hash TEXT,
+                        is_duplicate INTEGER DEFAULT 0
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE news_keywords (
+                        link TEXT NOT NULL,
+                        keyword TEXT NOT NULL,
+                        is_duplicate INTEGER DEFAULT 0,
+                        PRIMARY KEY (link, keyword)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO news (link, keyword, title, description, pubDate, publisher, title_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "https://example.com/legacy",
+                        "AI",
+                        "legacy-title",
+                        "legacy-desc",
+                        "2026-01-01T09:00:00",
+                        "example.com",
+                        "legacy-hash",
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO news_keywords (link, keyword, is_duplicate) VALUES (?, ?, ?)",
+                    ("https://example.com/legacy", "AI", 0),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            mgr = app.DatabaseManager(str(db_path), max_connections=2)
+            try:
+                conn = sqlite3.connect(str(db_path))
+                try:
+                    columns = {
+                        row[1]: row
+                        for row in conn.execute("PRAGMA table_info(news_keywords)").fetchall()
+                    }
+                    self.assertIn("query_key", columns)
+                    self.assertEqual(int(columns["link"][5]), 1)
+                    self.assertEqual(int(columns["query_key"][5]), 2)
+
+                    row = conn.execute(
+                        "SELECT keyword, query_key FROM news_keywords WHERE link = ?",
+                        ("https://example.com/legacy",),
+                    ).fetchone()
+                    self.assertEqual(row, ("AI", "ai|"))
+                finally:
+                    conn.close()
+            finally:
+                mgr.close()
 

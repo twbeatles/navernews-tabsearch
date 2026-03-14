@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
 
 from core.database import DatabaseManager
 from core.logging_setup import configure_logging
-from core.query_parser import parse_tab_query
+from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.text_utils import TextUtils, parse_date_string, perf_timer
 from core.workers import AsyncJobWorker, DBWorker
 from ui.dialogs import NoteDialog
@@ -89,6 +89,12 @@ class NewsTab(QWidget):
         _, exclude_words = parse_tab_query(self.keyword)
         return exclude_words
 
+    @property
+    def query_key(self):
+        """Full query scope key used for DB membership."""
+        search_keyword, exclude_words = parse_search_query(self.keyword)
+        return build_fetch_key(search_keyword, exclude_words)
+
     def _prepare_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
         link = item.get("link", "")
         title = item.get("title", "")
@@ -116,7 +122,14 @@ class NewsTab(QWidget):
         candidate = self.window()
         if candidate is None:
             return None
-        required_attrs = ("update_tab_badge", "refresh_bookmark_tab", "show_toast", "show_warning_toast")
+        required_attrs = (
+            "update_tab_badge",
+            "refresh_bookmark_tab",
+            "show_toast",
+            "show_warning_toast",
+            "sync_tab_load_more_state",
+            "maybe_show_query_refresh_hint",
+        )
         if not all(hasattr(candidate, attr) for attr in required_attrs):
             return None
         return cast(MainWindowProtocol, candidate)
@@ -428,12 +441,18 @@ class NewsTab(QWidget):
         with perf_timer("ui.on_data_loaded", f"kw={self.keyword}|rows={len(data)}"):
             self.news_data_cache = [self._prepare_item(dict(item)) for item in data]
             self._rebuild_item_indexes()
-            self.total_api_count = total_count
+            if self.total_api_count <= 0 or total_count > self.total_api_count:
+                self.total_api_count = total_count
             self._recount_unread_cache()
             self._data_version += 1
             self._last_render_signature = None
             self.btn_load.setEnabled(True)
             self.apply_filter()
+            parent = self._main_window()
+            if parent is not None:
+                parent.sync_tab_load_more_state(self.keyword)
+                if not self.news_data_cache and not self.is_bookmark_tab:
+                    parent.maybe_show_query_refresh_hint(self.keyword)
 
     def on_data_error(self, err_msg, request_id: Optional[int] = None):
         """데이터 로드 오류 시 호출"""
@@ -851,6 +870,7 @@ class NewsTab(QWidget):
                 self.db_keyword,
                 self.exclude_words,
                 self.is_bookmark_tab,
+                query_key=self.query_key,
             )
 
         self.job_worker.finished.connect(self._on_mark_all_read_done)

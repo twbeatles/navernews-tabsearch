@@ -704,3 +704,17 @@ class StartupManager:
 - Validation:
   - `pyright` => `0 errors, 0 warnings, 0 informations`
   - `pytest -q` => `128 passed, 5 subtests passed`
+
+## 2026-03-14 Addendum
+
+- Query scope has moved from representative keyword semantics to `query_key = build_fetch_key(parse_search_query(raw_tab_query))`.
+- `parse_tab_query(...)` still exists, but only as the compatibility/helper path for representative keyword metadata (`db_keyword`).
+- `news_keywords` now uses `PRIMARY KEY (link, query_key)`, so one article link can be attached to multiple tab scopes while read/bookmark/delete state remains global on `news`.
+- Added `pagination_totals` and restored load-more button state from `cursor + total` after restart/reload/filter changes.
+- Settings export/import format is now `1.1` and includes `search_history`, `pagination_state`, `pagination_totals`, and `window_geometry`.
+- `show_desktop_notification()` now falls back to toast + sound when tray is unavailable, and imported `start_minimized=true` is coerced to `False` in that environment.
+- `news_scraper_pro.spec` was re-reviewed for this pass; no additional hidden import/exclude change was needed.
+- `.gitignore` was re-reviewed for this pass; no additional ignore rule was needed.
+- Validation baseline:
+  - `pytest -q` => `136 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`

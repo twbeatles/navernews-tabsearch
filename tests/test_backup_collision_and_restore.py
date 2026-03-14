@@ -1,9 +1,11 @@
 import datetime
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import core.backup as backup_module
 from core.backup import AutoBackup
 
 
@@ -56,6 +58,10 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
 
             ok = backup.restore_backup("backup_missing_db", restore_db=True)
             self.assertFalse(ok)
+            self.assertEqual(
+                json.loads(cfg.read_text(encoding="utf-8")),
+                {"app_settings": {"v": 1}},
+            )
             self.assertEqual(db.read_text(encoding="utf-8"), "live-db")
 
     def test_restore_backup_syncs_wal_shm_sidecars(self):
@@ -81,3 +87,40 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
             self.assertEqual(db.read_text(encoding="utf-8"), "backup-db")
             self.assertEqual(Path(str(db) + "-wal").read_text(encoding="utf-8"), "backup-wal")
             self.assertFalse(Path(str(db) + "-shm").exists())
+
+    def test_restore_backup_rolls_back_if_apply_fails_midway(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "db.sqlite"
+            cfg.write_text('{"app_settings":{"v":1}}', encoding="utf-8")
+            db.write_text("live-db", encoding="utf-8")
+
+            backup = AutoBackup(config_file=str(cfg), db_file=str(db))
+            backup_dir = Path(backup.backup_dir) / "backup_apply_fail"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            (backup_dir / cfg.name).write_text('{"app_settings":{"v":2}}', encoding="utf-8")
+            (backup_dir / db.name).write_text("backup-db", encoding="utf-8")
+
+            original_atomic_copy = backup_module._atomic_copy_replace
+            call_counter = {"count": 0}
+
+            def fail_on_second_copy(src_path: str, dst_path: str) -> None:
+                call_counter["count"] += 1
+                if call_counter["count"] == 2:
+                    raise OSError("simulated restore failure")
+                original_atomic_copy(src_path, dst_path)
+
+            with mock.patch.object(
+                backup_module,
+                "_atomic_copy_replace",
+                side_effect=fail_on_second_copy,
+            ):
+                ok = backup.restore_backup("backup_apply_fail", restore_db=True)
+
+            self.assertFalse(ok)
+            self.assertEqual(
+                json.loads(cfg.read_text(encoding="utf-8")),
+                {"app_settings": {"v": 1}},
+            )
+            self.assertEqual(db.read_text(encoding="utf-8"), "live-db")

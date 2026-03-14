@@ -9,12 +9,14 @@ class TestImportSettingsDedupe(unittest.TestCase):
         block = inspect.getsource(MainApp.import_settings)
 
         self.assertIn("existing_keywords = {", block)
-        self.assertIn("existing_keywords.add(keyword)", block)
-        self.assertIn("if keyword and keyword not in existing_keywords", block)
+        self.assertIn("existing_keywords.add(normalized_keyword)", block)
+        self.assertIn("if normalized_keyword and normalized_keyword not in existing_keywords", block)
 
     def test_import_normalizes_settings_and_merges_groups(self):
         block = inspect.getsource(MainApp.import_settings)
 
         self.assertIn("normalize_import_settings(", block)
         self.assertIn("self.keyword_group_manager.merge_groups(imported_groups, save=True)", block)
+        self.assertIn("self._merge_search_history(", block)
+        self.assertIn("self._merge_int_mapping_keep_max(", block)
 

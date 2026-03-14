@@ -72,6 +72,91 @@ def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
             logger.error("rollback failed for %s: %s", target, rollback_error)
 
 
+def _validate_restore_sources(
+    backup_path: str,
+    config_file: str,
+    db_file: str,
+    restore_db: bool,
+    context_label: str,
+) -> Optional[Dict[str, str]]:
+    if not os.path.isdir(backup_path):
+        logger.error("%s validation failed: backup path is invalid (%s)", context_label, backup_path)
+        return None
+
+    cfg_backup = os.path.join(backup_path, os.path.basename(config_file))
+    if not os.path.exists(cfg_backup):
+        logger.error("%s validation failed: config backup missing (%s)", context_label, cfg_backup)
+        return None
+
+    db_backup = os.path.join(backup_path, os.path.basename(db_file))
+    if restore_db and not os.path.exists(db_backup):
+        logger.error(
+            "%s validation failed: restore_db=true but DB backup missing (%s)",
+            context_label,
+            db_backup,
+        )
+        return None
+
+    return {
+        "config_backup": cfg_backup,
+        "db_backup": db_backup,
+    }
+
+
+def _apply_restore_sidecars(src_db_path: str, dst_db_path: str) -> None:
+    for suffix in ("-wal", "-shm"):
+        src_sidecar = f"{src_db_path}{suffix}"
+        dst_sidecar = f"{dst_db_path}{suffix}"
+        if os.path.exists(src_sidecar):
+            _atomic_copy_replace(src_sidecar, dst_sidecar)
+        elif os.path.exists(dst_sidecar):
+            os.remove(dst_sidecar)
+
+
+def _apply_restore_from_backup(
+    backup_path: str,
+    config_file: str,
+    db_file: str,
+    restore_db: bool,
+    context_label: str,
+) -> bool:
+    validated = _validate_restore_sources(
+        backup_path=backup_path,
+        config_file=config_file,
+        db_file=db_file,
+        restore_db=restore_db,
+        context_label=context_label,
+    )
+    if validated is None:
+        return False
+
+    rollback_targets = [config_file]
+    if restore_db:
+        rollback_targets.extend([db_file, f"{db_file}-wal", f"{db_file}-shm"])
+
+    staging_parent = os.path.dirname(os.path.abspath(config_file)) or "."
+    try:
+        with tempfile.TemporaryDirectory(prefix=".restore_stage_", dir=staging_parent) as staging_dir:
+            snapshots = _snapshot_files_for_rollback(
+                rollback_targets,
+                os.path.join(staging_dir, "snapshots"),
+            )
+            try:
+                _atomic_copy_replace(validated["config_backup"], config_file)
+                if restore_db:
+                    _atomic_copy_replace(validated["db_backup"], db_file)
+                    _apply_restore_sidecars(validated["db_backup"], db_file)
+            except Exception as apply_error:
+                logger.error("%s apply failed, rolling back: %s", context_label, apply_error)
+                _rollback_files_from_snapshot(snapshots)
+                return False
+    except Exception as e:
+        logger.error("%s staging failed: %s", context_label, e)
+        return False
+
+    return True
+
+
 class AutoBackup:
     """설정 및 데이터베이스 자동 백업"""
 
@@ -290,30 +375,16 @@ class AutoBackup:
             if not os.path.exists(backup_path):
                 logger.error(f"백업을 찾을 수 없음: {backup_name}")
                 return False
-
-            config_backup = os.path.join(backup_path, os.path.basename(self.config_file))
-            if os.path.exists(config_backup):
-                shutil.copy2(config_backup, self.config_file)
-
-            if restore_db:
-                db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
-                if not os.path.exists(db_backup):
-                    logger.error(
-                        "restore_backup 실패: restore_db=true 인데 DB 백업 파일이 없습니다. "
-                        f"backup={db_backup}"
-                    )
-                    return False
-                shutil.copy2(db_backup, self.db_file)
-                for suffix in ("-wal", "-shm"):
-                    src_sidecar = f"{db_backup}{suffix}"
-                    dst_sidecar = f"{self.db_file}{suffix}"
-                    if os.path.exists(src_sidecar):
-                        shutil.copy2(src_sidecar, dst_sidecar)
-                    elif os.path.exists(dst_sidecar):
-                        os.remove(dst_sidecar)
-
-            logger.info(f"백업 복원 완료: {backup_name}")
-            return True
+            restored = _apply_restore_from_backup(
+                backup_path=backup_path,
+                config_file=self.config_file,
+                db_file=self.db_file,
+                restore_db=bool(restore_db),
+                context_label=f"restore_backup({backup_name})",
+            )
+            if restored:
+                logger.info("백업 복원 완료: %s", backup_name)
+            return restored
         except Exception as e:
             logger.error(f"백업 복원 실패: {e}")
             traceback.print_exc()
@@ -349,50 +420,14 @@ def apply_pending_restore_if_any(
         logger.error("pending restore validation failed: backup path is invalid (file is kept)")
         return False
 
-    cfg_backup = os.path.join(backup_path, os.path.basename(config_file))
-    db_backup = os.path.join(backup_path, os.path.basename(db_file))
-
-    if not os.path.exists(cfg_backup):
-        logger.error("pending restore validation failed: config backup missing (file is kept)")
-        return False
-
-    if restore_db and not os.path.exists(db_backup):
-        logger.error(
-            "pending restore validation failed: restore_db=true but DB backup missing (file is kept). backup=%s",
-            db_backup,
-        )
-        return False
-
-    rollback_targets = [config_file]
-    if restore_db:
-        rollback_targets.extend([db_file, f"{db_file}-wal", f"{db_file}-shm"])
-
-    staging_parent = os.path.dirname(os.path.abspath(config_file)) or "."
-    try:
-        with tempfile.TemporaryDirectory(prefix=".restore_stage_", dir=staging_parent) as staging_dir:
-            snapshots = _snapshot_files_for_rollback(
-                rollback_targets,
-                os.path.join(staging_dir, "snapshots"),
-            )
-
-            try:
-                _atomic_copy_replace(cfg_backup, config_file)
-
-                if restore_db:
-                    _atomic_copy_replace(db_backup, db_file)
-                    for suffix in ("-wal", "-shm"):
-                        src_sidecar = f"{db_backup}{suffix}"
-                        dst_sidecar = f"{db_file}{suffix}"
-                        if os.path.exists(src_sidecar):
-                            _atomic_copy_replace(src_sidecar, dst_sidecar)
-                        elif os.path.exists(dst_sidecar):
-                            os.remove(dst_sidecar)
-            except Exception as apply_error:
-                logger.error("pending restore apply failed, rolling back (file is kept): %s", apply_error)
-                _rollback_files_from_snapshot(snapshots)
-                return False
-    except Exception as e:
-        logger.error("pending restore staging failed (file is kept): %s", e)
+    restored = _apply_restore_from_backup(
+        backup_path=backup_path,
+        config_file=config_file,
+        db_file=db_file,
+        restore_db=restore_db,
+        context_label="pending restore",
+    )
+    if not restored:
         return False
 
     try:

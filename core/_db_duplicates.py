@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 class _DatabaseDuplicatesMixin:
-    def _recalculate_duplicate_flags_for_keyword_hashes(
+    def _recalculate_duplicate_flags_for_query_key_hashes(
         self: DatabaseManager,
         conn: sqlite3.Connection,
-        keyword: str,
+        query_key: str,
         title_hashes: List[str],
     ) -> int:
-        """특정 키워드/해시 집합의 중복 플래그를 재계산."""
+        """Recalculate duplicate flags for a specific query scope and title hashes."""
         normalized_hashes = sorted(
             {
                 str(value).strip()
@@ -30,38 +30,37 @@ class _DatabaseDuplicatesMixin:
                 if isinstance(value, str) and value.strip()
             }
         )
-        if not normalized_hashes:
+        if not query_key or not normalized_hashes:
             return 0
 
         placeholders = ",".join(["?"] * len(normalized_hashes))
         rows = conn.execute(
             f"""
-            SELECT nk.link, n.title_hash
+            SELECT nk.link, COALESCE(n.title_hash, '')
             FROM news_keywords nk
             JOIN news n ON n.link = nk.link
-            WHERE nk.keyword = ? AND n.title_hash IN ({placeholders})
+            WHERE nk.query_key = ? AND n.title_hash IN ({placeholders})
             """,
-            [keyword] + normalized_hashes,
+            [query_key] + normalized_hashes,
         ).fetchall()
-
         if not rows:
             return 0
 
         links_by_hash: Dict[str, Set[str]] = {}
         for row in rows:
-            link = str(row[0])
+            link = str(row[0] or "")
             title_hash = str(row[1] or "")
             links_by_hash.setdefault(title_hash, set()).add(link)
 
         updates: List[Tuple[int, str, str]] = []
         for row in rows:
-            link = str(row[0])
+            link = str(row[0] or "")
             title_hash = str(row[1] or "")
             is_dup = 1 if len(links_by_hash.get(title_hash, set())) > 1 else 0
-            updates.append((is_dup, link, keyword))
+            updates.append((is_dup, link, query_key))
 
         conn.executemany(
-            "UPDATE news_keywords SET is_duplicate=? WHERE link=? AND keyword=?",
+            "UPDATE news_keywords SET is_duplicate=? WHERE link=? AND query_key=?",
             updates,
         )
         return len(updates)
@@ -70,14 +69,14 @@ class _DatabaseDuplicatesMixin:
         self: DatabaseManager,
         conn: sqlite3.Connection,
     ) -> int:
-        """전체 news_keywords.is_duplicate 값을 현재 기준으로 재계산."""
+        """Recalculate all query-scoped duplicate flags."""
         with perf_timer("db.recalculate_duplicate_flags", "scope=all"):
             rows = conn.execute(
                 """
-                SELECT nk.keyword, nk.link, COALESCE(n.title_hash, '') AS title_hash
+                SELECT nk.query_key, nk.link, COALESCE(n.title_hash, '') AS title_hash
                 FROM news_keywords nk
                 JOIN news n ON n.link = nk.link
-                WHERE nk.keyword IS NOT NULL AND nk.keyword != ''
+                WHERE nk.query_key IS NOT NULL AND nk.query_key != ''
                 """
             ).fetchall()
 
@@ -87,32 +86,32 @@ class _DatabaseDuplicatesMixin:
 
             links_by_group: Dict[Tuple[str, str], Set[str]] = {}
             for row in rows:
-                keyword = str(row[0])
-                link = str(row[1])
+                query_key = str(row[0] or "")
+                link = str(row[1] or "")
                 title_hash = str(row[2] or "")
-                links_by_group.setdefault((keyword, title_hash), set()).add(link)
+                links_by_group.setdefault((query_key, title_hash), set()).add(link)
 
             updates: List[Tuple[int, str, str]] = []
             for row in rows:
-                keyword = str(row[0])
-                link = str(row[1])
+                query_key = str(row[0] or "")
+                link = str(row[1] or "")
                 title_hash = str(row[2] or "")
-                is_dup = 1 if len(links_by_group.get((keyword, title_hash), set())) > 1 else 0
-                updates.append((is_dup, link, keyword))
+                is_dup = 1 if len(links_by_group.get((query_key, title_hash), set())) > 1 else 0
+                updates.append((is_dup, link, query_key))
 
             conn.executemany(
-                "UPDATE news_keywords SET is_duplicate=? WHERE link=? AND keyword=?",
+                "UPDATE news_keywords SET is_duplicate=? WHERE link=? AND query_key=?",
                 updates,
             )
             return len(updates)
 
-    def _collect_affected_keyword_hashes(
+    def _collect_affected_query_key_hashes(
         self: DatabaseManager,
         conn: sqlite3.Connection,
         news_where_clause: str = "",
         params: Optional[List[Any]] = None,
     ) -> Dict[str, Set[str]]:
-        """Collect duplicate groups (keyword + title_hash) impacted by deletion."""
+        """Collect duplicate groups (query_key + title_hash) affected by deletion."""
         where_sql = (
             " AND (" + news_where_clause + ")"
             if isinstance(news_where_clause, str) and news_where_clause.strip()
@@ -120,10 +119,10 @@ class _DatabaseDuplicatesMixin:
         )
         rows = conn.execute(
             f"""
-            SELECT nk.keyword, COALESCE(n.title_hash, '')
+            SELECT nk.query_key, COALESCE(n.title_hash, '')
             FROM news_keywords nk
             JOIN news n ON n.link = nk.link
-            WHERE nk.keyword IS NOT NULL AND nk.keyword != ''
+            WHERE nk.query_key IS NOT NULL AND nk.query_key != ''
             {where_sql}
             """,
             list(params or []),
@@ -131,11 +130,11 @@ class _DatabaseDuplicatesMixin:
 
         affected: Dict[str, Set[str]] = {}
         for row in rows:
-            keyword = str(row[0] or "").strip()
-            if not keyword:
+            query_key = str(row[0] or "").strip()
+            if not query_key:
                 continue
             title_hash = str(row[1] or "").strip()
-            affected.setdefault(keyword, set()).add(title_hash)
+            affected.setdefault(query_key, set()).add(title_hash)
         return affected
 
     def _recalculate_duplicates_for_affected(
@@ -152,14 +151,16 @@ class _DatabaseDuplicatesMixin:
                 return self._recalculate_duplicate_flags_with_conn(conn)
 
         updated = 0
-        for keyword, hashes in affected.items():
-            updated += self._recalculate_duplicate_flags_for_keyword_hashes(
-                conn, keyword, sorted(hashes)
+        for query_key, hashes in affected.items():
+            updated += self._recalculate_duplicate_flags_for_query_key_hashes(
+                conn,
+                query_key,
+                sorted(hashes),
             )
         return updated
 
     def recalculate_duplicate_flags(self: DatabaseManager) -> int:
-        """중복 플래그 재계산 공개 메서드."""
+        """Public duplicate-recalculation entrypoint."""
         conn = self.get_connection()
         try:
             with conn:
@@ -168,6 +169,6 @@ class _DatabaseDuplicatesMixin:
             self.return_connection(conn)
 
     def _calculate_title_hash(self: DatabaseManager, title: str) -> str:
-        """제목의 해시 계산 (중복 감지용) - 프리컴파일된 정규식 사용"""
+        """Stable title hash used for duplicate grouping."""
         normalized = RE_WHITESPACE.sub("", title.lower())
         return hashlib.md5(normalized.encode()).hexdigest()

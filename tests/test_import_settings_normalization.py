@@ -115,6 +115,11 @@ class TestImportSettingsNormalization(unittest.TestCase):
                             "too-large": 5000,
                             "zero": 0,
                         },
+                        "pagination_totals": {
+                            "ai|coin": "777",
+                            "empty": 0,
+                            "negative": -1,
+                        },
                     },
                     ensure_ascii=False,
                 ),
@@ -140,4 +145,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
             self.assertEqual(loaded["pagination_state"]["ai|coin"], 301)
             self.assertEqual(loaded["pagination_state"]["too-large"], 1000)
             self.assertNotIn("zero", loaded["pagination_state"])
+            self.assertEqual(loaded["pagination_totals"]["ai|coin"], 777)
+            self.assertEqual(loaded["pagination_totals"]["empty"], 0)
+            self.assertNotIn("negative", loaded["pagination_totals"])
 

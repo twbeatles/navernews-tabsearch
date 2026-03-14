@@ -203,7 +203,9 @@ class MainApp(
             self._badge_refresh_running = False
             self._tab_fetch_state: Dict[str, TabFetchState] = {}
             self._fetch_cursor_by_key: Dict[str, int] = {}
+            self._fetch_total_by_key: Dict[str, int] = {}
             self._request_start_index: Dict[int, int] = {}
+            self._query_key_migration_hints_shown: set[str] = set()
             
             # 알림 관련 설정
             self.notification_enabled = True  # 데스크톱 알림 활성화
@@ -458,6 +460,7 @@ class MainApp(
             "api_timeout": settings.get("api_timeout", 15),
             "keyword_groups": loaded_cfg.get("keyword_groups", {}),
             "pagination_state": loaded_cfg.get("pagination_state", {}),
+            "pagination_totals": loaded_cfg.get("pagination_totals", {}),
         }
 
         self.client_id = self.config["client_id"]
@@ -485,6 +488,12 @@ class MainApp(
             str(fetch_key): int(start_idx)
             for fetch_key, start_idx in (raw_pagination_state.items() if isinstance(raw_pagination_state, dict) else [])
             if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+        }
+        raw_pagination_totals = self.config.get("pagination_totals", {})
+        self._fetch_total_by_key = {
+            str(fetch_key): int(total)
+            for fetch_key, total in (raw_pagination_totals.items() if isinstance(raw_pagination_totals, dict) else [])
+            if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
         }
 
     def save_config(self):
@@ -523,6 +532,11 @@ class MainApp(
                 str(fetch_key): max(1, min(1000, int(start_idx)))
                 for fetch_key, start_idx in self._fetch_cursor_by_key.items()
                 if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+            },
+            "pagination_totals": {
+                str(fetch_key): int(total)
+                for fetch_key, total in self._fetch_total_by_key.items()
+                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
             },
         }
         
@@ -762,42 +776,31 @@ class MainApp(
 
         self._badge_refresh_running = True
         try:
-            tab_infos: List[Tuple[int, str, str, List[str]]] = []
-            plain_db_keywords: List[str] = []
+            tab_infos: List[Tuple[int, str, str, str]] = []
+            query_keys: List[str] = []
             for i, widget in self._iter_news_tabs(start_index=1):
                 keyword = widget.keyword
                 db_keyword, exclude_words = parse_tab_query(keyword)
-                if not db_keyword:
+                search_keyword, _ = parse_search_query(keyword)
+                query_key = build_fetch_key(search_keyword, exclude_words)
+                if not db_keyword or not query_key:
                     continue
-                normalized_excludes = [
-                    ex for ex in exclude_words if isinstance(ex, str) and ex.strip()
-                ]
-                tab_infos.append((i, keyword, db_keyword, normalized_excludes))
-                if not normalized_excludes:
-                    plain_db_keywords.append(db_keyword)
+                tab_infos.append((i, keyword, db_keyword, query_key))
+                query_keys.append(query_key)
 
             if not tab_infos:
                 return
 
             with perf_timer("ui.update_all_tab_badges", f"tabs={len(tab_infos)}"):
-                deduped_plain_keywords = list(dict.fromkeys(plain_db_keywords))
-                unread_by_kw = (
-                    self._require_db().get_unread_counts_by_keywords(deduped_plain_keywords)
-                    if deduped_plain_keywords
+                deduped_query_keys = list(dict.fromkeys(query_keys))
+                unread_by_query_key = (
+                    self._require_db().get_unread_counts_by_query_keys(deduped_query_keys)
+                    if deduped_query_keys
                     else {}
                 )
 
-                for tab_index, keyword, db_keyword, exclude_words in tab_infos:
-                    if exclude_words:
-                        unread_count = int(
-                            self._require_db().count_news(
-                                keyword=db_keyword,
-                                only_unread=True,
-                                exclude_words=exclude_words,
-                            )
-                        )
-                    else:
-                        unread_count = int(unread_by_kw.get(db_keyword, 0))
+                for tab_index, keyword, _db_keyword, query_key in tab_infos:
+                    unread_count = int(unread_by_query_key.get(query_key, 0))
                     self._badge_unread_cache[keyword] = unread_count
                     self._set_tab_badge_text(tab_index, keyword, unread_count)
         except Exception as e:
@@ -817,6 +820,55 @@ class MainApp(
             self._schedule_badge_refresh()
         except Exception as e:
             logger.warning(f"탭 배지 업데이트 오류 ({keyword}): {e}")
+
+    def sync_tab_load_more_state(self, keyword: str):
+        """Re-apply persisted load-more state after a tab reloads from DB."""
+        located_tab = self._find_news_tab(keyword)
+        if located_tab is None:
+            return
+
+        _tab_index, tab_widget = located_tab
+        search_keyword, exclude_words = parse_search_query(keyword)
+        fetch_key = build_fetch_key(search_keyword, exclude_words)
+        fetch_state = self._tab_fetch_state.setdefault(keyword, self._make_tab_fetch_state())
+        persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
+        if persisted_cursor > fetch_state.last_api_start_index:
+            fetch_state.last_api_start_index = persisted_cursor
+
+        total = self._fetch_total_by_key.get(fetch_key)
+        if isinstance(total, int) and total >= 0:
+            tab_widget.total_api_count = total
+        self._apply_load_more_button_state(
+            tab_widget,
+            total,
+            fetch_state.last_api_start_index,
+        )
+
+    def maybe_show_query_refresh_hint(self, keyword: str):
+        """Show a one-time hint when a new query_key scope still needs its first refresh."""
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword or normalized_keyword in self._query_key_migration_hints_shown:
+            return
+
+        search_keyword, exclude_words = parse_search_query(normalized_keyword)
+        db_keyword, _ = parse_tab_query(normalized_keyword)
+        query_key = build_fetch_key(search_keyword, exclude_words)
+        legacy_query_key = build_fetch_key(db_keyword, [])
+        if not db_keyword or not query_key or query_key == legacy_query_key:
+            return
+        if query_key in self._fetch_total_by_key or query_key in self._fetch_cursor_by_key:
+            return
+
+        db = self._require_db()
+        if db.get_counts(db_keyword, query_key=query_key) > 0:
+            return
+        if db.get_counts(db_keyword) <= 0:
+            return
+
+        self._query_key_migration_hints_shown.add(normalized_keyword)
+        self.show_warning_toast(
+            f"'{normalized_keyword}' 탭은 한 번 새로고침해야 기존 데이터와 정확히 분리됩니다."
+        )
 
     def switch_to_tab(self, index: int):
         """탭 전환"""
@@ -847,9 +899,10 @@ class MainApp(
                     QSystemTrayIcon.MessageIcon.Information,
                     3000  # 3초
                 )
-                # 알림 소리 재생
-                if self.sound_enabled:
-                    NotificationSound.play('success')
+            else:
+                self.show_toast(f"{title}: {message}")
+            if self.sound_enabled:
+                NotificationSound.play('success')
         except Exception as e:
             logger.warning(f"데스크톱 알림 오류: {e}")
     

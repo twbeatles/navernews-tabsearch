@@ -19,7 +19,7 @@ class _FakeDB:
     def __init__(self):
         self.upsert_calls = 0
 
-    def upsert_news(self, items, keyword):
+    def upsert_news(self, items, keyword, query_key=None):
         self.upsert_calls += 1
         return len(items), 0
 

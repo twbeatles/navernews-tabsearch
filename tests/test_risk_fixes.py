@@ -81,7 +81,7 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertIn("old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)", block)
         self.assertIn("new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)", block)
         self.assertIn("if old_fetch_key != new_fetch_key:", block)
-        self.assertIn("self._last_fetch_request_ts.pop(old_fetch_key, None)", block)
+        self.assertIn("self._prune_fetch_key_state(old_fetch_key, skip_keyword=new_keyword)", block)
         self.assertIn("self._tab_fetch_state[new_keyword] = self._make_tab_fetch_state()", block)
         self.assertNotIn("UPDATE news_keywords SET keyword=? WHERE keyword=?", block)
         self.assertNotIn("UPDATE news SET keyword=? WHERE keyword=?", block)
@@ -97,9 +97,8 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         start = src.index("def update_all_tab_badges")
         end = src.index("def update_tab_badge")
         block = src[start:end]
-        self.assertIn("self._require_db().count_news(", block)
-        self.assertIn("self._require_db().get_unread_counts_by_keywords(", block)
-        self.assertIn("exclude_words=exclude_words", block)
+        self.assertIn("build_fetch_key(search_keyword, exclude_words)", block)
+        self.assertIn("self._require_db().get_unread_counts_by_query_keys(", block)
         self.assertIn("self._badge_unread_cache[keyword]", block)
 
         start = src.index("def update_tab_badge")
@@ -110,6 +109,11 @@ class TestMainWindowRiskFixes(unittest.TestCase):
     def test_update_tray_tooltip_uses_db_total_unread_count(self):
         block = inspect.getsource(MainApp.update_tray_tooltip)
         self.assertIn("self.db.get_total_unread_count()", block)
+
+    def test_desktop_notification_uses_toast_fallback_without_tray(self):
+        block = inspect.getsource(MainApp.show_desktop_notification)
+        self.assertIn('self.show_toast(f"{title}: {message}")', block)
+        self.assertIn("if self.sound_enabled:", block)
 
     def test_rename_tab_cleans_active_worker_and_uses_common_title_formatter(self):
         block = inspect.getsource(MainApp.rename_tab)
@@ -147,4 +151,5 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         self.assertIn("tab_combo.addItem(w.keyword, w.keyword)", block)
         self.assertIn("db_keyword, exclude_words = parse_tab_query(tab_query)", block)
         self.assertIn("exclude_words=exclude_words", block)
+        self.assertIn("query_key=query_key", block)
 

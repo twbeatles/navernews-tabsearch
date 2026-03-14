@@ -13,7 +13,7 @@ import requests
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from core.protocols import ClosableProtocol, RequestGetProtocol
-from core.query_parser import parse_tab_query
+from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,7 @@ class ApiWorker(QObject):
         db_keyword: str,
         exclude_words: List[str],
         db_manager,
+        query_key: Optional[str] = None,
         start_idx: int = 1,
         max_retries: int = 3,
         timeout: int = 15,
@@ -87,6 +88,10 @@ class ApiWorker(QObject):
         self.display_keyword = str(display_keyword or self.search_query or self.db_keyword)
         self.exclude_words = exclude_words
         self.db = db_manager
+        self.query_key = str(query_key or "").strip() or build_fetch_key(
+            self.search_query,
+            self.exclude_words,
+        )
         self.start = start_idx
         self.max_retries = max_retries
         self.timeout = timeout
@@ -245,8 +250,12 @@ class ApiWorker(QObject):
                             logger.info(f"ApiWorker cancelled before upsert: {self.display_keyword}")
                             return
 
-                        with perf_timer("api.upsert", f"kw={self.db_keyword}|items={len(items)}"):
-                            added_count, dup_count = self.db.upsert_news(items, self.db_keyword)
+                        with perf_timer("api.upsert", f"kw={self.db_keyword}|query_key={self.query_key}|items={len(items)}"):
+                            added_count, dup_count = self.db.upsert_news(
+                                items,
+                                self.db_keyword,
+                                query_key=self.query_key,
+                            )
 
                         result = {
                             "items": items,
@@ -357,7 +366,9 @@ class DBWorker(QThread):
                 if self._is_cancelled:
                     return
 
-                search_keyword, exclude_words = parse_tab_query(self.keyword)
+                search_keyword, exclude_words = parse_search_query(self.keyword)
+                db_keyword, _ = parse_tab_query(self.keyword)
+                query_key = build_fetch_key(search_keyword, exclude_words)
                 if self.only_bookmark:
                     search_keyword = ""
 
@@ -366,7 +377,7 @@ class DBWorker(QThread):
                     return
 
                 data = self.db.fetch_news(
-                    keyword=search_keyword,
+                    keyword=db_keyword or search_keyword,
                     filter_txt=self.filter_txt,
                     sort_mode=self.sort_mode,
                     only_bookmark=self.only_bookmark,
@@ -375,6 +386,7 @@ class DBWorker(QThread):
                     exclude_words=exclude_words,
                     start_date=self.start_date,
                     end_date=self.end_date,
+                    query_key=None if self.only_bookmark else query_key,
                 )
 
                 total_count = len(data)

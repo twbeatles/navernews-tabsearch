@@ -31,7 +31,9 @@ class TestLoadMoreTotalGuard(unittest.TestCase):
     def test_helper_formula_source_guard(self):
         src = inspect.getsource(MainApp._compute_load_more_state)
         self.assertIn("next_start = last_api_start_index + 100", src)
-        self.assertIn("has_more = next_start <= min(1000, total)", src)
+        self.assertIn("if next_start > 1000:", src)
+        self.assertIn("if total is None:", src)
+        self.assertIn("return next_start <= min(1000, max(0, int(total or 0)))", src)
 
     def test_apply_load_more_button_state(self):
         app = _MainWindowShim()
@@ -47,4 +49,5 @@ class TestLoadMoreTotalGuard(unittest.TestCase):
 
     def test_on_fetch_done_uses_total_based_button_update(self):
         block = inspect.getsource(MainApp.on_fetch_done)
-        self.assertIn("self._apply_load_more_button_state(w, total, last_api_start_index)", block)
+        self.assertIn("self._apply_load_more_button_state(tab_widget, total, last_api_start_index)", block)
+        self.assertIn("self._fetch_total_by_key[fetch_key] = total", block)
