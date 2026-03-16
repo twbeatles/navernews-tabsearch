@@ -120,7 +120,7 @@ navernews-tabsearch/
 ## ✅ 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `128 passed, 5 subtests passed`
+- `pytest -q` => `146 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
 
 ---
@@ -539,6 +539,7 @@ css = AppStyle.HTML_TEMPLATE.format(**colors)
 ```
 
 - 실행 중 DB 덮어쓰기를 피하기 위해 복원은 재시작 적용 정책으로 고정되었습니다.
+- 시작 시 생성되는 자동 백업은 설정만 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
 
 ### 3. UI 깜빡임
 
@@ -929,4 +930,35 @@ ews_scraper_pro.spec` removed forced `chardet` hidden import to align with reque
 
 ### Validation
 - `pytest -q` => `136 passed, 5 subtests passed`
+- `pyright` => `0 errors, 0 warnings, 0 informations`
+
+---
+
+## 2026-03-16 Addendum (Implementation Audit Follow-through)
+
+### Implemented
+- Global article state synchronization:
+  - Single-item read/bookmark/note/delete actions now synchronize by `link` across all open news tabs and the bookmark tab.
+  - Delete removes the cached item from every open tab immediately.
+  - Bulk actions such as `mark all read` now reuse the same full-refresh path as DB maintenance completion.
+- Alert / tab identity / export consistency:
+  - `ApiWorker.finished` now includes `new_items`, computed from pre-existing links in the current `query_key` scope before upsert.
+  - Alert keywords run only against newly added items and do not fire when `added_count == 0`.
+  - Tab dedupe, rename conflict detection, settings import dedupe, and search-history dedupe now share canonical-query identity.
+  - CSV export now uses `filtered_data_cache`, so only the current visible results are written.
+- Backup / docs / packaging alignment:
+  - Startup auto-backup remains settings-only, and the UI/docs now explicitly call out that DB restore points require a manual backup with DB included.
+  - `news_scraper_pro.spec` was re-reviewed; no additional hidden import/exclude changes were required.
+  - `.gitignore` was re-reviewed; no additional ignore rule was required.
+
+### Added / Updated Tests
+- Added `tests/test_audit_followthrough.py`
+- Expanded:
+  - `tests/test_worker_cancellation.py`
+  - `tests/test_db_queries.py`
+  - `tests/test_import_settings_dedupe.py`
+  - `tests/test_news_tab_ext_read_policy.py`
+
+### Validation
+- `pytest -q` => `146 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`

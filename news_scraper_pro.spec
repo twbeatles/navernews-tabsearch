@@ -20,6 +20,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 # - Query-key tab scoping, pagination total persistence, restore helper unification,
 #   and settings export/import 1.1 rely on stdlib / already-bundled modules only.
 # - No additional hidden import/exclude change is required for this pass.
+# 2026-03-16 review:
+# - Cross-tab state sync, visible-only CSV export, canonical-query dedupe,
+#   alert gating on newly added items, and backup wording updates rely on
+#   existing stdlib / already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

@@ -31,8 +31,9 @@ class _SettingsDialogDocsMixin:
             </ul>
             <h3>데이터 관리</h3>
             <ul>
-                <li>CSV 내보내기, 통계, 언론사 분석</li>
+                <li>현재 화면에 표시 중인 결과를 CSV로 내보내기</li>
                 <li>30일 이전 기사 정리 (북마크 제외)</li>
+                <li>자동 시작 백업은 설정만 저장하며, DB 복원 지점은 수동 백업(DB 포함)으로 생성</li>
             </ul>
             <p><strong>참고:</strong> 더 자세한 조작법은 단축키 탭을 확인하세요.</p>
         </body>
@@ -54,7 +55,7 @@ class _SettingsDialogDocsMixin:
             <h3>검색 / 설정</h3>
             <ul>
                 <li><strong>Ctrl+F</strong>: 필터 입력창 포커스</li>
-                <li><strong>Ctrl+S</strong>: 현재 탭 CSV 내보내기</li>
+                <li><strong>Ctrl+S</strong>: 현재 화면 표시 결과 CSV 내보내기</li>
                 <li><strong>Ctrl+,</strong>: 설정 창 열기</li>
                 <li><strong>F1</strong>: 도움말 열기</li>
             </ul>

@@ -51,7 +51,8 @@ class _MainWindowSettingsIOMixin:
     def export_data(self: MainApp):
         """Export the current tab's rows as CSV."""
         cur_widget = self._current_news_tab()
-        if cur_widget is None or not cur_widget.news_data_cache:
+        export_items = list(cur_widget.filtered_data_cache) if cur_widget is not None else []
+        if cur_widget is None or not export_items:
             QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
             return
 
@@ -70,7 +71,7 @@ class _MainWindowSettingsIOMixin:
             with open(fname, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.writer(f)
                 writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복"])
-                for item in cur_widget.news_data_cache:
+                for item in export_items:
                     writer.writerow(
                         [
                             item["title"],
@@ -85,7 +86,7 @@ class _MainWindowSettingsIOMixin:
                         ]
                     )
 
-            self.show_success_toast(f"총 {len(cur_widget.news_data_cache)}개 항목을 저장했습니다.")
+            self.show_success_toast(f"총 {len(export_items)}개 항목을 저장했습니다.")
             QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{fname}")
         except Exception as e:
             QMessageBox.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{e}")
@@ -95,13 +96,19 @@ class _MainWindowSettingsIOMixin:
         imported_history: Any,
     ) -> List[str]:
         merged: List[str] = []
+        seen_identities = set()
         raw_items: List[str] = []
         if isinstance(imported_history, list):
             raw_items.extend(str(item).strip() for item in imported_history if isinstance(item, str))
         raw_items.extend(str(item).strip() for item in self.search_history if isinstance(item, str))
         for keyword in raw_items:
-            if keyword and keyword not in merged:
-                merged.append(keyword)
+            if not keyword:
+                continue
+            identity = self._history_identity_for_keyword(keyword)
+            if identity in seen_identities:
+                continue
+            seen_identities.add(identity)
+            merged.append(keyword)
         return merged[:10]
 
     def _merge_int_mapping_keep_max(
@@ -295,14 +302,23 @@ class _MainWindowSettingsIOMixin:
                 widget.render_html()
 
             imported_tabs = import_data.get("tabs", [])
-            existing_keywords = {tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)}
+            existing_fetch_keys = {
+                self._canonical_fetch_key_for_keyword(tab.keyword)
+                for _index, tab in self._iter_news_tabs(start_index=1)
+                if self._canonical_fetch_key_for_keyword(tab.keyword)
+            }
             new_tabs = 0
             skipped_invalid_tabs = 0
             for keyword in imported_tabs:
                 normalized_keyword = self._normalize_tab_keyword(keyword.strip()) if isinstance(keyword, str) else None
-                if normalized_keyword and normalized_keyword not in existing_keywords:
+                normalized_fetch_key = (
+                    self._canonical_fetch_key_for_keyword(normalized_keyword)
+                    if normalized_keyword
+                    else ""
+                )
+                if normalized_keyword and normalized_fetch_key and normalized_fetch_key not in existing_fetch_keys:
                     self.add_news_tab(normalized_keyword)
-                    existing_keywords.add(normalized_keyword)
+                    existing_fetch_keys.add(normalized_fetch_key)
                     new_tabs += 1
                 elif not normalized_keyword:
                     skipped_invalid_tabs += 1

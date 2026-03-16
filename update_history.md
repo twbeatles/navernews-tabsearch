@@ -1,6 +1,32 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Implementation Audit Follow-through (2026-03-16)**:
+  - Cross-tab/global article state sync:
+    - Added link-based in-memory sync across open news tabs and the bookmark tab for single-item `read`, `unread`, `bookmark`, `note`, and `delete` actions.
+    - Deleting an article now removes it from all open tab caches immediately.
+    - Bulk actions such as `mark all read` now reuse the same full-refresh path as database maintenance completion so badge/tray state stays consistent.
+  - Alert/canonical-query/export behavior:
+    - `ApiWorker.finished` now includes `new_items`, derived by checking pre-existing links in the current `query_key` scope before upsert.
+    - Alert keywords now run only against newly added articles, and do not fire when `added_count == 0`.
+    - Tab dedupe, rename conflict detection, import dedupe, and search-history dedupe now share the same canonical query identity.
+    - CSV export now uses the current visible result set (`filtered_data_cache`) instead of the unfiltered tab cache.
+  - Backup/doc/spec alignment:
+    - Startup auto-backup remains settings-only (`include_db=False`), and UI/docs now explicitly direct users to manual DB-including backups for restore points.
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required.
+    - Re-reviewed `.gitignore`; existing runtime/build ignore rules already cover this pass.
+  - Documentation sync:
+    - Synced `README.md`, `claude.md`, `gemini.md`, and `project_structure_analysis.md` to the current behavior.
+  - Added/updated tests:
+    - Added `tests/test_audit_followthrough.py`
+    - Expanded:
+      - `tests/test_worker_cancellation.py`
+      - `tests/test_db_queries.py`
+      - `tests/test_import_settings_dedupe.py`
+      - `tests/test_news_tab_ext_read_policy.py`
+  - Validation:
+    - `pytest -q` => `146 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
 - **Implementation Audit Completion (2026-03-14)**:
   - Query-key scoped tab independence:
     - `news_keywords` migrated to `PRIMARY KEY (link, query_key)`.
@@ -21,7 +47,7 @@
     - Tray-unavailable imports force `start_minimized=false`.
     - `show_desktop_notification()` now falls back to toast + sound when tray is unavailable.
   - Documentation/spec review:
-    - Synced `README.md`, `claude.md`, `gemini.md`, and `implementation_audit_2026-03-14.md` to the new semantics.
+    - Synced `README.md`, `claude.md`, `gemini.md`, and repository audit notes to the new semantics.
     - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude change was required.
     - Re-reviewed `.gitignore`; existing runtime/build ignore rules already cover this pass.
   - Validation:

@@ -45,6 +45,53 @@ class _MainWindowTabsMixin:
             return None
         return keyword
 
+    def _canonical_fetch_key_for_keyword(self: MainApp, raw_keyword: str) -> str:
+        if not isinstance(raw_keyword, str):
+            return ""
+        search_query, exclude_words = parse_search_query(raw_keyword)
+        if not search_query:
+            return ""
+        return build_fetch_key(search_query, exclude_words)
+
+    def _history_identity_for_keyword(self: MainApp, raw_keyword: str) -> str:
+        canonical_fetch_key = self._canonical_fetch_key_for_keyword(raw_keyword)
+        if canonical_fetch_key:
+            return f"fetch:{canonical_fetch_key}"
+        collapsed = " ".join(str(raw_keyword or "").split()).lower()
+        return f"raw:{collapsed}"
+
+    def _find_news_tab_by_fetch_key(
+        self: MainApp,
+        fetch_key: str,
+        skip_index: Optional[int] = None,
+    ):
+        if not fetch_key:
+            return None
+        for index, widget in self._iter_news_tabs(start_index=1):
+            if skip_index is not None and index == skip_index:
+                continue
+            if self._canonical_fetch_key_for_keyword(widget.keyword) == fetch_key:
+                return index, widget
+        return None
+
+    def _remember_search_history(self: MainApp, keyword: str) -> None:
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword:
+            return
+
+        target_identity = self._history_identity_for_keyword(normalized_keyword)
+        updated_history = [normalized_keyword]
+        for existing_keyword in self.search_history:
+            if not isinstance(existing_keyword, str):
+                continue
+            candidate = existing_keyword.strip()
+            if not candidate:
+                continue
+            if self._history_identity_for_keyword(candidate) == target_identity:
+                continue
+            updated_history.append(candidate)
+        self.search_history = updated_history[:10]
+
     def _is_fetch_key_referenced(
         self: MainApp,
         fetch_key: str,
@@ -84,16 +131,14 @@ class _MainWindowTabsMixin:
             return
 
         keyword = normalized_keyword
-
-        for i, widget in self._iter_news_tabs():
-            if widget.keyword == keyword:
-                self.tabs.setCurrentIndex(i)
-                return
+        fetch_key = self._canonical_fetch_key_for_keyword(keyword)
+        existing_tab = self._find_news_tab_by_fetch_key(fetch_key)
+        if existing_tab is not None:
+            self.tabs.setCurrentIndex(existing_tab[0])
+            return
 
         tab = NewsTab(keyword, self._require_db(), self.theme_idx, self)
         tab.btn_load.clicked.connect(lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True))
-        search_query, exclude_words = parse_search_query(keyword)
-        fetch_key = build_fetch_key(search_query, exclude_words)
         fetch_state = self._tab_fetch_state.setdefault(keyword, self._make_tab_fetch_state())
         persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
         if persisted_cursor > fetch_state.last_api_start_index:
@@ -185,22 +230,21 @@ class _MainWindowTabsMixin:
                 )
                 return
 
-            for i, w in self._iter_news_tabs(start_index=1):
-                if w.keyword == keyword:
-                    QMessageBox.information(
-                        self,
-                        "중복 태브",
-                        f"'{keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다."
-                    )
-                    self.tabs.setCurrentIndex(i)
-                    return
+            existing_tab = self._find_news_tab_by_fetch_key(
+                self._canonical_fetch_key_for_keyword(keyword)
+            )
+            if existing_tab is not None:
+                QMessageBox.information(
+                    self,
+                    "중복 태브",
+                    f"'{existing_tab[1].keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다."
+                )
+                self.tabs.setCurrentIndex(existing_tab[0])
+                return
 
             self.add_news_tab(keyword)
             self.fetch_news(keyword)
-
-            if keyword not in self.search_history:
-                self.search_history.insert(0, keyword)
-                self.search_history = self.search_history[:10]
+            self._remember_search_history(keyword)
 
             self.save_config()
 
@@ -268,12 +312,18 @@ class _MainWindowTabsMixin:
                 )
                 return
 
-            for i, target in self._iter_news_tabs(start_index=1):
-                if i == idx:
-                    continue
-                if target.keyword == new_keyword:
-                    QMessageBox.information(self, "중복 탭", f"'{new_keyword}' 탭이 이미 존재합니다.")
-                    return
+            duplicate_tab = self._find_news_tab_by_fetch_key(
+                self._canonical_fetch_key_for_keyword(new_keyword),
+                skip_index=idx,
+            )
+            if duplicate_tab is not None:
+                QMessageBox.information(
+                    self,
+                    "중복 탭",
+                    f"'{duplicate_tab[1].keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다.",
+                )
+                self.tabs.setCurrentIndex(duplicate_tab[0])
+                return
 
             w.keyword = new_keyword
             self.tabs.setTabText(idx, self._format_tab_title(new_keyword, unread_count=0))

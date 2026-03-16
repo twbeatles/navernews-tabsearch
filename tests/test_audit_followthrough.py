@@ -1,0 +1,237 @@
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
+import csv
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+from ui._main_window_settings_io import _MainWindowSettingsIOMixin
+from ui._main_window_tabs import _MainWindowTabsMixin
+from ui.main_window import MainApp
+
+
+class _DummyHistoryMain:
+    _canonical_fetch_key_for_keyword = _MainWindowTabsMixin._canonical_fetch_key_for_keyword
+    _history_identity_for_keyword = _MainWindowTabsMixin._history_identity_for_keyword
+    _remember_search_history = _MainWindowTabsMixin._remember_search_history
+    _merge_search_history = _MainWindowSettingsIOMixin._merge_search_history
+
+    def __init__(self, search_history):
+        self.search_history = list(search_history)
+
+
+class _DummyTabs:
+    def __init__(self):
+        self.current_index = None
+
+    def setCurrentIndex(self, index):
+        self.current_index = index
+
+
+class _FakeOpenTab:
+    def __init__(self, keyword):
+        self.keyword = keyword
+
+
+class _DummyAddMain:
+    add_news_tab = _MainWindowTabsMixin.add_news_tab
+    _normalize_tab_keyword = _MainWindowTabsMixin._normalize_tab_keyword
+    _canonical_fetch_key_for_keyword = _MainWindowTabsMixin._canonical_fetch_key_for_keyword
+    _find_news_tab_by_fetch_key = _MainWindowTabsMixin._find_news_tab_by_fetch_key
+
+    def __init__(self):
+        self.tabs = _DummyTabs()
+        self.theme_idx = 0
+        self._fetch_cursor_by_key = {}
+        self._fetch_total_by_key = {}
+        self._tab_fetch_state = {}
+        self._open_tabs = [_FakeOpenTab("북마크"), _FakeOpenTab("foo bar")]
+
+    def _iter_news_tabs(self, start_index=0):
+        for index, tab in enumerate(self._open_tabs[start_index:], start_index):
+            yield index, tab
+
+
+class _DummyExportTab:
+    def __init__(self, keyword, news_items, visible_items):
+        self.keyword = keyword
+        self.news_data_cache = list(news_items)
+        self.filtered_data_cache = list(visible_items)
+
+
+class _DummyExportMain:
+    export_data = _MainWindowSettingsIOMixin.export_data
+
+    def __init__(self, widget):
+        self._widget = widget
+        self.toast_messages = []
+
+    def _current_news_tab(self):
+        return self._widget
+
+    def show_success_toast(self, message):
+        self.toast_messages.append(message)
+
+
+class _DummyCheck:
+    def __init__(self, checked):
+        self._checked = checked
+
+    def isChecked(self):
+        return self._checked
+
+
+class _FakeSyncTab:
+    def __init__(self, keyword, *, is_bookmark_tab=False, unread_checked=False, change_result=False):
+        self.keyword = keyword
+        self.is_bookmark_tab = is_bookmark_tab
+        self.chk_unread = _DummyCheck(unread_checked)
+        self.change_result = change_result
+        self.sync_calls = []
+        self.load_calls = 0
+
+    def apply_external_item_state(self, link, **kwargs):
+        self.sync_calls.append((link, kwargs))
+        return self.change_result
+
+    def load_data_from_db(self):
+        self.load_calls += 1
+
+
+class _DummySyncMain:
+    sync_link_state_across_tabs = MainApp.sync_link_state_across_tabs
+
+    def __init__(self, tabs):
+        self._tabs = list(tabs)
+        self.badge_refresh_delays = []
+        self.tooltip_calls = 0
+
+    def _iter_news_tabs(self, start_index=0):
+        for index, tab in enumerate(self._tabs[start_index:], start_index):
+            yield index, tab
+
+    def _schedule_badge_refresh(self, delay_ms=200):
+        self.badge_refresh_delays.append(delay_ms)
+
+    def update_tray_tooltip(self):
+        self.tooltip_calls += 1
+
+
+class TestCanonicalHistory(unittest.TestCase):
+    def test_remember_search_history_dedupes_by_canonical_query(self):
+        dummy = _DummyHistoryMain(["foo bar", "baz"])
+
+        dummy._remember_search_history("FOO   bar")
+
+        self.assertEqual(dummy.search_history, ["FOO   bar", "baz"])
+
+    def test_merge_search_history_prefers_first_canonical_entry(self):
+        dummy = _DummyHistoryMain(["foo bar", "baz"])
+
+        merged = dummy._merge_search_history(["FOO   bar", "qux"])
+
+        self.assertEqual(merged, ["FOO   bar", "qux", "baz"])
+
+
+class TestCanonicalTabDedupe(unittest.TestCase):
+    def test_add_news_tab_focuses_existing_canonical_tab(self):
+        dummy = _DummyAddMain()
+
+        with mock.patch("ui._main_window_tabs.NewsTab", side_effect=AssertionError("should not create tab")):
+            dummy.add_news_tab("FOO   BAR")
+
+        self.assertEqual(dummy.tabs.current_index, 1)
+
+
+class TestVisibleOnlyCsvExport(unittest.TestCase):
+    def test_export_data_uses_filtered_items_only(self):
+        all_items = [
+            {
+                "title": "one",
+                "link": "https://example.com/1",
+                "pubDate": "2026-01-01",
+                "publisher": "example.com",
+                "description": "visible",
+                "is_read": 0,
+                "is_bookmarked": 0,
+                "notes": "",
+                "is_duplicate": 0,
+            },
+            {
+                "title": "two",
+                "link": "https://example.com/2",
+                "pubDate": "2026-01-02",
+                "publisher": "example.com",
+                "description": "hidden",
+                "is_read": 1,
+                "is_bookmarked": 0,
+                "notes": "",
+                "is_duplicate": 0,
+            },
+        ]
+        visible_items = [all_items[0]]
+        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, visible_items))
+
+        with tempfile.TemporaryDirectory() as td:
+            export_path = Path(td) / "export.csv"
+            with mock.patch.object(QFileDialog, "getSaveFileName", return_value=(str(export_path), "CSV")):
+                with mock.patch.object(QMessageBox, "information"):
+                    dummy.export_data()
+
+            rows = list(csv.reader(export_path.open("r", encoding="utf-8-sig")))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[1][0], "one")
+            self.assertEqual(dummy.toast_messages, ["총 1개 항목을 저장했습니다."])
+
+    def test_export_data_blocks_when_no_visible_items_exist(self):
+        all_items = [
+            {
+                "title": "one",
+                "link": "https://example.com/1",
+                "pubDate": "2026-01-01",
+                "publisher": "example.com",
+                "description": "hidden",
+                "is_read": 0,
+                "is_bookmarked": 0,
+                "notes": "",
+                "is_duplicate": 0,
+            }
+        ]
+        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, []))
+
+        with mock.patch.object(QFileDialog, "getSaveFileName") as save_mock:
+            with mock.patch.object(QMessageBox, "information") as info_mock:
+                dummy.export_data()
+
+        save_mock.assert_not_called()
+        info_mock.assert_called_once()
+        self.assertEqual(dummy.toast_messages, [])
+
+
+class TestLinkStateSync(unittest.TestCase):
+    def test_sync_link_state_reloads_bookmark_and_unread_only_tabs_when_needed(self):
+        source_tab = _FakeSyncTab("AI", change_result=True)
+        bookmark_tab = _FakeSyncTab("북마크", is_bookmark_tab=True)
+        unread_tab = _FakeSyncTab("AI -광고", unread_checked=True)
+        dummy = _DummySyncMain([source_tab, bookmark_tab, unread_tab])
+
+        with mock.patch.object(QTimer, "singleShot", side_effect=lambda _ms, callback: callback()):
+            dummy.sync_link_state_across_tabs(
+                source_tab,
+                "https://example.com/news",
+                is_bookmarked=True,
+                is_read=False,
+            )
+
+        self.assertEqual(bookmark_tab.load_calls, 1)
+        self.assertEqual(unread_tab.load_calls, 1)
+        self.assertEqual(dummy.badge_refresh_delays, [0])
+        self.assertEqual(dummy.tooltip_calls, 2)
+        self.assertEqual(bookmark_tab.sync_calls[0][0], "https://example.com/news")
+
+
+if __name__ == "__main__":
+    unittest.main()

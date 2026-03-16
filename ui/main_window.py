@@ -357,6 +357,48 @@ class MainApp(
                 return index, tab
         return None
 
+    def sync_link_state_across_tabs(
+        self,
+        source_tab: Optional[NewsTab],
+        link: str,
+        *,
+        is_read: Optional[bool] = None,
+        is_bookmarked: Optional[bool] = None,
+        notes: Optional[str] = None,
+        deleted: bool = False,
+    ) -> None:
+        normalized_link = str(link or "").strip()
+        if not normalized_link:
+            return
+
+        tabs_to_reload: List[NewsTab] = []
+        for _index, tab in self._iter_news_tabs():
+            if source_tab is not None and tab is source_tab:
+                continue
+            changed = tab.apply_external_item_state(
+                normalized_link,
+                is_read=is_read,
+                is_bookmarked=is_bookmarked,
+                notes=notes,
+                deleted=deleted,
+            )
+            if changed or deleted:
+                continue
+            if is_bookmarked is True and tab.is_bookmark_tab and tab not in tabs_to_reload:
+                tabs_to_reload.append(tab)
+            if is_read is False and tab.chk_unread.isChecked() and tab not in tabs_to_reload:
+                tabs_to_reload.append(tab)
+
+        for tab in tabs_to_reload:
+            try:
+                tab.load_data_from_db()
+            except Exception as e:
+                logger.warning("External tab sync reload failed (%s): %s", tab.keyword, e)
+
+        self._schedule_badge_refresh(delay_ms=0)
+        self.update_tray_tooltip()
+        QTimer.singleShot(300, self.update_tray_tooltip)
+
     def _add_menu_action(self, menu: QMenu, text: str) -> QAction:
         action = menu.addAction(text)
         if action is None:
@@ -636,7 +678,7 @@ class MainApp(
         self.btn_refresh.setObjectName("RefreshBtn")
         
         self.btn_save = QPushButton("💾 내보내기")
-        self.btn_save.setToolTip("현재 탭의 뉴스를 CSV로 내보냅니다 (Ctrl+S)")
+        self.btn_save.setToolTip("현재 탭의 표시 결과를 CSV로 내보냅니다 (Ctrl+S)")
         
         toolbar.addWidget(self.btn_refresh)
         toolbar.addWidget(self.btn_save)

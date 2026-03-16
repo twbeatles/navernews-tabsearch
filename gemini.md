@@ -83,7 +83,7 @@ navernews-tabsearch/
 ### 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `128 passed, 5 subtests passed`
+- `pytest -q` => `146 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
 
 ### 핵심 클래스 계층
@@ -717,4 +717,28 @@ class StartupManager:
 - `.gitignore` was re-reviewed for this pass; no additional ignore rule was needed.
 - Validation baseline:
   - `pytest -q` => `136 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+
+---
+
+## 2026-03-16 Addendum
+
+- Cross-tab article state sync:
+  - single-item `read`, `unread`, `bookmark`, `note`, and `delete` actions now synchronize by `link` across all open news tabs and the bookmark tab
+  - delete removes the cached item from every open tab immediately
+  - bulk refresh-sensitive actions now reuse the same full-refresh path as database maintenance completion
+- Alert / canonical-query / export consistency:
+  - `ApiWorker.finished` now includes `new_items`, computed from pre-existing links in the current `query_key` scope before upsert
+  - alert keywords run only against `new_items`, and do not fire when `added_count == 0`
+  - tab dedupe, rename conflict detection, settings import dedupe, and search-history dedupe now share canonical-query identity
+  - CSV export now uses `filtered_data_cache`, so only the current visible result set is written
+- Backup / packaging / docs:
+  - startup auto-backup remains settings-only, and docs/UI now make the manual DB-including backup requirement explicit
+  - `news_scraper_pro.spec` was re-reviewed; no new hidden import/exclude/data change was needed
+  - `.gitignore` was re-reviewed; no additional ignore rule was needed
+- Added/updated tests:
+  - added `tests/test_audit_followthrough.py`
+  - expanded `tests/test_worker_cancellation.py`, `tests/test_db_queries.py`, `tests/test_import_settings_dedupe.py`, `tests/test_news_tab_ext_read_policy.py`
+- Validation baseline:
+  - `pytest -q` => `146 passed, 5 subtests passed`
   - `pyright` => `0 errors, 0 warnings, 0 informations`

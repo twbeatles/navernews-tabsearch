@@ -44,6 +44,14 @@ class _DummyWindow:
         pass
 
 
+class _DummyCheck:
+    def __init__(self, checked=False):
+        self._checked = checked
+
+    def isChecked(self):
+        return self._checked
+
+
 class _DummyNewsTab:
     _set_read_state = NewsTab._set_read_state
 
@@ -52,8 +60,10 @@ class _DummyNewsTab:
         self.adjust_calls = 0
         self.refresh_calls = 0
         self.badge_calls = 0
+        self.removed_targets = []
         self.lbl_status = _DummyLabel()
         self._window = _DummyWindow()
+        self.chk_unread = _DummyCheck(False)
         self.target = {"link": "https://example.com/news-1", "is_read": 0}
 
     def _adjust_unread_cache(self, _was_read, _now_read):
@@ -64,6 +74,10 @@ class _DummyNewsTab:
 
     def _notify_badge_change(self):
         self.badge_calls += 1
+
+    def _remove_cached_target(self, target):
+        self.removed_targets.append(target)
+        return True
 
     def _target_by_hash(self, _link_hash):
         return self.target
@@ -102,6 +116,17 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         self.assertEqual(tab.adjust_calls, 0)
         self.assertEqual(tab.refresh_calls, 0)
         self.assertEqual(tab.badge_calls, 0)
+
+    def test_set_read_state_removes_item_when_unread_only_filter_is_enabled(self):
+        tab = _DummyNewsTab()
+        tab.chk_unread = _DummyCheck(True)
+        target = {"link": "https://example.com/news-3", "is_read": 0}
+
+        updated = NewsTab._set_read_state(cast(Any, tab), target, True)
+
+        self.assertTrue(updated)
+        self.assertEqual(tab.db.calls, [("https://example.com/news-3", "is_read", 1)])
+        self.assertEqual(tab.removed_targets, [target])
 
     def test_open_action_does_not_mutate_ui_when_db_update_fails(self):
         tab = _DummyNewsTab(update_result=False)

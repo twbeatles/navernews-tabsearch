@@ -455,6 +455,14 @@ class BackupDialog(QDialog):
         btn_layout.addWidget(self.chk_include_db)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
+
+        info_label = QLabel(
+            "참고: 시작 시 자동 백업은 설정만 저장합니다. DB 복원 지점이 필요하면 수동 백업에서 "
+            "'데이터베이스 포함'을 선택하세요."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; margin-bottom: 8px;")
+        layout.addWidget(info_label)
         
         # 백업 목록
         layout.addWidget(QLabel("📁 백업 목록:"))

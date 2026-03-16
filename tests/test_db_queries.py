@@ -366,6 +366,41 @@ class TestDbQueries(unittest.TestCase):
         publishers = self.mgr.get_top_publishers("AI", query_key=q1, limit=10)
         self.assertEqual(publishers, [("finance.com", 1)])
 
+    def test_get_existing_links_for_query_is_query_key_scoped(self):
+        q1 = app.build_fetch_key("AI finance", [])
+        q2 = app.build_fetch_key("AI robotics", [])
+        shared = {
+            "title": "shared title",
+            "description": "shared",
+            "link": "https://example.com/shared-scope",
+            "pubDate": "2026-01-01T09:00:00",
+            "publisher": "example.com",
+        }
+        other = {
+            "title": "other title",
+            "description": "other",
+            "link": "https://example.com/other-scope",
+            "pubDate": "2026-01-02T09:00:00",
+            "publisher": "example.com",
+        }
+
+        self.mgr.upsert_news([shared], "AI", query_key=q1)
+        self.mgr.upsert_news([other], "AI", query_key=q2)
+
+        existing_q1 = self.mgr.get_existing_links_for_query(
+            [shared["link"], other["link"]],
+            keyword="AI",
+            query_key=q1,
+        )
+        existing_q2 = self.mgr.get_existing_links_for_query(
+            [shared["link"], other["link"]],
+            keyword="AI",
+            query_key=q2,
+        )
+
+        self.assertEqual(existing_q1, {shared["link"]})
+        self.assertEqual(existing_q2, {other["link"]})
+
     def test_delete_link_recalculates_duplicate_flags(self):
         same_title = "delete-link-duplicate-title"
         self.mgr.upsert_news(

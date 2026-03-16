@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Optional, Protocol
+
+if TYPE_CHECKING:
+    from ui.news_tab import NewsTab
 
 
 class MainWindowProtocol(Protocol):
@@ -20,6 +23,21 @@ class MainWindowProtocol(Protocol):
         ...
 
     def show_warning_toast(self, message: str) -> None:
+        ...
+
+    def sync_link_state_across_tabs(
+        self,
+        source_tab: Optional["NewsTab"],
+        link: str,
+        *,
+        is_read: Optional[bool] = None,
+        is_bookmarked: Optional[bool] = None,
+        notes: Optional[str] = None,
+        deleted: bool = False,
+    ) -> None:
+        ...
+
+    def on_database_maintenance_completed(self, operation: str, affected_count: int = 0) -> None:
         ...
 
 

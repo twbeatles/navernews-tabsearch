@@ -425,7 +425,7 @@ class _MainWindowFetchMixin:
                             )
                         self.update_tray_tooltip()
 
-                    matched = self.check_alert_keywords(result.get("items", []))
+                    matched = self.check_alert_keywords(result.get("new_items", [])) if added_count > 0 else []
                     if matched:
                         for item, alert_keyword in matched[:3]:
                             title = html.unescape(RE_HTML_TAGS.sub("", item.get("title", "")))

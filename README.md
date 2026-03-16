@@ -16,14 +16,17 @@
 
 - 탭 기반 키워드 검색 및 독립 관리
 - 같은 첫 키워드를 공유해도 전체 검색 의미(`query_key`) 기준으로 탭 범위 분리
+- 같은 `canonical query` 탭은 중복 생성하지 않고 기존 탭으로 이동
 - 제외어(`-키워드`)와 날짜 조건을 포함한 고급 검색
 - 자동 새로고침(10분~6시간) 및 수동 전체 새로고침
 - 기사 북마크/읽음 처리/메모 작성
-- 검색 결과 CSV 내보내기
+- 열린 탭/북마크 탭 사이의 기사 상태 즉시 동기화
+- 알림 키워드는 이번 fetch에서 새로 추가된 기사에만 적용
+- 현재 표시 결과 CSV 내보내기
 - 키워드 그룹 관리
 - 시스템 트레이 동작(최소화/닫기 동작 커스터마이징)
 - 단일 인스턴스 실행 보장(중복 실행 방지)
-- 설정/DB 자동 백업 및 재시작 적용형 복원(pending restore)
+- 설정 자동 백업 + 수동 DB 포함 백업 및 재시작 적용형 복원(pending restore)
 
 ## 안정화 포인트 (v32.7.2+ 작업 브랜치 반영)
 
@@ -77,6 +80,12 @@
 - 트레이 미지원 환경에서도 `show_desktop_notification()`이 토스트 fallback + 알림음으로 동작
 - `pyrightconfig.json`을 추가하고 `core.protocols`/`ui.protocols` 기반 타입 계약을 도입해 `pyright` 기준 0 errors를 유지
 - UTF-8 인코딩 스모크 테스트를 리포지토리 주요 텍스트 자산 전체로 확장
+- 단건 기사 상태 변경(`읽음/북마크/메모/삭제`) 시 열린 뉴스/북마크 탭 캐시를 `link` 기준으로 즉시 동기화
+- `모두 읽음`/DB 유지보수 완료 후에는 열린 탭과 북마크 탭을 full refresh 경로로 재정렬해 정합성 보장
+- 알림 키워드는 이번 fetch에서 실제로 새로 추가된 기사(`new_items`)에만 적용
+- 탭 중복 방지, 설정 import dedupe, 검색 이력 dedupe를 `canonical query` 기준으로 통일
+- CSV 내보내기를 `filtered_data_cache` 기준으로 통일해 현재 화면에 보이는 결과만 저장
+- 자동 시작 백업은 계속 `설정만` 대상으로 유지하고, UI/문서에서 DB 포함 수동 백업 필요성을 명시
 
 ## 프로젝트 구조
 
@@ -150,6 +159,7 @@ navernews-tabsearch/
 │   ├── test_worker_cancellation.py
 │   ├── test_backup_collision_and_restore.py
 │   ├── test_backup_restore_mode.py
+│   ├── test_audit_followthrough.py
 │   ├── test_load_more_total_guard.py
 │   ├── test_news_tab_ext_read_policy.py
 │   ├── test_settings_dialog_maintenance.py
@@ -221,6 +231,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 감사 후속 3차(2026-03-07)에서도 `.spec`을 재검토했으며, DPAPI 비밀값 저장 전환은 표준 라이브러리 기반(`ctypes`, `base64`)이라 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 타입/인코딩 정리(2026-03-09)에서는 개발용 `pyrightconfig.json`, 문서, `.gitignore`만 동기화했으며 `.spec` 추가 수정은 필요하지 않습니다.
 - v32.7.2 감사 후속 4차(2026-03-14)에서도 `.spec`을 다시 재검토했으며, `query_key` 범위화, `pagination_totals`, restore helper 공통화, export/import 1.1 확대는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
+- v32.7.2 감사 후속 5차(2026-03-16)에서도 `.spec`을 다시 재검토했으며, 열린 탭 동기화/가시 결과 CSV/canonical dedupe/신규 기사 알림 분리는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 
 ## 네이버 API 키 설정
 
@@ -236,7 +247,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 | `Ctrl+T` | 새 탭 추가 |
 | `Ctrl+W` | 현재 탭 닫기 |
 | `Ctrl+F` | 검색/필터 포커스 |
-| `Ctrl+S` | CSV 내보내기 |
+| `Ctrl+S` | 현재 표시 결과 CSV 내보내기 |
 | `Ctrl+,` | 설정 열기 |
 | `Alt+1~9` | 탭 바로가기 |
 
@@ -254,8 +265,11 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `pagination_state`는 `fetch_key -> 마지막 API start index` 매핑이며, 필드가 없으면 기본값 `{}`로 로드됩니다.
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
 - `pagination_totals`는 `fetch_key -> 마지막으로 확인한 API total` 매핑이며 `0`도 유효한 값으로 저장됩니다.
+- `search_history`는 `canonical query` 기준으로 dedupe되며 공백/대소문자만 다른 변형은 별도 항목으로 누적되지 않습니다.
 - 백업 복원 예약은 선택한 백업의 `include_db` 메타를 기준으로 복원 범위(`설정만`/`설정+DB`)를 자동 적용합니다.
 - 백업 메타의 `trigger`는 `auto`/`manual` 값을 가지며, 자동 시작 백업은 수동 백업과 별도 보존 정책으로 관리됩니다.
+- 자동 시작 백업은 `설정만` 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
+- 알림 키워드 매칭은 fetch 결과 전체가 아니라 이번 요청에서 새로 추가된 기사 집합에만 적용됩니다.
 - `app_settings`는 `client_secret_enc`, `client_secret_storage` 필드를 지원하며 Windows에서는 평문 `client_secret`를 비우고 암호문을 저장합니다.
 - pending restore 실패(검증/적용 실패) 시 pending 파일은 유지되며, 적용 중 오류가 나면 변경 파일을 롤백합니다.
 
@@ -285,6 +299,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 - 최소 1개 이상의 일반 키워드가 필요합니다.
 - 제외어-only 입력(예: `-광고 -코인`)은 탭 추가/이름 변경/설정 가져오기에서 차단됩니다.
+- 같은 의미의 `canonical query`가 이미 열린 경우(예: 공백/대소문자 차이) 새 탭 대신 기존 탭으로 이동합니다.
 - API 검색어는 모든 양(+) 키워드를 공백 결합해 사용합니다. 예: `인공지능 AI -광고` → API query: `인공지능 AI`
 - 대표 키워드(`db_keyword`)는 첫 번째 양(+) 키워드를 사용합니다. 예: `인공지능 AI -광고` → 대표 키워드: `인공지능`
 - 실제 탭 범위/배지/분석/중복 판정/페이지 상태는 `query_key = build_fetch_key(parse_search_query(raw_tab_query))` 기준으로 동작합니다.
@@ -294,7 +309,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 - export 포맷 버전은 `1.1`이며 `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`를 포함합니다.
 - API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외됩니다.
-- import 시 `tabs`는 dedupe, `keyword_groups`는 merge, `search_history`는 imported-first dedupe 후 최대 10개로 정리합니다.
+- import 시 `tabs`는 `canonical query` 기준 dedupe, `keyword_groups`는 merge, `search_history`는 `canonical query` 기준 imported-first dedupe 후 최대 10개로 정리합니다.
 - `pagination_state`와 `pagination_totals`는 fetch key별로 병합하며 충돌 시 더 큰 값을 유지합니다.
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
 

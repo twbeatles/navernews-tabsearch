@@ -19,6 +19,9 @@ class _FakeDB:
     def __init__(self):
         self.upsert_calls = 0
 
+    def get_existing_links_for_query(self, links, keyword="", query_key=None):
+        return set()
+
     def upsert_news(self, items, keyword, query_key=None):
         self.upsert_calls += 1
         return len(items), 0
@@ -64,6 +67,23 @@ class _ClosableSession:
 
     def close(self):
         self.close_called = True
+
+
+class _ExistingLinkDB(_FakeDB):
+    def __init__(self, existing_links):
+        super().__init__()
+        self.existing_links = set(existing_links)
+
+    def get_existing_links_for_query(self, links, keyword="", query_key=None):
+        return self.existing_links.intersection(set(links))
+
+
+class _StaticSession:
+    def __init__(self, response):
+        self.response = response
+
+    def get(self, *_args, **_kwargs):
+        return self.response
 
 
 class TestWorkerCancellation(unittest.TestCase):
@@ -121,3 +141,49 @@ class TestWorkerCancellation(unittest.TestCase):
         worker.stop()
 
         self.assertTrue(closable.close_called)
+
+    def test_finished_result_only_exposes_new_items_for_alerts(self):
+        payload = {
+            "total": 2,
+            "items": [
+                {
+                    "title": "Existing AI update",
+                    "description": "desc",
+                    "link": "https://news.naver.com/existing",
+                    "originallink": "https://example.com/existing",
+                    "pubDate": "2026-02-27T10:00:00",
+                },
+                {
+                    "title": "Fresh AI update",
+                    "description": "desc",
+                    "link": "https://news.naver.com/new",
+                    "originallink": "https://example.com/new",
+                    "pubDate": "2026-02-27T11:00:00",
+                },
+            ],
+        }
+        session = _FakeResponse(200, payload)
+        db = _ExistingLinkDB({"https://news.naver.com/existing"})
+        worker = ApiWorker(
+            client_id="id",
+            client_secret="secret",
+            search_query="AI",
+            db_keyword="AI",
+            exclude_words=[],
+            db_manager=db,
+            start_idx=1,
+            max_retries=1,
+            timeout=1,
+            session=_StaticSession(session),
+        )
+
+        finished = []
+        worker.finished.connect(lambda result: finished.append(result))
+
+        worker.run()
+
+        self.assertEqual(len(finished), 1)
+        self.assertEqual(
+            [item["link"] for item in finished[0]["new_items"]],
+            ["https://news.naver.com/new"],
+        )

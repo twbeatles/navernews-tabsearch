@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from core.text_utils import perf_timer
 
@@ -368,3 +368,43 @@ class _DatabaseQueriesMixin:
     ) -> Dict[str, int]:
         """Unread-count batch lookup keyed by full query scope."""
         return self._get_grouped_unread_counts("query_key", query_keys)
+
+    def get_existing_links_for_query(
+        self: DatabaseManager,
+        links: List[str],
+        keyword: str = "",
+        query_key: Optional[str] = None,
+    ) -> Set[str]:
+        """Return the subset of links that already exist in the current query scope."""
+        cleaned_links = [
+            str(link).strip()
+            for link in links
+            if isinstance(link, str) and str(link).strip()
+        ]
+        if not cleaned_links:
+            return set()
+
+        deduped_links = list(dict.fromkeys(cleaned_links))
+        conn = self.get_connection()
+        try:
+            with perf_timer(
+                "db.get_existing_links_for_query",
+                f"kw={keyword}|query_key={query_key or ''}|links={len(deduped_links)}",
+            ):
+                placeholders = ",".join(["?"] * len(deduped_links))
+                params: List[Any] = []
+                query = (
+                    "SELECT nk.link "
+                    "FROM news_keywords nk "
+                    "WHERE "
+                    + self._append_news_scope_clause(params, keyword, query_key)
+                    + f" AND nk.link IN ({placeholders})"
+                )
+                params.extend(deduped_links)
+                rows = conn.execute(query, params).fetchall()
+                return {str(row[0]) for row in rows if row and row[0]}
+        except Exception as e:
+            logger.error("get_existing_links_for_query failed: %s", e)
+            return set()
+        finally:
+            self.return_connection(conn)

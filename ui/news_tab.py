@@ -118,6 +118,85 @@ class NewsTab(QWidget):
     def _target_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
         return self._item_by_hash.get(link_hash)
 
+    def _target_by_link(self, link: str) -> Optional[Dict[str, Any]]:
+        normalized_link = str(link or "").strip()
+        if not normalized_link:
+            return None
+        for item in self.news_data_cache:
+            if str(item.get("link", "") or "").strip() == normalized_link:
+                return item
+        return None
+
+    def _remove_cached_target(self, target: Dict[str, Any]) -> bool:
+        removed = False
+        if target in self.news_data_cache:
+            self.news_data_cache.remove(target)
+            removed = True
+        if target in self.filtered_data_cache:
+            self.filtered_data_cache.remove(target)
+            removed = True
+        link_hash = str(target.get("_link_hash", "") or "")
+        if link_hash:
+            self._item_by_hash.pop(link_hash, None)
+        return removed
+
+    def apply_external_item_state(
+        self,
+        link: str,
+        *,
+        is_read: Optional[bool] = None,
+        is_bookmarked: Optional[bool] = None,
+        notes: Optional[str] = None,
+        deleted: bool = False,
+    ) -> bool:
+        target = self._target_by_link(link)
+        if target is None:
+            return False
+
+        if deleted:
+            if not target.get("is_read", 0):
+                self._adjust_unread_cache(False, True)
+            if self._remove_cached_target(target):
+                self._refresh_after_local_change(requires_refilter=True)
+                return True
+            return False
+
+        changed = False
+
+        if is_bookmarked is not None:
+            new_bookmarked = 1 if bool(is_bookmarked) else 0
+            if int(target.get("is_bookmarked", 0) or 0) != new_bookmarked:
+                target["is_bookmarked"] = new_bookmarked
+                changed = True
+            if self.is_bookmark_tab and new_bookmarked == 0:
+                if not target.get("is_read", 0):
+                    self._adjust_unread_cache(False, True)
+                if self._remove_cached_target(target):
+                    self._refresh_after_local_change(requires_refilter=True)
+                    return True
+
+        if is_read is not None:
+            was_read = bool(target.get("is_read", 0))
+            now_read = bool(is_read)
+            if was_read != now_read:
+                target["is_read"] = 1 if now_read else 0
+                self._adjust_unread_cache(was_read, now_read)
+                changed = True
+            if self.chk_unread.isChecked() and now_read:
+                if self._remove_cached_target(target):
+                    self._refresh_after_local_change(requires_refilter=True)
+                    return True
+
+        if notes is not None:
+            new_note = str(notes)
+            if str(target.get("notes", "") or "") != new_note:
+                target["notes"] = new_note
+                changed = True
+
+        if changed:
+            self._refresh_after_local_change()
+        return changed
+
     def _main_window(self) -> Optional[MainWindowProtocol]:
         candidate = self.window()
         if candidate is None:
@@ -735,8 +814,15 @@ class NewsTab(QWidget):
 
         target["is_read"] = 1 if now_read else 0
         self._adjust_unread_cache(was_read, now_read)
-        self._refresh_after_local_change()
+        if self.chk_unread.isChecked() and now_read:
+            self._remove_cached_target(target)
+            self._refresh_after_local_change(requires_refilter=True)
+        else:
+            self._refresh_after_local_change()
         self._notify_badge_change()
+        parent = self._main_window()
+        if parent is not None and hasattr(parent, "sync_link_state_across_tabs"):
+            parent.sync_link_state_across_tabs(self, link, is_read=now_read)
         return True
 
     def on_link_clicked(self, url: QUrl):
@@ -774,17 +860,18 @@ class NewsTab(QWidget):
                 if self.is_bookmark_tab and new_val == 0:
                     if not target.get("is_read", 0):
                         self._adjust_unread_cache(False, True)
-                    if target in self.news_data_cache:
-                        self.news_data_cache.remove(target)
-                    if target in self.filtered_data_cache:
-                        self.filtered_data_cache.remove(target)
-                    self._item_by_hash.pop(link_hash, None)
+                    self._remove_cached_target(target)
                     requires_refilter = True
                 self._refresh_after_local_change(requires_refilter=requires_refilter)
                 self._notify_badge_change()
                 parent = self._main_window()
                 if parent is not None:
-                    parent.refresh_bookmark_tab()
+                    if hasattr(parent, "sync_link_state_across_tabs"):
+                        parent.sync_link_state_across_tabs(
+                            self,
+                            link,
+                            is_bookmarked=bool(new_val),
+                        )
                     msg = "⭐ 북마크에 추가되었습니다." if new_val else "북마크가 해제되었습니다."
                     parent.show_toast(msg)
 
@@ -816,6 +903,8 @@ class NewsTab(QWidget):
                     self._refresh_after_local_change()
                     parent = self._main_window()
                     if parent is not None:
+                        if hasattr(parent, "sync_link_state_across_tabs"):
+                            parent.sync_link_state_across_tabs(self, link, notes=new_note)
                         parent.show_toast("📝 메모가 저장되었습니다.")
             return
 
@@ -880,11 +969,16 @@ class NewsTab(QWidget):
     def _on_mark_all_read_done(self, count):
         """모두 읽음 처리 완료"""
         self.btn_read_all.setEnabled(True)
-        self.load_data_from_db() # UI 갱신
         parent = self._main_window()
         if parent is not None:
+            if hasattr(parent, "on_database_maintenance_completed"):
+                parent.on_database_maintenance_completed("mark_all_read", int(count or 0))
+            else:
+                self.load_data_from_db()  # UI 갱신 fallback
             mode_label = getattr(self, "_mark_all_mode_label", "선택 범위")
             parent.show_toast(f"✓ {mode_label} {count}개의 기사를 읽음으로 표시했습니다.")
+        else:
+            self.load_data_from_db()
             
     def _on_mark_all_read_error(self, err_msg):
         """모두 읽음 처리 오류"""
@@ -923,17 +1017,18 @@ class NewsTab(QWidget):
                 if self.is_bookmark_tab and new_val == 0:
                     if not target.get("is_read", 0):
                         self._adjust_unread_cache(False, True)
-                    if target in self.news_data_cache:
-                        self.news_data_cache.remove(target)
-                    if target in self.filtered_data_cache:
-                        self.filtered_data_cache.remove(target)
-                    self._item_by_hash.pop(link_hash, None)
+                    self._remove_cached_target(target)
                     requires_refilter = True
                 self._refresh_after_local_change(requires_refilter=requires_refilter)
                 self._notify_badge_change()
                 parent = self._main_window()
                 if parent is not None:
-                    parent.refresh_bookmark_tab()
+                    if hasattr(parent, "sync_link_state_across_tabs"):
+                        parent.sync_link_state_across_tabs(
+                            self,
+                            link,
+                            is_bookmarked=bool(new_val),
+                        )
                     msg = "⭐ 북마크됨" if new_val else "북마크 해제됨"
                     parent.show_toast(msg)
 
@@ -943,8 +1038,15 @@ class NewsTab(QWidget):
             if self.db.update_status(link, "is_read", new_val):
                 target["is_read"] = new_val
                 self._adjust_unread_cache(was_read, bool(new_val))
-                self._refresh_after_local_change()
+                if self.chk_unread.isChecked() and bool(new_val):
+                    self._remove_cached_target(target)
+                    self._refresh_after_local_change(requires_refilter=True)
+                else:
+                    self._refresh_after_local_change()
                 self._notify_badge_change()
+                parent = self._main_window()
+                if parent is not None and hasattr(parent, "sync_link_state_across_tabs"):
+                    parent.sync_link_state_across_tabs(self, link, is_read=bool(new_val))
 
         elif action == "note":
             current_note = self.db.get_note(link)
@@ -956,6 +1058,8 @@ class NewsTab(QWidget):
                     self._refresh_after_local_change()
                     parent = self._main_window()
                     if parent is not None:
+                        if hasattr(parent, "sync_link_state_across_tabs"):
+                            parent.sync_link_state_across_tabs(self, link, notes=new_note)
                         parent.show_toast("📝 메모가 저장되었습니다.")
 
         elif action == "delete":
@@ -972,15 +1076,13 @@ class NewsTab(QWidget):
                         return
                     if not target.get("is_read", 0):
                         self._adjust_unread_cache(False, True)
-                    if target in self.news_data_cache:
-                        self.news_data_cache.remove(target)
-                    if target in self.filtered_data_cache:
-                        self.filtered_data_cache.remove(target)
-                    self._item_by_hash.pop(link_hash, None)
+                    self._remove_cached_target(target)
                     self._refresh_after_local_change(requires_refilter=True)
                     self._notify_badge_change()
                     parent = self._main_window()
                     if parent is not None:
+                        if hasattr(parent, "sync_link_state_across_tabs"):
+                            parent.sync_link_state_across_tabs(self, link, deleted=True)
                         parent.show_toast("🗑 삭제되었습니다.")
                 except Exception as e:
                     QMessageBox.warning(self, "오류", f"삭제 실패: {e}")

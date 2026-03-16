@@ -195,6 +195,7 @@ class ApiWorker(QObject):
                             data = resp.json()
                             raw_items = data.get("items", [])
                             items: List[Dict[str, Any]] = []
+                            new_items: List[Dict[str, Any]] = []
                             filtered_count = 0
                             exclude_words_lc = [ex.lower() for ex in self.exclude_words if ex]
 
@@ -250,6 +251,19 @@ class ApiWorker(QObject):
                             logger.info(f"ApiWorker cancelled before upsert: {self.display_keyword}")
                             return
 
+                        existing_links = self.db.get_existing_links_for_query(
+                            [str(item.get("link", "") or "") for item in items],
+                            keyword=self.db_keyword,
+                            query_key=self.query_key,
+                        )
+                        seen_new_links = set()
+                        for item in items:
+                            link = str(item.get("link", "") or "").strip()
+                            if not link or link in existing_links or link in seen_new_links:
+                                continue
+                            seen_new_links.add(link)
+                            new_items.append(item)
+
                         with perf_timer("api.upsert", f"kw={self.db_keyword}|query_key={self.query_key}|items={len(items)}"):
                             added_count, dup_count = self.db.upsert_news(
                                 items,
@@ -259,6 +273,7 @@ class ApiWorker(QObject):
 
                         result = {
                             "items": items,
+                            "new_items": new_items,
                             "total": data.get("total", 0),
                             "filtered": filtered_count,
                             "added_count": added_count,
