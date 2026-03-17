@@ -132,5 +132,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=icon_path,
-    runtime_tmpdir=os.path.join(os.environ.get('LOCALAPPDATA', os.environ.get('TEMP', '.')), 'NewsScraperPro'),
+    # Do not pin onefile extraction to a build-machine-specific absolute path.
+    # Let PyInstaller resolve the target machine's temp directory at runtime.
+    runtime_tmpdir=None,
 )
