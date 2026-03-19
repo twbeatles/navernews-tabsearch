@@ -51,7 +51,16 @@ class _MainWindowSettingsIOMixin:
     def export_data(self: MainApp):
         """Export the current tab's rows as CSV."""
         cur_widget = self._current_news_tab()
-        export_items = list(cur_widget.filtered_data_cache) if cur_widget is not None else []
+        export_items: List[Dict[str, Any]] = []
+        if cur_widget is not None:
+            if hasattr(cur_widget, "get_all_filtered_items"):
+                try:
+                    export_items = list(cur_widget.get_all_filtered_items())
+                except Exception as e:
+                    logger.warning("Falling back to loaded slice during export: %s", e)
+                    export_items = list(cur_widget.filtered_data_cache)
+            else:
+                export_items = list(cur_widget.filtered_data_cache)
         if cur_widget is None or not export_items:
             QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
             return
@@ -176,7 +185,7 @@ class _MainWindowSettingsIOMixin:
             return
 
         export_data = {
-            "export_version": "1.1",
+            "export_version": "1.2",
             "app_version": VERSION,
             "settings": {
                 "theme_index": self.theme_idx,
@@ -187,6 +196,7 @@ class _MainWindowSettingsIOMixin:
                 "minimize_to_tray": self.minimize_to_tray,
                 "close_to_tray": self.close_to_tray,
                 "start_minimized": self.start_minimized,
+                "auto_start_enabled": self.auto_start_enabled,
                 "notify_on_refresh": self.notify_on_refresh,
                 "api_timeout": self.api_timeout,
             },
@@ -210,10 +220,46 @@ class _MainWindowSettingsIOMixin:
             QMessageBox.information(
                 self,
                 "완료",
-                f"설정이 저장되었습니다:\n{fname}\n\nAPI 자격증명은 보안상 제외됩니다.",
+                f"설정이 저장되었습니다:\n{fname}\n\n"
+                "API 자격증명은 보안상 제외되며, 자동 시작 설정은 함께 저장됩니다.",
             )
         except Exception as e:
             QMessageBox.warning(self, "오류", f"설정 내보내기 오류:\n{e}")
+
+    def _reconcile_startup_state_from_import(
+        self: MainApp,
+        normalized_settings: Dict[str, Any],
+        import_warnings: List[str],
+    ) -> None:
+        requested_auto_start = bool(normalized_settings.get("auto_start_enabled", False))
+        requested_start_minimized = bool(normalized_settings.get("start_minimized", False))
+
+        if requested_auto_start and not StartupManager.is_available():
+            normalized_settings["auto_start_enabled"] = False
+            requested_auto_start = False
+            import_warnings.append(
+                "시작프로그램 기능을 사용할 수 없어 auto_start_enabled 값을 False로 강제했습니다."
+            )
+            self.show_warning_toast(
+                "시작프로그램 기능을 사용할 수 없어 자동 시작 설정은 꺼진 상태로 가져왔습니다."
+            )
+
+        if not StartupManager.is_available():
+            return
+
+        if requested_auto_start:
+            if StartupManager.enable_startup(requested_start_minimized):
+                return
+            normalized_settings["auto_start_enabled"] = StartupManager.is_startup_enabled()
+            import_warnings.append("자동 시작 설정을 시스템에 적용하지 못해 현재 상태를 유지했습니다.")
+            self.show_warning_toast("자동 시작 설정 적용에 실패해 시스템 상태를 유지했습니다.")
+            return
+
+        if StartupManager.disable_startup():
+            return
+        normalized_settings["auto_start_enabled"] = StartupManager.is_startup_enabled()
+        import_warnings.append("자동 시작 해제를 시스템에 적용하지 못해 현재 상태를 유지했습니다.")
+        self.show_warning_toast("자동 시작 해제에 실패해 시스템 상태를 유지했습니다.")
 
     def import_settings(self: MainApp):
         """Import settings JSON and merge user-state fields conservatively."""
@@ -242,6 +288,7 @@ class _MainWindowSettingsIOMixin:
                 "minimize_to_tray": self.minimize_to_tray,
                 "close_to_tray": self.close_to_tray,
                 "start_minimized": self.start_minimized,
+                "auto_start_enabled": self.auto_start_enabled,
                 "notify_on_refresh": self.notify_on_refresh,
                 "api_timeout": self.api_timeout,
             }
@@ -259,6 +306,8 @@ class _MainWindowSettingsIOMixin:
                     "트레이를 사용할 수 없어 '시작 시 최소화' 설정은 꺼진 상태로 가져왔습니다."
                 )
 
+            self._reconcile_startup_state_from_import(normalized_settings, import_warnings)
+
             self.theme_idx = normalized_settings["theme_index"]
             self.interval_idx = normalized_settings["refresh_interval_index"]
             self.notification_enabled = normalized_settings["notification_enabled"]
@@ -267,6 +316,7 @@ class _MainWindowSettingsIOMixin:
             self.minimize_to_tray = normalized_settings["minimize_to_tray"]
             self.close_to_tray = normalized_settings["close_to_tray"]
             self.start_minimized = normalized_settings["start_minimized"]
+            self.auto_start_enabled = normalized_settings["auto_start_enabled"]
             self.notify_on_refresh = normalized_settings["notify_on_refresh"]
             self.api_timeout = normalized_settings["api_timeout"]
 

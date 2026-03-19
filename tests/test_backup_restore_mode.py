@@ -61,6 +61,10 @@ class _FakeAutoBackup:
     def get_backup_list(self):
         return list(self.backups)
 
+    def create_backup(self, include_db: bool = True):
+        self.calls.append(("create_backup", bool(include_db)))
+        return None
+
 
 class _DummyDialog:
     def __init__(self, backup_list, auto_backup):
@@ -159,6 +163,8 @@ class TestBackupRestoreMode(unittest.TestCase):
                 "trigger": "auto",
                 "is_corrupt": False,
                 "error": "",
+                "is_restorable": True,
+                "restore_error": "",
             },
         )
 
@@ -216,6 +222,8 @@ class TestBackupRestoreMode(unittest.TestCase):
                 "trigger": "manual",
                 "is_corrupt": True,
                 "error": "invalid json",
+                "is_restorable": False,
+                "restore_error": "",
             },
         )
 
@@ -259,6 +267,82 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             self.assertFalse(backup_path.exists())
             dialog.load_backups.assert_called_once()
+
+    def test_restore_backup_blocks_non_restorable_item(self):
+        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        dialog = _DummyDialog(
+            _FakeBackupList(
+                _FakeItem(
+                    {
+                        "backup_name": "backup_missing_db",
+                        "include_db": True,
+                        "is_restorable": False,
+                        "restore_error": "데이터베이스 백업 파일이 없습니다.",
+                    }
+                )
+            ),
+            auto_backup,
+        )
+
+        with mock.patch.object(QMessageBox, "warning") as warning_mock:
+            BackupDialog.restore_backup(cast(Any, dialog))
+
+        warning_mock.assert_called_once()
+        self.assertEqual(auto_backup.calls, [])
+
+    def test_create_backup_returns_none_when_db_requested_but_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            cfg.write_text("{}", encoding="utf-8")
+            db = root / "missing.sqlite"
+
+            auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
+
+            self.assertIsNone(auto_backup.create_backup(include_db=True, trigger="manual"))
+
+    def test_backup_dialog_prechecks_missing_db_before_create(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            auto_backup = _FakeAutoBackup(
+                backup_dir=str(root / "backups"),
+                db_file=str(root / "missing.sqlite"),
+            )
+
+            class _Check:
+                def isChecked(self):
+                    return True
+
+            dialog = _DummyDialog(_FakeBackupList(None), auto_backup)
+            setattr(dialog, "chk_include_db", _Check())
+
+            with mock.patch.object(QMessageBox, "warning") as warning_mock:
+                BackupDialog.create_backup(cast(Any, dialog))
+
+            warning_mock.assert_called_once()
+            self.assertEqual(auto_backup.calls, [])
+
+    def test_get_backup_list_marks_missing_db_payload_as_not_restorable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "news.sqlite"
+            cfg.write_text("{}", encoding="utf-8")
+            db.write_text("", encoding="utf-8")
+
+            auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
+            backup_path = auto_backup.create_backup(include_db=False, trigger="manual")
+            self.assertIsNotNone(backup_path)
+            assert backup_path is not None
+
+            info_path = Path(backup_path) / "backup_info.json"
+            info = info_path.read_text(encoding="utf-8")
+            info_path.write_text(info.replace('"include_db": false', '"include_db": true'), encoding="utf-8")
+
+            backups = auto_backup.get_backup_list()
+            item = next(entry for entry in backups if entry["name"] == Path(backup_path).name)
+            self.assertFalse(item["is_restorable"])
+            self.assertIn("데이터베이스", item["restore_error"])
 
 
 if __name__ == "__main__":

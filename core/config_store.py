@@ -441,6 +441,9 @@ def normalize_import_settings(
         baseline["start_minimized"] = _to_bool(
             fallback_settings.get("start_minimized"), baseline["start_minimized"]
         )
+        baseline["auto_start_enabled"] = _to_bool(
+            fallback_settings.get("auto_start_enabled"), baseline["auto_start_enabled"]
+        )
         baseline["notify_on_refresh"] = _to_bool(
             fallback_settings.get("notify_on_refresh"), baseline["notify_on_refresh"]
         )
@@ -457,6 +460,7 @@ def normalize_import_settings(
         "minimize_to_tray": bool(baseline["minimize_to_tray"]),
         "close_to_tray": bool(baseline["close_to_tray"]),
         "start_minimized": bool(baseline["start_minimized"]),
+        "auto_start_enabled": bool(baseline["auto_start_enabled"]),
         "notify_on_refresh": bool(baseline["notify_on_refresh"]),
         "api_timeout": max(5, min(60, int(baseline["api_timeout"]))),
     }
@@ -476,6 +480,7 @@ def normalize_import_settings(
         "minimize_to_tray",
         "close_to_tray",
         "start_minimized",
+        "auto_start_enabled",
         "notify_on_refresh",
     ]
 

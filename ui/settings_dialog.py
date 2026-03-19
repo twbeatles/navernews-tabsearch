@@ -27,6 +27,7 @@ class SettingsDialog(
         self._api_validate_worker: Optional[AsyncJobWorker] = None
         self._data_task_worker: Optional[AsyncJobWorker] = None
         self._is_closing = False
+        self._maintenance_active_for_data_task = False
         self.is_dark = False
         if parent and hasattr(parent, "theme_idx"):
             self.is_dark = parent.theme_idx == 1
@@ -37,6 +38,8 @@ class SettingsDialog(
         if candidate is None:
             return None
         required_attrs = (
+            "begin_database_maintenance",
+            "end_database_maintenance",
             "on_database_maintenance_completed",
             "export_settings",
             "import_settings",
@@ -89,6 +92,14 @@ class SettingsDialog(
         self._is_closing = True
         self._shutdown_worker(self._api_validate_worker, wait_ms=400)
         self._shutdown_worker(self._data_task_worker, wait_ms=800)
+        if self._maintenance_active_for_data_task:
+            parent = self._typed_parent()
+            if parent is not None:
+                try:
+                    parent.end_database_maintenance()
+                except Exception:
+                    pass
+            self._maintenance_active_for_data_task = False
         self._api_validate_worker = None
         self._data_task_worker = None
         super().closeEvent(a0)

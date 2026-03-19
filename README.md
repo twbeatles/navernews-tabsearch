@@ -84,7 +84,7 @@
 - `모두 읽음`/DB 유지보수 완료 후에는 열린 탭과 북마크 탭을 full refresh 경로로 재정렬해 정합성 보장
 - 알림 키워드는 이번 fetch에서 실제로 새로 추가된 기사(`new_items`)에만 적용
 - 탭 중복 방지, 설정 import dedupe, 검색 이력 dedupe를 `canonical query` 기준으로 통일
-- CSV 내보내기를 `filtered_data_cache` 기준으로 통일해 현재 화면에 보이는 결과만 저장
+- CSV 내보내기는 현재 로드된 slice가 아니라 현재 탭 필터 조건 전체 결과를 DB에서 다시 조회해 저장
 - 자동 시작 백업은 계속 `설정만` 대상으로 유지하고, UI/문서에서 DB 포함 수동 백업 필요성을 명시
 
 ## 프로젝트 구조
@@ -232,6 +232,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 타입/인코딩 정리(2026-03-09)에서는 개발용 `pyrightconfig.json`, 문서, `.gitignore`만 동기화했으며 `.spec` 추가 수정은 필요하지 않습니다.
 - v32.7.2 감사 후속 4차(2026-03-14)에서도 `.spec`을 다시 재검토했으며, `query_key` 범위화, `pagination_totals`, restore helper 공통화, export/import 1.1 확대는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 감사 후속 5차(2026-03-16)에서도 `.spec`을 다시 재검토했으며, 열린 탭 동기화/가시 결과 CSV/canonical dedupe/신규 기사 알림 분리는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
+- v32.7.2 실행형 리스크 전면 수정(2026-03-18)에서도 `.spec`을 다시 재검토했으며, 유지보수 모드, DB 기반 로컬 페이지네이션, 백업 복원 가능 메타, export/import 1.2는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 
 ## 네이버 API 키 설정
 
@@ -293,7 +294,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `DatabaseManager.count_news(..., exclude_words: Optional[List[str]] = None)`가 확장되어 미읽음 배지 집계 시 제외어 조건을 반영할 수 있습니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, `get_top_publishers(...)`는 `query_key`를 받아 대표 키워드가 같은 탭도 독립 범위로 조회할 수 있습니다.
 - `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`가 추가되어 탭 배지를 `query_key` 기준으로 일괄 집계합니다.
-- `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error` 메타를 포함해 UI가 손상 항목을 분리 표시할 수 있습니다.
+- `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
 
 ## 키워드 입력 규칙
 
@@ -307,11 +308,13 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 ## 설정 Export/Import
 
-- export 포맷 버전은 `1.1`이며 `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`를 포함합니다.
-- API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외됩니다.
+- export 포맷 버전은 `1.2`이며 `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`를 포함합니다.
+- API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외되고, `settings.auto_start_enabled`는 export/import 대상에 포함됩니다.
 - import 시 `tabs`는 `canonical query` 기준 dedupe, `keyword_groups`는 merge, `search_history`는 `canonical query` 기준 imported-first dedupe 후 최대 10개로 정리합니다.
 - `pagination_state`와 `pagination_totals`는 fetch key별로 병합하며 충돌 시 더 큰 값을 유지합니다.
+- import는 `1.1`과 `1.2`를 모두 허용하며, 자동 시작/시작 최소화는 환경 가용성에 따라 안전한 값으로 보정됩니다.
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
+- 시작프로그램 기능을 사용할 수 없는 환경에서 import된 `auto_start_enabled=true`는 `False`로 강제되고, 가능한 환경에서는 실제 레지스트리 상태까지 동기화합니다.
 
 ## 트레이/시작 최소화 규칙
 

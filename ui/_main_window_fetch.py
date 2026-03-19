@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 class _MainWindowFetchMixin:
     def _safe_refresh_all(self: MainApp):
         """Timer-safe refresh wrapper."""
+        if self.is_maintenance_mode_active():
+            logger.info("Automatic refresh skipped during maintenance mode")
+            self._status_bar().showMessage(
+                self._maintenance_block_message("자동 새로고침"),
+                3000,
+            )
+            return
+
         if self._network_error_count >= self._max_network_errors:
             if self._network_available:
                 logger.warning(
@@ -57,6 +65,12 @@ class _MainWindowFetchMixin:
     def refresh_all(self: MainApp) -> bool:
         """Refresh all tabs sequentially."""
         logger.info("Starting refresh_all")
+
+        if self.is_maintenance_mode_active():
+            msg = self._maintenance_block_message("새로고침")
+            self._status_bar().showMessage(msg, 3000)
+            self.show_warning_toast(msg)
+            return False
 
         if self._sequential_refresh_active:
             logger.warning("Sequential refresh is already running")
@@ -214,6 +228,12 @@ class _MainWindowFetchMixin:
         total: Optional[int],
         last_api_start_index: int,
     ) -> bool:
+        is_maintenance_active = getattr(self, "is_maintenance_mode_active", lambda: False)
+        if is_maintenance_active():
+            tab_widget.btn_load.setEnabled(False)
+            tab_widget.btn_load.setText("🔒 유지보수 중")
+            return False
+
         has_more = self._compute_load_more_state(total, last_api_start_index)
         if has_more:
             tab_widget.btn_load.setEnabled(True)
@@ -230,6 +250,15 @@ class _MainWindowFetchMixin:
         is_sequential: bool = False,
     ):
         """Fetch news for a tab."""
+        if self.is_maintenance_mode_active():
+            action = "더 불러오기" if is_more else "새로고침"
+            msg = self._maintenance_block_message(action)
+            logger.info("Fetch blocked during maintenance: kw=%s, action=%s", keyword, action)
+            self._status_bar().showMessage(msg, 3000)
+            if not is_sequential:
+                self.show_warning_toast(msg)
+            return
+
         search_keyword, exclude_words = parse_search_query(keyword)
         if not search_keyword:
             if not is_sequential:
@@ -507,24 +536,21 @@ class _MainWindowFetchMixin:
         keyword: Optional[str] = None,
         request_id: Optional[int] = None,
         only_if_active: bool = False,
-    ):
+        wait_ms: int = 1000,
+    ) -> bool:
         """Dispose a worker/thread pair by request id."""
         try:
             if request_id is None and keyword:
                 request_id = self._worker_registry.get_active_request_id(keyword)
             if request_id is None:
-                return
+                return True
 
             handle = self._worker_registry.get_by_request_id(request_id)
             if not handle:
-                return
+                return True
 
             if only_if_active and keyword and not self._worker_registry.is_active(keyword, request_id):
-                return
-
-            handle = self._worker_registry.pop_by_request_id(request_id)
-            if not handle:
-                return
+                return True
 
             worker = handle.worker
             thread = handle.thread
@@ -547,17 +573,25 @@ class _MainWindowFetchMixin:
             except (AttributeError, RuntimeError):
                 pass
 
+            finished = True
             try:
                 thread.quit()
-                thread.wait(1000)
+                finished = thread.wait(max(0, int(wait_ms)))
             except (AttributeError, RuntimeError):
                 pass
 
+            if not finished:
+                logger.warning("Worker cleanup timed out: %s (rid=%s)", handle.tab_keyword, request_id)
+                return False
+
+            self._worker_registry.pop_by_request_id(request_id)
             self.workers.pop(handle.tab_keyword, None)
             self._request_start_index.pop(request_id, None)
             logger.info("Worker cleaned up: %s (rid=%s)", handle.tab_keyword, request_id)
+            return finished
         except Exception as e:
             logger.error("cleanup_worker failed (keyword=%s, rid=%s): %s", keyword, request_id, e)
+            return False
 
     def _validate_api_credentials(self: MainApp):
         from core.validation import ValidationUtils

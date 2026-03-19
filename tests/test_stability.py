@@ -231,8 +231,9 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         src = Path('core/workers.py').read_text(encoding='utf-8')
         start = src.index('class DBWorker')
         block = src[start:]
-        self.assertNotIn('total_count = self.db.count_news(', block)
-        self.assertIn('total_count = len(data)', block)
+        self.assertIn('total_count = self.db.count_news(', block)
+        self.assertIn('limit=self.limit', block)
+        self.assertIn('offset=self.offset', block)
 
     def test_render_html_skips_when_signature_unchanged(self):
         src = Path('ui/news_tab.py').read_text(encoding='utf-8')

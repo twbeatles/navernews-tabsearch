@@ -357,6 +357,8 @@ class DBWorker(QThread):
         hide_duplicates: bool = False,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
     ):
         super().__init__()
         self.db = db_manager
@@ -368,6 +370,8 @@ class DBWorker(QThread):
         self.hide_duplicates = hide_duplicates
         self.start_date = start_date
         self.end_date = end_date
+        self.limit = limit
+        self.offset = offset
         self._is_cancelled = False
 
     def stop(self):
@@ -391,6 +395,21 @@ class DBWorker(QThread):
                     self.finished.emit([], 0)
                     return
 
+                total_count = self.db.count_news(
+                    keyword=db_keyword or search_keyword,
+                    only_bookmark=self.only_bookmark,
+                    only_unread=self.only_unread,
+                    hide_duplicates=self.hide_duplicates,
+                    filter_txt=self.filter_txt,
+                    exclude_words=exclude_words,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    query_key=None if self.only_bookmark else query_key,
+                )
+
+                if self._is_cancelled:
+                    return
+
                 data = self.db.fetch_news(
                     keyword=db_keyword or search_keyword,
                     filter_txt=self.filter_txt,
@@ -401,10 +420,10 @@ class DBWorker(QThread):
                     exclude_words=exclude_words,
                     start_date=self.start_date,
                     end_date=self.end_date,
+                    limit=self.limit,
+                    offset=self.offset,
                     query_key=None if self.only_bookmark else query_key,
                 )
-
-                total_count = len(data)
 
                 if self._is_cancelled:
                     return

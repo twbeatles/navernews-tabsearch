@@ -56,10 +56,16 @@ class _DummyAddMain:
 
 
 class _DummyExportTab:
-    def __init__(self, keyword, news_items, visible_items):
+    def __init__(self, keyword, news_items, visible_items, all_filtered_items=None):
         self.keyword = keyword
         self.news_data_cache = list(news_items)
         self.filtered_data_cache = list(visible_items)
+        self._all_filtered_items = (
+            list(all_filtered_items) if all_filtered_items is not None else list(visible_items)
+        )
+
+    def get_all_filtered_items(self):
+        return list(self._all_filtered_items)
 
 
 class _DummyExportMain:
@@ -147,7 +153,7 @@ class TestCanonicalTabDedupe(unittest.TestCase):
 
 
 class TestVisibleOnlyCsvExport(unittest.TestCase):
-    def test_export_data_uses_filtered_items_only(self):
+    def test_export_data_uses_full_filtered_scope_when_tab_supports_it(self):
         all_items = [
             {
                 "title": "one",
@@ -173,7 +179,54 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
             },
         ]
         visible_items = [all_items[0]]
-        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, visible_items))
+        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, visible_items, all_items))
+
+        with tempfile.TemporaryDirectory() as td:
+            export_path = Path(td) / "export.csv"
+            with mock.patch.object(QFileDialog, "getSaveFileName", return_value=(str(export_path), "CSV")):
+                with mock.patch.object(QMessageBox, "information"):
+                    dummy.export_data()
+
+            rows = list(csv.reader(export_path.open("r", encoding="utf-8-sig")))
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(rows[1][0], "one")
+            self.assertEqual(rows[2][0], "two")
+            self.assertEqual(dummy.toast_messages, ["총 2개 항목을 저장했습니다."])
+
+    def test_export_data_falls_back_to_loaded_slice_when_helper_missing(self):
+        all_items = [
+            {
+                "title": "one",
+                "link": "https://example.com/1",
+                "pubDate": "2026-01-01",
+                "publisher": "example.com",
+                "description": "visible",
+                "is_read": 0,
+                "is_bookmarked": 0,
+                "notes": "",
+                "is_duplicate": 0,
+            },
+            {
+                "title": "two",
+                "link": "https://example.com/2",
+                "pubDate": "2026-01-02",
+                "publisher": "example.com",
+                "description": "hidden",
+                "is_read": 1,
+                "is_bookmarked": 0,
+                "notes": "",
+                "is_duplicate": 0,
+            },
+        ]
+        visible_items = [all_items[0]]
+
+        class _LegacyTab:
+            def __init__(self):
+                self.keyword = "AI"
+                self.news_data_cache = list(all_items)
+                self.filtered_data_cache = list(visible_items)
+
+        dummy = _DummyExportMain(_LegacyTab())
 
         with tempfile.TemporaryDirectory() as td:
             export_path = Path(td) / "export.csv"

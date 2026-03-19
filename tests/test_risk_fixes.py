@@ -143,8 +143,9 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         block = src[start:end]
         self.assertIn("현재 표시 결과만", block)
         self.assertIn("탭 전체", block)
-        self.assertIn("self.db.mark_links_as_read", block)
         self.assertIn("self.db.mark_query_as_read", block)
+        self.assertIn("self._current_filter_text()", block)
+        self.assertIn("self.chk_hide_dup.isChecked()", block)
 
     def test_stats_analysis_uses_raw_tab_query_data(self):
         block = inspect.getsource(MainApp.show_stats_analysis)

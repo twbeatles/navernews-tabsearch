@@ -311,6 +311,90 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(int(rows_q1[0]["is_read"]), 1)
         self.assertEqual(int(rows_q2[0]["is_read"]), 0)
 
+    def test_mark_query_as_read_respects_filter_text_hide_duplicates_and_dates(self):
+        q1 = build_fetch_key("AI finance", [])
+        same_title = "same-duplicate-title"
+        items = [
+            {
+                "title": same_title,
+                "description": "duplicate one",
+                "link": "https://example.com/filter-dup-1",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": same_title,
+                "description": "duplicate two",
+                "link": "https://example.com/filter-dup-2",
+                "pubDate": "2026-01-03T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "beta launch",
+                "description": "visible january row",
+                "link": "https://example.com/filter-keep",
+                "pubDate": "2026-01-04T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "beta february",
+                "description": "outside date range",
+                "link": "https://example.com/filter-feb",
+                "pubDate": "2026-02-04T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI", query_key=q1)
+
+        updated = self.mgr.mark_query_as_read(
+            "AI",
+            filter_txt="beta",
+            hide_duplicates=True,
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            query_key=q1,
+        )
+        self.assertEqual(updated, 1)
+
+        rows = self.mgr.fetch_news("AI", query_key=q1)
+        read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
+        self.assertEqual(read_by_link["https://example.com/filter-keep"], 1)
+        self.assertEqual(read_by_link["https://example.com/filter-feb"], 0)
+        self.assertEqual(read_by_link["https://example.com/filter-dup-1"], 0)
+        self.assertEqual(read_by_link["https://example.com/filter-dup-2"], 0)
+
+    def test_mark_query_as_read_only_bookmark_scope_respects_filter_text(self):
+        items = [
+            {
+                "title": "bookmark launch",
+                "description": "keep",
+                "link": "https://example.com/bookmark-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "general launch",
+                "description": "not bookmarked",
+                "link": "https://example.com/bookmark-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI")
+        self.assertTrue(self.mgr.update_status("https://example.com/bookmark-1", "is_bookmarked", 1))
+
+        updated = self.mgr.mark_query_as_read(
+            "AI",
+            only_bookmark=True,
+            filter_txt="bookmark",
+        )
+        self.assertEqual(updated, 1)
+
+        rows = self.mgr.fetch_news("AI")
+        read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
+        self.assertEqual(read_by_link["https://example.com/bookmark-1"], 1)
+        self.assertEqual(read_by_link["https://example.com/bookmark-2"], 0)
+
     def test_get_top_publishers_respects_exclude_words(self):
         items = [
             {

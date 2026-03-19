@@ -120,7 +120,7 @@ navernews-tabsearch/
 ## ✅ 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `146 passed, 5 subtests passed`
+- `pytest -q` => `165 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
 
 ---
@@ -383,12 +383,14 @@ class DBWorker(QThread):
     error = pyqtSignal(str)
     
     def run(self):
-        # 제외어 파싱: parse_tab_query(raw) 사용
-        search_keyword, exclude_words = parse_tab_query(self.keyword)
-        
-        data = self.db.fetch_news(...)
-        
-        self.finished.emit(data, len(data))
+        search_keyword, exclude_words = parse_search_query(self.keyword)
+        db_keyword, _ = parse_tab_query(self.keyword)
+        query_key = build_fetch_key(search_keyword, exclude_words)
+
+        total_count = self.db.count_news(...)
+        data = self.db.fetch_news(..., limit=self.limit, offset=self.offset)
+
+        self.finished.emit(data, total_count)
 ```
 
 ### AsyncJobWorker (범용 비동기)
@@ -484,6 +486,15 @@ css = AppStyle.HTML_TEMPLATE.format(**colors)
 }
 ```
 
+### 설정 Export/Import 현재 정책
+
+- export 포맷 버전은 `1.2`
+- API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외
+- `settings.auto_start_enabled`는 export/import 대상에 포함
+- import는 `1.1`과 `1.2`를 모두 허용
+- 트레이/자동 시작 미지원 환경에서는 `start_minimized`, `auto_start_enabled`를 안전한 값으로 보정
+- 자동 시작 import는 UI 상태만이 아니라 실제 `StartupManager.enable_startup(...)` / `disable_startup()` 호출로 로컬 레지스트리 상태까지 동기화
+
 ### 새로고침 간격 인덱스
 
 | 인덱스 | 간격 |
@@ -540,6 +551,7 @@ css = AppStyle.HTML_TEMPLATE.format(**colors)
 
 - 실행 중 DB 덮어쓰기를 피하기 위해 복원은 재시작 적용 정책으로 고정되었습니다.
 - 시작 시 생성되는 자동 백업은 설정만 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
+- 백업 목록 메타에는 `is_restorable` / `restore_error`가 포함되며, 필요한 payload가 없는 항목은 복원 전에 즉시 차단됩니다.
 
 ### 3. UI 깜빡임
 

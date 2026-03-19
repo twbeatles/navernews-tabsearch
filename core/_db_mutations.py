@@ -395,6 +395,10 @@ class _DatabaseMutationsMixin:
         keyword: str,
         exclude_words: Optional[List[str]] = None,
         only_bookmark: bool = False,
+        filter_txt: str = "",
+        hide_duplicates: bool = False,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         query_key: Optional[str] = None,
     ) -> int:
         """Mark unread rows in the current query scope as read."""
@@ -402,9 +406,9 @@ class _DatabaseMutationsMixin:
         try:
             params: List[Any] = []
             if only_bookmark:
-                query = "SELECT n.link FROM news n WHERE n.is_bookmarked = 1 AND n.is_read = 0"
+                scope_query = "SELECT n.link FROM news n WHERE n.is_bookmarked = 1 AND n.is_read = 0"
             else:
-                query = (
+                scope_query = (
                     "SELECT n.link FROM news n "
                     "JOIN news_keywords nk ON nk.link = n.link "
                     "WHERE "
@@ -412,24 +416,52 @@ class _DatabaseMutationsMixin:
                     + " AND n.is_read = 0"
                 )
 
+            if hide_duplicates:
+                if only_bookmark:
+                    scope_query += (
+                        " AND NOT EXISTS ("
+                        "SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
+                    )
+                else:
+                    scope_query += " AND nk.is_duplicate = 0"
+
+            if filter_txt:
+                scope_query += " AND (n.title LIKE ? OR n.description LIKE ?)"
+                wildcard = f"%{filter_txt}%"
+                params.extend([wildcard, wildcard])
+
             if exclude_words:
                 for exclude_word in exclude_words:
                     if not exclude_word:
                         continue
-                    query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
+                    scope_query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
                     wildcard = f"%{exclude_word}%"
                     params.extend([wildcard, wildcard])
 
-            links = [
-                str(row[0])
-                for row in conn.execute(query, params).fetchall()
-                if row and row[0]
-            ]
-            if not links:
-                return 0
+            if start_date:
+                try:
+                    s_ts = datetime.strptime(start_date, "%Y-%m-%d").timestamp()
+                    scope_query += " AND n.pubDate_ts >= ?"
+                    params.append(s_ts)
+                except ValueError:
+                    logger.warning("Invalid start_date format for mark_query_as_read: %s", start_date)
 
+            if end_date:
+                try:
+                    e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                    scope_query += " AND n.pubDate_ts < ?"
+                    params.append(e_ts)
+                except ValueError:
+                    logger.warning("Invalid end_date format for mark_query_as_read: %s", end_date)
+
+            query = (
+                "UPDATE news SET is_read = 1 WHERE is_read = 0 AND link IN ("
+                + scope_query
+                + ")"
+            )
             with conn:
-                return self._mark_links_as_read_with_conn(conn, links)
+                cursor = conn.execute(query, params)
+                return int(cursor.rowcount or 0)
         except Exception as e:
             logger.error("mark_query_as_read failed: %s", e)
             raise

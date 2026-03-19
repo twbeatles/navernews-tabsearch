@@ -25,6 +25,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   alert gating on newly added items, and backup wording updates rely on
 #   existing stdlib / already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-03-18 review:
+# - Maintenance-mode fetch gating, DB-backed local pagination, mark-all-read SQL
+#   scoping, backup restorable metadata, and settings export/import 1.2
+#   rely on stdlib / already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

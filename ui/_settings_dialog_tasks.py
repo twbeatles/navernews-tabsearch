@@ -181,7 +181,7 @@ class _SettingsDialogTasksMixin:
             finally:
                 db.close()
 
-        self._start_data_task(job_func, self._on_clean_data_done)
+        self._start_data_task(job_func, self._on_clean_data_done, "delete_old_news")
 
     def clean_all(self: SettingsDialog):
         reply = QMessageBox.warning(
@@ -203,18 +203,37 @@ class _SettingsDialogTasksMixin:
             finally:
                 db.close()
 
-        self._start_data_task(job_func, self._on_clean_all_done)
+        self._start_data_task(job_func, self._on_clean_all_done, "delete_all_news")
 
     def _start_data_task(
         self: SettingsDialog,
         job_func: Callable[[], int],
         done_handler: Callable[[Any], None],
+        operation: str,
     ):
         if self._is_closing:
             return
         if self._data_task_worker and self._data_task_worker.isRunning():
             QMessageBox.information(self, "진행 중", "이미 데이터 정리 작업이 진행 중입니다.")
             return
+
+        maintenance_active = False
+        parent = self._typed_parent()
+        if parent is not None:
+            try:
+                started, reason = parent.begin_database_maintenance(operation)
+            except Exception as e:
+                started = False
+                reason = str(e)
+            if not started:
+                QMessageBox.warning(
+                    self,
+                    "유지보수 시작 실패",
+                    reason or "활성 새로고침 작업을 정리하지 못해 데이터 정리를 시작할 수 없습니다.",
+                )
+                return
+            maintenance_active = True
+        setattr(self, "_maintenance_active_for_data_task", maintenance_active)
 
         self.btn_clean.setEnabled(False)
         self.btn_all.setEnabled(False)
@@ -248,6 +267,16 @@ class _SettingsDialogTasksMixin:
         QMessageBox.critical(self, "작업 오류", f"데이터 작업 중 오류가 발생했습니다:\n\n{error_msg}")
 
     def _on_data_task_finished(self: SettingsDialog, *_args):
+        maintenance_active = bool(getattr(self, "_maintenance_active_for_data_task", False))
+        if maintenance_active:
+            parent = self._typed_parent()
+            if parent is not None:
+                try:
+                    parent.end_database_maintenance()
+                except Exception:
+                    pass
+        setattr(self, "_maintenance_active_for_data_task", False)
+
         if self._is_closing:
             self._data_task_worker = None
             return

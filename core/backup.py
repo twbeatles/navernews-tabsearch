@@ -195,6 +195,10 @@ class AutoBackup:
             normalized_trigger = str(trigger or "manual").strip().lower()
             if normalized_trigger not in {"auto", "manual"}:
                 normalized_trigger = "manual"
+            if include_db and not os.path.exists(self.db_file):
+                logger.error("백업 생성 실패: include_db=True but DB file is missing (%s)", self.db_file)
+                return None
+
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             base_backup_name = f"backup_{timestamp}"
             backup_name = ""
@@ -214,18 +218,20 @@ class AutoBackup:
                 logger.error("백업 폴더 생성 실패: 이름 충돌 재시도 한도 초과")
                 return None
 
+            actual_include_db = False
             if os.path.exists(self.config_file):
                 shutil.copy2(self.config_file, os.path.join(backup_path, os.path.basename(self.config_file)))
 
-            if include_db and os.path.exists(self.db_file):
+            if include_db:
                 backup_db = os.path.join(backup_path, os.path.basename(self.db_file))
                 if not self._snapshot_db(backup_db):
                     self._copy_db_with_sidecars(backup_db)
+                actual_include_db = True
 
             info = {
                 "timestamp": timestamp,
                 "app_version": self.app_version,
-                "include_db": include_db,
+                "include_db": actual_include_db,
                 "trigger": normalized_trigger,
                 "created_at": datetime.datetime.now().isoformat(),
             }
@@ -238,6 +244,8 @@ class AutoBackup:
         except Exception as e:
             logger.error(f"백업 생성 실패: {e}")
             traceback.print_exc()
+            if "backup_path" in locals() and backup_path:
+                shutil.rmtree(backup_path, ignore_errors=True)
             return None
 
     def _copy_db_with_sidecars(self, dst_db_path: str):
@@ -338,6 +346,8 @@ class AutoBackup:
                 "created_at": "",
                 "is_corrupt": False,
                 "error": "",
+                "is_restorable": False,
+                "restore_error": "",
             }
             info_file = os.path.join(backup_path, "backup_info.json")
             try:
@@ -358,7 +368,21 @@ class AutoBackup:
             except Exception as item_error:
                 item["is_corrupt"] = True
                 item["error"] = str(item_error)
+                item["is_restorable"] = False
+                item["restore_error"] = "백업 메타데이터가 손상되었습니다."
                 logger.warning("corrupt backup metadata detected: %s (%s)", name, item_error)
+            else:
+                cfg_backup = os.path.join(backup_path, os.path.basename(self.config_file))
+                db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
+                if not os.path.exists(cfg_backup):
+                    item["is_restorable"] = False
+                    item["restore_error"] = "설정 백업 파일이 없습니다."
+                elif item["include_db"] and not os.path.exists(db_backup):
+                    item["is_restorable"] = False
+                    item["restore_error"] = "데이터베이스 백업 파일이 없습니다."
+                else:
+                    item["is_restorable"] = True
+                    item["restore_error"] = ""
 
             backups.append(item)
 

@@ -508,10 +508,16 @@ class BackupDialog(QDialog):
             )
 
             is_corrupt = bool(backup.get("is_corrupt", False))
+            is_restorable = bool(backup.get("is_restorable", not is_corrupt))
+            restore_error = str(backup.get("restore_error", "") or "")
             if is_corrupt:
                 item_text = f"[손상됨] {date_str} (v{version})"
+            elif not is_restorable:
+                item_text = f"[복원 불가] {date_str} (v{version}) {include_db} {trigger_label}"
+                if restore_error:
+                    item_text += f" - {restore_error}"
             else:
-                item_text = f"{date_str} (v{version}) {include_db} {trigger_label}"
+                item_text = f"{date_str} (v{version}) {include_db} {trigger_label} [복원 가능]"
             self.backup_list.addItem(item_text)
             item = self.backup_list.item(self.backup_list.count() - 1)
             if item is not None:
@@ -523,12 +529,21 @@ class BackupDialog(QDialog):
                         "trigger": str(backup.get("trigger", "manual")).lower(),
                         "is_corrupt": is_corrupt,
                         "error": str(backup.get("error", "") or ""),
+                        "is_restorable": is_restorable,
+                        "restore_error": restore_error,
                     },
                 )
 
     def create_backup(self):
         """백업 생성"""
         include_db = self.chk_include_db.isChecked()
+        if include_db and not os.path.exists(getattr(self.auto_backup, "db_file", "")):
+            QMessageBox.warning(
+                self,
+                "백업 생성 실패",
+                "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다.",
+            )
+            return
         result = self.auto_backup.create_backup(include_db)
         
         if result:
@@ -549,11 +564,15 @@ class BackupDialog(QDialog):
             include_db_meta = item_meta.get("include_db")
             is_corrupt = bool(item_meta.get("is_corrupt", False))
             corrupt_error = str(item_meta.get("error", "") or "")
+            is_restorable = bool(item_meta.get("is_restorable", True))
+            restore_error = str(item_meta.get("restore_error", "") or "")
         else:
             backup_name = str(item_meta or "").strip()
             include_db_meta = None
             is_corrupt = False
             corrupt_error = ""
+            is_restorable = True
+            restore_error = ""
 
         if not backup_name:
             QMessageBox.warning(self, "오류", "선택한 백업 정보를 읽을 수 없습니다.")
@@ -578,6 +597,14 @@ class BackupDialog(QDialog):
                     QMessageBox.information(self, "완료", "손상된 백업 항목을 삭제했습니다.")
                 except Exception as e:
                     QMessageBox.warning(self, "오류", f"삭제 실패: {str(e)}")
+            return
+
+        if not is_restorable:
+            QMessageBox.warning(
+                self,
+                "복원 불가",
+                restore_error or "선택한 백업은 필요한 파일이 없어 복원할 수 없습니다.",
+            )
             return
 
         if isinstance(include_db_meta, bool):

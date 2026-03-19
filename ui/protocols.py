@@ -42,6 +42,12 @@ class MainWindowProtocol(Protocol):
 
 
 class SettingsDialogParentProtocol(Protocol):
+    def begin_database_maintenance(self, operation: str) -> tuple[bool, str]:
+        ...
+
+    def end_database_maintenance(self) -> None:
+        ...
+
     def on_database_maintenance_completed(self, operation: str, affected_count: int = 0) -> None:
         ...
 

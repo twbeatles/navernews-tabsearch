@@ -1,6 +1,44 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Execution Risk Full Pass + Docs/Spec Review (2026-03-18)**:
+  - Settings portability / import-export:
+    - Export format bumped to `1.2`.
+    - `settings.auto_start_enabled` is now included in export/import while API credentials remain excluded.
+    - Import supports `1.1` / `1.2`, coerces unavailable `start_minimized` / `auto_start_enabled` values safely, and syncs actual startup registry state through `StartupManager.enable_startup(...)` / `disable_startup()`.
+  - Maintenance mode / fetch coordination:
+    - Added app-wide maintenance mode before settings-dialog DB cleanup actions.
+    - Active fetch workers are cancelled with bounded wait; new refresh/load-more entrypoints are blocked during maintenance.
+    - Fetch-related UI controls now stay locked with explicit maintenance messaging until cleanup finishes.
+  - DB pagination / read-state semantics:
+    - Local tab browsing now uses DB-backed filtering + pagination (`count_news(...)` + `fetch_news(..., limit, offset)`).
+    - HTML `더 보기` now appends the next DB page instead of revealing a preloaded in-memory slice.
+    - `DatabaseManager.mark_query_as_read(...)` switched to a single SQL update path and now preserves filter text, duplicate-hide, date-range, bookmark scope, and `query_key`.
+    - CSV export now re-queries the current tab's full filtered scope instead of exporting only the currently loaded slice.
+  - Backup / restore preflight:
+    - `create_backup(include_db=True)` now fails when the DB file is missing.
+    - `backup_info.json.include_db` is now guaranteed to match the actual payload.
+    - `AutoBackup.get_backup_list()` now exposes `is_restorable` / `restore_error`, and BackupDialog blocks non-restorable entries before scheduling restore.
+  - Docs / packaging / repo hygiene:
+    - Synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, and audit notes to the current behavior.
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required.
+    - Re-reviewed `.gitignore`; existing runtime/build ignore rules already cover this pass.
+  - Added/updated tests:
+    - Added:
+      - `tests/test_dbworker_pagination.py`
+      - `tests/test_maintenance_mode.py`
+      - `tests/test_news_tab_mark_all_read_scope.py`
+      - `tests/test_settings_import_export_portability.py`
+    - Expanded:
+      - `tests/test_audit_followthrough.py`
+      - `tests/test_backup_restore_mode.py`
+      - `tests/test_db_queries.py`
+      - `tests/test_risk_fixes.py`
+      - `tests/test_settings_dialog_maintenance.py`
+      - `tests/test_stability.py`
+  - Validation:
+    - `python -m pytest -q` => `165 passed, 5 subtests passed`
+    - `python -m pyright` => `0 errors, 0 warnings, 0 informations`
 - **Implementation Audit Follow-through (2026-03-16)**:
   - Cross-tab/global article state sync:
     - Added link-based in-memory sync across open news tabs and the bookmark tab for single-item `read`, `unread`, `bookmark`, `note`, and `delete` actions.

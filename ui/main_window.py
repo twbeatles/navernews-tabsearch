@@ -189,6 +189,8 @@ class MainApp(
             self._refresh_queue = []
             self._refresh_mutex = QMutex()
             self._last_refresh_time = None
+            self._maintenance_mode = False
+            self._maintenance_reason = ""
             
             # 순차 새로고침 관련 변수 (완전 구현)
             self._pending_refresh_keywords = []
@@ -407,6 +409,96 @@ class MainApp(
 
     def _make_tab_fetch_state(self) -> TabFetchState:
         return TabFetchState()
+
+    def is_maintenance_mode_active(self) -> bool:
+        return bool(getattr(self, "_maintenance_mode", False))
+
+    def _maintenance_block_message(self, action: str) -> str:
+        reason = str(getattr(self, "_maintenance_reason", "") or "데이터 정리")
+        return f"유지보수 중이라 {action}을(를) 실행할 수 없습니다. ({reason})"
+
+    def _set_fetch_controls_enabled(self, enabled: bool) -> None:
+        if hasattr(self, "btn_refresh"):
+            self.btn_refresh.setEnabled(enabled)
+        if hasattr(self, "btn_add"):
+            self.btn_add.setEnabled(enabled)
+
+        for _index, tab in self._iter_news_tabs():
+            if tab.is_bookmark_tab:
+                continue
+            if enabled:
+                self.sync_tab_load_more_state(tab.keyword)
+            else:
+                tab.btn_load.setEnabled(False)
+                tab.btn_load.setText("🔒 유지보수 중")
+
+    def _apply_maintenance_ui_state(self) -> None:
+        active = self.is_maintenance_mode_active()
+        self._set_fetch_controls_enabled(not active)
+        if active:
+            self._status_bar().showMessage(
+                f"🔧 유지보수 중: {self._maintenance_reason or '데이터 정리'}",
+            )
+
+    def _cancel_active_fetch_workers(self, wait_ms: int = 1500) -> tuple[bool, List[str]]:
+        deadline = time.monotonic() + (max(0, int(wait_ms)) / 1000.0)
+        unfinished_keywords: List[str] = []
+
+        if self._sequential_refresh_active:
+            self._sequential_refresh_active = False
+            self._pending_refresh_keywords = []
+            self._current_refresh_idx = 0
+            self._total_refresh_count = 0
+            self.progress.setVisible(False)
+
+        with QMutexLocker(self._refresh_mutex):
+            self._refresh_in_progress = False
+
+        handles = self._worker_registry.all_handles()
+        for handle in handles:
+            remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
+            finished = self.cleanup_worker(
+                keyword=handle.tab_keyword,
+                request_id=handle.request_id,
+                only_if_active=False,
+                wait_ms=remaining_ms,
+            )
+            if not finished:
+                unfinished_keywords.append(handle.tab_keyword)
+
+        return len(unfinished_keywords) == 0, unfinished_keywords
+
+    def begin_database_maintenance(self, operation: str) -> tuple[bool, str]:
+        if self.is_maintenance_mode_active():
+            return False, "이미 다른 유지보수 작업이 진행 중입니다."
+
+        ok, unfinished_keywords = self._cancel_active_fetch_workers(wait_ms=1500)
+        if not ok:
+            keywords_txt = ", ".join(unfinished_keywords)
+            logger.warning("Database maintenance blocked by active fetch workers: %s", keywords_txt)
+            return (
+                False,
+                f"활성 새로고침을 1.5초 안에 정리하지 못했습니다: {keywords_txt}",
+            )
+
+        operation_label = {
+            "delete_old_news": "오래된 기사 정리",
+            "delete_all_news": "전체 기사 정리",
+        }.get(str(operation or "").strip(), "데이터 정리")
+        self._maintenance_mode = True
+        self._maintenance_reason = operation_label
+        self._apply_maintenance_ui_state()
+        self.show_warning_toast(f"{operation_label}를 위해 유지보수 모드로 전환했습니다.")
+        return True, ""
+
+    def end_database_maintenance(self) -> None:
+        if not self.is_maintenance_mode_active():
+            return
+        self._maintenance_mode = False
+        self._maintenance_reason = ""
+        self._apply_maintenance_ui_state()
+        self._status_bar().showMessage("✅ 유지보수 모드가 해제되었습니다.", 3000)
+        self.show_toast("유지보수 모드가 해제되었습니다.")
 
     
     def _update_countdown(self):

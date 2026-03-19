@@ -2,7 +2,7 @@ import html
 import hashlib
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from PyQt6.QtCore import QDate, Qt, QTimer, QUrl
 from PyQt6.QtGui import QClipboard, QDesktopServices
@@ -36,13 +36,10 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 class NewsTab(QWidget):
-    """개별 뉴스 탭 (메모리 캐싱 및 필터링 최적화) - Phase 3 성능 최적화"""
-    
-    # 렌더링 최적화 상수
-    INITIAL_RENDER_COUNT = 50   # 초기 렌더링 개수
-    LOAD_MORE_COUNT = 30        # 추가 로딩 개수
-    MAX_RENDER_COUNT = 500      # 최대 렌더링 개수
-    FILTER_DEBOUNCE_MS = 250    # 필터 디바운싱 시간 (ms) - 성능 최적화
+    """개별 뉴스 탭."""
+
+    PAGE_SIZE = 50
+    FILTER_DEBOUNCE_MS = 250
     
     def __init__(self, keyword: str, db_manager: DatabaseManager, theme_mode: int = 0, parent=None):
         super().__init__(parent)
@@ -64,11 +61,14 @@ class NewsTab(QWidget):
         self._last_filter_text = ""
         self._cached_badge_keyword = ""
         self._cached_badges_html = ""
-        
-        # 렌더링 최적화 변수 (Phase 3)
-        self._rendered_count = 0           # 현재 렌더링된 항목 수
-        self._is_loading_more = False      # 추가 로딩 중 여부
-        
+
+        self._rendered_count = 0
+        self._is_loading_more = False
+        self._total_filtered_count = 0
+        self._loaded_offset = 0
+        self._pending_append_request_ids: set[int] = set()
+        self._pending_scroll_restore = 0
+
         # Async DB Worker
         self.worker: Optional[DBWorker] = None
         self.job_worker: Optional[AsyncJobWorker] = None
@@ -94,6 +94,46 @@ class NewsTab(QWidget):
         """Full query scope key used for DB membership."""
         search_keyword, exclude_words = parse_search_query(self.keyword)
         return build_fetch_key(search_keyword, exclude_words)
+
+    def _current_filter_text(self) -> str:
+        return self.inp_filter.text().strip()
+
+    def _current_date_range(self) -> Tuple[Optional[str], Optional[str]]:
+        if not self.btn_date_toggle.isChecked():
+            return None, None
+        return (
+            self.date_start.date().toString("yyyy-MM-dd"),
+            self.date_end.date().toString("yyyy-MM-dd"),
+        )
+
+    def _current_scope_kwargs(self) -> Dict[str, Any]:
+        start_date, end_date = self._current_date_range()
+        return {
+            "filter_txt": self._current_filter_text(),
+            "sort_mode": self.combo_sort.currentText(),
+            "only_bookmark": self.is_bookmark_tab,
+            "only_unread": self.chk_unread.isChecked(),
+            "hide_duplicates": self.chk_hide_dup.isChecked(),
+            "exclude_words": self.exclude_words,
+            "start_date": start_date,
+            "end_date": end_date,
+            "query_key": None if self.is_bookmark_tab else self.query_key,
+        }
+
+    def get_all_filtered_items(self) -> List[Dict[str, Any]]:
+        scope = self._current_scope_kwargs()
+        return self.db.fetch_news(
+            keyword=self.db_keyword,
+            filter_txt=scope["filter_txt"],
+            sort_mode=scope["sort_mode"],
+            only_bookmark=scope["only_bookmark"],
+            only_unread=scope["only_unread"],
+            hide_duplicates=scope["hide_duplicates"],
+            exclude_words=scope["exclude_words"],
+            start_date=scope["start_date"],
+            end_date=scope["end_date"],
+            query_key=scope["query_key"],
+        )
 
     def _prepare_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
         link = item.get("link", "")
@@ -229,7 +269,7 @@ class NewsTab(QWidget):
         self._data_version += 1
         self._last_render_signature = None
         if requires_refilter:
-            self.apply_filter()
+            self.load_data_from_db()
         else:
             self.render_html()
             self.update_status_label()
@@ -475,38 +515,54 @@ class NewsTab(QWidget):
         """디바운싱된 필터 적용"""
         self.apply_filter()
 
-    def load_data_from_db(self):
-        """DB에서 데이터 로드 (비동기 처리)"""
-        with perf_timer("ui.load_data_from_db", f"kw={self.keyword}"):
+    def load_data_from_db(self, append: bool = False):
+        """DB에서 현재 필터 범위의 페이지를 로드한다."""
+        with perf_timer("ui.load_data_from_db", f"kw={self.keyword}|append={int(append)}"):
             if self.worker and self.worker.isRunning():
                 self.worker.stop()
                 if not self.worker.wait(150):
                     logger.warning(f"DBWorker wait timeout: {self.keyword}")
 
+            if not append:
+                self._loaded_offset = 0
+                self._is_loading_more = False
+            elif self._is_loading_more:
+                return
+
             self._load_request_id += 1
             current_request_id = self._load_request_id
+            if append:
+                self._pending_append_request_ids.add(current_request_id)
+                self._pending_scroll_restore = self._browser_scroll_bar().value()
+                self._is_loading_more = True
+            else:
+                self._pending_append_request_ids.clear()
+                self._pending_scroll_restore = 0
+
             self.lbl_status.setText("⏳ 데이터 로딩 중...")
             self.btn_load.setEnabled(False)
 
-            s_date = None
-            e_date = None
-            if self.btn_date_toggle.isChecked():
-                s_date = self.date_start.date().toString("yyyy-MM-dd")
-                e_date = self.date_end.date().toString("yyyy-MM-dd")
-
+            scope = self._current_scope_kwargs()
+            offset = self._loaded_offset if append else 0
             self.worker = DBWorker(
                 self.db,
                 keyword=self.keyword,
-                filter_txt="",
-                sort_mode=self.combo_sort.currentText(),
-                only_bookmark=self.is_bookmark_tab,
-                only_unread=self.chk_unread.isChecked(),
-                hide_duplicates=self.chk_hide_dup.isChecked(),
-                start_date=s_date,
-                end_date=e_date,
+                filter_txt=scope["filter_txt"],
+                sort_mode=scope["sort_mode"],
+                only_bookmark=scope["only_bookmark"],
+                only_unread=scope["only_unread"],
+                hide_duplicates=scope["hide_duplicates"],
+                start_date=scope["start_date"],
+                end_date=scope["end_date"],
+                limit=self.PAGE_SIZE,
+                offset=offset,
             )
             self.worker.finished.connect(
-                lambda data, total_count, rid=current_request_id: self.on_data_loaded(data, total_count, rid)
+                lambda data, total_count, rid=current_request_id: self.on_data_loaded(
+                    data,
+                    total_count,
+                    rid,
+                )
             )
             self.worker.error.connect(lambda err_msg, rid=current_request_id: self.on_data_error(err_msg, rid))
             self.worker.start()
@@ -518,15 +574,38 @@ class NewsTab(QWidget):
             return
 
         with perf_timer("ui.on_data_loaded", f"kw={self.keyword}|rows={len(data)}"):
-            self.news_data_cache = [self._prepare_item(dict(item)) for item in data]
+            is_append = bool(request_id in self._pending_append_request_ids)
+            if request_id is not None:
+                self._pending_append_request_ids.discard(request_id)
+
+            prepared_rows = [self._prepare_item(dict(item)) for item in data]
+            if is_append:
+                self.news_data_cache.extend(prepared_rows)
+            else:
+                self.news_data_cache = prepared_rows
+                self._loaded_offset = 0
+
+            self.filtered_data_cache = list(self.news_data_cache)
+            self._loaded_offset = len(self.news_data_cache)
+            self._rendered_count = len(self.filtered_data_cache)
+            self._total_filtered_count = int(total_count or 0)
+            self._last_filter_text = self._current_filter_text().lower()
             self._rebuild_item_indexes()
-            if self.total_api_count <= 0 or total_count > self.total_api_count:
-                self.total_api_count = total_count
             self._recount_unread_cache()
             self._data_version += 1
             self._last_render_signature = None
+            self._is_loading_more = False
             self.btn_load.setEnabled(True)
-            self.apply_filter()
+            self.render_html()
+
+            if self.total_api_count <= 0 and self._total_filtered_count > self.total_api_count:
+                self.total_api_count = self._total_filtered_count
+
+            if is_append and self._pending_scroll_restore > 0:
+                scroll_pos = self._pending_scroll_restore
+                QTimer.singleShot(10, lambda: self._browser_scroll_bar().setValue(scroll_pos))
+            self._pending_scroll_restore = 0
+
             parent = self._main_window()
             if parent is not None:
                 parent.sync_tab_load_more_state(self.keyword)
@@ -537,45 +616,29 @@ class NewsTab(QWidget):
         """데이터 로드 오류 시 호출"""
         if request_id is not None and request_id != self._load_request_id:
             return
+        if request_id is not None:
+            self._pending_append_request_ids.discard(request_id)
+        self._is_loading_more = False
         self.lbl_status.setText(f"⚠️ 오류: {err_msg}")
         self.btn_load.setEnabled(True)
-    
-    def apply_filter(self):
-        """메모리 내 필터링 (DB 쿼리 없이)"""
-        with perf_timer("ui.apply_filter", f"kw={self.keyword}|rows={len(self.news_data_cache)}"):
-            filter_txt = self.inp_filter.text().strip()
-            filter_txt_lc = filter_txt.lower()
 
+    def apply_filter(self):
+        """필터 변경 시 DB 기반으로 첫 페이지부터 다시 조회한다."""
+        with perf_timer("ui.apply_filter", f"kw={self.keyword}|rows={len(self.news_data_cache)}"):
+            filter_txt = self._current_filter_text()
             if filter_txt:
                 self.inp_filter.setObjectName("FilterActive")
             else:
                 self.inp_filter.setObjectName("")
             self.inp_filter.setStyle(self.inp_filter.style())
 
-            prev_filtered = self.filtered_data_cache
-            if filter_txt_lc:
-                new_filtered = [
-                    item
-                    for item in self.news_data_cache
-                    if filter_txt_lc in item.get("_title_lc", "") or filter_txt_lc in item.get("_desc_lc", "")
-                ]
-            else:
-                new_filtered = self.news_data_cache
-
-            same_filter = filter_txt_lc == self._last_filter_text
-            same_items = (
-                len(prev_filtered) == len(new_filtered)
-                and all(a is b for a, b in zip(prev_filtered, new_filtered))
-            )
-            self.filtered_data_cache = new_filtered
-            self._last_filter_text = filter_txt_lc
-
-            if same_filter and same_items and self._rendered_count > 0:
+            filter_txt_lc = filter_txt.lower()
+            if filter_txt_lc == self._last_filter_text and self._loaded_offset <= self.PAGE_SIZE:
                 self.update_status_label()
                 return
 
-            self._rendered_count = 0
-            self.render_html()
+            self._last_filter_text = filter_txt_lc
+            self.load_data_from_db(append=False)
 
     def _render_single_item(self, item: Dict[str, Any], filter_word: str, base_badges_html: str) -> str:
         """단일 뉴스 아이템 HTML 렌더링"""
@@ -655,13 +718,13 @@ class NewsTab(QWidget):
         with perf_timer("ui.render_html", f"kw={self.keyword}|rows={len(self.filtered_data_cache)}"):
             scroll_pos = self._browser_scroll_bar().value()
             is_dark = self.theme == 1
-            filter_word = self.inp_filter.text().strip()
+            filter_word = self._current_filter_text()
 
             render_signature = (
                 self.theme,
                 filter_word,
-                self._rendered_count,
                 len(self.filtered_data_cache),
+                self._total_filtered_count,
                 self._data_version,
             )
             if render_signature == self._last_render_signature:
@@ -687,19 +750,13 @@ class NewsTab(QWidget):
                     msg = "<div class='empty-state-title'>📰 뉴스</div>표시할 기사가 없습니다.<br><br>새로고침 버튼을 눌러 최신 뉴스를 가져오세요."
                 html_parts.append(f"<div class='empty-state'>{msg}</div>")
             else:
-                total_items = len(self.filtered_data_cache)
-                if self._rendered_count < self.INITIAL_RENDER_COUNT:
-                    self._rendered_count = self.INITIAL_RENDER_COUNT
-
-                render_limit = min(self._rendered_count, total_items)
-                items_to_render = self.filtered_data_cache[:render_limit]
-                self._rendered_count = len(items_to_render)
+                items_to_render = self.filtered_data_cache
                 base_badges_html = self._get_keyword_badges_html()
 
                 for item in items_to_render:
                     html_parts.append(self._render_single_item(item, filter_word, base_badges_html))
 
-                remaining = total_items - self._rendered_count
+                remaining = max(0, self._total_filtered_count - len(items_to_render))
                 if remaining > 0:
                     html_parts.append(self._get_load_more_html(remaining))
 
@@ -708,8 +765,8 @@ class NewsTab(QWidget):
             self._last_render_signature = (
                 self.theme,
                 filter_word,
-                self._rendered_count,
                 len(self.filtered_data_cache),
+                self._total_filtered_count,
                 self._data_version,
             )
 
@@ -718,61 +775,48 @@ class NewsTab(QWidget):
             self.update_status_label()
 
     def append_items(self):
-        """추가 아이템 로딩 (최적화: 전체 재렌더링 대신 _rendered_count 증가 후 렌더링)"""
-        total_items = len(self.filtered_data_cache)
-        start_idx = self._rendered_count
-        end_idx = min(start_idx + self.LOAD_MORE_COUNT, total_items)
-        
-        if start_idx >= end_idx:
+        """다음 DB 페이지를 로드한다."""
+        if self._is_loading_more:
             return
-        
-        # _rendered_count 증가 (render_html에서 이 값까지 렌더링)
-        self._rendered_count = end_idx
-        
-        # 스크롤 위치 저장 후 렌더링
-        scroll_pos = self._browser_scroll_bar().value()
-        self.render_html()
-        
-        # 스크롤 위치 복원 (약간의 지연 필요)
-        if scroll_pos > 0:
-            QTimer.singleShot(10, lambda: self._browser_scroll_bar().setValue(scroll_pos))
+        if len(self.filtered_data_cache) >= self._total_filtered_count:
+            return
+        self.load_data_from_db(append=True)
 
 
     def update_status_label(self):
         """상태 레이블 업데이트 - 캐시 기반 최적화"""
-        total_filtered = len(self.filtered_data_cache)
-        rendered = self._rendered_count
-        
+        loaded_count = len(self.filtered_data_cache)
+        total_filtered = max(self._total_filtered_count, loaded_count)
+
         if not self.is_bookmark_tab:
             unread = self._unread_count_cache
-            msg = f"'{self.keyword}': 총 {self.total_api_count}개"
-            
-            filter_word = self.inp_filter.text().strip()
-            if filter_word:
+            overall_total = max(int(self.total_api_count or 0), total_filtered)
+            msg = f"'{self.keyword}': 총 {overall_total}개"
+
+            filter_word = self._current_filter_text()
+            if filter_word or self.chk_unread.isChecked() or self.chk_hide_dup.isChecked() or self.btn_date_toggle.isChecked():
                 msg += f" | 필터링: {total_filtered}개"
             else:
-                msg += f" | {len(self.news_data_cache)}개"
-            
-            # Phase 3: 렌더링된 항목 수 표시
-            if rendered < total_filtered:
-                msg += f" (표시: {rendered}개)"
-            
+                msg += f" | {loaded_count}개"
+
+            if loaded_count < total_filtered:
+                msg += f" (표시: {loaded_count}개)"
+
             if unread > 0:
                 msg += f" | 안 읽음: {unread}개"
             if self.last_update:
                 msg += f" | 업데이트: {self.last_update}"
             self.lbl_status.setText(msg)
         else:
-            filter_word = self.inp_filter.text().strip()
-            if filter_word:
-                status_text = f"⭐ 북마크 {len(self.news_data_cache)}개 중 {total_filtered}개"
+            filter_word = self._current_filter_text()
+            if filter_word or self.chk_unread.isChecked() or self.chk_hide_dup.isChecked() or self.btn_date_toggle.isChecked():
+                status_text = f"⭐ 북마크 {total_filtered}개"
             else:
-                status_text = f"⭐ 북마크 {len(self.news_data_cache)}개"
-            
-            # Phase 3: 렌더링된 항목 수 표시
-            if rendered < total_filtered:
-                status_text += f" (표시: {rendered}개)"
-            
+                status_text = f"⭐ 북마크 {loaded_count}개"
+
+            if loaded_count < total_filtered:
+                status_text += f" (표시: {loaded_count}개)"
+
             self.lbl_status.setText(status_text)
 
 
@@ -934,15 +978,10 @@ class NewsTab(QWidget):
 
         self.lbl_status.setText("⏳ 처리 중...")
         self.btn_read_all.setEnabled(False)
+        start_date, end_date = self._current_date_range()
 
         if clicked == btn_visible_only:
-            target_links = []
-            for item in self.filtered_data_cache:
-                link = item.get("link", "")
-                if link and link not in target_links:
-                    target_links.append(link)
-
-            if not target_links:
+            if self._total_filtered_count <= 0:
                 self.btn_read_all.setEnabled(True)
                 self.lbl_status.setText("읽음 처리할 기사가 없습니다.")
                 parent = self._main_window()
@@ -951,7 +990,17 @@ class NewsTab(QWidget):
                 return
 
             self._mark_all_mode_label = "현재 표시 결과"
-            self.job_worker = AsyncJobWorker(self.db.mark_links_as_read, target_links)
+            self.job_worker = AsyncJobWorker(
+                self.db.mark_query_as_read,
+                self.db_keyword,
+                self.exclude_words,
+                self.is_bookmark_tab,
+                self._current_filter_text(),
+                self.chk_hide_dup.isChecked(),
+                start_date,
+                end_date,
+                query_key=self.query_key,
+            )
         else:
             self._mark_all_mode_label = "탭 전체"
             self.job_worker = AsyncJobWorker(
@@ -959,6 +1008,10 @@ class NewsTab(QWidget):
                 self.db_keyword,
                 self.exclude_words,
                 self.is_bookmark_tab,
+                "",
+                False,
+                None,
+                None,
                 query_key=self.query_key,
             )
 
@@ -973,12 +1026,9 @@ class NewsTab(QWidget):
         if parent is not None:
             if hasattr(parent, "on_database_maintenance_completed"):
                 parent.on_database_maintenance_completed("mark_all_read", int(count or 0))
-            else:
-                self.load_data_from_db()  # UI 갱신 fallback
             mode_label = getattr(self, "_mark_all_mode_label", "선택 범위")
             parent.show_toast(f"✓ {mode_label} {count}개의 기사를 읽음으로 표시했습니다.")
-        else:
-            self.load_data_from_db()
+        self.load_data_from_db()
             
     def _on_mark_all_read_error(self, err_msg):
         """모두 읽음 처리 오류"""
