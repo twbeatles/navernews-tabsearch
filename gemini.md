@@ -83,7 +83,7 @@ navernews-tabsearch/
 ### 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `146 passed, 5 subtests passed`
+- `pytest -q` => `165 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
 
 ### 핵심 클래스 계층
@@ -320,16 +320,15 @@ class NewsTab(QWidget):
     """개별 뉴스 탭"""
     
     # 렌더링 최적화 상수
-    INITIAL_RENDER_COUNT = 50   # 초기 렌더링 개수
-    LOAD_MORE_COUNT = 30        # 추가 로딩 개수
-    MAX_RENDER_COUNT = 500      # 최대 렌더링 개수
+    LOCAL_PAGE_SIZE = 50        # DB 페이지 크기
     FILTER_DEBOUNCE_MS = 250    # 필터 디바운싱 시간
     
     # 주요 속성
-    self.keyword             # str - 검색 키워드
-    self.news_data_cache     # List[Dict] - 전체 뉴스 캐시
-    self.filtered_data_cache # List[Dict] - 필터링된 캐시
-    self._rendered_count     # int - 현재 렌더링된 항목 수
+    self.keyword              # str - 검색 키워드
+    self.news_data_cache      # List[Dict] - 현재 로드된 DB slice 캐시
+    self.filtered_data_cache  # List[Dict] - 현재 렌더링 중인 slice
+    self._local_page_offset   # int - 현재 로드된 DB offset
+    self._local_total_count   # int - 현재 필터 조건의 전체 결과 수
 ```
 
 ### DatabaseManager (DB 연결 관리)

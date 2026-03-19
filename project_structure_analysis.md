@@ -17,6 +17,19 @@
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
 
+## 0. 2026-03-18 실행형 리스크 전면 수정 반영
+
+이번 배치에서는 2026-03-16 기준선을 다시 한 번 확장해, 실행 중 경합과 대용량 탭 동작까지 실제 구현 기준으로 보정했다.
+
+- 로컬 탭 조회는 "전체 적재 후 클라이언트 필터"가 아니라 `DBWorker -> count_news(...) + fetch_news(..., limit, offset)` 기반의 DB 페이지네이션으로 동작한다.
+- HTML 내부 `더 보기`는 메모리 slice 확장이 아니라 다음 DB 페이지 append로 동작한다.
+- `filtered_data_cache`는 현재 로드된 slice 의미만 가지며, CSV export와 `현재 표시 결과만` 읽음 처리는 현재 탭 필터 조건 전체 결과를 DB에서 다시 조회하는 별도 경로를 사용한다.
+- `DatabaseManager.mark_query_as_read(...)`는 단일 SQL update 경로로 바뀌었고, `filter_txt`, `hide_duplicates`, 날짜 범위, bookmark scope, `query_key`를 함께 반영한다.
+- 설정 export/import는 `1.2` 기준이며 API 자격증명은 제외하고 `settings.auto_start_enabled`는 포함한다.
+- 설정 창 데이터 정리 전에는 앱 전역 유지보수 모드가 활성화되며, active fetch 취소와 새 fetch 진입 차단이 함께 적용된다.
+- 백업 목록은 이제 `is_restorable`, `restore_error` 메타를 포함해 UI에서 복원 가능 여부를 사전 표시한다.
+- 현재 검증 기준은 `python -m pytest -q` 기준 `165 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
+
 ## 0. 2026-03-16 기능 감사 후속 반영
 
 이번 후속 반영으로 구조적으로 중요한 동작이 몇 가지 더 명확해졌다.
@@ -25,9 +38,9 @@
 - `모두 읽음` 같은 bulk 작업은 증분 반영보다 안전성을 우선해 DB 유지보수 완료와 같은 full refresh 경로를 재사용한다.
 - 알림 키워드는 fetch 응답 전체가 아니라 이번 요청에서 새로 추가된 기사(`new_items`)에만 적용된다.
 - 탭 dedupe, 탭 리네임 충돌 판정, 설정 import dedupe, 검색 이력 dedupe는 모두 `canonical query` 기준으로 통일되었다.
-- CSV 내보내기의 의미는 "탭 전체 캐시"가 아니라 "현재 화면에 실제로 표시 중인 결과"로 고정되었다.
+- CSV 내보내기는 2026-03-16 시점의 visible-only 경로를 거쳐, 현재는 "현재 탭 필터 조건 전체 결과"를 DB에서 다시 조회해 저장하는 방식으로 정착되었다.
 - 시작 시 자동 백업은 계속 설정만 저장하며, DB 복원 지점은 수동 백업(DB 포함)으로 만들도록 UI/문서가 맞춰졌다.
-- 현재 검증 기준은 `pytest -q` 기준 `146 passed, 5 subtests passed`, `pyright` 기준 `0 errors`다.
+- 현재 검증 기준은 최신 배치 기준 `python -m pytest -q` => `165 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
 
 ## 0. 2026-03-12 리팩토링 반영 상태
 
