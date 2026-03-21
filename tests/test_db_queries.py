@@ -679,6 +679,19 @@ class TestDbSchemaMigration(unittest.TestCase):
                         ("https://example.com/legacy",),
                     ).fetchone()
                     self.assertEqual(row, ("AI", "ai|"))
+
+                    indexes = {
+                        row[1]
+                        for row in conn.execute("PRAGMA index_list(news_keywords)").fetchall()
+                    }
+                    self.assertIn("idx_nk_query_key_keyword", indexes)
+                    self.assertIn("idx_nk_query_key_keyword_dup", indexes)
+
+                    news_indexes = {
+                        row[1]
+                        for row in conn.execute("PRAGMA index_list(news)").fetchall()
+                    }
+                    self.assertIn("idx_bookmarked_read_ts", news_indexes)
                 finally:
                     conn.close()
             finally:

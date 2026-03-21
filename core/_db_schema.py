@@ -237,13 +237,16 @@ class _DatabaseSchemaMixin:
                 "CREATE INDEX IF NOT EXISTS idx_keyword_ts ON news(keyword, pubDate_ts DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_keyword_dup ON news(keyword, is_duplicate)",
                 "CREATE INDEX IF NOT EXISTS idx_bookmarked_ts ON news(is_bookmarked, pubDate_ts DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_bookmarked_read_ts ON news(is_bookmarked, is_read, pubDate_ts DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_keyword ON news_keywords(keyword)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_query_key ON news_keywords(query_key)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_link ON news_keywords(link)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_keyword_link ON news_keywords(keyword, link)",
+                "CREATE INDEX IF NOT EXISTS idx_nk_query_key_keyword ON news_keywords(query_key, keyword)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_query_key_link ON news_keywords(query_key, link)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_keyword_dup ON news_keywords(keyword, is_duplicate)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_query_key_dup ON news_keywords(query_key, is_duplicate)",
+                "CREATE INDEX IF NOT EXISTS idx_nk_query_key_keyword_dup ON news_keywords(query_key, keyword, is_duplicate)",
             ]
             for idx in indexes:
                 try:

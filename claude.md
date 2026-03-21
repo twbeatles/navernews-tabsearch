@@ -50,7 +50,7 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session Protocol 계약
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
 │   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
@@ -69,7 +69,7 @@ navernews-tabsearch/
 │   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
-│   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog facade
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
@@ -97,6 +97,7 @@ navernews-tabsearch/
 │   ├── test_keyword_groups_storage.py
 │   ├── test_backup_restore_mode.py
 │   ├── test_news_tab_ext_read_policy.py
+│   ├── test_news_tab_performance.py
 │   ├── test_settings_dialog_maintenance.py
 │   └── test_risk_fixes.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
@@ -120,8 +121,17 @@ navernews-tabsearch/
 ## ✅ 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `165 passed, 5 subtests passed`
+- `pytest -q` => `169 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
+
+---
+
+## 🚀 2026-03-21 성능 리팩토링 메모
+
+- `core.workers.DBQueryScope`가 탭 조회 scope 계산을 단일화하고, append 경로는 `known_total_count`를 재사용해 `count_news(...)`를 다시 호출하지 않는다.
+- `ui.news_tab.NewsTab`은 `_item_by_link`로 단건 상태 변경 대상을 O(1)에 찾고, fragment cache + event-loop coalesced render로 HTML flush를 줄인다.
+- `core._db_schema.init_db()`는 `news_keywords(query_key, keyword)`, `news_keywords(query_key, keyword, is_duplicate)`, `news(is_bookmarked, is_read, pubDate_ts DESC)` 복합 인덱스를 보장한다.
+- `news_scraper_pro.spec`는 2026-03-21 기준으로 재검토되었고, 이번 패스는 표준 라이브러리/기존 번들 의존성만 사용하므로 추가 packaging 수정이 필요하지 않다.
 
 ---
 
@@ -141,8 +151,9 @@ navernews-tabsearch/
 | `NoScrollComboBox` | 휠 스크롤 방지 콤보박스 | `ui/widgets.py` |
 | `DatabaseManager` | 스레드 안전 DB 매니저 (연결 풀) | `core/database.py` |
 | `ApiWorker` | API 호출 워커 (재시도, DB 저장) | `core/workers.py` |
-| `DBWorker` | DB 조회 전용 워커 스레드 | `core/workers.py` |
+| `DBWorker` | `DBQueryScope`를 소비하는 DB 조회 전용 워커 스레드 | `core/workers.py` |
 | `AsyncJobWorker` | 단발성 비동기 작업 워커 | `core/workers.py` |
+| `DBQueryScope` | 탭 조회 scope를 정규화한 내부 dataclass | `core/workers.py` |
 | `WorkerRegistry` | 요청 ID 기반 워커 레지스트리 | `core/worker_registry.py` |
 | `WorkerHandle` | 워커 핸들 데이터클래스 | `core/worker_registry.py` |
 | `LockFileProtocol` | 단일 인스턴스 lock capability 계약 | `core/protocols.py` |
@@ -156,7 +167,7 @@ navernews-tabsearch/
 | `AppConfig` | 설정 파일 TypedDict 스키마 | `core/config_store.py` |
 | `MainApp` | 메인 윈도우 | `ui/main_window.py` |
 | `MainWindowProtocol` | `NewsTab`이 의존하는 메인 윈도우 capability | `ui/protocols.py` |
-| `NewsTab` | 개별 뉴스 탭 위젯 | `ui/news_tab.py` |
+| `NewsTab` | 개별 뉴스 탭 위젯 (fragment cache + coalesced render) | `ui/news_tab.py` |
 | `SettingsDialog` | 설정 다이얼로그 | `ui/settings_dialog.py` |
 | `SettingsDialogParentProtocol` | `SettingsDialog` 부모 capability | `ui/protocols.py` |
 | `NoteDialog` | 메모 편집 다이얼로그 | `ui/dialogs.py` |

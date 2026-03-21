@@ -22,13 +22,15 @@
 이번 배치에서는 2026-03-16 기준선을 다시 한 번 확장해, 실행 중 경합과 대용량 탭 동작까지 실제 구현 기준으로 보정했다.
 
 - 로컬 탭 조회는 "전체 적재 후 클라이언트 필터"가 아니라 `DBWorker -> count_news(...) + fetch_news(..., limit, offset)` 기반의 DB 페이지네이션으로 동작한다.
+- append 경로는 `DBQueryScope + known_total_count`를 사용해 `count_news(...)`를 다시 호출하지 않고 `fetch_news(..., limit, offset)`만 수행한다.
 - HTML 내부 `더 보기`는 메모리 slice 확장이 아니라 다음 DB 페이지 append로 동작한다.
 - `filtered_data_cache`는 현재 로드된 slice 의미만 가지며, CSV export와 `현재 표시 결과만` 읽음 처리는 현재 탭 필터 조건 전체 결과를 DB에서 다시 조회하는 별도 경로를 사용한다.
+- `NewsTab.render_html()`은 fragment cache와 event-loop coalesced flush를 사용해 연속 상태 변경/append/빠른 필터 입력에서 `setHtml()` 호출 수를 줄인다.
 - `DatabaseManager.mark_query_as_read(...)`는 단일 SQL update 경로로 바뀌었고, `filter_txt`, `hide_duplicates`, 날짜 범위, bookmark scope, `query_key`를 함께 반영한다.
 - 설정 export/import는 `1.2` 기준이며 API 자격증명은 제외하고 `settings.auto_start_enabled`는 포함한다.
 - 설정 창 데이터 정리 전에는 앱 전역 유지보수 모드가 활성화되며, active fetch 취소와 새 fetch 진입 차단이 함께 적용된다.
 - 백업 목록은 이제 `is_restorable`, `restore_error` 메타를 포함해 UI에서 복원 가능 여부를 사전 표시한다.
-- 현재 검증 기준은 `python -m pytest -q` 기준 `165 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
+- 현재 검증 기준은 `python -m pytest -q` 기준 `169 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
 
 ## 0. 2026-03-16 기능 감사 후속 반영
 
@@ -40,7 +42,7 @@
 - 탭 dedupe, 탭 리네임 충돌 판정, 설정 import dedupe, 검색 이력 dedupe는 모두 `canonical query` 기준으로 통일되었다.
 - CSV 내보내기는 2026-03-16 시점의 visible-only 경로를 거쳐, 현재는 "현재 탭 필터 조건 전체 결과"를 DB에서 다시 조회해 저장하는 방식으로 정착되었다.
 - 시작 시 자동 백업은 계속 설정만 저장하며, DB 복원 지점은 수동 백업(DB 포함)으로 만들도록 UI/문서가 맞춰졌다.
-- 현재 검증 기준은 최신 배치 기준 `python -m pytest -q` => `165 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
+- 현재 검증 기준은 최신 배치 기준 `python -m pytest -q` => `169 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
 
 ## 0. 2026-03-12 리팩토링 반영 상태
 
@@ -134,7 +136,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 4. 응답 결과는 `core.database.DatabaseManager.upsert_news()`로 저장된다.
 5. `MainApp.on_fetch_done()`이 완료 콜백을 받아 탭 재로딩, 배지 업데이트, 토스트/트레이 알림을 처리한다.
 6. `NewsTab.load_data_from_db()`는 다시 `DBWorker`를 돌려 DB에서 탭 목록을 비동기로 읽는다.
-7. `NewsTab.render_html()`이 `QTextBrowser` 기반 카드 HTML을 렌더링한다.
+7. `NewsTab.render_html()`은 실제 flush를 스케줄링하고, `_flush_render()`가 `QTextBrowser` 기반 카드 HTML을 coalesced render로 반영한다.
 
 ### 3-3. 설정/백업/복원
 
@@ -162,7 +164,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `core/_db_queries.py` | 조회, count, unread 집계 |
 | `core/_db_mutations.py` | upsert, 상태 변경, 삭제, mark-read |
 | `core/_db_analytics.py` | 통계, 언론사별 집계 |
-| `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker` |
+| `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker`, `DBQueryScope` |
 | `core/worker_registry.py` | 요청 ID 기반 워커 활성 상태 관리 |
 | `core/query_parser.py` | 검색어 파싱 정책의 단일 기준 |
 | `core/backup.py` | 백업 생성, 복원 예약, pending restore staging/rollback |
@@ -179,6 +181,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 - `core.config_store.py`는 단순 설정 저장 모듈이 아니라, **호환성/보안/정규화 레이어**다.
 - `core.query_parser.py`는 작지만 의미상 매우 중요하다. 탭 의미, API 질의, 페이지네이션 키가 여기 정책에 묶여 있다.
 - `core.backup.py`는 파일 복사 유틸이 아니라, **복원 무결성 보장 모듈**에 가깝다.
+- `core.workers.DBWorker`는 탭 raw keyword를 다시 파싱하지 않고, `NewsTab`이 계산한 `DBQueryScope`를 그대로 소비한다.
 
 ### `ui/`
 
@@ -194,7 +197,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 | `ui/_main_window_settings_io.py` | 설정 import/export, 도움말/설정창, DB 유지보수 동기화 |
 | `ui/_main_window_tray.py` | 시스템 트레이, close/minimize, 실제 종료 처리 |
 | `ui/_main_window_analysis.py` | 통계/언론사 분석 UI |
-| `ui/news_tab.py` | 개별 탭의 목록 필터링, 읽음 처리, HTML 렌더링 |
+| `ui/news_tab.py` | 개별 탭의 목록 필터링, 링크 인덱스 캐시, HTML fragment cache, coalesced render |
 | `ui/settings_dialog.py` | `SettingsDialog` facade, orchestration, public contract |
 | `ui/_settings_dialog_content.py` | 설정/도움말/단축키 탭 조립 |
 | `ui/_settings_dialog_docs.py` | 도움말 / 단축키 HTML |
@@ -208,7 +211,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 ### 구조적으로 중요한 관찰
 
 - `ui.main_window.py`는 940줄 수준의 facade로 축소됐고, 도메인별 책임은 private helper module로 나뉘었다.
-- `ui.news_tab.py`는 `QTextBrowser`용 HTML 렌더링까지 담당하므로, 목록 UI 기능이 늘수록 빠르게 비대해질 가능성이 높다.
+- `ui.news_tab.py`는 여전히 `QTextBrowser`용 HTML 렌더링까지 담당하지만, 현재는 `_item_by_link` 인덱스와 fragment cache/coalesced render로 대용량 탭 비용을 낮춘 상태다.
 - `ui.settings_dialog.py`는 117줄 수준의 facade로 축소됐다. 설정 항목 확장은 `ui/_settings_dialog_content.py` 쪽이 주 수정 지점이다.
 - `ui/widgets.NewsBrowser`는 `app://...` 내부 URL 스키마를 이용한 액션 전달 구조를 갖고 있어, 카드 액션 확장이 상대적으로 쉽다.
 
@@ -224,7 +227,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 검색/페이지네이션: `test_query_parser_search_policy.py`, `test_pagination_state_persistence.py`, `test_load_more_total_guard.py`
 - 단일 인스턴스/시작: `test_single_instance_guard.py`, `test_start_minimized_guard.py`, `test_startup_registry_command.py`
 - 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`
-- 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_settings_dialog_maintenance.py`
+- 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_news_tab_performance.py`, `test_settings_dialog_maintenance.py`
 - 문서/버전/인코딩 가드: `test_version_history_guard.py`, `test_encoding_smoke.py`
 
 즉, 새 기능 추가 시 테스트를 처음부터 새로 짜는 것보다, **기존 계약을 안 깨뜨리는 테스트를 같이 확장**하는 방식이 맞다.

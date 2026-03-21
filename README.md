@@ -86,6 +86,9 @@
 - 탭 중복 방지, 설정 import dedupe, 검색 이력 dedupe를 `canonical query` 기준으로 통일
 - CSV 내보내기는 현재 로드된 slice가 아니라 현재 탭 필터 조건 전체 결과를 DB에서 다시 조회해 저장
 - 자동 시작 백업은 계속 `설정만` 대상으로 유지하고, UI/문서에서 DB 포함 수동 백업 필요성을 명시
+- `DBQueryScope`로 탭 조회 scope 계산을 단일화하고, append 경로에서는 `known_total_count`를 재사용해 `count_news()`를 다시 호출하지 않음
+- `NewsTab`은 `_item_by_link` 인덱스로 단건 상태 변경 대상을 O(1)에 찾고, fragment cache + coalesced render로 HTML flush를 줄임
+- `news_keywords(query_key, keyword)`, `news_keywords(query_key, keyword, is_duplicate)`, `news(is_bookmarked, is_read, pubDate_ts DESC)` 복합 인덱스를 추가해 현재 조회 패턴에 맞춤
 
 ## 프로젝트 구조
 
@@ -107,7 +110,7 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session capability Protocol 정의
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
 │   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
@@ -126,7 +129,7 @@ navernews-tabsearch/
 │   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 언론사 분석 UI
-│   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol 정의
 │   ├── settings_dialog.py       # SettingsDialog facade
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
@@ -162,6 +165,7 @@ navernews-tabsearch/
 │   ├── test_audit_followthrough.py
 │   ├── test_load_more_total_guard.py
 │   ├── test_news_tab_ext_read_policy.py
+│   ├── test_news_tab_performance.py
 │   ├── test_settings_dialog_maintenance.py
 │   └── test_version_history_guard.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
@@ -233,6 +237,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 감사 후속 4차(2026-03-14)에서도 `.spec`을 다시 재검토했으며, `query_key` 범위화, `pagination_totals`, restore helper 공통화, export/import 1.1 확대는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 감사 후속 5차(2026-03-16)에서도 `.spec`을 다시 재검토했으며, 열린 탭 동기화/가시 결과 CSV/canonical dedupe/신규 기사 알림 분리는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 실행형 리스크 전면 수정(2026-03-18)에서도 `.spec`을 다시 재검토했으며, 유지보수 모드, DB 기반 로컬 페이지네이션, 백업 복원 가능 메타, export/import 1.2는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
+- v32.7.2 성능 최적화 리팩토링(2026-03-21)에서도 `.spec`을 다시 재검토했으며, `DBQueryScope`, append skip-count, `NewsTab` fragment cache/coalesced render, 복합 인덱스 추가는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
+- 2026-03-21 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드를 다시 검증했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 
@@ -293,6 +299,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `DatabaseManager.delete_link(link: str) -> bool`가 추가되어 UI 삭제 경로에서 중복 플래그 재계산을 일원화합니다.
 - `DatabaseManager.count_news(..., exclude_words: Optional[List[str]] = None)`가 확장되어 미읽음 배지 집계 시 제외어 조건을 반영할 수 있습니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, `get_top_publishers(...)`는 `query_key`를 받아 대표 키워드가 같은 탭도 독립 범위로 조회할 수 있습니다.
+- `core.workers.DBWorker`는 `DBQueryScope + include_total + known_total_count` 계약을 사용해 append 시 total count round-trip을 생략하고, full reload에서만 `count_news(...)`를 실행합니다.
+- `ui.news_tab.NewsTab`은 scope signature별 append/replace를 구분하고, HTML 렌더는 fragment cache를 재사용하면서 event-loop tick당 한 번만 flush합니다.
 - `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`가 추가되어 탭 배지를 `query_key` 기준으로 일괄 집계합니다.
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
 

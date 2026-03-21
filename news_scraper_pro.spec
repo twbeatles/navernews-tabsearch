@@ -30,6 +30,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   scoping, backup restorable metadata, and settings export/import 1.2
 #   rely on stdlib / already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-03-21 review:
+# - DBQueryScope-based tab scope normalization, append skip-count pagination,
+#   NewsTab fragment-cache/coalesced render, and query-path composite indexes
+#   rely on stdlib / already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

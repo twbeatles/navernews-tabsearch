@@ -26,7 +26,7 @@ from core.database import DatabaseManager
 from core.logging_setup import configure_logging
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.text_utils import TextUtils, parse_date_string, perf_timer
-from core.workers import AsyncJobWorker, DBWorker
+from core.workers import AsyncJobWorker, DBQueryScope, DBWorker
 from ui.dialogs import NoteDialog
 from ui.protocols import MainWindowProtocol
 from ui.styles import AppStyle, Colors
@@ -53,14 +53,25 @@ class NewsTab(QWidget):
         self.total_api_count = 0
         self.last_update = None
         self._item_by_hash: Dict[str, Dict[str, Any]] = {}
+        self._item_by_link: Dict[str, Dict[str, Any]] = {}
+        self._preview_data_cache: Dict[str, str] = {}
+        self._item_html_cache: Dict[Tuple[Any, ...], str] = {}
         self._css_cache_by_theme: Dict[int, str] = {}
         self._unread_count_cache = 0
         self._load_request_id = 0
         self._data_version = 0
         self._last_render_signature: Optional[Tuple[Any, ...]] = None
+        self._last_loaded_scope_signature: Optional[Tuple[Any, ...]] = None
         self._last_filter_text = ""
         self._cached_badge_keyword = ""
         self._cached_badges_html = ""
+        self._request_scope_signatures: Dict[int, Tuple[Any, ...]] = {}
+        self._render_context_signature: Optional[Tuple[Any, ...]] = None
+        self._rendered_body_html = ""
+        self._rendered_item_count = 0
+        self._pending_render_append_from_index: Optional[int] = None
+        self._pending_render_scroll_restore: Optional[int] = None
+        self._render_scheduled = False
 
         self._rendered_count = 0
         self._is_loading_more = False
@@ -73,6 +84,9 @@ class NewsTab(QWidget):
         self.worker: Optional[DBWorker] = None
         self.job_worker: Optional[AsyncJobWorker] = None
         self._mark_all_mode_label = "탭 전체"
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.timeout.connect(self._flush_render)
         
         self.setup_ui()
         self.load_data_from_db()
@@ -106,39 +120,42 @@ class NewsTab(QWidget):
             self.date_end.date().toString("yyyy-MM-dd"),
         )
 
-    def _current_scope_kwargs(self) -> Dict[str, Any]:
+    def _build_query_scope(self) -> DBQueryScope:
         start_date, end_date = self._current_date_range()
-        return {
-            "filter_txt": self._current_filter_text(),
-            "sort_mode": self.combo_sort.currentText(),
-            "only_bookmark": self.is_bookmark_tab,
-            "only_unread": self.chk_unread.isChecked(),
-            "hide_duplicates": self.chk_hide_dup.isChecked(),
-            "exclude_words": self.exclude_words,
-            "start_date": start_date,
-            "end_date": end_date,
-            "query_key": None if self.is_bookmark_tab else self.query_key,
-        }
-
-    def get_all_filtered_items(self) -> List[Dict[str, Any]]:
-        scope = self._current_scope_kwargs()
-        return self.db.fetch_news(
+        return DBQueryScope(
             keyword=self.db_keyword,
-            filter_txt=scope["filter_txt"],
-            sort_mode=scope["sort_mode"],
-            only_bookmark=scope["only_bookmark"],
-            only_unread=scope["only_unread"],
-            hide_duplicates=scope["hide_duplicates"],
-            exclude_words=scope["exclude_words"],
-            start_date=scope["start_date"],
-            end_date=scope["end_date"],
-            query_key=scope["query_key"],
+            filter_txt=self._current_filter_text(),
+            sort_mode=self.combo_sort.currentText(),
+            only_bookmark=self.is_bookmark_tab,
+            only_unread=self.chk_unread.isChecked(),
+            hide_duplicates=self.chk_hide_dup.isChecked(),
+            exclude_words=tuple(self.exclude_words),
+            start_date=start_date,
+            end_date=end_date,
+            query_key=None if self.is_bookmark_tab else self.query_key,
         )
 
+    def _scope_signature(self, scope: DBQueryScope) -> Tuple[Any, ...]:
+        return (
+            scope.keyword,
+            scope.filter_txt,
+            scope.sort_mode,
+            scope.only_bookmark,
+            scope.only_unread,
+            scope.hide_duplicates,
+            scope.exclude_words,
+            scope.start_date,
+            scope.end_date,
+            scope.query_key,
+        )
+
+    def get_all_filtered_items(self) -> List[Dict[str, Any]]:
+        return self.db.fetch_news(**self._build_query_scope().fetch_kwargs())
+
     def _prepare_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
-        link = item.get("link", "")
-        title = item.get("title", "")
-        desc = item.get("description", "")
+        link = str(item.get("link", "") or "")
+        title = str(item.get("title", "") or "")
+        desc = str(item.get("description", "") or "")
         if not item.get("_link_hash"):
             item["_link_hash"] = hashlib.md5(link.encode()).hexdigest() if link else ""
         item["_title_lc"] = title.lower()
@@ -147,13 +164,27 @@ class NewsTab(QWidget):
             item["_date_fmt"] = parse_date_string(item.get("pubDate", ""))
         return item
 
+    def _index_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        prepared = self._prepare_item(item)
+        link_hash = str(prepared.get("_link_hash", "") or "")
+        if link_hash:
+            self._item_by_hash[link_hash] = prepared
+            self._preview_data_cache[link_hash] = str(prepared.get("description", "") or "")
+        normalized_link = str(prepared.get("link", "") or "").strip()
+        if normalized_link:
+            self._item_by_link[normalized_link] = prepared
+        return prepared
+
+    def _index_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [self._index_item(item) for item in items]
+
     def _rebuild_item_indexes(self):
         self._item_by_hash = {}
-        for item in self.news_data_cache:
-            prepared = self._prepare_item(item)
-            link_hash = prepared.get("_link_hash")
-            if link_hash:
-                self._item_by_hash[link_hash] = prepared
+        self._item_by_link = {}
+        self._preview_data_cache = {}
+        self._index_items(self.news_data_cache)
+        if hasattr(self.browser, "set_preview_data"):
+            self.browser.set_preview_data(dict(self._preview_data_cache))
 
     def _target_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
         return self._item_by_hash.get(link_hash)
@@ -162,10 +193,20 @@ class NewsTab(QWidget):
         normalized_link = str(link or "").strip()
         if not normalized_link:
             return None
-        for item in self.news_data_cache:
-            if str(item.get("link", "") or "").strip() == normalized_link:
-                return item
-        return None
+        return self._item_by_link.get(normalized_link)
+
+    def _discard_item_render_cache(self, link_hash: str):
+        if not link_hash:
+            return
+        stale_keys = [cache_key for cache_key in self._item_html_cache if cache_key[3] == link_hash]
+        for cache_key in stale_keys:
+            self._item_html_cache.pop(cache_key, None)
+
+    def _invalidate_item_render_cache(self, target: Dict[str, Any]):
+        discard = getattr(self, "_discard_item_render_cache", None)
+        if not callable(discard):
+            return
+        discard(str(target.get("_link_hash", "") or ""))
 
     def _remove_cached_target(self, target: Dict[str, Any]) -> bool:
         removed = False
@@ -178,6 +219,13 @@ class NewsTab(QWidget):
         link_hash = str(target.get("_link_hash", "") or "")
         if link_hash:
             self._item_by_hash.pop(link_hash, None)
+            self._preview_data_cache.pop(link_hash, None)
+            self._discard_item_render_cache(link_hash)
+        link = str(target.get("link", "") or "").strip()
+        if link:
+            self._item_by_link.pop(link, None)
+        if removed and hasattr(self.browser, "set_preview_data"):
+            self.browser.set_preview_data(dict(self._preview_data_cache))
         return removed
 
     def apply_external_item_state(
@@ -234,6 +282,7 @@ class NewsTab(QWidget):
                 changed = True
 
         if changed:
+            NewsTab._invalidate_item_render_cache(cast(Any, self), target)
             self._refresh_after_local_change()
         return changed
 
@@ -265,14 +314,143 @@ class NewsTab(QWidget):
             raise RuntimeError("Clipboard is unavailable")
         return clipboard
 
+    def _schedule_render(
+        self,
+        *,
+        append_from_index: Optional[int] = None,
+        restore_scroll: Optional[int] = None,
+    ):
+        if append_from_index is not None:
+            if self._pending_render_append_from_index is None:
+                self._pending_render_append_from_index = append_from_index
+            else:
+                self._pending_render_append_from_index = min(
+                    self._pending_render_append_from_index,
+                    append_from_index,
+                )
+        else:
+            self._pending_render_append_from_index = None
+
+        if restore_scroll is not None:
+            self._pending_render_scroll_restore = restore_scroll
+
+        if self._render_scheduled:
+            return
+
+        self._render_scheduled = True
+        self._render_timer.start(0)
+
+    def _render_context_key(self, filter_word: str) -> Tuple[Any, ...]:
+        return (
+            self.theme,
+            self.keyword,
+            filter_word,
+            self._total_filtered_count,
+            self.is_bookmark_tab,
+        )
+
+    def _build_document_html(self, body_html: str, remaining_html: str = "") -> str:
+        is_dark = self.theme == 1
+        if self.theme not in self._css_cache_by_theme:
+            colors = Colors.get_html_colors(is_dark)
+            self._css_cache_by_theme[self.theme] = AppStyle.HTML_TEMPLATE.format(**colors)
+        css = self._css_cache_by_theme[self.theme]
+        return f"<html><head><meta charset='utf-8'>{css}</head><body>{body_html}{remaining_html}</body></html>"
+
+    def _empty_state_html(self) -> str:
+        if self.is_bookmark_tab:
+            msg = "<div class='empty-state-title'>⭐ 북마크</div>북마크된 기사가 없습니다.<br><br>기사 카드의 [북마크] 버튼을 눌러<br>중요한 기사를 저장하세요."
+        elif self.chk_unread.isChecked():
+            msg = "<div class='empty-state-title'>✓ 완료!</div>모든 기사를 읽었습니다."
+        else:
+            msg = "<div class='empty-state-title'>📰 뉴스</div>표시할 기사가 없습니다.<br><br>새로고침 버튼을 눌러 최신 뉴스를 가져오세요."
+        return f"<div class='empty-state'>{msg}</div>"
+
+    def _item_render_cache_key(self, item: Dict[str, Any], filter_word: str) -> Tuple[Any, ...]:
+        return (
+            self.theme,
+            filter_word,
+            self.keyword,
+            str(item.get("_link_hash", "") or ""),
+            int(item.get("is_read", 0) or 0),
+            int(item.get("is_bookmarked", 0) or 0),
+            int(item.get("is_duplicate", 0) or 0),
+            str(item.get("notes", "") or ""),
+            str(item.get("title", "") or ""),
+            str(item.get("description", "") or ""),
+            str(item.get("publisher", "") or ""),
+            str(item.get("_date_fmt", "") or ""),
+        )
+
+    def _flush_render(self):
+        self._render_scheduled = False
+        with perf_timer("ui.render_html", f"kw={self.keyword}|rows={len(self.filtered_data_cache)}"):
+            filter_word = self._current_filter_text()
+            render_signature = (
+                self.theme,
+                filter_word,
+                len(self.filtered_data_cache),
+                self._total_filtered_count,
+                self._data_version,
+            )
+            restore_scroll = self._pending_render_scroll_restore
+            if restore_scroll is None:
+                restore_scroll = self._browser_scroll_bar().value()
+            append_from_index = self._pending_render_append_from_index
+            self._pending_render_scroll_restore = None
+            self._pending_render_append_from_index = None
+
+            if render_signature == self._last_render_signature:
+                self.update_status_label()
+                if restore_scroll > 0:
+                    QTimer.singleShot(0, lambda: self._browser_scroll_bar().setValue(restore_scroll))
+                return
+
+            if not self.filtered_data_cache:
+                body_html = self._empty_state_html()
+                self._rendered_body_html = body_html
+                self._rendered_item_count = 0
+                self._render_context_signature = self._render_context_key(filter_word)
+            else:
+                base_badges_html = self._get_keyword_badges_html()
+                render_context = self._render_context_key(filter_word)
+                can_append = (
+                    append_from_index is not None
+                    and append_from_index == self._rendered_item_count
+                    and self._render_context_signature == render_context
+                    and 0 <= append_from_index <= len(self.filtered_data_cache)
+                )
+                if can_append:
+                    new_fragments = [
+                        self._render_single_item(item, filter_word, base_badges_html)
+                        for item in self.filtered_data_cache[append_from_index:]
+                    ]
+                    self._rendered_body_html += "".join(new_fragments)
+                else:
+                    self._rendered_body_html = "".join(
+                        self._render_single_item(item, filter_word, base_badges_html)
+                        for item in self.filtered_data_cache
+                    )
+                self._rendered_item_count = len(self.filtered_data_cache)
+                self._render_context_signature = render_context
+                body_html = self._rendered_body_html
+
+            remaining = max(0, self._total_filtered_count - len(self.filtered_data_cache))
+            footer_html = self._get_load_more_html(remaining) if remaining > 0 else ""
+            self.browser.setHtml(self._build_document_html(body_html, footer_html))
+            self._last_render_signature = render_signature
+
+            if restore_scroll > 0:
+                QTimer.singleShot(0, lambda: self._browser_scroll_bar().setValue(restore_scroll))
+            self.update_status_label()
+
     def _refresh_after_local_change(self, requires_refilter: bool = False):
         self._data_version += 1
         self._last_render_signature = None
         if requires_refilter:
             self.load_data_from_db()
         else:
-            self.render_html()
-            self.update_status_label()
+            self._schedule_render()
 
     def _notify_badge_change(self):
         parent = self._main_window()
@@ -542,20 +720,16 @@ class NewsTab(QWidget):
             self.lbl_status.setText("⏳ 데이터 로딩 중...")
             self.btn_load.setEnabled(False)
 
-            scope = self._current_scope_kwargs()
+            scope = self._build_query_scope()
+            self._request_scope_signatures[current_request_id] = self._scope_signature(scope)
             offset = self._loaded_offset if append else 0
             self.worker = DBWorker(
                 self.db,
-                keyword=self.keyword,
-                filter_txt=scope["filter_txt"],
-                sort_mode=scope["sort_mode"],
-                only_bookmark=scope["only_bookmark"],
-                only_unread=scope["only_unread"],
-                hide_duplicates=scope["hide_duplicates"],
-                start_date=scope["start_date"],
-                end_date=scope["end_date"],
+                scope=scope,
                 limit=self.PAGE_SIZE,
                 offset=offset,
+                include_total=not append,
+                known_total_count=self._total_filtered_count if append else None,
             )
             self.worker.finished.connect(
                 lambda data, total_count, rid=current_request_id: self.on_data_loaded(
@@ -570,41 +744,57 @@ class NewsTab(QWidget):
     def on_data_loaded(self, data, total_count, request_id: Optional[int] = None):
         """데이터 로드 완료 시 호출"""
         if request_id is not None and request_id != self._load_request_id:
+            self._request_scope_signatures.pop(request_id, None)
             logger.info(f"PERF|ui.on_data_loaded.stale|0.00ms|kw={self.keyword}|rid={request_id}")
             return
 
         with perf_timer("ui.on_data_loaded", f"kw={self.keyword}|rows={len(data)}"):
+            scope_signature = None
+            if request_id is not None:
+                scope_signature = self._request_scope_signatures.pop(request_id, None)
             is_append = bool(request_id in self._pending_append_request_ids)
             if request_id is not None:
                 self._pending_append_request_ids.discard(request_id)
+            if scope_signature is None:
+                scope_signature = self._scope_signature(self._build_query_scope())
 
-            prepared_rows = [self._prepare_item(dict(item)) for item in data]
-            if is_append:
+            append_from_index: Optional[int] = None
+            prepared_rows = [dict(item) for item in data]
+            if is_append and scope_signature == self._last_loaded_scope_signature:
+                append_from_index = len(self.news_data_cache)
+                prepared_rows = self._index_items(prepared_rows)
                 self.news_data_cache.extend(prepared_rows)
+                if hasattr(self.browser, "set_preview_data"):
+                    self.browser.set_preview_data(dict(self._preview_data_cache))
             else:
+                prepared_rows = [self._prepare_item(item) for item in prepared_rows]
                 self.news_data_cache = prepared_rows
                 self._loaded_offset = 0
+                self._rebuild_item_indexes()
 
             self.filtered_data_cache = list(self.news_data_cache)
             self._loaded_offset = len(self.news_data_cache)
             self._rendered_count = len(self.filtered_data_cache)
             self._total_filtered_count = int(total_count or 0)
+            self._last_loaded_scope_signature = scope_signature
             self._last_filter_text = self._current_filter_text().lower()
-            self._rebuild_item_indexes()
             self._recount_unread_cache()
             self._data_version += 1
             self._last_render_signature = None
             self._is_loading_more = False
             self.btn_load.setEnabled(True)
-            self.render_html()
 
             if self.total_api_count <= 0 and self._total_filtered_count > self.total_api_count:
                 self.total_api_count = self._total_filtered_count
 
+            restore_scroll = None
             if is_append and self._pending_scroll_restore > 0:
-                scroll_pos = self._pending_scroll_restore
-                QTimer.singleShot(10, lambda: self._browser_scroll_bar().setValue(scroll_pos))
+                restore_scroll = self._pending_scroll_restore
             self._pending_scroll_restore = 0
+            self._schedule_render(
+                append_from_index=append_from_index,
+                restore_scroll=restore_scroll,
+            )
 
             parent = self._main_window()
             if parent is not None:
@@ -615,10 +805,13 @@ class NewsTab(QWidget):
     def on_data_error(self, err_msg, request_id: Optional[int] = None):
         """데이터 로드 오류 시 호출"""
         if request_id is not None and request_id != self._load_request_id:
+            self._request_scope_signatures.pop(request_id, None)
             return
         if request_id is not None:
             self._pending_append_request_ids.discard(request_id)
+            self._request_scope_signatures.pop(request_id, None)
         self._is_loading_more = False
+        self._pending_scroll_restore = 0
         self.lbl_status.setText(f"⚠️ 오류: {err_msg}")
         self.btn_load.setEnabled(True)
 
@@ -642,6 +835,16 @@ class NewsTab(QWidget):
 
     def _render_single_item(self, item: Dict[str, Any], filter_word: str, base_badges_html: str) -> str:
         """단일 뉴스 아이템 HTML 렌더링"""
+        link_hash = str(
+            item.get("_link_hash")
+            or (hashlib.md5(str(item.get("link", "") or "").encode()).hexdigest() if item.get("link") else "")
+        )
+        item["_link_hash"] = link_hash
+        cache_key = self._item_render_cache_key(item, filter_word)
+        cached_html = self._item_html_cache.get(cache_key)
+        if cached_html is not None:
+            return cached_html
+
         is_read_cls = " read" if item.get("is_read", 0) else ""
         is_dup_cls = " duplicate" if item.get("is_duplicate", 0) else ""
         title_pfx = "⭐ " if item.get("is_bookmarked", 0) else ""
@@ -649,11 +852,6 @@ class NewsTab(QWidget):
         item_link = item.get("link", "")
         item_title = item.get("title", "(제목 없음)")
         item_desc = item.get("description", "")
-        link_hash = item.get("_link_hash") or (hashlib.md5(item_link.encode()).hexdigest() if item_link else "")
-        item["_link_hash"] = link_hash
-
-        if hasattr(self.browser, "preview_data") and link_hash:
-            self.browser.preview_data[link_hash] = item_desc
 
         if filter_word:
             title = TextUtils.highlight_text(item_title, filter_word)
@@ -685,7 +883,7 @@ class NewsTab(QWidget):
         if item.get("is_duplicate", 0):
             badges += "<span class='duplicate-badge'>유사</span>"
 
-        return f"""
+        rendered = f"""
         <div class="news-item{is_read_cls}{is_dup_cls}">
             <a href="app://open/{link_hash}" class="title-link">{title_pfx}{title}</a>
             <div class="meta-info">
@@ -695,6 +893,8 @@ class NewsTab(QWidget):
             <div class="description">{desc}</div>
         </div>
         """
+        self._item_html_cache[cache_key] = rendered
+        return rendered
 
     def _get_load_more_html(self, remaining: int) -> str:
         """더 보기 버튼 HTML"""
@@ -714,65 +914,8 @@ class NewsTab(QWidget):
         """
 
     def render_html(self):
-        """HTML 렌더링 - Colors 헬퍼 사용 버전"""
-        with perf_timer("ui.render_html", f"kw={self.keyword}|rows={len(self.filtered_data_cache)}"):
-            scroll_pos = self._browser_scroll_bar().value()
-            is_dark = self.theme == 1
-            filter_word = self._current_filter_text()
-
-            render_signature = (
-                self.theme,
-                filter_word,
-                len(self.filtered_data_cache),
-                self._total_filtered_count,
-                self._data_version,
-            )
-            if render_signature == self._last_render_signature:
-                self.update_status_label()
-                return
-
-            if self.theme not in self._css_cache_by_theme:
-                colors = Colors.get_html_colors(is_dark)
-                self._css_cache_by_theme[self.theme] = AppStyle.HTML_TEMPLATE.format(**colors)
-            css = self._css_cache_by_theme[self.theme]
-
-            html_parts = [f"<html><head><meta charset='utf-8'>{css}</head><body>"]
-
-            if hasattr(self.browser, "set_preview_data"):
-                self.browser.set_preview_data({})
-
-            if not self.filtered_data_cache:
-                if self.is_bookmark_tab:
-                    msg = "<div class='empty-state-title'>⭐ 북마크</div>북마크된 기사가 없습니다.<br><br>기사 카드의 [북마크] 버튼을 눌러<br>중요한 기사를 저장하세요."
-                elif self.chk_unread.isChecked():
-                    msg = "<div class='empty-state-title'>✓ 완료!</div>모든 기사를 읽었습니다."
-                else:
-                    msg = "<div class='empty-state-title'>📰 뉴스</div>표시할 기사가 없습니다.<br><br>새로고침 버튼을 눌러 최신 뉴스를 가져오세요."
-                html_parts.append(f"<div class='empty-state'>{msg}</div>")
-            else:
-                items_to_render = self.filtered_data_cache
-                base_badges_html = self._get_keyword_badges_html()
-
-                for item in items_to_render:
-                    html_parts.append(self._render_single_item(item, filter_word, base_badges_html))
-
-                remaining = max(0, self._total_filtered_count - len(items_to_render))
-                if remaining > 0:
-                    html_parts.append(self._get_load_more_html(remaining))
-
-            html_parts.append("</body></html>")
-            self.browser.setHtml("".join(html_parts))
-            self._last_render_signature = (
-                self.theme,
-                filter_word,
-                len(self.filtered_data_cache),
-                self._total_filtered_count,
-                self._data_version,
-            )
-
-            if scroll_pos > 0:
-                QTimer.singleShot(0, lambda: self._browser_scroll_bar().setValue(scroll_pos))
-            self.update_status_label()
+        """Schedule an HTML render on the next event-loop tick."""
+        self._schedule_render()
 
     def append_items(self):
         """다음 DB 페이지를 로드한다."""
@@ -857,6 +1000,7 @@ class NewsTab(QWidget):
             return False
 
         target["is_read"] = 1 if now_read else 0
+        NewsTab._invalidate_item_render_cache(cast(Any, self), target)
         self._adjust_unread_cache(was_read, now_read)
         if self.chk_unread.isChecked() and now_read:
             self._remove_cached_target(target)
@@ -900,6 +1044,7 @@ class NewsTab(QWidget):
             new_val = 0 if target.get("is_bookmarked") else 1
             if self.db.update_status(link, "is_bookmarked", new_val):
                 target["is_bookmarked"] = new_val
+                NewsTab._invalidate_item_render_cache(cast(Any, self), target)
                 requires_refilter = False
                 if self.is_bookmark_tab and new_val == 0:
                     if not target.get("is_read", 0):
@@ -944,6 +1089,7 @@ class NewsTab(QWidget):
                 new_note = dialog.get_note()
                 if self.db.save_note(link, new_note):
                     target["notes"] = new_note
+                    NewsTab._invalidate_item_render_cache(cast(Any, self), target)
                     self._refresh_after_local_change()
                     parent = self._main_window()
                     if parent is not None:
@@ -1063,6 +1209,7 @@ class NewsTab(QWidget):
             new_val = 0 if target.get("is_bookmarked") else 1
             if self.db.update_status(link, "is_bookmarked", new_val):
                 target["is_bookmarked"] = new_val
+                NewsTab._invalidate_item_render_cache(cast(Any, self), target)
                 requires_refilter = False
                 if self.is_bookmark_tab and new_val == 0:
                     if not target.get("is_read", 0):
@@ -1087,6 +1234,7 @@ class NewsTab(QWidget):
             new_val = 0 if was_read else 1
             if self.db.update_status(link, "is_read", new_val):
                 target["is_read"] = new_val
+                NewsTab._invalidate_item_render_cache(cast(Any, self), target)
                 self._adjust_unread_cache(was_read, bool(new_val))
                 if self.chk_unread.isChecked() and bool(new_val):
                     self._remove_cached_target(target)
@@ -1105,6 +1253,7 @@ class NewsTab(QWidget):
                 new_note = dialog.get_note()
                 if self.db.save_note(link, new_note):
                     target["notes"] = new_note
+                    NewsTab._invalidate_item_render_cache(cast(Any, self), target)
                     self._refresh_after_local_change()
                     parent = self._main_window()
                     if parent is not None:
@@ -1142,6 +1291,9 @@ class NewsTab(QWidget):
         # 필터 타이머 정리
         if hasattr(self, 'filter_timer') and self.filter_timer:
             self.filter_timer.stop()
+        if hasattr(self, '_render_timer') and self._render_timer:
+            self._render_timer.stop()
+        self._request_scope_signatures.clear()
         
         # DB 워커 정리
         if hasattr(self, 'worker') and self.worker and self.worker.isRunning():

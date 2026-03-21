@@ -895,11 +895,11 @@ class MainApp(
             badge = " (99+)" if count > 99 else f" ({count})"
         return f"{self._tab_icon_for_keyword(normalized_keyword)} {normalized_keyword}{badge}"
 
-    def _schedule_badge_refresh(self, delay_ms: int = 200):
+    def _schedule_badge_refresh(self, delay_ms: int = 75):
         if not hasattr(self, "_badge_refresh_timer"):
             return
         if self._badge_refresh_timer.isActive():
-            return
+            self._badge_refresh_timer.stop()
         self._badge_refresh_timer.start(max(0, int(delay_ms)))
 
     def update_all_tab_badges(self):

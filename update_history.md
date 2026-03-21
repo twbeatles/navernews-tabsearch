@@ -1,6 +1,32 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Performance Refactor Pass (2026-03-21)**:
+  - DB worker/query contract:
+    - Added `DBQueryScope` so `NewsTab` computes the tab scope once and `DBWorker` consumes the normalized scope directly.
+    - Append pagination now skips `count_news(...)` and reuses `known_total_count`, while full reload/filter changes still execute `count_news(...) + fetch_news(...)`.
+  - News tab cache/rendering:
+    - Added `_item_by_link` for O(1) single-item state sync (`read`, `bookmark`, `note`, `delete`) by link.
+    - Switched `NewsTab` HTML rendering to fragment-cache reuse plus event-loop coalesced flush (`render_html()` schedules, `_flush_render()` applies).
+    - Append with an unchanged scope now extends the cached body HTML instead of rebuilding every card fragment.
+  - DB/index tuning:
+    - Added composite indexes for current query patterns: `news_keywords(query_key, keyword)`, `news_keywords(query_key, keyword, is_duplicate)`, and `news(is_bookmarked, is_read, pubDate_ts DESC)`.
+    - Legacy `news_keywords(link, keyword)` databases still rebuild into the query-key-aware schema before index creation.
+  - Added/updated tests:
+    - Added:
+      - `tests/test_news_tab_performance.py`
+    - Expanded:
+      - `tests/test_db_queries.py`
+      - `tests/test_dbworker_pagination.py`
+      - `tests/test_stability.py`
+  - Docs / packaging / repo hygiene:
+    - Synced `README.md`, `claude.md`, `gemini.md`, and `project_structure_analysis.md` to the current performance-oriented worker/render architecture.
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required for this pass.
+    - Re-reviewed `.gitignore`; existing runtime/build ignore rules still cover this pass.
+  - Validation:
+    - `python -m pytest -q` => `169 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Execution Risk Full Pass + Docs/Spec Review (2026-03-18)**:
   - Settings portability / import-export:
     - Export format bumped to `1.2`.

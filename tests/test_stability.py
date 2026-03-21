@@ -227,11 +227,13 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         src = Path('ui/main_window.py').read_text(encoding='utf-8')
         self.assertNotIn('search_keyword = keyword.split()[0] if keyword.split() else keyword', src)
 
-    def test_dbworker_has_no_extra_count_news_roundtrip(self):
+    def test_dbworker_gates_total_count_lookup_for_append(self):
         src = Path('core/workers.py').read_text(encoding='utf-8')
         start = src.index('class DBWorker')
         block = src[start:]
-        self.assertIn('total_count = self.db.count_news(', block)
+        self.assertIn('if self.include_total:', block)
+        self.assertIn('self.db.count_news(**self.scope.count_kwargs())', block)
+        self.assertIn('total_count = int(self.known_total_count or 0)', block)
         self.assertIn('limit=self.limit', block)
         self.assertIn('offset=self.offset', block)
 

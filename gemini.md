@@ -35,7 +35,7 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session capability Protocol
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
 │   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
@@ -54,7 +54,7 @@ navernews-tabsearch/
 │   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
-│   ├── news_tab.py              # NewsTab (개별 뉴스 탭)
+│   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog facade
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
@@ -83,8 +83,16 @@ navernews-tabsearch/
 ### 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `165 passed, 5 subtests passed`
+- `pytest -q` => `169 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
+
+### 2026-03-21 성능 리팩토링 메모
+
+- `core.workers.DBQueryScope`가 탭 조회 scope 계산을 단일화했고, append 경로는 `known_total_count`를 재사용해 `count_news(...)`를 다시 호출하지 않는다.
+- `ui.news_tab.NewsTab`은 `_item_by_link`로 단건 상태 변경을 O(1)에 찾고, fragment cache + event-loop coalesced render로 HTML flush를 줄인다.
+- `core._db_schema.init_db()`는 `news_keywords(query_key, keyword)`, `news_keywords(query_key, keyword, is_duplicate)`, `news(is_bookmarked, is_read, pubDate_ts DESC)` 복합 인덱스를 보장한다.
+- `tests/test_news_tab_performance.py`가 link index 유지, render coalescing, append body reuse를 회귀 테스트로 감시한다.
+- `news_scraper_pro.spec`는 2026-03-21 기준으로 재검토되었고, 이번 패스는 기존 번들 의존성만 사용하므로 추가 packaging 수정이 필요하지 않다.
 
 ### 핵심 클래스 계층
 
@@ -98,8 +106,8 @@ classDiagram
     }
     class NewsTab {
         +키워드별 뉴스 표시
-        +검색 필터
-        +읽음/북마크 상태
+        +fragment cache / coalesced render
+        +link 기반 상태 동기화
     }
     class DatabaseManager {
         +스레드 안전 DB 연결
@@ -114,7 +122,7 @@ classDiagram
     }
     class DBWorker {
         +QThread
-        +비동기 DB 조회
+        +DBQueryScope 기반 비동기 DB 조회
     }
     class WorkerRegistry {
         +요청 ID 기반 관리

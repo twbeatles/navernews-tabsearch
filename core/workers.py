@@ -7,13 +7,14 @@ import time
 import traceback
 import urllib.parse
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, cast
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import requests
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from core.protocols import ClosableProtocol, RequestGetProtocol
-from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
+from core.query_parser import build_fetch_key
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,38 @@ class AsyncJobWorker(QThread):
                 return
             self.error.emit(str(e))
             traceback.print_exc()
+
+
+@dataclass(frozen=True)
+class DBQueryScope:
+    keyword: str
+    filter_txt: str = ""
+    sort_mode: str = ""
+    only_bookmark: bool = False
+    only_unread: bool = False
+    hide_duplicates: bool = False
+    exclude_words: Tuple[str, ...] = field(default_factory=tuple)
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    query_key: Optional[str] = None
+
+    def count_kwargs(self) -> Dict[str, Any]:
+        return {
+            "keyword": self.keyword,
+            "only_bookmark": self.only_bookmark,
+            "only_unread": self.only_unread,
+            "hide_duplicates": self.hide_duplicates,
+            "filter_txt": self.filter_txt,
+            "exclude_words": list(self.exclude_words),
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+            "query_key": self.query_key,
+        }
+
+    def fetch_kwargs(self) -> Dict[str, Any]:
+        kwargs = self.count_kwargs()
+        kwargs["sort_mode"] = self.sort_mode
+        return kwargs
 
 
 class ApiWorker(QObject):
@@ -349,29 +382,19 @@ class DBWorker(QThread):
     def __init__(
         self,
         db_manager,
-        keyword: str,
-        filter_txt: str = "",
-        sort_mode: str = "최신순",
-        only_bookmark: bool = False,
-        only_unread: bool = False,
-        hide_duplicates: bool = False,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
+        scope: DBQueryScope,
         limit: Optional[int] = None,
         offset: int = 0,
+        include_total: bool = True,
+        known_total_count: Optional[int] = None,
     ):
         super().__init__()
         self.db = db_manager
-        self.keyword = keyword
-        self.filter_txt = filter_txt
-        self.sort_mode = sort_mode
-        self.only_bookmark = only_bookmark
-        self.only_unread = only_unread
-        self.hide_duplicates = hide_duplicates
-        self.start_date = start_date
-        self.end_date = end_date
+        self.scope = scope
         self.limit = limit
         self.offset = offset
+        self.include_total = include_total
+        self.known_total_count = known_total_count
         self._is_cancelled = False
 
     def stop(self):
@@ -381,48 +404,28 @@ class DBWorker(QThread):
 
     def run(self):
         try:
-            with perf_timer("ui.dbworker.run", f"raw_kw={self.keyword}|bookmark={int(self.only_bookmark)}"):
+            with perf_timer(
+                "ui.dbworker.run",
+                f"kw={self.scope.keyword}|bookmark={int(self.scope.only_bookmark)}|include_total={int(self.include_total)}",
+            ):
                 if self._is_cancelled:
                     return
 
-                search_keyword, exclude_words = parse_search_query(self.keyword)
-                db_keyword, _ = parse_tab_query(self.keyword)
-                query_key = build_fetch_key(search_keyword, exclude_words)
-                if self.only_bookmark:
-                    search_keyword = ""
-
-                if not search_keyword and not self.only_bookmark:
+                if not self.scope.only_bookmark and not str(self.scope.keyword or "").strip():
                     self.finished.emit([], 0)
                     return
 
-                total_count = self.db.count_news(
-                    keyword=db_keyword or search_keyword,
-                    only_bookmark=self.only_bookmark,
-                    only_unread=self.only_unread,
-                    hide_duplicates=self.hide_duplicates,
-                    filter_txt=self.filter_txt,
-                    exclude_words=exclude_words,
-                    start_date=self.start_date,
-                    end_date=self.end_date,
-                    query_key=None if self.only_bookmark else query_key,
-                )
+                total_count = int(self.known_total_count or 0)
+                if self.include_total:
+                    total_count = self.db.count_news(**self.scope.count_kwargs())
 
                 if self._is_cancelled:
                     return
 
                 data = self.db.fetch_news(
-                    keyword=db_keyword or search_keyword,
-                    filter_txt=self.filter_txt,
-                    sort_mode=self.sort_mode,
-                    only_bookmark=self.only_bookmark,
-                    only_unread=self.only_unread,
-                    hide_duplicates=self.hide_duplicates,
-                    exclude_words=exclude_words,
-                    start_date=self.start_date,
-                    end_date=self.end_date,
                     limit=self.limit,
                     offset=self.offset,
-                    query_key=None if self.only_bookmark else query_key,
+                    **self.scope.fetch_kwargs(),
                 )
 
                 if self._is_cancelled:
