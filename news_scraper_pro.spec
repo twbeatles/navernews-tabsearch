@@ -35,6 +35,10 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   NewsTab fragment-cache/coalesced render, and query-path composite indexes
 #   rely on stdlib / already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-03-24 review:
+# - Docs/build revalidation for the 2026-03-21 performance pass confirmed the
+#   same dependency surface; no additional hidden import/exclude/data change is
+#   required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

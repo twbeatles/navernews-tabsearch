@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16
+작성일: 2026-03-16 (최근 갱신: 2026-03-24)
 
 ## 분석 범위
 
@@ -16,6 +16,15 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-03-24 문서/패키징 재검증
+
+이번 재검증에서는 성능 리팩토링 이후 패키징/문서 기준이 실제 저장소 상태와 계속 일치하는지 다시 점검했다.
+
+- `news_scraper_pro.spec`는 2026-03-24 기준 재검토되었고, `DBQueryScope`, append skip-count, fragment cache/coalesced render, 복합 인덱스 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
+- `.gitignore`는 `build/`, `dist/`, 런타임 DB 파일, 복원 스테이징 잔여물을 이미 무시하고 있어 이번 배치에서도 추가 규칙이 필요하지 않았다.
+- `README.md`, `claude.md`, `gemini.md`, `update_history.md`의 검증 기준/패키징 메모를 다시 대조해 현재 아키텍처 설명과 맞췄다.
+- 2026-03-24 기준 클린 빌드 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`가 다시 성공했고, 산출물은 `dist/NewsScraperPro_Safe.exe`다.
 
 ## 0. 2026-03-18 실행형 리스크 전면 수정 반영
 

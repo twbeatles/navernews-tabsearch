@@ -239,6 +239,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 실행형 리스크 전면 수정(2026-03-18)에서도 `.spec`을 다시 재검토했으며, 유지보수 모드, DB 기반 로컬 페이지네이션, 백업 복원 가능 메타, export/import 1.2는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 성능 최적화 리팩토링(2026-03-21)에서도 `.spec`을 다시 재검토했으며, `DBQueryScope`, append skip-count, `NewsTab` fragment cache/coalesced render, 복합 인덱스 추가는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - 2026-03-21 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드를 다시 검증했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-03-24 기준으로도 `.spec`과 `.gitignore`를 다시 재검토했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 성공해 추가 packaging/ignore 수정이 필요하지 않음을 재확인했습니다.
 
 ## 네이버 API 키 설정
 

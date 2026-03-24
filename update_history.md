@@ -1,6 +1,15 @@
 ﻿# Update History
 
 ## v32.7.2 (Unreleased)
+- **Docs / Packaging Revalidation (2026-03-24)**:
+  - Docs / packaging / repo hygiene:
+    - Re-reviewed `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, and `update_history.md` against the current worker/render architecture.
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required beyond the 2026-03-21 performance pass.
+    - Re-reviewed `.gitignore`; existing runtime/build ignore rules still cover this pass.
+  - Validation:
+    - `python -m pytest -q` => `169 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Performance Refactor Pass (2026-03-21)**:
   - DB worker/query contract:
     - Added `DBQueryScope` so `NewsTab` computes the tab scope once and `DBWorker` consumes the normalized scope directly.

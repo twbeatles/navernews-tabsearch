@@ -85,6 +85,7 @@ navernews-tabsearch/
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `pytest -q` => `169 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-24 기준 다시 성공했다.
 
 ### 2026-03-21 성능 리팩토링 메모
 
@@ -93,6 +94,13 @@ navernews-tabsearch/
 - `core._db_schema.init_db()`는 `news_keywords(query_key, keyword)`, `news_keywords(query_key, keyword, is_duplicate)`, `news(is_bookmarked, is_read, pubDate_ts DESC)` 복합 인덱스를 보장한다.
 - `tests/test_news_tab_performance.py`가 link index 유지, render coalescing, append body reuse를 회귀 테스트로 감시한다.
 - `news_scraper_pro.spec`는 2026-03-21 기준으로 재검토되었고, 이번 패스는 기존 번들 의존성만 사용하므로 추가 packaging 수정이 필요하지 않다.
+
+### 2026-03-24 문서/패키징 재검증 메모
+
+- `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`를 현재 구조/검증 기준과 다시 대조한다.
+- `news_scraper_pro.spec`는 2026-03-24 기준 재검토되었고, 2026-03-21 성능 리팩토링 이후에도 추가 hidden import/exclude/data 수정이 필요하지 않다.
+- `.gitignore`는 `build/`, `dist/`, 런타임 DB/복구 잔여물을 이미 무시하므로 이번 패스에서 추가 규칙이 필요하지 않다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했고, 산출물은 `dist/NewsScraperPro_Safe.exe`다.
 
 ### 핵심 클래스 계층
 
@@ -278,7 +286,7 @@ python news_scraper_pro.py
 
 ### PyInstaller 빌드
 ```bash
-pyinstaller news_scraper_pro.spec
+pyinstaller --noconfirm --clean news_scraper_pro.spec
 ```
 
 ### 디버깅 모드
