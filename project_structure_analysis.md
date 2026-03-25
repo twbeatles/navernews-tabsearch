@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-03-24)
+작성일: 2026-03-16 (최근 갱신: 2026-03-25)
 
 ## 분석 범위
 
@@ -16,6 +16,18 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-03-25 운영 안정화/문서 재검증
+
+이번 재검증에서는 2026-03-25 운영 안정화 패스가 실제 저장소 구조, 문서, 패키징 기준과 계속 일치하는지 다시 확인했다.
+
+- CSV export는 이제 `IterativeJobWorker`를 통해 UI 스레드 밖에서 청크 기반으로 DB를 순회하고, `*.tmp`에 저장한 뒤 atomic rename으로 마무리된다.
+- 백업 목록은 quick metadata 이후 background full verification을 수행하며, config JSON parse, DB payload 존재 여부, SQLite integrity check, sidecar 정책 검사까지 포함한다.
+- 자동 시작은 단순 on/off가 아니라 `StartupManager.get_startup_status()` 기준의 health 상태(`정상/수리 필요/비활성화`)를 가지며, 설정 창에서 repair를 직접 수행할 수 있다.
+- 설정 저장은 main config와 `.backup` 회전을 모두 atomic하게 수행하고, SQLite emergency connection은 상한과 rejection logging을 갖는다.
+- `news_scraper_pro.spec`는 2026-03-25 기준 다시 재검토되었고, `IterativeJobWorker`, backup verification, startup health/repair, config rotation, DB emergency cap 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
+- `.gitignore`는 기존 build/dist/runtime 산출물 외에 로컬 회귀 테스트용 `.pytest_tmp/`를 명시적으로 무시하도록 보강했다.
+- 문서 기준 현재 검증선은 `pytest -q` => `180 passed, 5 subtests passed`이며, `pyinstaller --noconfirm --clean news_scraper_pro.spec`도 2026-03-25 기준 다시 성공했다.
 
 ## 0. 2026-03-24 문서/패키징 재검증
 
@@ -39,7 +51,7 @@
 - 설정 export/import는 `1.2` 기준이며 API 자격증명은 제외하고 `settings.auto_start_enabled`는 포함한다.
 - 설정 창 데이터 정리 전에는 앱 전역 유지보수 모드가 활성화되며, active fetch 취소와 새 fetch 진입 차단이 함께 적용된다.
 - 백업 목록은 이제 `is_restorable`, `restore_error` 메타를 포함해 UI에서 복원 가능 여부를 사전 표시한다.
-- 현재 검증 기준은 `python -m pytest -q` 기준 `169 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
+- 현재 검증 기준은 `python -m pytest -q` 기준 `180 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
 
 ## 0. 2026-03-16 기능 감사 후속 반영
 
@@ -51,7 +63,7 @@
 - 탭 dedupe, 탭 리네임 충돌 판정, 설정 import dedupe, 검색 이력 dedupe는 모두 `canonical query` 기준으로 통일되었다.
 - CSV 내보내기는 2026-03-16 시점의 visible-only 경로를 거쳐, 현재는 "현재 탭 필터 조건 전체 결과"를 DB에서 다시 조회해 저장하는 방식으로 정착되었다.
 - 시작 시 자동 백업은 계속 설정만 저장하며, DB 복원 지점은 수동 백업(DB 포함)으로 만들도록 UI/문서가 맞춰졌다.
-- 현재 검증 기준은 최신 배치 기준 `python -m pytest -q` => `169 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
+- 현재 검증 기준은 최신 배치 기준 `python -m pytest -q` => `180 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
 
 ## 0. 2026-03-12 리팩토링 반영 상태
 
@@ -166,18 +178,18 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 |---|---|
 | `core/bootstrap.py` | 앱 시작, 단일 인스턴스, 예외 처리, 복원 적용 |
 | `core/constants.py` | 앱 경로, 파일명, 버전 상수 |
-| `core/config_store.py` | 설정 TypedDict, 로드 정규화, 원자 저장, import 보정, DPAPI |
+| `core/config_store.py` | 설정 TypedDict, 로드 정규화, 원자 저장/.backup 회전, import 보정, DPAPI |
 | `core/database.py` | `DatabaseManager` facade, 연결 풀 수명 주기 |
 | `core/_db_schema.py` | DB 초기화, 마이그레이션, 무결성 검사, 복구 |
 | `core/_db_duplicates.py` | 제목 해시, 중복 플래그 계산/복구 |
 | `core/_db_queries.py` | 조회, count, unread 집계 |
 | `core/_db_mutations.py` | upsert, 상태 변경, 삭제, mark-read |
 | `core/_db_analytics.py` | 통계, 언론사별 집계 |
-| `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker`, `DBQueryScope` |
+| `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker`, `IterativeJobWorker`, `DBQueryScope` |
 | `core/worker_registry.py` | 요청 ID 기반 워커 활성 상태 관리 |
 | `core/query_parser.py` | 검색어 파싱 정책의 단일 기준 |
-| `core/backup.py` | 백업 생성, 복원 예약, pending restore staging/rollback |
-| `core/startup.py` | Windows 시작프로그램 레지스트리 제어 |
+| `core/backup.py` | 백업 생성, 검증, 복원 예약, pending restore staging/rollback |
+| `core/startup.py` | 자동 시작 상태 진단 + Windows 시작프로그램 레지스트리 제어 |
 | `core/keyword_groups.py` | 키워드 그룹 저장/병합/마이그레이션 |
 | `core/text_utils.py` | 날짜 파싱, HTML/강조, LRU 캐시, perf timer |
 | `core/validation.py` | API 키/키워드 입력 검증 |
@@ -235,8 +247,8 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 설정/정규화: `test_settings_roundtrip.py`, `test_import_settings_*`, `test_config_secret_storage.py`
 - 검색/페이지네이션: `test_query_parser_search_policy.py`, `test_pagination_state_persistence.py`, `test_load_more_total_guard.py`
 - 단일 인스턴스/시작: `test_single_instance_guard.py`, `test_start_minimized_guard.py`, `test_startup_registry_command.py`
-- 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`
-- 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_news_tab_performance.py`, `test_settings_dialog_maintenance.py`
+- 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`, `test_stabilization_round1.py`
+- 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_news_tab_performance.py`, `test_settings_dialog_maintenance.py`, `test_stabilization_round1.py`
 - 문서/버전/인코딩 가드: `test_version_history_guard.py`, `test_encoding_smoke.py`
 
 즉, 새 기능 추가 시 테스트를 처음부터 새로 짜는 것보다, **기존 계약을 안 깨뜨리는 테스트를 같이 확장**하는 방식이 맞다.

@@ -3,6 +3,8 @@ from typing import Dict, Optional, cast
 from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QTabWidget, QVBoxLayout
 
+from core.startup import StartupManager
+from core.startup import StartupStatus
 from core.validation import ValidationUtils
 from core.workers import AsyncJobWorker
 from ui._settings_dialog_content import _SettingsDialogContentMixin
@@ -28,6 +30,7 @@ class SettingsDialog(
         self._data_task_worker: Optional[AsyncJobWorker] = None
         self._is_closing = False
         self._maintenance_active_for_data_task = False
+        self._startup_status: Optional[StartupStatus] = None
         self.is_dark = False
         if parent and hasattr(parent, "theme_idx"):
             self.is_dark = parent.theme_idx == 1
@@ -49,6 +52,75 @@ class SettingsDialog(
         if not all(hasattr(candidate, attr) for attr in required_attrs):
             return None
         return cast(SettingsDialogParentProtocol, candidate)
+
+    def refresh_startup_status(self):
+        if not hasattr(self, "lbl_auto_start_status"):
+            return
+
+        if not hasattr(self, "btn_repair_auto_start"):
+            return
+
+        if not hasattr(self, "chk_auto_start"):
+            return
+
+        if not StartupManager.is_available():
+            self._startup_status = None
+            self.lbl_auto_start_status.setText("자동 시작 상태: Windows 환경에서만 지원됩니다.")
+            self.btn_repair_auto_start.setEnabled(False)
+            return
+
+        desired_minimized = bool(
+            hasattr(self, "chk_start_minimized") and self.chk_start_minimized.isChecked()
+        )
+        status = StartupManager.get_startup_status(start_minimized=desired_minimized)
+        self._startup_status = status
+
+        if not self.chk_auto_start.isChecked():
+            if status.get("has_registry_value"):
+                self.lbl_auto_start_status.setText(
+                    "자동 시작 상태: 기존 등록이 남아 있습니다. 저장하면 해제됩니다."
+                )
+            else:
+                self.lbl_auto_start_status.setText("자동 시작 상태: 비활성화됨")
+            self.btn_repair_auto_start.setEnabled(False)
+            return
+
+        if status.get("is_healthy"):
+            self.lbl_auto_start_status.setText("자동 시작 상태: 정상")
+            self.btn_repair_auto_start.setEnabled(False)
+            return
+
+        if status.get("has_registry_value"):
+            reasons = []
+            if not status.get("command_matches"):
+                reasons.append("명령 불일치")
+            if status.get("actual_target") and not status.get("target_exists"):
+                reasons.append("대상 경로 없음")
+            reason_text = ", ".join(reasons) if reasons else "상태 불일치"
+            self.lbl_auto_start_status.setText(f"자동 시작 상태: 수리 필요 ({reason_text})")
+            self.btn_repair_auto_start.setEnabled(True)
+            return
+
+        self.lbl_auto_start_status.setText("자동 시작 상태: 저장하면 등록됩니다.")
+        self.btn_repair_auto_start.setEnabled(False)
+
+    def repair_startup_registration(self):
+        if not StartupManager.is_available():
+            QMessageBox.warning(self, "자동 시작", "Windows 환경에서만 자동 시작 수리를 지원합니다.")
+            return
+
+        if not hasattr(self, "chk_auto_start") or not self.chk_auto_start.isChecked():
+            QMessageBox.information(self, "자동 시작", "먼저 '윈도우 시작 시 자동 실행'을 켜주세요.")
+            return
+
+        desired_minimized = bool(
+            hasattr(self, "chk_start_minimized") and self.chk_start_minimized.isChecked()
+        )
+        if StartupManager.enable_startup(desired_minimized):
+            QMessageBox.information(self, "자동 시작", "자동 시작 등록을 현재 설정 기준으로 다시 작성했습니다.")
+        else:
+            QMessageBox.warning(self, "자동 시작", "자동 시작 등록 수리에 실패했습니다.")
+        self.refresh_startup_status()
 
     def setup_ui(self):
         """테마 적용 UI 설정"""

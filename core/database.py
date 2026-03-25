@@ -26,14 +26,22 @@ class DatabaseManager(
 ):
     """스레드 안전한 데이터베이스 매니저 (연결 풀 사용)"""
 
-    def __init__(self, db_file: str, max_connections: int = 10):
+    def __init__(
+        self,
+        db_file: str,
+        max_connections: int = 10,
+        max_emergency_connections: int = 2,
+    ):
         self.db_file = db_file
         self.max_connections = max_connections
+        self.max_emergency_connections = max(0, int(max_emergency_connections))
         self.connection_pool = Queue(maxsize=max_connections)
         self._lock = threading.Lock()
         self._active_connections = 0
         self._closed = False
         self._emergency_connections = set()
+        self._emergency_connection_uses = 0
+        self._emergency_connection_rejections = 0
 
         if os.path.exists(self.db_file):
             if not self._check_integrity():
@@ -58,9 +66,29 @@ class DatabaseManager(
         except Exception as e:
             logger.warning(f"DB 연결 획득 실패 (timeout={timeout}s): {e}")
             logger.warning(f"활성 연결 수: {self._active_connections}/{self.max_connections}")
+            with self._lock:
+                active_emergency = len(self._emergency_connections)
+                if active_emergency >= self.max_emergency_connections:
+                    self._emergency_connection_rejections += 1
+                    logger.error(
+                        "DB emergency connection cap exceeded: active=%s/%s, rejects=%s",
+                        active_emergency,
+                        self.max_emergency_connections,
+                        self._emergency_connection_rejections,
+                    )
+                    raise RuntimeError("Database connection pool exhausted") from e
             conn = self._create_connection()
             with self._lock:
                 self._emergency_connections.add(id(conn))
+                self._emergency_connection_uses += 1
+                emergency_use_no = self._emergency_connection_uses
+                active_emergency = len(self._emergency_connections)
+            logger.warning(
+                "비상 DB 연결 사용: #%s (active=%s/%s)",
+                emergency_use_no,
+                active_emergency,
+                self.max_emergency_connections,
+            )
             return conn
 
     @contextmanager
@@ -118,6 +146,12 @@ class DatabaseManager(
             emergency_count = len(self._emergency_connections)
             if emergency_count > 0:
                 logger.warning(f"비상 연결 {emergency_count}개가 정리되지 않고 남아있음")
+            if self._emergency_connection_uses > 0 or self._emergency_connection_rejections > 0:
+                logger.warning(
+                    "비상 연결 통계: uses=%s, rejects=%s",
+                    self._emergency_connection_uses,
+                    self._emergency_connection_rejections,
+                )
             self._emergency_connections.clear()
 
         try:

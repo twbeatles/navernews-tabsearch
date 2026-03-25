@@ -50,18 +50,26 @@ class TestSettingsImportExportPortability(unittest.TestCase):
 
         with mock.patch("ui._main_window_settings_io.StartupManager.is_available", return_value=True):
             with mock.patch("ui._main_window_settings_io.StartupManager.enable_startup", return_value=True) as enable_mock:
-                normalized_settings = {"auto_start_enabled": True, "start_minimized": True}
-                warnings = []
-                dummy._reconcile_startup_state_from_import(normalized_settings, warnings)
-                enable_mock.assert_called_once_with(True)
-                self.assertEqual(warnings, [])
+                with mock.patch(
+                    "ui._main_window_settings_io.StartupManager.get_startup_status",
+                    return_value={"is_healthy": True, "has_registry_value": True},
+                ):
+                    normalized_settings = {"auto_start_enabled": True, "start_minimized": True}
+                    warnings = []
+                    dummy._reconcile_startup_state_from_import(normalized_settings, warnings)
+                    enable_mock.assert_called_once_with(True)
+                    self.assertEqual(warnings, [])
 
             with mock.patch("ui._main_window_settings_io.StartupManager.disable_startup", return_value=True) as disable_mock:
-                normalized_settings = {"auto_start_enabled": False, "start_minimized": False}
-                warnings = []
-                dummy._reconcile_startup_state_from_import(normalized_settings, warnings)
-                disable_mock.assert_called_once_with()
-                self.assertEqual(warnings, [])
+                with mock.patch(
+                    "ui._main_window_settings_io.StartupManager.get_startup_status",
+                    return_value={"is_healthy": False, "has_registry_value": False},
+                ):
+                    normalized_settings = {"auto_start_enabled": False, "start_minimized": False}
+                    warnings = []
+                    dummy._reconcile_startup_state_from_import(normalized_settings, warnings)
+                    disable_mock.assert_called_once_with()
+                    self.assertEqual(warnings, [])
 
 
 if __name__ == "__main__":

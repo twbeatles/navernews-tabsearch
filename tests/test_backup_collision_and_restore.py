@@ -1,5 +1,6 @@
 import datetime
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +20,17 @@ class _FixedDateTime(datetime.datetime):
 
 
 class TestBackupCollisionAndRestore(unittest.TestCase):
+    @staticmethod
+    def _create_sqlite_db(path: Path, value: str) -> bytes:
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute("CREATE TABLE sample (value TEXT)")
+            conn.execute("INSERT INTO sample(value) VALUES (?)", (value,))
+            conn.commit()
+        finally:
+            conn.close()
+        return path.read_bytes()
+
     def test_create_backup_retries_on_name_collision(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -70,7 +82,7 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
             cfg = root / "config.json"
             db = root / "db.sqlite"
             cfg.write_text("{}", encoding="utf-8")
-            db.write_text("live-db", encoding="utf-8")
+            live_db_bytes = self._create_sqlite_db(db, "live-db")
             Path(str(db) + "-wal").write_text("live-wal", encoding="utf-8")
             Path(str(db) + "-shm").write_text("live-shm", encoding="utf-8")
 
@@ -79,12 +91,14 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
             backup_dir.mkdir(parents=True, exist_ok=True)
             (backup_dir / cfg.name).write_text("{}", encoding="utf-8")
             backup_db = backup_dir / db.name
-            backup_db.write_text("backup-db", encoding="utf-8")
+            backup_db_bytes = self._create_sqlite_db(backup_db, "backup-db")
             Path(str(backup_db) + "-wal").write_text("backup-wal", encoding="utf-8")
 
-            ok = backup.restore_backup("backup_sidecar_policy", restore_db=True)
+            with mock.patch.object(backup_module, "_validate_sqlite_backup", return_value=""):
+                ok = backup.restore_backup("backup_sidecar_policy", restore_db=True)
             self.assertTrue(ok)
-            self.assertEqual(db.read_text(encoding="utf-8"), "backup-db")
+            self.assertNotEqual(db.read_bytes(), live_db_bytes)
+            self.assertEqual(db.read_bytes(), backup_db_bytes)
             self.assertEqual(Path(str(db) + "-wal").read_text(encoding="utf-8"), "backup-wal")
             self.assertFalse(Path(str(db) + "-shm").exists())
 
@@ -94,13 +108,13 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
             cfg = root / "config.json"
             db = root / "db.sqlite"
             cfg.write_text('{"app_settings":{"v":1}}', encoding="utf-8")
-            db.write_text("live-db", encoding="utf-8")
+            live_db_bytes = self._create_sqlite_db(db, "live-db")
 
             backup = AutoBackup(config_file=str(cfg), db_file=str(db))
             backup_dir = Path(backup.backup_dir) / "backup_apply_fail"
             backup_dir.mkdir(parents=True, exist_ok=True)
             (backup_dir / cfg.name).write_text('{"app_settings":{"v":2}}', encoding="utf-8")
-            (backup_dir / db.name).write_text("backup-db", encoding="utf-8")
+            self._create_sqlite_db(backup_dir / db.name, "backup-db")
 
             original_atomic_copy = backup_module._atomic_copy_replace
             call_counter = {"count": 0}
@@ -123,4 +137,4 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
                 json.loads(cfg.read_text(encoding="utf-8")),
                 {"app_settings": {"v": 1}},
             )
-            self.assertEqual(db.read_text(encoding="utf-8"), "live-db")
+            self.assertEqual(db.read_bytes(), live_db_bytes)

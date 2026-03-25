@@ -60,6 +60,7 @@ from core.config_store import (
     load_config_file,
     normalize_import_settings,
     resolve_client_secret_for_runtime,
+    save_primary_config_file,
     save_config_file_atomic,
 )
 from core.constants import (
@@ -86,7 +87,7 @@ from core.startup import StartupManager
 from core.text_utils import RE_HTML_TAGS, perf_timer
 from core.validation import ValidationUtils
 from core.worker_registry import WorkerHandle, WorkerRegistry
-from core.workers import ApiWorker
+from core.workers import ApiWorker, IterativeJobWorker
 from ui.dialogs import BackupDialog, KeywordGroupDialog, LogViewerDialog
 from ui._main_window_analysis import _MainWindowAnalysisMixin
 from ui._main_window_fetch import _MainWindowFetchMixin
@@ -208,6 +209,9 @@ class MainApp(
             self._fetch_total_by_key: Dict[str, int] = {}
             self._request_start_index: Dict[int, int] = {}
             self._query_key_migration_hints_shown: set[str] = set()
+            self._export_worker: Optional[IterativeJobWorker] = None
+            self._export_target_path: str = ""
+            self._export_cancel_requested = False
             
             # 알림 관련 설정
             self.notification_enabled = True  # 데스크톱 알림 활성화
@@ -629,6 +633,9 @@ class MainApp(
             for fetch_key, total in (raw_pagination_totals.items() if isinstance(raw_pagination_totals, dict) else [])
             if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
         }
+        if StartupManager.is_available():
+            startup_status = StartupManager.get_startup_status(start_minimized=self.start_minimized)
+            self.auto_start_enabled = bool(startup_status.get("is_healthy", False))
 
     def save_config(self):
         """설정 저장"""
@@ -675,16 +682,7 @@ class MainApp(
         }
         
         try:
-            if os.path.exists(CONFIG_FILE):
-                backup_file = CONFIG_FILE + ".backup"
-                try:
-                    with open(CONFIG_FILE, "r", encoding="utf-8") as src:
-                        with open(backup_file, "w", encoding="utf-8") as dst:
-                            dst.write(src.read())
-                except Exception as backup_err:
-                    logger.warning(f"설정 백업 복사 생략됨 (Config backup copy skipped): {backup_err}")
-
-            save_config_file_atomic(CONFIG_FILE, data)
+            save_primary_config_file(CONFIG_FILE, data)
         except Exception as e:
             logger.error(f"설정 저장 오류 (Config Save Error): {e}")
             QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(e)}")

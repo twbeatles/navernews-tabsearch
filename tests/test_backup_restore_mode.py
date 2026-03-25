@@ -52,6 +52,7 @@ class _FakeAutoBackup:
         self.backup_dir = backup_dir
         self.db_file = db_file
         self.calls = []
+        self.verify_calls = []
         self.backups = []
 
     def schedule_restore(self, backup_name: str, restore_db: bool = True):
@@ -61,9 +62,43 @@ class _FakeAutoBackup:
     def get_backup_list(self):
         return list(self.backups)
 
-    def create_backup(self, include_db: bool = True):
+    def create_backup(self, include_db: bool = True, trigger: str = "manual"):
         self.calls.append(("create_backup", bool(include_db)))
-        return None
+        return str(Path(self.backup_dir) / "safeguard_backup")
+
+    def verify_backup_by_name(self, backup_name: str, require_db: bool = True):
+        self.verify_calls.append((backup_name, bool(require_db)))
+        for backup in self.backups:
+            current_name = str(backup.get("name", "") or backup.get("backup_name", ""))
+            if current_name == backup_name:
+                entry = dict(backup)
+                break
+        else:
+            entry = {
+                "name": backup_name,
+                "backup_name": backup_name,
+                "include_db": bool(require_db),
+            }
+
+        is_corrupt = bool(entry.get("is_corrupt", False))
+        entry.setdefault("is_restorable", not is_corrupt)
+        entry.setdefault("restore_error", "")
+        entry.setdefault("error", "")
+        entry.setdefault("verification_state", "verified")
+        entry.setdefault("verification_error", "")
+        return entry
+
+    def delete_backup(self, backup_name: str):
+        backup_path = Path(self.backup_dir) / backup_name
+        if backup_path.exists():
+            for child in backup_path.iterdir():
+                if child.is_file():
+                    child.unlink()
+                elif child.is_dir():
+                    child.rmdir()
+            backup_path.rmdir()
+            return True, ""
+        return False, "missing backup"
 
 
 class _DummyDialog:
@@ -72,6 +107,16 @@ class _DummyDialog:
         self.auto_backup = auto_backup
         self.format_backup_timestamp = BackupDialog.format_backup_timestamp
         self.load_backups = lambda: None
+        self._backup_item_text = lambda backup: BackupDialog._backup_item_text(cast(Any, self), backup)
+        self._backup_item_meta = lambda backup: BackupDialog._backup_item_meta(cast(Any, self), backup)
+        self._apply_backup_item_state = (
+            lambda item, backup: BackupDialog._apply_backup_item_state(cast(Any, self), item, backup)
+        )
+        self._handle_corrupt_backup = (
+            lambda backup_name, corrupt_error: BackupDialog._handle_corrupt_backup(
+                cast(Any, self), backup_name, corrupt_error
+            )
+        )
 
 
 class TestBackupRestoreMode(unittest.TestCase):
@@ -86,7 +131,8 @@ class TestBackupRestoreMode(unittest.TestCase):
             with mock.patch.object(QMessageBox, "information"):
                 BackupDialog.restore_backup(cast(Any, dialog))
 
-        self.assertEqual(auto_backup.calls, [("backup_meta", False)])
+        self.assertEqual(auto_backup.verify_calls, [("backup_meta", False)])
+        self.assertEqual(auto_backup.calls, [("create_backup", False), ("backup_meta", False)])
 
     def test_restore_backup_legacy_fallback_detects_db_file(self):
         with tempfile.TemporaryDirectory() as td:
@@ -109,7 +155,8 @@ class TestBackupRestoreMode(unittest.TestCase):
                 with mock.patch.object(QMessageBox, "information"):
                     BackupDialog.restore_backup(cast(Any, dialog))
 
-            self.assertEqual(auto_backup.calls, [(backup_name, True)])
+            self.assertEqual(auto_backup.verify_calls, [(backup_name, True)])
+            self.assertEqual(auto_backup.calls, [("create_backup", True), (backup_name, True)])
 
     def test_backup_cleanup_keeps_manual_backups_when_auto_backups_rotate(self):
         with tempfile.TemporaryDirectory() as td:
@@ -158,13 +205,20 @@ class TestBackupRestoreMode(unittest.TestCase):
         self.assertEqual(
             dialog.backup_list.item(0).data(None),
             {
+                "name": "backup_1",
                 "backup_name": "backup_1",
+                "path": "",
+                "timestamp": "20260306_101530_123456",
+                "app_version": "32.7.2",
                 "include_db": True,
                 "trigger": "auto",
+                "created_at": "2026-03-06T10:15:30",
                 "is_corrupt": False,
                 "error": "",
                 "is_restorable": True,
                 "restore_error": "",
+                "verification_state": "pending",
+                "verification_error": "",
             },
         )
 
@@ -217,13 +271,20 @@ class TestBackupRestoreMode(unittest.TestCase):
         self.assertEqual(
             dialog.backup_list.item(0).data(None),
             {
+                "name": "backup_broken",
                 "backup_name": "backup_broken",
+                "path": "",
+                "timestamp": "20260307_010203_000000",
+                "app_version": "32.7.2",
                 "include_db": False,
                 "trigger": "manual",
+                "created_at": "2026-03-07T01:02:03",
                 "is_corrupt": True,
                 "error": "invalid json",
                 "is_restorable": False,
                 "restore_error": "",
+                "verification_state": "pending",
+                "verification_error": "",
             },
         )
 

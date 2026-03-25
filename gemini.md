@@ -7,7 +7,7 @@
 | 항목 | 값 |
 |------|-----|
 | **프로젝트명** | 뉴스 스크래퍼 Pro |
-| **버전** | v32.7.2 |
+| **버전** | v32.7.3 |
 | **언어** | Python 3.10+ (개발/검증 기준 3.14) |
 | **GUI 프레임워크** | PyQt6 |
 | **주요 기능** | 네이버 뉴스 API 기반 탭 브라우징 뉴스 스크래퍼 |
@@ -27,7 +27,7 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # 경로/버전/앱 상수
-│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
+│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
@@ -35,12 +35,12 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session capability Protocol
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/DBQueryScope
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
-│   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
+│   ├── backup.py                # AutoBackup/backup verification/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
-│   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
+│   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
 │   ├── logging_setup.py         # configure_logging
 │   ├── notifications.py         # NotificationSound
@@ -83,9 +83,9 @@ navernews-tabsearch/
 ### 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `169 passed, 5 subtests passed`
+- `pytest -q` => `180 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-24 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-25 기준 다시 성공했다.
 
 ### 2026-03-21 성능 리팩토링 메모
 
@@ -616,6 +616,13 @@ class StartupManager:
 - 설정 창 API 키 검증/데이터 정리 비동기 처리
 - 설정 가져오기 탭 중복 병합(dedupe) 강화
 
+### v32.7.3 추가 변경사항
+- 장시간 반복 작업용 `IterativeJobWorker` 추가 및 CSV export/백업 검증 경로 적용
+- 백업 검증 상태와 SQLite integrity/sidecar 정책 검사 도입
+- `StartupManager.get_startup_status()` 도입 및 자동 시작 수리 UI 추가
+- 설정 저장 시 메인 config와 `.backup`을 원자적으로 회전 저장
+- `NewsTab` 로컬 상태 변경 helper 일원화 및 DB emergency connection cap 추가
+
 ### v32.7.2 추가 변경사항
 - 삭제 경로 중복 무결성 보정: `delete_link` 도입 + 삭제 후 duplicate flag 재계산
 - pending restore 엄격 정책: `restore_db=true` && DB 백업 누락 시 실패 + pending 유지
@@ -746,7 +753,7 @@ class StartupManager:
   - `ApiWorker.finished` now includes `new_items`, computed from pre-existing links in the current `query_key` scope before upsert
   - alert keywords run only against `new_items`, and do not fire when `added_count == 0`
   - tab dedupe, rename conflict detection, settings import dedupe, and search-history dedupe now share canonical-query identity
-  - CSV export now uses `filtered_data_cache`, so only the current visible result set is written
+  - at the 2026-03-16 pass, CSV export used `filtered_data_cache` (visible-only); later passes superseded this with full-scope DB export and then the 2026-03-25 async chunked path
 - Backup / packaging / docs:
   - startup auto-backup remains settings-only, and docs/UI now make the manual DB-including backup requirement explicit
   - `news_scraper_pro.spec` was re-reviewed; no new hidden import/exclude/data change was needed

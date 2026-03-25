@@ -8,7 +8,9 @@ from unittest import mock
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
+from core.workers import DBQueryScope
 from ui._main_window_settings_io import _MainWindowSettingsIOMixin
+from ui._main_window_settings_io import export_scope_to_csv
 from ui._main_window_tabs import _MainWindowTabsMixin
 from ui.main_window import MainApp
 
@@ -67,12 +69,35 @@ class _DummyExportTab:
     def get_all_filtered_items(self):
         return list(self._all_filtered_items)
 
+    def _build_query_scope(self):
+        return DBQueryScope(keyword=self.keyword)
+
+
+class _FakeExportDB:
+    def __init__(self, items):
+        self.items = list(items)
+
+    def count_news(self, **_kwargs):
+        return len(self.items)
+
+    def fetch_news(self, limit=50, offset=0, **_kwargs):
+        return list(self.items[offset : offset + limit])
+
+
+class _ImmediateExportContext:
+    def report(self, **_kwargs):
+        return None
+
+    def check_cancelled(self):
+        return None
+
 
 class _DummyExportMain:
     export_data = _MainWindowSettingsIOMixin.export_data
 
-    def __init__(self, widget):
+    def __init__(self, widget, db=None):
         self._widget = widget
+        self._db = db
         self.toast_messages = []
 
     def _current_news_tab(self):
@@ -80,6 +105,18 @@ class _DummyExportMain:
 
     def show_success_toast(self, message):
         self.toast_messages.append(message)
+
+    def _start_export_job(self, scope, keyword, output_path):
+        result = export_scope_to_csv(
+            _ImmediateExportContext(),
+            self._db,
+            scope,
+            output_path,
+            keyword,
+            chunk_size=1,
+        )
+        self.show_success_toast(f"총 {result['count']}개 항목을 저장했습니다.")
+        QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
 
 
 class _DummyCheck:
@@ -179,7 +216,10 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
             },
         ]
         visible_items = [all_items[0]]
-        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, visible_items, all_items))
+        dummy = _DummyExportMain(
+            _DummyExportTab("AI", all_items, visible_items, all_items),
+            db=_FakeExportDB(all_items),
+        )
 
         with tempfile.TemporaryDirectory() as td:
             export_path = Path(td) / "export.csv"

@@ -54,6 +54,7 @@ class _DummyCheck:
 
 class _DummyNewsTab:
     _set_read_state = NewsTab._set_read_state
+    _emit_local_action_failure = NewsTab._emit_local_action_failure
 
     def __init__(self, update_result=True):
         self.db = _DummyDB(update_result=update_result)

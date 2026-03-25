@@ -188,7 +188,12 @@ class _SettingsDialogContentMixin:
 
         self.chk_auto_start = QCheckBox("윈도우 시작 시 자동 실행")
         if StartupManager.is_available():
-            self.chk_auto_start.setChecked(StartupManager.is_startup_enabled())
+            desired_minimized = bool(self.config.get("start_minimized", False))
+            startup_status = StartupManager.get_startup_status(start_minimized=desired_minimized)
+            self.chk_auto_start.setChecked(
+                bool(startup_status.get("has_registry_value"))
+                or bool(self.config.get("auto_start_enabled", False))
+            )
         else:
             self.chk_auto_start.setEnabled(False)
             self.chk_auto_start.setToolTip("Windows에서만 사용 가능합니다.")
@@ -205,6 +210,15 @@ class _SettingsDialogContentMixin:
             )
         layout.addWidget(self.chk_start_minimized)
 
+        self.lbl_auto_start_status = QLabel("")
+        self.lbl_auto_start_status.setWordWrap(True)
+        self.lbl_auto_start_status.setStyleSheet("color: #666; font-size: 9pt;")
+        layout.addWidget(self.lbl_auto_start_status)
+
+        self.btn_repair_auto_start = QPushButton("🔧 자동 시작 등록 수리")
+        self.btn_repair_auto_start.clicked.connect(self.repair_startup_registration)
+        layout.addWidget(self.btn_repair_auto_start)
+
         self.chk_notify_on_refresh = QCheckBox("자동 새로고침 완료 시 알림 표시")
         self.chk_notify_on_refresh.setChecked(self.config.get("notify_on_refresh", False))
         layout.addWidget(self.chk_notify_on_refresh)
@@ -215,6 +229,10 @@ class _SettingsDialogContentMixin:
         )
         tray_info.setStyleSheet("color: #666; font-size: 9pt;")
         layout.addWidget(tray_info)
+
+        self.chk_auto_start.toggled.connect(lambda _checked: self.refresh_startup_status())
+        self.chk_start_minimized.toggled.connect(lambda _checked: self.refresh_startup_status())
+        self.refresh_startup_status()
 
         group.setLayout(layout)
         return group

@@ -248,6 +248,14 @@ class _MainWindowTrayMixin:
             self.workers.clear()
             logger.info("워커 정리 완료")
 
+            export_worker = getattr(self, "_export_worker", None)
+            if export_worker is not None and export_worker.isRunning():
+                try:
+                    export_worker.requestInterruption()
+                    export_worker.wait(1000)
+                except Exception as e:
+                    logger.error(f"CSV export worker 종료 오류: {e}")
+
             try:
                 self.save_config()
                 logger.info("설정 저장 완료")

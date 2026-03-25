@@ -59,6 +59,77 @@ class AsyncJobWorker(QThread):
             traceback.print_exc()
 
 
+class JobCancelledError(Exception):
+    """Raised when a long-running worker is cancelled cooperatively."""
+
+
+class LongTaskContext:
+    """Cancellation/progress helper passed to repetitive background jobs."""
+
+    def __init__(self, worker: "IterativeJobWorker"):
+        self._worker = worker
+
+    def is_cancelled(self) -> bool:
+        return self._worker.isInterruptionRequested()
+
+    def check_cancelled(self) -> None:
+        if self.is_cancelled():
+            raise JobCancelledError("cancelled")
+
+    def report(
+        self,
+        *,
+        current: int = 0,
+        total: int = 0,
+        message: str = "",
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        progress_payload: Dict[str, Any] = {
+            "current": max(0, int(current)),
+            "total": max(0, int(total)),
+            "message": str(message or ""),
+        }
+        if payload:
+            progress_payload.update(payload)
+        self._worker.progress.emit(progress_payload)
+
+
+class IterativeJobWorker(QThread):
+    """Cancel-aware worker for repetitive or chunked background tasks."""
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    progress = pyqtSignal(object)
+    cancelled = pyqtSignal()
+
+    def __init__(self, job_func, *args, parent=None, **kwargs):
+        super().__init__(parent)
+        self.job_func = job_func
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        context = LongTaskContext(self)
+        try:
+            context.check_cancelled()
+            result = self.job_func(context, *self.args, **self.kwargs)
+            context.check_cancelled()
+            self.finished.emit(result)
+        except JobCancelledError:
+            self.cancelled.emit()
+        except Exception as e:
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+            self.error.emit(str(e))
+            traceback.print_exc()
+
+    def stop(self):
+        self.requestInterruption()
+        self.quit()
+        self.wait(100)
+
+
 @dataclass(frozen=True)
 class DBQueryScope:
     keyword: str

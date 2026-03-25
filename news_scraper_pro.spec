@@ -39,6 +39,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 # - Docs/build revalidation for the 2026-03-21 performance pass confirmed the
 #   same dependency surface; no additional hidden import/exclude/data change is
 #   required for this pass.
+# 2026-03-25 review:
+# - IterativeJobWorker-based CSV export / backup verification, startup health
+#   diagnostics/repair, atomic config backup rotation, and DB emergency caps
+#   rely on stdlib / already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

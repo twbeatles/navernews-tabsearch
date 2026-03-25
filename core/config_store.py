@@ -656,13 +656,22 @@ def load_config_file(path: str) -> AppConfig:
 
 
 def save_config_file_atomic(path: str, config: AppConfig) -> None:
+    _write_text_atomic(
+        path,
+        json.dumps(config, indent=4, ensure_ascii=False),
+    )
+
+
+def _write_text_atomic(path: str, text: str) -> None:
     directory = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(directory, exist_ok=True)
 
     fd, tmp_path = tempfile.mkstemp(prefix=".config_", suffix=".tmp", dir=directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
+            f.write(text)
+            if not text.endswith("\n"):
+                f.write("\n")
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, path)
@@ -672,3 +681,22 @@ def save_config_file_atomic(path: str, config: AppConfig) -> None:
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def save_primary_config_file(path: str, config: AppConfig) -> None:
+    """Save the main config atomically while keeping the previous valid file as .backup."""
+    backup_path = f"{path}.backup"
+
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as src:
+                current_text = src.read()
+            loaded = json.loads(current_text)
+            if isinstance(loaded, dict):
+                _write_text_atomic(backup_path, current_text)
+            else:
+                logger.warning("기존 설정 파일이 JSON object가 아니어서 backup 회전을 건너뜁니다.")
+        except Exception as e:
+            logger.warning("기존 설정 backup 회전 생략: %s", e)
+
+    save_config_file_atomic(path, config)

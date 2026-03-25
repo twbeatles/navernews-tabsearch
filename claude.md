@@ -41,8 +41,8 @@ navernews-tabsearch/
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
-│   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.2')
-│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
+│   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.3')
+│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
@@ -50,12 +50,12 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session Protocol 계약
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/DBQueryScope
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
-│   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
+│   ├── backup.py                # AutoBackup/backup verification/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
-│   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
+│   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
 │   ├── logging_setup.py         # configure_logging
 │   ├── notifications.py         # NotificationSound
@@ -121,9 +121,9 @@ navernews-tabsearch/
 ## ✅ 현재 검증 기준
 
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `169 passed, 5 subtests passed`
+- `pytest -q` => `180 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-24 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-25 기준 다시 성공했다.
 
 ---
 
@@ -163,6 +163,7 @@ navernews-tabsearch/
 | `ApiWorker` | API 호출 워커 (재시도, DB 저장) | `core/workers.py` |
 | `DBWorker` | `DBQueryScope`를 소비하는 DB 조회 전용 워커 스레드 | `core/workers.py` |
 | `AsyncJobWorker` | 단발성 비동기 작업 워커 | `core/workers.py` |
+| `IterativeJobWorker` | 취소 가능한 반복형 장시간 작업 워커 | `core/workers.py` |
 | `DBQueryScope` | 탭 조회 scope를 정규화한 내부 dataclass | `core/workers.py` |
 | `WorkerRegistry` | 요청 ID 기반 워커 레지스트리 | `core/worker_registry.py` |
 | `WorkerHandle` | 워커 핸들 데이터클래스 | `core/worker_registry.py` |
@@ -171,6 +172,7 @@ navernews-tabsearch/
 | `AutoBackup` | 설정/DB 자동 백업 | `core/backup.py` |
 | `KeywordGroupManager` | 키워드 그룹(폴더) 관리 | `core/keyword_groups.py` |
 | `StartupManager` | Windows 시작프로그램 레지스트리 | `core/startup.py` |
+| `StartupStatus` | 자동 시작 등록 health 상태 구조체 | `core/startup.py` |
 | `NotificationSound` | 시스템 알림 소리 재생 | `core/notifications.py` |
 | `ValidationUtils` | API 키/키워드 입력 검증 | `core/validation.py` |
 | `TextUtils` | 텍스트 처리 (하이라이팅 등) | `core/text_utils.py` |
@@ -718,6 +720,14 @@ ews_scraper_pro.py` (thin compatibility layer + re-export)
 - 설정 가져오기 탭 중복 병합(dedupe) 강화
 - 자동 시작 최소화 옵션 변경 시 레지스트리 재등록
 
+### v32.7.3 추가 변경사항
+- 장시간 반복 작업용 `IterativeJobWorker` 추가 및 CSV export/백업 검증 경로 적용
+- 백업 검증 상태(`pending/ok/failed`)와 SQLite integrity/sidecar 정책 검사 도입
+- `StartupManager.get_startup_status()` 도입 및 설정 창 자동 시작 수리 버튼 추가
+- 설정 저장 시 `save_primary_config_file()`로 main config + `.backup` 원자 회전 저장
+- `NewsTab` 읽음/북마크/메모/삭제 로컬 변경 경로를 helper로 일원화
+- DB emergency connection cap/logging 추가
+
 ### v32.7.2 추가 변경사항
 - `get_statistics()['duplicates']`를 
 ews_keywords.is_duplicate` 기준으로 보정
@@ -978,7 +988,7 @@ ews_scraper_pro.spec` removed forced `chardet` hidden import to align with reque
   - `ApiWorker.finished` now includes `new_items`, computed from pre-existing links in the current `query_key` scope before upsert.
   - Alert keywords run only against newly added items and do not fire when `added_count == 0`.
   - Tab dedupe, rename conflict detection, settings import dedupe, and search-history dedupe now share canonical-query identity.
-  - CSV export now uses `filtered_data_cache`, so only the current visible results are written.
+  - At the 2026-03-16 pass, CSV export used `filtered_data_cache` (visible-only); later passes superseded this with full-scope DB export and then the 2026-03-25 async chunked path.
 - Backup / docs / packaging alignment:
   - Startup auto-backup remains settings-only, and the UI/docs now explicitly call out that DB restore points require a manual backup with DB included.
   - `news_scraper_pro.spec` was re-reviewed; no additional hidden import/exclude changes were required.

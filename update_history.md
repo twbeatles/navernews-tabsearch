@@ -1,6 +1,30 @@
 ﻿# Update History
 
-## v32.7.2 (Unreleased)
+## v32.7.3 (Unreleased)
+- **Operational Hardening Pass I (2026-03-25)**:
+  - Export / long task UX:
+    - Added `IterativeJobWorker` for cancel-aware iterative jobs.
+    - Moved CSV export off the UI thread for `DBQueryScope` tabs, streaming paged DB rows into `*.tmp` and finalizing with atomic rename.
+    - Added loaded-slice fallback export compatibility when a legacy tab does not expose `_build_query_scope()`.
+  - Backup / restore hardening:
+    - Added quick backup-list metadata plus background full verification with config JSON parse, DB payload existence, SQLite `PRAGMA integrity_check`, and sidecar policy validation.
+    - Backup dialog now surfaces verification state, supports cancelable verification, blocks corrupt/non-restorable restore attempts, and creates a safeguard backup before scheduling restore.
+    - Backup deletion/retention now reports failures instead of silently ignoring them.
+  - Startup / config durability:
+    - Added structured `StartupManager.get_startup_status()` with repair diagnostics (`command_matches`, target path existence, `needs_repair`).
+    - Settings UI now shows startup health and exposes a repair action; import/save flows sync `auto_start_enabled` from healthy registration state.
+    - Added `save_primary_config_file()` so main config and `.backup` rotation are both atomic and `.backup` keeps the previous valid full config.
+  - State / DB hardening:
+    - Unified `NewsTab` local state mutation helpers for read/bookmark/note/delete paths.
+    - Added SQLite emergency connection cap/logging and explicit exhaustion failure instead of unlimited emergency fallback.
+  - Tests:
+    - Added `tests/test_stabilization_round1.py`.
+    - Updated export/backup/startup/news-tab regression tests for the new async export, backup verification, restore safeguard, and startup health semantics.
+  - Validation:
+    - `pytest -q` => `180 passed, 5 subtests passed`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+
+## v32.7.2
 - **Docs / Packaging Revalidation (2026-03-24)**:
   - Docs / packaging / repo hygiene:
     - Re-reviewed `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, and `update_history.md` against the current worker/render architecture.

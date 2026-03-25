@@ -1,4 +1,4 @@
-﻿# 뉴스 스크래퍼 Pro v32.7.2
+﻿# 뉴스 스크래퍼 Pro v32.7.3
 
 네이버 뉴스 검색 API를 기반으로 동작하는 탭형 뉴스 수집/관리 도구입니다.
 
@@ -28,13 +28,15 @@
 - 단일 인스턴스 실행 보장(중복 실행 방지)
 - 설정 자동 백업 + 수동 DB 포함 백업 및 재시작 적용형 복원(pending restore)
 
-## 안정화 포인트 (v32.7.2+ 작업 브랜치 반영)
+## 안정화 포인트 (v32.7.3+ 작업 브랜치 반영)
 
 - 시작 시 단일 인스턴스 가드 적용
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
 - 설정 창의 API 키 검증/정리 작업 비동기 처리
 - 설정 가져오기 시 탭 중복 병합(dedupe) 강화
 - 자동 시작 최소화 옵션 변경 시 레지스트리 재등록
+- 자동 시작 상태를 `정상/수리 필요/비활성화`로 진단하고 설정 창에서 즉시 수리 지원
+- 설정 저장 시 메인 config와 `.backup`을 원자적으로 회전 저장하여 직전 정상 파일 보존
 - 자동 새로고침 조기 종료 경로에서 락 플래그 복구 보장
 - 탭 이름 변경 후 `더 불러오기`가 최신 탭 키워드를 사용하도록 보정
 - 제외어-only(예: `-광고 -코인`) 탭 입력 차단
@@ -56,6 +58,10 @@
 - 트레이 미지원 환경에서 `--minimized`/`start_minimized` 요청 시 숨김 시작 차단
 - 검색어 정책 분리: API 검색어(`parse_search_query`)와 대표 키워드(`parse_tab_query`)를 분리하고 실제 탭 범위는 `query_key`로 판정
 - `news_keywords`를 `(link, query_key)` 기준으로 마이그레이션해 멀티 키워드 탭을 독립 범위로 조회/분석/배지 집계
+- CSV 내보내기를 청크 기반 백그라운드 작업으로 전환하고 `*.tmp` 저장 후 atomic rename 적용
+- 백업 목록을 빠른 메타데이터로 먼저 노출한 뒤 백그라운드 full verification(SQLite integrity/sidecar 정책 포함) 수행
+- 백업 복원 전 현재 상태 보호 백업을 먼저 시도하고, 실패 시 사용자 확인 없이는 복원을 진행하지 않음
+- SQLite 비상 연결 수를 제한하고 포화 시 명시적으로 실패/로그 남김
 - 설정 창 닫힘 시 백그라운드 워커 정리(콜백 안전 가드)
 - PyInstaller spec 동기화: `PyQt6.QtNetwork` 포함 보장(단일 인스턴스 IPC 런타임 안정화)
 - 백업 복원 예약 시 백업 메타(`include_db`) 기반으로 `설정만`/`설정+DB` 범위를 자동 판별
@@ -102,7 +108,7 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # 경로/버전/앱 상수
-│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장
+│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
@@ -110,12 +116,12 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session capability Protocol 정의
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/DBQueryScope
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
-│   ├── backup.py                # AutoBackup/apply_pending_restore_if_any
+│   ├── backup.py                # AutoBackup/backup verification/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
-│   ├── startup.py               # StartupManager (Windows 자동 시작 레지스트리)
+│   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
 │   ├── logging_setup.py         # configure_logging
 │   ├── notifications.py         # NotificationSound
@@ -163,6 +169,7 @@ navernews-tabsearch/
 │   ├── test_backup_collision_and_restore.py
 │   ├── test_backup_restore_mode.py
 │   ├── test_audit_followthrough.py
+│   ├── test_stabilization_round1.py
 │   ├── test_load_more_total_guard.py
 │   ├── test_news_tab_ext_read_policy.py
 │   ├── test_news_tab_performance.py
@@ -238,6 +245,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 감사 후속 5차(2026-03-16)에서도 `.spec`을 다시 재검토했으며, 열린 탭 동기화/가시 결과 CSV/canonical dedupe/신규 기사 알림 분리는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 실행형 리스크 전면 수정(2026-03-18)에서도 `.spec`을 다시 재검토했으며, 유지보수 모드, DB 기반 로컬 페이지네이션, 백업 복원 가능 메타, export/import 1.2는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 성능 최적화 리팩토링(2026-03-21)에서도 `.spec`을 다시 재검토했으며, `DBQueryScope`, append skip-count, `NewsTab` fragment cache/coalesced render, 복합 인덱스 추가는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
+- v32.7.3 운영 안정화 1차(2026-03-25)에서도 `.spec`을 다시 재검토했으며, `IterativeJobWorker`, 백업 full verification, 자동 시작 health/repair, config `.backup` 회전, DB emergency cap은 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
+- 2026-03-25 기준으로 `.gitignore`에 `.pytest_tmp/`를 명시 추가했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 다시 성공해 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됨을 재확인했습니다.
 - 2026-03-21 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드를 다시 검증했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-03-24 기준으로도 `.spec`과 `.gitignore`를 다시 재검토했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 성공해 추가 packaging/ignore 수정이 필요하지 않음을 재확인했습니다.
 
@@ -335,4 +344,5 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 ## 라이선스
 
 MIT License
+
 

@@ -12,6 +12,7 @@ ENV/
 # Build artifacts
 build/
 dist/
+.pytest_tmp/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/

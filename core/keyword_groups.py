@@ -3,7 +3,7 @@ import os
 from typing import Dict, List, Optional
 
 from core.constants import CONFIG_FILE
-from core.config_store import load_config_file, save_config_file_atomic
+from core.config_store import load_config_file, save_primary_config_file
 from core.logging_setup import configure_logging
 
 configure_logging()
@@ -105,7 +105,7 @@ class KeywordGroupManager:
         try:
             config = load_config_file(self.config_file)
             config["keyword_groups"] = self._normalize_groups(self.groups)
-            save_config_file_atomic(self.config_file, config)
+            save_primary_config_file(self.config_file, config)
         except Exception as e:
             logger.error(f"키워드 그룹 저장 오류: {e}")
 

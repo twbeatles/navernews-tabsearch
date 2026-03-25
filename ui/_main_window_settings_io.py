@@ -4,6 +4,8 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
+import tempfile
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -13,6 +15,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox, QTabWidget
 from core.config_store import normalize_import_settings
 from core.constants import VERSION
 from core.startup import StartupManager
+from core.workers import DBQueryScope, IterativeJobWorker
 from ui.settings_dialog import SettingsDialog
 from ui.styles import AppStyle
 
@@ -21,6 +24,117 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+EXPORT_CHUNK_SIZE = 200
+
+
+def _export_row(item: Dict[str, Any]) -> List[str]:
+    return [
+        str(item.get("title", "") or ""),
+        str(item.get("link", "") or ""),
+        str(item.get("pubDate", "") or ""),
+        str(item.get("publisher", "") or ""),
+        str(item.get("description", "") or ""),
+        "읽음" if item.get("is_read") else "안읽음",
+        "북마크" if item.get("is_bookmarked") else "",
+        str(item.get("notes", "") or ""),
+        "중복" if item.get("is_duplicate", 0) else "",
+    ]
+
+
+def export_items_to_csv(
+    items: List[Dict[str, Any]],
+    output_path: str,
+    keyword: str,
+) -> Dict[str, Any]:
+    directory = os.path.dirname(os.path.abspath(output_path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".export_", suffix=".tmp", dir=directory)
+    written = 0
+
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복"])
+            for item in items:
+                writer.writerow(_export_row(item))
+                written += 1
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, output_path)
+        return {"count": written, "path": output_path, "keyword": keyword}
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
+def export_scope_to_csv(
+    context,
+    db_manager,
+    scope: DBQueryScope,
+    output_path: str,
+    keyword: str,
+    chunk_size: int = EXPORT_CHUNK_SIZE,
+) -> Dict[str, Any]:
+    total_count = int(db_manager.count_news(**scope.count_kwargs()))
+    context.report(current=0, total=total_count, message="내보내기 준비 중...", payload={"stage": "count"})
+    context.check_cancelled()
+
+    if total_count <= 0:
+        raise ValueError("내보낼 뉴스가 없습니다.")
+
+    directory = os.path.dirname(os.path.abspath(output_path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".export_", suffix=".tmp", dir=directory)
+    written = 0
+
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복"])
+
+            offset = 0
+            while written < total_count:
+                context.check_cancelled()
+                rows = db_manager.fetch_news(
+                    limit=max(1, int(chunk_size)),
+                    offset=max(0, int(offset)),
+                    **scope.fetch_kwargs(),
+                )
+                if not rows:
+                    break
+
+                for item in rows:
+                    context.check_cancelled()
+                    writer.writerow(_export_row(item))
+                    written += 1
+
+                offset += len(rows)
+                f.flush()
+                os.fsync(f.fileno())
+                context.report(
+                    current=written,
+                    total=total_count,
+                    message=f"CSV 내보내는 중... ({written}/{total_count})",
+                    payload={"stage": "write", "written": written, "path": output_path},
+                )
+
+                if len(rows) < max(1, int(chunk_size)):
+                    break
+
+        os.replace(tmp_path, output_path)
+        return {"count": written, "path": output_path, "keyword": keyword}
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
 
 
 class _MainWindowSettingsIOMixin:
@@ -50,18 +164,19 @@ class _MainWindowSettingsIOMixin:
 
     def export_data(self: MainApp):
         """Export the current tab's rows as CSV."""
+        export_worker = getattr(self, "_export_worker", None)
+        if export_worker is not None and export_worker.isRunning():
+            self._cancel_export_job()
+            return
+
         cur_widget = self._current_news_tab()
-        export_items: List[Dict[str, Any]] = []
-        if cur_widget is not None:
-            if hasattr(cur_widget, "get_all_filtered_items"):
-                try:
-                    export_items = list(cur_widget.get_all_filtered_items())
-                except Exception as e:
-                    logger.warning("Falling back to loaded slice during export: %s", e)
-                    export_items = list(cur_widget.filtered_data_cache)
-            else:
-                export_items = list(cur_widget.filtered_data_cache)
-        if cur_widget is None or not export_items:
+        if cur_widget is None:
+            QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
+            return
+
+        known_total = int(getattr(cur_widget, "_total_filtered_count", 0) or 0)
+        loaded_count = len(getattr(cur_widget, "filtered_data_cache", []))
+        if max(known_total, loaded_count) <= 0:
             QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
             return
 
@@ -76,29 +191,106 @@ class _MainWindowSettingsIOMixin:
         if not fname:
             return
 
-        try:
-            with open(fname, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f)
-                writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복"])
-                for item in export_items:
-                    writer.writerow(
-                        [
-                            item["title"],
-                            item["link"],
-                            item["pubDate"],
-                            item["publisher"],
-                            item["description"],
-                            "읽음" if item["is_read"] else "안읽음",
-                            "북마크" if item["is_bookmarked"] else "",
-                            item.get("notes", ""),
-                            "중복" if item.get("is_duplicate", 0) else "",
-                        ]
-                    )
+        scope_builder = getattr(cur_widget, "_build_query_scope", None)
+        if callable(scope_builder):
+            self._start_export_job(scope_builder(), keyword, fname)
+            return
 
-            self.show_success_toast(f"총 {len(export_items)}개 항목을 저장했습니다.")
-            QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{fname}")
+        visible_items = list(getattr(cur_widget, "filtered_data_cache", []))
+        if not visible_items:
+            QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
+            return
+
+        try:
+            result = export_items_to_csv(visible_items, fname, keyword)
         except Exception as e:
             QMessageBox.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{e}")
+            return
+
+        self.show_success_toast(f"총 {int(result.get('count', 0) or 0)}개 항목을 저장했습니다.")
+        QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
+
+    def _start_export_job(
+        self: MainApp,
+        scope: DBQueryScope,
+        keyword: str,
+        output_path: str,
+    ) -> None:
+        self._export_target_path = str(output_path or "")
+        self._export_cancel_requested = False
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress.setValue(0)
+        self.btn_save.setText("⏹ 내보내기 취소")
+        self.btn_save.setEnabled(True)
+        self._status_bar().showMessage("CSV 내보내기를 시작합니다...")
+
+        worker = IterativeJobWorker(
+            export_scope_to_csv,
+            self._require_db(),
+            scope,
+            output_path,
+            keyword,
+            EXPORT_CHUNK_SIZE,
+        )
+        self._export_worker = worker
+        worker.progress.connect(self._on_export_progress)
+        worker.finished.connect(self._on_export_finished)
+        worker.error.connect(self._on_export_error)
+        worker.cancelled.connect(self._on_export_cancelled)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        worker.cancelled.connect(worker.deleteLater)
+        worker.start()
+
+    def _cancel_export_job(self: MainApp) -> None:
+        worker = getattr(self, "_export_worker", None)
+        if worker is None or not worker.isRunning():
+            return
+        self._export_cancel_requested = True
+        self.btn_save.setEnabled(False)
+        self.btn_save.setText("⏳ 취소 중...")
+        self._status_bar().showMessage("CSV 내보내기 취소 요청 중...")
+        worker.requestInterruption()
+
+    def _reset_export_ui(self: MainApp) -> None:
+        self.progress.setVisible(False)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.btn_save.setText("💾 내보내기")
+        self.btn_save.setEnabled(True)
+        self._export_worker = None
+        self._export_target_path = ""
+        self._export_cancel_requested = False
+
+    def _on_export_progress(self: MainApp, payload: Dict[str, Any]) -> None:
+        current = int(payload.get("current", 0) or 0)
+        total = int(payload.get("total", 0) or 0)
+        message = str(payload.get("message", "") or "")
+        if total > 0:
+            self.progress.setRange(0, total)
+            self.progress.setValue(min(current, total))
+        else:
+            self.progress.setRange(0, 0)
+        if message:
+            self._status_bar().showMessage(message)
+
+    def _on_export_finished(self: MainApp, result: Dict[str, Any]) -> None:
+        exported_count = int(result.get("count", 0) or 0)
+        target_path = str(result.get("path", "") or self._export_target_path)
+        self._reset_export_ui()
+        self.show_success_toast(f"총 {exported_count}개 항목을 저장했습니다.")
+        self._status_bar().showMessage(f"CSV 내보내기 완료 ({exported_count}개)", 4000)
+        QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{target_path}")
+
+    def _on_export_error(self: MainApp, error_msg: str) -> None:
+        self._reset_export_ui()
+        QMessageBox.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{error_msg}")
+
+    def _on_export_cancelled(self: MainApp) -> None:
+        self._reset_export_ui()
+        self._status_bar().showMessage("CSV 내보내기를 취소했습니다.", 3000)
+        self.show_warning_toast("CSV 내보내기를 취소했습니다.")
 
     def _merge_search_history(
         self: MainApp,
@@ -249,15 +441,32 @@ class _MainWindowSettingsIOMixin:
 
         if requested_auto_start:
             if StartupManager.enable_startup(requested_start_minimized):
+                status = StartupManager.get_startup_status(requested_start_minimized)
+                normalized_settings["auto_start_enabled"] = bool(status.get("is_healthy", False))
+                if normalized_settings["auto_start_enabled"]:
+                    return
+                import_warnings.append("자동 시작 등록은 되었지만 현재 상태가 비정상이라 수리가 필요합니다.")
+                self.show_warning_toast("자동 시작 등록 상태가 비정상입니다. 설정에서 수리해 주세요.")
                 return
-            normalized_settings["auto_start_enabled"] = StartupManager.is_startup_enabled()
+            normalized_settings["auto_start_enabled"] = StartupManager.get_startup_status(
+                requested_start_minimized
+            ).get("is_healthy", False)
             import_warnings.append("자동 시작 설정을 시스템에 적용하지 못해 현재 상태를 유지했습니다.")
             self.show_warning_toast("자동 시작 설정 적용에 실패해 시스템 상태를 유지했습니다.")
             return
 
         if StartupManager.disable_startup():
+            status = StartupManager.get_startup_status(False)
+            normalized_settings["auto_start_enabled"] = bool(status.get("is_healthy", False))
+            if not status.get("has_registry_value", False):
+                return
+            import_warnings.append("자동 시작 항목이 남아 있어 완전히 해제되지 않았습니다.")
+            self.show_warning_toast("자동 시작 항목이 남아 있습니다. 설정에서 다시 확인해 주세요.")
             return
-        normalized_settings["auto_start_enabled"] = StartupManager.is_startup_enabled()
+
+        normalized_settings["auto_start_enabled"] = bool(
+            StartupManager.get_startup_status(False).get("is_healthy", False)
+        )
         import_warnings.append("자동 시작 해제를 시스템에 적용하지 못해 현재 상태를 유지했습니다.")
         self.show_warning_toast("자동 시작 해제에 실패해 시스템 상태를 유지했습니다.")
 
@@ -462,23 +671,42 @@ class _MainWindowSettingsIOMixin:
         if auto_start_changed or (new_auto_start and start_minimized_changed):
             if new_auto_start:
                 if StartupManager.enable_startup(new_start_minimized):
-                    if auto_start_changed:
-                        self.show_success_toast("자동 시작을 설정했습니다.")
+                    status = StartupManager.get_startup_status(new_start_minimized)
+                    self.auto_start_enabled = bool(status.get("is_healthy", False))
+                    if self.auto_start_enabled:
+                        if auto_start_changed:
+                            self.show_success_toast("자동 시작을 설정했습니다.")
+                        else:
+                            self.show_success_toast("자동 시작 옵션을 갱신했습니다.")
                     else:
-                        self.show_success_toast("자동 시작 옵션을 갱신했습니다.")
-                    self.auto_start_enabled = True
+                        self.show_warning_toast("자동 시작 등록은 되었지만 상태가 비정상입니다. 설정에서 수리해 주세요.")
                 else:
+                    self.auto_start_enabled = bool(
+                        StartupManager.get_startup_status(new_start_minimized).get("is_healthy", False)
+                    )
                     self.show_error_toast("자동 시작 설정에 실패했습니다.")
                     logger.error("Failed to enable startup")
             else:
                 if StartupManager.disable_startup():
-                    self.show_success_toast("자동 시작을 해제했습니다.")
-                    self.auto_start_enabled = False
+                    status = StartupManager.get_startup_status(False)
+                    self.auto_start_enabled = bool(status.get("is_healthy", False))
+                    if not status.get("has_registry_value", False):
+                        self.show_success_toast("자동 시작을 해제했습니다.")
+                    else:
+                        self.show_warning_toast("자동 시작 항목이 남아 있습니다. 설정에서 다시 확인해 주세요.")
                 else:
+                    self.auto_start_enabled = bool(
+                        StartupManager.get_startup_status(False).get("is_healthy", False)
+                    )
                     self.show_error_toast("자동 시작 해제에 실패했습니다.")
                     logger.error("Failed to disable startup")
         else:
-            self.auto_start_enabled = new_auto_start
+            if new_auto_start:
+                self.auto_start_enabled = bool(
+                    StartupManager.get_startup_status(new_start_minimized).get("is_healthy", False)
+                )
+            else:
+                self.auto_start_enabled = False
 
         if self.theme_idx != data["theme"]:
             self.theme_idx = data["theme"]
