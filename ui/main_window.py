@@ -421,6 +421,12 @@ class MainApp(
         reason = str(getattr(self, "_maintenance_reason", "") or "데이터 정리")
         return f"유지보수 중이라 {action}을(를) 실행할 수 없습니다. ({reason})"
 
+    def _set_countdown_status_text(self, text: str) -> None:
+        label = getattr(self, "countdown_status_label", None)
+        if label is None:
+            return
+        label.setText(str(text or ""))
+
     def _set_fetch_controls_enabled(self, enabled: bool) -> None:
         if hasattr(self, "btn_refresh"):
             self.btn_refresh.setEnabled(enabled)
@@ -507,18 +513,22 @@ class MainApp(
     
     def _update_countdown(self):
         """상태바 카운트다운 업데이트"""
+        if self._sequential_refresh_active or self.is_maintenance_mode_active():
+            self._set_countdown_status_text("")
+            return
+
         if self._next_refresh_seconds > 0:
             self._next_refresh_seconds -= 1
             minutes = self._next_refresh_seconds // 60
             seconds = self._next_refresh_seconds % 60
-            
-            if not self._sequential_refresh_active:
-                if minutes > 0:
-                    countdown_text = f"⏰ 다음 새로고침: {minutes}분 {seconds}초 후"
-                else:
-                    countdown_text = f"⏰ 다음 새로고침: {seconds}초 후"
-                self._status_bar().showMessage(countdown_text)
+
+            if minutes > 0:
+                countdown_text = f"⏰ 다음 새로고침: {minutes}분 {seconds}초 후"
+            else:
+                countdown_text = f"⏰ 다음 새로고침: {seconds}초 후"
+            self._set_countdown_status_text(countdown_text)
         else:
+            self._set_countdown_status_text("")
             self._countdown_timer.stop()
 
     
@@ -840,6 +850,10 @@ class MainApp(
         QTimer.singleShot(100, self.update_all_tab_badges)
         
         # 상태바 초기 메시지
+        self.countdown_status_label = QLabel("")
+        self.countdown_status_label.setObjectName("CountdownStatus")
+        self._status_bar().addPermanentWidget(self.countdown_status_label)
+
         if self.client_id:
             self._status_bar().showMessage(f"✅ 준비됨 - {len(self.tabs_data)}개 탭")
         else:
@@ -883,7 +897,7 @@ class MainApp(
         self.tabs.setTabText(tab_index, self._format_tab_title(keyword, unread_count=unread_count))
 
     def _tab_icon_for_keyword(self, keyword: str) -> str:
-        return "📰" if not str(keyword or "").startswith("-") else "🚫"
+        return "📰" if has_positive_keyword(str(keyword or "")) else "🚫"
 
     def _format_tab_title(self, keyword: str, unread_count: int = 0) -> str:
         normalized_keyword = str(keyword or "").strip()
@@ -1110,6 +1124,7 @@ class MainApp(
                 self._next_refresh_seconds = minutes[idx] * 60
                 self._countdown_timer.setInterval(1000)  # 1초마다 업데이트
                 self._countdown_timer.start()
+                self._set_countdown_status_text(f"⏰ 다음 새로고침: {minutes[idx]}분 0초 후")
                 
                 self._status_bar().showMessage(f"⏰ 자동 새로고침: {minutes[idx]}분 간격")
                 logger.info(f"자동 새로고침 설정: {minutes[idx]}분 ({ms}ms)")
@@ -1118,6 +1133,7 @@ class MainApp(
                 self.timer.stop()
                 self._countdown_timer.stop()
                 self._next_refresh_seconds = 0
+                self._set_countdown_status_text("")
                 self._status_bar().showMessage("⏰ 자동 새로고침 꺼짐")
                 logger.info("자동 새로고침 비활성화됨")
         except Exception as e:

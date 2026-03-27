@@ -21,9 +21,18 @@ class SettingsDialog(
 ):
     """설정 다이얼로그 (검증 기능 + 도움말 추가)"""
 
-    def __init__(self, config: Dict, parent=None):
+    def __init__(
+        self,
+        config: Dict,
+        parent=None,
+        *,
+        initial_tab: int = 0,
+        help_mode: bool = False,
+    ):
         super().__init__(parent)
-        self.setWindowTitle("설정 및 도움말")
+        self._help_mode = bool(help_mode)
+        self._initial_tab = max(0, int(initial_tab))
+        self.setWindowTitle("도움말" if self._help_mode else "설정 및 도움말")
         self.resize(600, 550)
         self.config = config
         self._api_validate_worker: Optional[AsyncJobWorker] = None
@@ -127,17 +136,23 @@ class SettingsDialog(
         layout = QVBoxLayout(self)
         bg_color, text_color = self._theme_colors()
 
-        tab_widget = QTabWidget()
-        tab_widget.addTab(self._build_settings_tab(bg_color, text_color), "⚙ 설정")
-        tab_widget.addTab(self._build_help_tab(bg_color, text_color), "📖 도움말")
-        tab_widget.addTab(self._build_shortcuts_tab(bg_color, text_color), "⌨ 단축키")
-        layout.addWidget(tab_widget)
+        self.tab_widget = QTabWidget()
+        if not self._help_mode:
+            self.tab_widget.addTab(self._build_settings_tab(bg_color, text_color), "⚙ 설정")
+        self.tab_widget.addTab(self._build_help_tab(bg_color, text_color), "📖 도움말")
+        self.tab_widget.addTab(self._build_shortcuts_tab(bg_color, text_color), "⌨ 단축키")
+        self.tab_widget.setCurrentIndex(min(self._initial_tab, max(0, self.tab_widget.count() - 1)))
+        layout.addWidget(self.tab_widget)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept_with_validation)
-        buttons.rejected.connect(self.reject)
+        if self._help_mode:
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            buttons.rejected.connect(self.reject)
+        else:
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            )
+            buttons.accepted.connect(self.accept_with_validation)
+            buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
     def accept_with_validation(self):

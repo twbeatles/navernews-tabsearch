@@ -44,6 +44,12 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   diagnostics/repair, atomic config backup rotation, and DB emergency caps
 #   rely on stdlib / already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-03-27 review:
+# - Read-only help-mode settings dialog, explicit date-filter apply/clear UX,
+#   scope-wide unread count bookkeeping, on-demand backup verification, and
+#   tray-unavailable notification fallback rely on stdlib / already-bundled
+#   modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QTabWidget
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core.config_store import normalize_import_settings
 from core.constants import VERSION
@@ -138,6 +138,23 @@ def export_scope_to_csv(
 
 
 class _MainWindowSettingsIOMixin:
+    def _build_current_settings_dialog_config(self: MainApp) -> Dict[str, Any]:
+        return {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "interval": self.interval_idx,
+            "theme": self.theme_idx,
+            "notification_enabled": self.notification_enabled,
+            "alert_keywords": self.alert_keywords,
+            "sound_enabled": self.sound_enabled,
+            "minimize_to_tray": self.minimize_to_tray,
+            "close_to_tray": self.close_to_tray,
+            "start_minimized": self.start_minimized,
+            "auto_start_enabled": self.auto_start_enabled,
+            "notify_on_refresh": self.notify_on_refresh,
+            "api_timeout": self.api_timeout,
+        }
+
     def refresh_bookmark_tab(self: MainApp):
         """Reload the bookmark tab."""
         self.bm_tab.load_data_from_db()
@@ -603,41 +620,17 @@ class _MainWindowSettingsIOMixin:
 
     def show_help(self: MainApp):
         """Open the Settings dialog directly on the help tab."""
-        current_config = {
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "interval": self.interval_idx,
-            "theme": self.theme_idx,
-            "sound_enabled": self.sound_enabled,
-            "api_timeout": self.api_timeout,
-        }
-
-        dlg = SettingsDialog(current_config, self)
-        if hasattr(dlg, "findChild"):
-            tab_widget = dlg.findChild(QTabWidget)
-            if tab_widget:
-                tab_widget.setCurrentIndex(1)
+        dlg = SettingsDialog(
+            self._build_current_settings_dialog_config(),
+            self,
+            initial_tab=0,
+            help_mode=True,
+        )
         dlg.exec()
 
     def open_settings(self: MainApp):
         """Open the main settings dialog."""
-        current_config = {
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "interval": self.interval_idx,
-            "theme": self.theme_idx,
-            "notification_enabled": self.notification_enabled,
-            "alert_keywords": self.alert_keywords,
-            "sound_enabled": self.sound_enabled,
-            "minimize_to_tray": self.minimize_to_tray,
-            "close_to_tray": self.close_to_tray,
-            "start_minimized": self.start_minimized,
-            "auto_start_enabled": self.auto_start_enabled,
-            "notify_on_refresh": self.notify_on_refresh,
-            "api_timeout": self.api_timeout,
-        }
-
-        dlg = SettingsDialog(current_config, self)
+        dlg = SettingsDialog(self._build_current_settings_dialog_config(), self)
         if not dlg.exec():
             return
 

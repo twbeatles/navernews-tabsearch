@@ -10,7 +10,7 @@ class _FakeDb:
 
     def count_news(self, **kwargs):
         self.calls.append(("count_news", kwargs))
-        return 123
+        return 45 if kwargs.get("only_unread") else 123
 
     def fetch_news(self, **kwargs):
         self.calls.append(("fetch_news", kwargs))
@@ -44,18 +44,21 @@ class TestDbWorkerPagination(unittest.TestCase):
         worker.finished.connect(lambda data, total_count: finished_payloads.append((data, total_count)))
         worker.run()
 
-        self.assertEqual([call[0] for call in db.calls], ["count_news", "fetch_news"])
+        self.assertEqual([call[0] for call in db.calls], ["count_news", "count_news", "fetch_news"])
 
         count_kwargs = db.calls[0][1]
-        fetch_kwargs = db.calls[1][1]
+        unread_count_kwargs = db.calls[1][1]
+        fetch_kwargs = db.calls[2][1]
         self.assertEqual(count_kwargs["keyword"], "AI")
         self.assertEqual(count_kwargs["filter_txt"], "launch")
         self.assertEqual(count_kwargs["hide_duplicates"], True)
         self.assertEqual(count_kwargs["start_date"], "2026-01-01")
         self.assertEqual(count_kwargs["end_date"], "2026-01-31")
         self.assertEqual(count_kwargs["query_key"], build_fetch_key("AI finance", ["coin"]))
+        self.assertEqual(unread_count_kwargs["only_unread"], True)
         self.assertEqual(fetch_kwargs["limit"], 50)
         self.assertEqual(fetch_kwargs["offset"], 100)
+        self.assertEqual(worker.last_unread_count, 45)
 
         self.assertEqual(
             finished_payloads,
@@ -77,8 +80,10 @@ class TestDbWorkerPagination(unittest.TestCase):
         worker.finished.connect(lambda data, total_count: finished_payloads.append((data, total_count)))
         worker.run()
 
-        self.assertEqual([call[0] for call in db.calls], ["fetch_news"])
-        self.assertEqual(db.calls[0][1]["offset"], 50)
+        self.assertEqual([call[0] for call in db.calls], ["count_news", "fetch_news"])
+        self.assertEqual(db.calls[0][1]["only_unread"], True)
+        self.assertEqual(db.calls[1][1]["offset"], 50)
+        self.assertEqual(worker.last_unread_count, 45)
         self.assertEqual(
             finished_payloads,
             [([{"link": "https://example.com/1", "title": "row"}], 321)],

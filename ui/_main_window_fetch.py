@@ -189,7 +189,7 @@ class _MainWindowFetchMixin:
         self.show_toast(toast_msg)
 
         if self.notify_on_refresh and added > 0:
-            self.show_tray_notification(
+            self.show_desktop_notification(
                 "뉴스 자동 새로고침 완료",
                 f"{added}건의 새 기사가 업데이트되었습니다.",
             )

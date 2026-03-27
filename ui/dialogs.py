@@ -129,7 +129,10 @@ class LogViewerDialog(QDialog):
         filter_layout.addWidget(QLabel("검색:"))
         self.inp_search = QLineEdit()
         self.inp_search.setPlaceholderText("로그 내용 검색...")
-        self.inp_search.textChanged.connect(self.load_logs)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.timeout.connect(self.load_logs)
+        self.inp_search.textChanged.connect(self._schedule_load_logs)
         filter_layout.addWidget(self.inp_search, 1)
         
         layout.addLayout(filter_layout)
@@ -159,6 +162,10 @@ class LogViewerDialog(QDialog):
         
         # 로그 로드
         self.load_logs()
+
+    def _schedule_load_logs(self):
+        self._search_timer.stop()
+        self._search_timer.start(200)
     
     def load_logs(self):
         """로그 파일 로드 - 최근 로그만 최적화하여 로드"""
@@ -266,6 +273,7 @@ class KeywordGroupDialog(QDialog):
         self.resize(600, 500)
         self.group_manager = group_manager
         self.current_tabs = current_tabs
+        self.edit_groups = self.group_manager._normalize_groups(dict(self.group_manager.groups))
         
         self.setup_ui()
         self.load_groups()
@@ -274,7 +282,7 @@ class KeywordGroupDialog(QDialog):
         layout = QVBoxLayout(self)
         
         # 설명
-        info = QLabel("키워드를 그룹(폴더)으로 정리하여 관리할 수 있습니다.")
+        info = QLabel("키워드를 그룹(폴더)으로 정리하여 관리할 수 있습니다. 변경 내용은 저장 시에만 반영됩니다.")
         info.setStyleSheet("color: #666; margin-bottom: 10px;")
         layout.addWidget(info)
         
@@ -332,17 +340,40 @@ class KeywordGroupDialog(QDialog):
         
         layout.addLayout(main_layout)
         
-        # 닫기 버튼
-        btn_close = QPushButton("닫기")
-        btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _group_names(self) -> List[str]:
+        return list(self.edit_groups.keys())
+
+    def _selected_group_name(self) -> Optional[str]:
+        current_row = self.group_list.currentRow()
+        groups = self._group_names()
+        if 0 <= current_row < len(groups):
+            return groups[current_row]
+        return None
+
+    def accept(self):
+        self.group_manager.groups = self.group_manager._normalize_groups(self.edit_groups)
+        self.group_manager.save_groups()
+        super().accept()
     
     def load_groups(self):
         """그룹 및 키워드 목록 로드"""
+        selected_group = self._selected_group_name()
         self.group_list.clear()
-        for group in self.group_manager.get_all_groups():
-            count = len(self.group_manager.get_group_keywords(group))
+        groups = self._group_names()
+        for group in groups:
+            count = len(self.edit_groups.get(group, []))
             self.group_list.addItem(f"📁 {group} ({count})")
+
+        if groups:
+            target_index = groups.index(selected_group) if selected_group in groups else 0
+            self.group_list.setCurrentRow(target_index)
         
         self.update_keyword_lists()
     
@@ -352,18 +383,15 @@ class KeywordGroupDialog(QDialog):
         self.unassigned_list.clear()
         
         # 현재 선택된 그룹의 키워드
-        current_row = self.group_list.currentRow()
-        if current_row >= 0:
-            groups = self.group_manager.get_all_groups()
-            if current_row < len(groups):
-                group_name = groups[current_row]
-                for kw in self.group_manager.get_group_keywords(group_name):
-                    self.group_keywords_list.addItem(kw)
+        group_name = self._selected_group_name()
+        if group_name:
+            for kw in self.edit_groups.get(group_name, []):
+                self.group_keywords_list.addItem(kw)
         
         # 미분류 키워드 (어떤 그룹에도 속하지 않은 탭)
         assigned = set()
-        for group in self.group_manager.get_all_groups():
-            assigned.update(self.group_manager.get_group_keywords(group))
+        for keywords in self.edit_groups.values():
+            assigned.update(keywords)
         
         for tab in self.current_tabs:
             if tab not in assigned and tab != "북마크":
@@ -377,58 +405,55 @@ class KeywordGroupDialog(QDialog):
         """새 그룹 추가"""
         name, ok = QInputDialog.getText(self, "새 그룹", "그룹 이름:")
         if ok and name.strip():
-            if self.group_manager.create_group(name.strip()):
+            group_name = name.strip()
+            if group_name not in self.edit_groups:
+                self.edit_groups[group_name] = []
                 self.load_groups()
             else:
                 QMessageBox.warning(self, "오류", "이미 존재하는 그룹 이름입니다.")
     
     def delete_group(self):
         """그룹 삭제"""
-        current_row = self.group_list.currentRow()
-        if current_row < 0:
+        group_name = self._selected_group_name()
+        if not group_name:
             return
-        
-        groups = self.group_manager.get_all_groups()
-        if current_row < len(groups):
-            group_name = groups[current_row]
-            reply = QMessageBox.question(
-                self, "그룹 삭제",
-                f"'{group_name}' 그룹을 삭제하시겠습니까?\n(그룹 내 키워드는 미분류로 이동됩니다)",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.group_manager.delete_group(group_name)
-                self.load_groups()
+
+        reply = QMessageBox.question(
+            self, "그룹 삭제",
+            f"'{group_name}' 그룹을 삭제하시겠습니까?\n(그룹 내 키워드는 미분류로 이동됩니다)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.edit_groups.pop(group_name, None)
+            self.load_groups()
     
     def add_keyword_to_group(self):
         """선택한 키워드를 그룹에 추가"""
-        group_row = self.group_list.currentRow()
+        group_name = self._selected_group_name()
         keyword_item = self.unassigned_list.currentItem()
         
-        if group_row < 0 or not keyword_item:
+        if not group_name or not keyword_item:
             return
-        
-        groups = self.group_manager.get_all_groups()
-        if group_row < len(groups):
-            group_name = groups[group_row]
-            keyword = keyword_item.text()
-            self.group_manager.add_keyword_to_group(group_name, keyword)
-            self.load_groups()
+
+        keyword = keyword_item.text()
+        keywords = self.edit_groups.setdefault(group_name, [])
+        if keyword not in keywords:
+            keywords.append(keyword)
+        self.load_groups()
     
     def remove_keyword_from_group(self):
         """그룹에서 키워드 제거"""
-        group_row = self.group_list.currentRow()
+        group_name = self._selected_group_name()
         keyword_item = self.group_keywords_list.currentItem()
         
-        if group_row < 0 or not keyword_item:
+        if not group_name or not keyword_item:
             return
-        
-        groups = self.group_manager.get_all_groups()
-        if group_row < len(groups):
-            group_name = groups[group_row]
-            keyword = keyword_item.text()
-            self.group_manager.remove_keyword_from_group(group_name, keyword)
-            self.load_groups()
+
+        keyword = keyword_item.text()
+        keywords = self.edit_groups.get(group_name, [])
+        if keyword in keywords:
+            keywords.remove(keyword)
+        self.load_groups()
 
 
 class BackupDialog(QDialog):
@@ -575,7 +600,7 @@ class BackupDialog(QDialog):
             return item_text
 
         if verification_state == "pending":
-            return f"[검증 중] {date_str} (v{version}) {include_db} {trigger_label}"
+            return f"[검증 전] {date_str} (v{version}) {include_db} {trigger_label}"
 
         if not is_restorable:
             item_text = f"[복원 불가] {date_str} (v{version}) {include_db} {trigger_label}"
@@ -652,9 +677,7 @@ class BackupDialog(QDialog):
         if hasattr(self, "btn_cancel_verify"):
             self.btn_cancel_verify.setEnabled(False)
         if hasattr(self, "lbl_verify_status"):
-            self.lbl_verify_status.setText("백업 목록을 불러왔습니다. 자동 검증을 시작합니다.")
-        if hasattr(self, "start_backup_verification"):
-            QTimer.singleShot(0, self.start_backup_verification)
+            self.lbl_verify_status.setText("백업 목록을 불러왔습니다. 필요 시 '백업 검증'을 실행하세요.")
 
     def start_backup_verification(self):
         if self._verify_worker is not None and self._verify_worker.isRunning():

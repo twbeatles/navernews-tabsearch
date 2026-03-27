@@ -55,6 +55,7 @@ class _DummyCheck:
 class _DummyNewsTab:
     _set_read_state = NewsTab._set_read_state
     _emit_local_action_failure = NewsTab._emit_local_action_failure
+    _open_article_url = NewsTab._open_article_url
 
     def __init__(self, update_result=True):
         self.db = _DummyDB(update_result=update_result)
@@ -95,7 +96,7 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         tab = _DummyNewsTab()
         target = {"link": "https://example.com/news-1", "is_read": 0}
 
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl") as open_mock:
+        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=True) as open_mock:
             NewsTab._open_external_link_and_mark_read(cast(Any, tab), target)
 
         open_mock.assert_called_once()
@@ -109,7 +110,7 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         tab = _DummyNewsTab()
         target = {"link": "https://example.com/news-2", "is_read": 1}
 
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl") as open_mock:
+        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=True) as open_mock:
             NewsTab._open_external_link_and_mark_read(cast(Any, tab), target)
 
         open_mock.assert_called_once()
@@ -133,10 +134,25 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         tab = _DummyNewsTab(update_result=False)
         tab.target = {"link": "https://example.com/news-open", "is_read": 0, "is_bookmarked": 0}
 
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl") as open_mock:
+        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=True) as open_mock:
             NewsTab.on_link_clicked(cast(Any, tab), QUrl("app://open/hash"))
 
         open_mock.assert_called_once()
+        self.assertEqual(tab.target["is_read"], 0)
+        self.assertEqual(tab.adjust_calls, 0)
+        self.assertEqual(tab.refresh_calls, 0)
+        self.assertEqual(tab.badge_calls, 0)
+        self.assertTrue(tab._window.warning_calls)
+
+    def test_open_action_does_not_mark_as_read_when_link_open_fails(self):
+        tab = _DummyNewsTab(update_result=True)
+        tab.target = {"link": "https://example.com/news-open-fail", "is_read": 0, "is_bookmarked": 0}
+
+        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=False) as open_mock:
+            NewsTab.on_link_clicked(cast(Any, tab), QUrl("app://open/hash"))
+
+        open_mock.assert_called_once()
+        self.assertEqual(tab.db.calls, [])
         self.assertEqual(tab.target["is_read"], 0)
         self.assertEqual(tab.adjust_calls, 0)
         self.assertEqual(tab.refresh_calls, 0)

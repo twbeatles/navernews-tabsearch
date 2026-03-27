@@ -107,6 +107,7 @@ class _DummyDialog:
         self.auto_backup = auto_backup
         self.format_backup_timestamp = BackupDialog.format_backup_timestamp
         self.load_backups = lambda: None
+        self.start_backup_verification = mock.Mock()
         self._backup_item_text = lambda backup: BackupDialog._backup_item_text(cast(Any, self), backup)
         self._backup_item_meta = lambda backup: BackupDialog._backup_item_meta(cast(Any, self), backup)
         self._apply_backup_item_state = (
@@ -287,6 +288,24 @@ class TestBackupRestoreMode(unittest.TestCase):
                 "verification_error": "",
             },
         )
+
+    def test_load_backups_does_not_auto_start_verification(self):
+        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        auto_backup.backups = [
+            {
+                "name": "backup_1",
+                "timestamp": "20260306_101530_123456",
+                "app_version": "32.7.2",
+                "include_db": False,
+                "trigger": "manual",
+                "created_at": "2026-03-06T10:15:30",
+            }
+        ]
+        dialog = _DummyDialog(_FakeListWidget(), auto_backup)
+
+        BackupDialog.load_backups(cast(Any, dialog))
+
+        dialog.start_backup_verification.assert_not_called()
 
     def test_restore_backup_corrupt_item_delete_branch(self):
         with tempfile.TemporaryDirectory() as td:

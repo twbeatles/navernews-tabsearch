@@ -129,6 +129,9 @@ class _MainWindowTrayMixin:
     ):
         """시스템 트레이 알림 표시 (새 뉴스 도착 등)"""
         if not hasattr(self, "tray") or not self.tray:
+            fallback = getattr(self, "show_desktop_notification", None)
+            if callable(fallback):
+                fallback(title, message)
             return
 
         try:

@@ -467,6 +467,7 @@ class DBWorker(QThread):
         self.include_total = include_total
         self.known_total_count = known_total_count
         self._is_cancelled = False
+        self.last_unread_count = 0
 
     def stop(self):
         self._is_cancelled = True
@@ -486,9 +487,18 @@ class DBWorker(QThread):
                     self.finished.emit([], 0)
                     return
 
+                count_kwargs = self.scope.count_kwargs()
                 total_count = int(self.known_total_count or 0)
                 if self.include_total:
                     total_count = self.db.count_news(**self.scope.count_kwargs())
+
+                if count_kwargs.get("only_unread", False):
+                    unread_count = total_count
+                else:
+                    unread_count_kwargs = dict(count_kwargs)
+                    unread_count_kwargs["only_unread"] = True
+                    unread_count = self.db.count_news(**unread_count_kwargs)
+                self.last_unread_count = int(unread_count or 0)
 
                 if self._is_cancelled:
                     return

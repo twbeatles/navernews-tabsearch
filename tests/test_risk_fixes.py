@@ -4,6 +4,7 @@ from pathlib import Path
 
 from core.query_parser import has_positive_keyword
 from ui.main_window import MainApp
+from ui._main_window_settings_io import _MainWindowSettingsIOMixin
 
 
 class TestKeywordValidation(unittest.TestCase):
@@ -115,6 +116,25 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertIn('self.show_toast(f"{title}: {message}")', block)
         self.assertIn("if self.sound_enabled:", block)
 
+    def test_tray_notification_falls_back_to_desktop_notification(self):
+        src = Path("ui/_main_window_tray.py").read_text(encoding="utf-8")
+        self.assertIn('fallback = getattr(self, "show_desktop_notification", None)', src)
+        self.assertIn("fallback(title, message)", src)
+
+    def test_tab_icon_uses_query_parser_semantics(self):
+        block = inspect.getsource(MainApp._tab_icon_for_keyword)
+        self.assertIn('return "📰" if has_positive_keyword(str(keyword or "")) else "🚫"', block)
+
+    def test_countdown_updates_dedicated_label_instead_of_overwriting_status_messages(self):
+        block = inspect.getsource(MainApp._update_countdown)
+        self.assertIn('self._set_countdown_status_text(countdown_text)', block)
+        self.assertNotIn('self._status_bar().showMessage(countdown_text)', block)
+
+    def test_show_help_opens_help_mode_dialog(self):
+        block = inspect.getsource(_MainWindowSettingsIOMixin.show_help)
+        self.assertIn("help_mode=True", block)
+        self.assertIn("initial_tab=0", block)
+
     def test_rename_tab_cleans_active_worker_and_uses_common_title_formatter(self):
         block = inspect.getsource(MainApp.rename_tab)
         self.assertIn("self._worker_registry.get_active_request_id(old_keyword)", block)
@@ -146,6 +166,14 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         self.assertIn("self.db.mark_query_as_read", block)
         self.assertIn("self._current_filter_text()", block)
         self.assertIn("self.chk_hide_dup.isChecked()", block)
+
+    def test_date_filter_requires_explicit_apply_and_tracks_active_state(self):
+        src = Path("ui/news_tab.py").read_text(encoding="utf-8")
+        self.assertIn("self.btn_apply_date = QPushButton(\"적용\")", src)
+        self.assertIn("self.btn_clear_date = QPushButton(\"해제\")", src)
+        self.assertIn("self._date_filter_active = False", src)
+        self.assertIn("def _apply_date_filter(self):", src)
+        self.assertIn("def _clear_date_filter(self):", src)
 
     def test_stats_analysis_uses_raw_tab_query_data(self):
         block = inspect.getsource(MainApp.show_stats_analysis)

@@ -51,3 +51,8 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         self.assertIn("worker.wait(wait_ms)", block)
         self.assertIn("worker.setParent(None)", block)
         self.assertIn("worker.finished.connect(worker.deleteLater)", block)
+
+    def test_settings_dialog_supports_help_mode(self):
+        src = inspect.getsource(SettingsDialog.__init__)
+        self.assertIn("help_mode: bool = False", src)
+        self.assertIn('self.setWindowTitle("도움말" if self._help_mode else "설정 및 도움말")', src)

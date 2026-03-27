@@ -38,7 +38,7 @@ navernews-tabsearch/
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
-│   ├── backup.py                # AutoBackup/backup verification/apply_pending_restore_if_any
+│   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
@@ -82,10 +82,18 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `180 passed, 5 subtests passed`
+- `pyrightconfig.json`으로 repo-wide Pyright 게이트를 유지한다. 이번 패스에서는 로컬 PyQt6 import resolution 환경 차이로 재검증 기준에 포함하지 않았다.
+- `pytest -q` => `188 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-25 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-27 기준 다시 성공했다.
+
+### 2026-03-27 UI/UX Hardening + Docs/Packaging Revalidation
+
+- `SettingsDialog`는 `help_mode` / `initial_tab`을 지원하며, 도움말은 저장과 분리된 read-only 다이얼로그로 열린다.
+- `NewsTab`은 기간 필터를 `적용`/`해제`로 명시화했고, 외부 기사 열기 실패 시 읽음 처리하지 않으며, unread 수치를 DB scope 기준으로 유지한다.
+- `MainApp`은 자동 새로고침 카운트다운을 전용 상태바 라벨로 분리했고, 트레이 미지원 환경에서도 데스크톱 fallback 알림을 사용한다.
+- `KeywordGroupDialog`는 staged save/cancel 모델을 사용하고, `BackupDialog`의 무거운 검증은 사용자 트리거형으로 전환됐다.
+- `news_scraper_pro.spec`와 `.gitignore`를 다시 검토했으며, 이번 패스에서도 추가 packaging/ignore 변경은 필요하지 않았다.
 
 ### 2026-03-21 성능 리팩토링 메모
 

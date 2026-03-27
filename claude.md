@@ -53,7 +53,7 @@ navernews-tabsearch/
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
-│   ├── backup.py                # AutoBackup/backup verification/apply_pending_restore_if_any
+│   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
@@ -120,10 +120,21 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pytest -q` => `180 passed, 5 subtests passed`
+- `pyrightconfig.json`으로 repo-wide Pyright 게이트를 유지한다. 이번 패스에서는 로컬 PyQt6 import resolution 환경 차이로 재검증 기준에 포함하지 않았다.
+- `pytest -q` => `188 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-25 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-27 기준 다시 성공했다.
+
+---
+
+## 🚀 2026-03-27 UI/UX Hardening + Docs/Packaging Revalidation
+
+- `ui.settings_dialog.SettingsDialog`는 `help_mode` / `initial_tab`을 지원하고, `MainApp.show_help()`는 저장 경로와 분리된 read-only 도움말 다이얼로그를 연다.
+- `ui.news_tab.NewsTab`은 기간 필터를 `적용`/`해제` 흐름으로 명시화했고, 외부 기사 열기 실패 시 읽음 처리하지 않으며, 하단 unread 수치를 현재 DB scope 기준으로 유지한다.
+- `ui.main_window.MainApp`은 자동 새로고침 카운트다운을 전용 상태바 라벨로 분리하고, 트레이 미지원 환경에서도 데스크톱 fallback 알림을 유지한다.
+- `ui.dialogs.KeywordGroupDialog`는 staged save/cancel 모델로 바뀌었고, `LogViewerDialog`는 debounce 검색을 사용하며, `BackupDialog`의 무거운 백업 검증은 사용자가 직접 시작한다.
+- `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`를 현재 동작 기준으로 다시 맞췄다.
+- `.gitignore`는 build/dist/runtime 산출물을 이미 충분히 무시하고 있어 이번 패스에서 추가 규칙이 필요하지 않았다.
 
 ---
 

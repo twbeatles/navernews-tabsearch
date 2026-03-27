@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-03-25)
+작성일: 2026-03-16 (최근 갱신: 2026-03-27)
 
 ## 분석 범위
 
@@ -16,6 +16,19 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-03-27 UI/UX 하드닝/문서 재검증
+
+이번 재검증에서는 2026-03-27 UI/UX 하드닝 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- `SettingsDialog`는 `help_mode` / `initial_tab`을 지원하고, 도움말은 저장 가능한 설정 창이 아니라 read-only 도움말 다이얼로그로 열린다.
+- `NewsTab`은 기간 필터를 즉시 반영형에서 `적용`/`해제` 흐름으로 바꿨고, 외부 기사 열기 실패 시 읽음 처리하지 않으며, unread 카운트는 현재 로드된 slice가 아니라 현재 DB scope 전체를 기준으로 유지한다.
+- 자동 새로고침 카운트다운은 전용 상태바 라벨로 분리되었고, 자동 새로고침 완료 알림은 트레이 미지원 환경에서도 desktop fallback을 유지한다.
+- `KeywordGroupDialog`는 staged save/cancel 모델로 바뀌었고, `LogViewerDialog`는 debounce 검색을 사용한다.
+- 백업 목록은 quick metadata를 먼저 보여주고, 무거운 SQLite integrity/sidecar 검사는 사용자가 직접 시작하는 on-demand verification으로 전환됐다.
+- `news_scraper_pro.spec`는 2026-03-27 기준 다시 재검토되었고, help/read-only dialog, on-demand backup verification, unread count bookkeeping, tray fallback 알림 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
+- `.gitignore`는 build/dist/runtime/test 부산물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
+- 문서 기준 현재 검증선은 `pytest -q` => `188 passed, 5 subtests passed`이며, `pyinstaller --noconfirm --clean news_scraper_pro.spec`도 2026-03-27 기준 다시 성공했다.
 
 ## 0. 2026-03-25 운영 안정화/문서 재검증
 

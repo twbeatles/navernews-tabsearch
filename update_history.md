@@ -1,6 +1,33 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **UI/UX Hardening + Docs/Spec Revalidation (2026-03-27)**:
+  - Help/settings separation:
+    - Added read-only `help_mode` / `initial_tab` support to `SettingsDialog`.
+    - `MainApp.show_help()` now opens a help-only dialog instead of a save-capable settings surface.
+  - News-tab interaction fixes:
+    - Date filtering now uses explicit `적용` / `해제` actions and normalizes reversed ranges safely.
+    - External article open failures no longer mark items as read.
+    - `DBWorker` now preserves scope-wide unread counts so tab footer counts match badge semantics.
+  - UI workflow polish:
+    - Auto-refresh countdown moved to a dedicated permanent status-bar label.
+    - Refresh completion notifications now fall back cleanly when the tray is unavailable.
+    - `KeywordGroupDialog` switched to staged save/cancel semantics.
+    - `LogViewerDialog` search now debounces repeated reloads.
+  - Backup/docs/spec alignment:
+    - Backup list loading remains metadata-first, while expensive verification is now user-triggered on demand.
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, and `news_scraper_pro.spec` to the current behavior.
+    - Re-reviewed `.gitignore`; existing rules already covered this pass, so no new ignore entry was required.
+  - Added/updated tests:
+    - Expanded:
+      - `tests/test_backup_restore_mode.py`
+      - `tests/test_dbworker_pagination.py`
+      - `tests/test_news_tab_ext_read_policy.py`
+      - `tests/test_risk_fixes.py`
+      - `tests/test_settings_roundtrip.py`
+  - Validation:
+    - `pytest -q` => `188 passed, 5 subtests passed`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Operational Hardening Pass I (2026-03-25)**:
   - Export / long task UX:
     - Added `IterativeJobWorker` for cancel-aware iterative jobs.

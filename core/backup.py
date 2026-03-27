@@ -72,6 +72,15 @@ def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
             logger.error("rollback failed for %s: %s", target, rollback_error)
 
 
+def _cleanup_restore_stage_dir(staging_dir: str) -> None:
+    try:
+        shutil.rmtree(staging_dir)
+    except FileNotFoundError:
+        return
+    except Exception as cleanup_error:
+        logger.warning("restore staging cleanup failed for %s: %s", staging_dir, cleanup_error)
+
+
 def _validate_restore_sources(
     backup_path: str,
     config_file: str,
@@ -238,23 +247,29 @@ def _apply_restore_from_backup(
 
     staging_parent = os.path.dirname(os.path.abspath(config_file)) or "."
     try:
-        with tempfile.TemporaryDirectory(prefix=".restore_stage_", dir=staging_parent) as staging_dir:
-            snapshots = _snapshot_files_for_rollback(
-                rollback_targets,
-                os.path.join(staging_dir, "snapshots"),
-            )
-            try:
-                _atomic_copy_replace(validated["config_backup"], config_file)
-                if restore_db:
-                    _atomic_copy_replace(validated["db_backup"], db_file)
-                    _apply_restore_sidecars(validated["db_backup"], db_file)
-            except Exception as apply_error:
-                logger.error("%s apply failed, rolling back: %s", context_label, apply_error)
-                _rollback_files_from_snapshot(snapshots)
-                return False
+        staging_dir = tempfile.mkdtemp(prefix=".restore_stage_", dir=staging_parent)
     except Exception as e:
         logger.error("%s staging failed: %s", context_label, e)
         return False
+    try:
+        snapshots = _snapshot_files_for_rollback(
+            rollback_targets,
+            os.path.join(staging_dir, "snapshots"),
+        )
+        try:
+            _atomic_copy_replace(validated["config_backup"], config_file)
+            if restore_db:
+                _atomic_copy_replace(validated["db_backup"], db_file)
+                _apply_restore_sidecars(validated["db_backup"], db_file)
+        except Exception as apply_error:
+            logger.error("%s apply failed, rolling back: %s", context_label, apply_error)
+            _rollback_files_from_snapshot(snapshots)
+            return False
+    except Exception as e:
+        logger.error("%s staging failed: %s", context_label, e)
+        return False
+    finally:
+        _cleanup_restore_stage_dir(staging_dir)
 
     return True
 

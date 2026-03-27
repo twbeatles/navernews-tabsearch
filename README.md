@@ -59,7 +59,7 @@
 - 검색어 정책 분리: API 검색어(`parse_search_query`)와 대표 키워드(`parse_tab_query`)를 분리하고 실제 탭 범위는 `query_key`로 판정
 - `news_keywords`를 `(link, query_key)` 기준으로 마이그레이션해 멀티 키워드 탭을 독립 범위로 조회/분석/배지 집계
 - CSV 내보내기를 청크 기반 백그라운드 작업으로 전환하고 `*.tmp` 저장 후 atomic rename 적용
-- 백업 목록을 빠른 메타데이터로 먼저 노출한 뒤 백그라운드 full verification(SQLite integrity/sidecar 정책 포함) 수행
+- 백업 목록은 빠른 메타데이터로 먼저 노출하고, 무거운 SQLite integrity/sidecar 검사는 필요 시 수동 검증으로 실행
 - 백업 복원 전 현재 상태 보호 백업을 먼저 시도하고, 실패 시 사용자 확인 없이는 복원을 진행하지 않음
 - SQLite 비상 연결 수를 제한하고 포화 시 명시적으로 실패/로그 남김
 - 설정 창 닫힘 시 백그라운드 워커 정리(콜백 안전 가드)
@@ -95,6 +95,20 @@
 - `DBQueryScope`로 탭 조회 scope 계산을 단일화하고, append 경로에서는 `known_total_count`를 재사용해 `count_news()`를 다시 호출하지 않음
 - `NewsTab`은 `_item_by_link` 인덱스로 단건 상태 변경 대상을 O(1)에 찾고, fragment cache + coalesced render로 HTML flush를 줄임
 - `news_keywords(query_key, keyword)`, `news_keywords(query_key, keyword, is_duplicate)`, `news(is_bookmarked, is_read, pubDate_ts DESC)` 복합 인덱스를 추가해 현재 조회 패턴에 맞춤
+- 도움말은 설정 저장 경로와 분리된 read-only `help_mode`로 열려 저장 가능한 설정 화면처럼 보이지 않도록 분리
+- 기사 외부 열기 실패 시 읽음 처리/캐시 갱신을 하지 않도록 보정
+- 기간 필터는 즉시 반영형 대신 `적용`/`해제` 흐름으로 바꾸고, 역전된 날짜 범위는 자동 정규화
+- 탭 하단 `안 읽음` 수치와 배지 기준을 현재 로드된 slice가 아니라 현재 DB scope 전체 기준으로 일치시킴
+- 자동 새로고침 카운트다운은 전용 상태바 라벨로 분리해 일반 상태 메시지를 덮어쓰지 않도록 조정
+- 트레이 미지원 환경에서도 자동 새로고침 완료 알림이 토스트/알림음 fallback으로 전달되도록 통일
+- 키워드 그룹 관리는 즉시 저장형에서 staged `저장`/`취소` 다이얼로그로 전환
+- 로그 검색은 debounce를 적용해 빠른 연속 입력에서 불필요한 reload를 줄임
+
+## 최신 검증 메모 (2026-03-27)
+
+- `python -m pytest -q` => `188 passed, 5 subtests passed`
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공
+- 산출물: `dist/NewsScraperPro_Safe.exe`
 
 ## 프로젝트 구조
 
@@ -119,7 +133,7 @@ navernews-tabsearch/
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
-│   ├── backup.py                # AutoBackup/backup verification/apply_pending_restore_if_any
+│   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
@@ -249,6 +263,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-03-25 기준으로 `.gitignore`에 `.pytest_tmp/`를 명시 추가했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 다시 성공해 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됨을 재확인했습니다.
 - 2026-03-21 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드를 다시 검증했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-03-24 기준으로도 `.spec`과 `.gitignore`를 다시 재검토했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 성공해 추가 packaging/ignore 수정이 필요하지 않음을 재확인했습니다.
+- 2026-03-27 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, help/read-only 설정 다이얼로그, 수동 백업 검증 UX, unread count bookkeeping, 트레이 fallback 알림 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않았습니다.
+- 2026-03-27 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 

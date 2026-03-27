@@ -79,6 +79,7 @@ class NewsTab(QWidget):
         self._loaded_offset = 0
         self._pending_append_request_ids: set[int] = set()
         self._pending_scroll_restore = 0
+        self._date_filter_active = False
 
         # Async DB Worker
         self.worker: Optional[DBWorker] = None
@@ -113,11 +114,19 @@ class NewsTab(QWidget):
         return self.inp_filter.text().strip()
 
     def _current_date_range(self) -> Tuple[Optional[str], Optional[str]]:
-        if not self.btn_date_toggle.isChecked():
+        if not self._date_filter_active:
             return None, None
         return (
             self.date_start.date().toString("yyyy-MM-dd"),
             self.date_end.date().toString("yyyy-MM-dd"),
+        )
+
+    def _has_active_filters(self) -> bool:
+        return bool(
+            self._current_filter_text()
+            or self.chk_unread.isChecked()
+            or self.chk_hide_dup.isChecked()
+            or self._date_filter_active
         )
 
     def _build_query_scope(self) -> DBQueryScope:
@@ -560,7 +569,7 @@ class NewsTab(QWidget):
         self.date_start.setDisplayFormat("yyyy-MM-dd")
         self.date_start.setMinimumWidth(120)
         self.date_start.setDate(QDate.currentDate().addDays(-7))
-        self.date_start.dateChanged.connect(self.load_data_from_db)
+        self.date_start.dateChanged.connect(self._on_date_start_changed)
         
         self.lbl_tilde = QLabel("~")
         
@@ -569,11 +578,19 @@ class NewsTab(QWidget):
         self.date_end.setDisplayFormat("yyyy-MM-dd")
         self.date_end.setMinimumWidth(120)
         self.date_end.setDate(QDate.currentDate())
-        self.date_end.dateChanged.connect(self.load_data_from_db)
-        
+        self.date_end.dateChanged.connect(self._on_date_end_changed)
+
+        self.btn_apply_date = QPushButton("적용")
+        self.btn_apply_date.clicked.connect(self._apply_date_filter)
+
+        self.btn_clear_date = QPushButton("해제")
+        self.btn_clear_date.clicked.connect(self._clear_date_filter)
+
         date_inner_layout.addWidget(self.date_start)
         date_inner_layout.addWidget(self.lbl_tilde)
         date_inner_layout.addWidget(self.date_end)
+        date_inner_layout.addWidget(self.btn_apply_date)
+        date_inner_layout.addWidget(self.btn_clear_date)
         
         row2_layout.addWidget(self.btn_date_toggle)
         row2_layout.addWidget(self.date_container)
@@ -584,6 +601,7 @@ class NewsTab(QWidget):
         # 초기에는 날짜 필터 숨김
         self.date_container.setVisible(False)
         self._update_date_toggle_style(False)
+        self._refresh_date_filter_controls()
         
         layout.addWidget(filter_card)
         
@@ -617,14 +635,20 @@ class NewsTab(QWidget):
     def _toggle_date_filter(self, checked: bool):
         """날짜 필터 표시/숨김 토글"""
         self.date_container.setVisible(checked)
-        self._update_date_toggle_style(checked)
         if checked:
             self.date_container.adjustSize()
             self.date_container.updateGeometry()
             self.date_container.repaint()
+            self._refresh_date_filter_controls()
+            return
 
-        # 즉시 조회 실행
-        self.load_data_from_db()
+        was_active = self._date_filter_active
+        self._date_filter_active = False
+        self._refresh_date_filter_controls()
+        if was_active:
+            self.load_data_from_db()
+        else:
+            self.update_status_label()
 
     def _update_date_toggle_style(self, checked: bool):
         """날짜 토글 버튼 스타일 업데이트"""
@@ -684,6 +708,53 @@ class NewsTab(QWidget):
             self.date_end.setStyleSheet(date_edit_style)
             self.lbl_tilde.setStyleSheet(f"color: {tilde_text};")
 
+    def _refresh_date_filter_controls(self):
+        active = bool(self._date_filter_active)
+        self.btn_date_toggle.setText("📅 기간 적용 중" if active else "📅 기간")
+        self.btn_apply_date.setEnabled(self.btn_date_toggle.isChecked())
+        self.btn_clear_date.setEnabled(active)
+        self._update_date_toggle_style(active)
+
+    def _set_date_edit_value(self, widget: QDateEdit, date_value: QDate):
+        widget.blockSignals(True)
+        try:
+            widget.setDate(date_value)
+        finally:
+            widget.blockSignals(False)
+
+    def _normalize_date_inputs(self):
+        start_date = self.date_start.date()
+        end_date = self.date_end.date()
+        if start_date > end_date:
+            self._set_date_edit_value(self.date_end, start_date)
+        return self.date_start.date(), self.date_end.date()
+
+    def _on_date_start_changed(self, selected_date: QDate):
+        if selected_date > self.date_end.date():
+            self._set_date_edit_value(self.date_end, selected_date)
+        if self._date_filter_active:
+            self.load_data_from_db()
+
+    def _on_date_end_changed(self, selected_date: QDate):
+        if selected_date < self.date_start.date():
+            self._set_date_edit_value(self.date_start, selected_date)
+        if self._date_filter_active:
+            self.load_data_from_db()
+
+    def _apply_date_filter(self):
+        self._normalize_date_inputs()
+        self._date_filter_active = True
+        self._refresh_date_filter_controls()
+        self.load_data_from_db()
+
+    def _clear_date_filter(self):
+        if not self._date_filter_active:
+            self.update_status_label()
+            return
+        self._date_filter_active = False
+        self._refresh_date_filter_controls()
+        self.load_data_from_db()
+
     def _on_filter_changed(self):
         """필터 입력 변경 시 디바운싱 타이머 시작"""
         self.filter_timer.stop()
@@ -732,16 +803,23 @@ class NewsTab(QWidget):
                 known_total_count=self._total_filtered_count if append else None,
             )
             self.worker.finished.connect(
-                lambda data, total_count, rid=current_request_id: self.on_data_loaded(
+                lambda data, total_count, rid=current_request_id, worker_ref=self.worker: self.on_data_loaded(
                     data,
                     total_count,
-                    rid,
+                    request_id=rid,
+                    unread_count=getattr(worker_ref, "last_unread_count", None),
                 )
             )
             self.worker.error.connect(lambda err_msg, rid=current_request_id: self.on_data_error(err_msg, rid))
             self.worker.start()
 
-    def on_data_loaded(self, data, total_count, request_id: Optional[int] = None):
+    def on_data_loaded(
+        self,
+        data,
+        total_count,
+        request_id: Optional[int] = None,
+        unread_count: Optional[int] = None,
+    ):
         """데이터 로드 완료 시 호출"""
         if request_id is not None and request_id != self._load_request_id:
             self._request_scope_signatures.pop(request_id, None)
@@ -778,7 +856,10 @@ class NewsTab(QWidget):
             self._total_filtered_count = int(total_count or 0)
             self._last_loaded_scope_signature = scope_signature
             self._last_filter_text = self._current_filter_text().lower()
-            self._recount_unread_cache()
+            if unread_count is None:
+                self._recount_unread_cache()
+            else:
+                self._unread_count_cache = max(0, int(unread_count or 0))
             self._data_version += 1
             self._last_render_signature = None
             self._is_loading_more = False
@@ -930,14 +1011,14 @@ class NewsTab(QWidget):
         """상태 레이블 업데이트 - 캐시 기반 최적화"""
         loaded_count = len(self.filtered_data_cache)
         total_filtered = max(self._total_filtered_count, loaded_count)
+        active_start_date, active_end_date = self._current_date_range()
 
         if not self.is_bookmark_tab:
             unread = self._unread_count_cache
             overall_total = max(int(self.total_api_count or 0), total_filtered)
             msg = f"'{self.keyword}': 총 {overall_total}개"
 
-            filter_word = self._current_filter_text()
-            if filter_word or self.chk_unread.isChecked() or self.chk_hide_dup.isChecked() or self.btn_date_toggle.isChecked():
+            if self._has_active_filters():
                 msg += f" | 필터링: {total_filtered}개"
             else:
                 msg += f" | {loaded_count}개"
@@ -945,14 +1026,16 @@ class NewsTab(QWidget):
             if loaded_count < total_filtered:
                 msg += f" (표시: {loaded_count}개)"
 
+            if active_start_date and active_end_date:
+                msg += f" | 기간: {active_start_date}~{active_end_date}"
+
             if unread > 0:
                 msg += f" | 안 읽음: {unread}개"
             if self.last_update:
                 msg += f" | 업데이트: {self.last_update}"
             self.lbl_status.setText(msg)
         else:
-            filter_word = self._current_filter_text()
-            if filter_word or self.chk_unread.isChecked() or self.chk_hide_dup.isChecked() or self.btn_date_toggle.isChecked():
+            if self._has_active_filters():
                 status_text = f"⭐ 북마크 {total_filtered}개"
             else:
                 status_text = f"⭐ 북마크 {loaded_count}개"
@@ -960,15 +1043,44 @@ class NewsTab(QWidget):
             if loaded_count < total_filtered:
                 status_text += f" (표시: {loaded_count}개)"
 
+            if active_start_date and active_end_date:
+                status_text += f" | 기간: {active_start_date}~{active_end_date}"
+
             self.lbl_status.setText(status_text)
 
+
+    def _open_article_url(
+        self,
+        link: str,
+        *,
+        failure_message: str,
+    ) -> bool:
+        normalized_link = str(link or "").strip()
+        if not normalized_link:
+            self._emit_local_action_failure(failure_message)
+            return False
+
+        url = QUrl.fromUserInput(normalized_link)
+        if not url.isValid():
+            self._emit_local_action_failure(failure_message)
+            return False
+
+        if not QDesktopServices.openUrl(url):
+            self._emit_local_action_failure(failure_message)
+            return False
+
+        return True
 
     def _open_external_link_and_mark_read(self, target: Dict[str, Any]):
         link = target.get("link", "")
         if not link:
             return
 
-        QDesktopServices.openUrl(QUrl(link))
+        if not self._open_article_url(
+            str(link),
+            failure_message="브라우저에서 기사를 열지 못했습니다. 기본 브라우저 설정을 확인해주세요.",
+        ):
+            return
         self._set_read_state(
             target,
             True,
@@ -1152,7 +1264,11 @@ class NewsTab(QWidget):
         link = target.get("link", "")
 
         if action == "open":
-            QDesktopServices.openUrl(QUrl(link))
+            if not self._open_article_url(
+                str(link),
+                failure_message="기사를 열지 못했습니다. 링크 또는 브라우저 설정을 확인해주세요.",
+            ):
+                return
             self._set_read_state(
                 target,
                 True,
