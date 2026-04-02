@@ -80,6 +80,8 @@ class NewsTab(QWidget):
         self._pending_append_request_ids: set[int] = set()
         self._pending_scroll_restore = 0
         self._date_filter_active = False
+        self._is_closing = False
+        self._cleanup_started = False
 
         # Async DB Worker
         self.worker: Optional[DBWorker] = None
@@ -316,6 +318,16 @@ class NewsTab(QWidget):
         if scroll_bar is None:
             raise RuntimeError("News browser scrollbar is unavailable")
         return scroll_bar
+
+    def _detach_worker_signals(self, worker: Any, signal_names: Tuple[str, ...]) -> None:
+        for signal_name in signal_names:
+            signal = getattr(worker, signal_name, None)
+            if signal is None:
+                continue
+            try:
+                signal.disconnect()
+            except Exception:
+                pass
 
     def _clipboard(self) -> QClipboard:
         clipboard = QApplication.clipboard()
@@ -766,8 +778,11 @@ class NewsTab(QWidget):
 
     def load_data_from_db(self, append: bool = False):
         """DB에서 현재 필터 범위의 페이지를 로드한다."""
+        if getattr(self, "_is_closing", False):
+            return
         with perf_timer("ui.load_data_from_db", f"kw={self.keyword}|append={int(append)}"):
             if self.worker and self.worker.isRunning():
+                self._detach_worker_signals(self.worker, ("finished", "error"))
                 self.worker.stop()
                 if not self.worker.wait(150):
                     logger.warning(f"DBWorker wait timeout: {self.keyword}")
@@ -821,6 +836,11 @@ class NewsTab(QWidget):
         unread_count: Optional[int] = None,
     ):
         """데이터 로드 완료 시 호출"""
+        if getattr(self, "_is_closing", False):
+            if request_id is not None:
+                self._request_scope_signatures.pop(request_id, None)
+                self._pending_append_request_ids.discard(request_id)
+            return
         if request_id is not None and request_id != self._load_request_id:
             self._request_scope_signatures.pop(request_id, None)
             logger.info(f"PERF|ui.on_data_loaded.stale|0.00ms|kw={self.keyword}|rid={request_id}")
@@ -885,6 +905,11 @@ class NewsTab(QWidget):
 
     def on_data_error(self, err_msg, request_id: Optional[int] = None):
         """데이터 로드 오류 시 호출"""
+        if getattr(self, "_is_closing", False):
+            if request_id is not None:
+                self._request_scope_signatures.pop(request_id, None)
+                self._pending_append_request_ids.discard(request_id)
+            return
         if request_id is not None and request_id != self._load_request_id:
             self._request_scope_signatures.pop(request_id, None)
             return
@@ -1308,6 +1333,8 @@ class NewsTab(QWidget):
 
     def mark_all_read(self):
         """모두 읽음으로 표시 (비동기)"""
+        if getattr(self, "_is_closing", False):
+            return
         mode_dialog = QMessageBox(self)
         mode_dialog.setIcon(QMessageBox.Icon.Question)
         mode_dialog.setWindowTitle("모두 읽음으로 표시")
@@ -1371,6 +1398,8 @@ class NewsTab(QWidget):
              
     def _on_mark_all_read_done(self, count):
         """모두 읽음 처리 완료"""
+        if getattr(self, "_is_closing", False):
+            return
         self.btn_read_all.setEnabled(True)
         parent = self._main_window()
         if parent is not None:
@@ -1382,6 +1411,8 @@ class NewsTab(QWidget):
             
     def _on_mark_all_read_error(self, err_msg):
         """모두 읽음 처리 오류"""
+        if getattr(self, "_is_closing", False):
+            return
         self.btn_read_all.setEnabled(True)
         self.lbl_status.setText("오류 발생")
         QMessageBox.critical(self, "오류", f"처리 중 오류가 발생했습니다:\n\n{err_msg}")
@@ -1433,20 +1464,63 @@ class NewsTab(QWidget):
 
     def cleanup(self):
         """탭 종료 시 리소스 정리"""
+        if getattr(self, "_cleanup_started", False):
+            return
+        self._cleanup_started = True
+        self._is_closing = True
+
         # 필터 타이머 정리
         if hasattr(self, 'filter_timer') and self.filter_timer:
             self.filter_timer.stop()
         if hasattr(self, '_render_timer') and self._render_timer:
             self._render_timer.stop()
         self._request_scope_signatures.clear()
+        self._pending_append_request_ids.clear()
+        self._pending_scroll_restore = 0
+        self._render_scheduled = False
         
         # DB 워커 정리
-        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
-            self.worker.stop()
-            self.worker.wait(1000)
+        if hasattr(self, 'worker') and self.worker:
+            self._detach_worker_signals(self.worker, ("finished", "error"))
+            try:
+                if self.worker.isRunning():
+                    self.worker.stop()
+                    if not self.worker.wait(1000):
+                        logger.warning("DBWorker cleanup wait timeout: %s", self.keyword)
+            except Exception as e:
+                logger.warning("DBWorker cleanup failed (%s): %s", self.keyword, e)
+            finally:
+                self.worker = None
         
         # Job 워커 정리
-        if hasattr(self, 'job_worker') and self.job_worker and self.job_worker.isRunning():
-            self.job_worker.wait(1000)
+        if hasattr(self, 'job_worker') and self.job_worker:
+            self._detach_worker_signals(self.job_worker, ("finished", "error"))
+            try:
+                if self.job_worker.isRunning():
+                    try:
+                        self.job_worker.stop()
+                    except Exception:
+                        self.job_worker.requestInterruption()
+                        self.job_worker.quit()
+                        self.job_worker.wait(100)
+                    if not self.job_worker.wait(300):
+                        try:
+                            self.job_worker.setParent(None)
+                        except Exception:
+                            pass
+                        try:
+                            self.job_worker.finished.connect(self.job_worker.deleteLater)
+                        except Exception:
+                            pass
+                        logger.warning("AsyncJobWorker cleanup wait timeout: %s", self.keyword)
+                else:
+                    try:
+                        self.job_worker.deleteLater()
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning("AsyncJobWorker cleanup failed (%s): %s", self.keyword, e)
+            finally:
+                self.job_worker = None
         
         logger.debug(f"NewsTab 정리 완료: {self.keyword}")

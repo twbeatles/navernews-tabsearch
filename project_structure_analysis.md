@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-03-27)
+작성일: 2026-03-16 (최근 갱신: 2026-04-02)
 
 ## 분석 범위
 
@@ -16,6 +16,18 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-04-02 구현 감사 전면 반영 / 문서 재검증
+
+이번 재검증에서는 2026-04-02 구현 감사 전면 반영 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- CSV export, 설정 export/import, 백업 create/restore/delete는 이제 `ui.dialog_adapters.QtDialogAdapter`를 통해 Qt static dialog 의존성을 얇게 감싼다.
+- 설정 import는 새로 추가된 탭 목록을 추적하고, 사용자가 동의하면 `refresh_selected_tabs(...)`로 새 탭만 순차 새로고침한다.
+- 백업 생성은 `core.backup.AutoBackup.validate_create_backup_prerequisites(...)` 기준으로 restorable payload 여부를 먼저 검사하며, 설정 파일이 없으면 manual backup은 실패하고 startup auto-backup은 조용히 skip한다.
+- 앱 종료는 `MainApp._perform_real_close()`에서 열린 `NewsTab` cleanup을 먼저 수행하고, `NewsTab.cleanup()`은 timer/DB worker/job worker/request state를 idempotent하게 정리한다.
+- `news_scraper_pro.spec`는 2026-04-02 기준 다시 재검토되었고, dialog adapter, 종료 cleanup, backup preflight, selective refresh 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
+- `.gitignore`는 build/dist/runtime/test 부산물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `196 passed, 5 subtests passed`이며, `pyinstaller --noconfirm --clean news_scraper_pro.spec`도 2026-04-02 기준 다시 성공했다.
 
 ## 0. 2026-03-27 UI/UX 하드닝/문서 재검증
 
@@ -232,6 +244,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 | `ui/_main_window_tray.py` | 시스템 트레이, close/minimize, 실제 종료 처리 |
 | `ui/_main_window_analysis.py` | 통계/언론사 분석 UI |
 | `ui/news_tab.py` | 개별 탭의 목록 필터링, 링크 인덱스 캐시, HTML fragment cache, coalesced render |
+| `ui/dialog_adapters.py` | export/import/backup 경로의 QFileDialog/QMessageBox adapter |
 | `ui/settings_dialog.py` | `SettingsDialog` facade, orchestration, public contract |
 | `ui/_settings_dialog_content.py` | 설정/도움말/단축키 탭 조립 |
 | `ui/_settings_dialog_docs.py` | 도움말 / 단축키 HTML |
@@ -246,6 +259,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 - `ui.main_window.py`는 940줄 수준의 facade로 축소됐고, 도메인별 책임은 private helper module로 나뉘었다.
 - `ui.news_tab.py`는 여전히 `QTextBrowser`용 HTML 렌더링까지 담당하지만, 현재는 `_item_by_link` 인덱스와 fragment cache/coalesced render로 대용량 탭 비용을 낮춘 상태다.
+- export/import/backup 경로는 `ui.dialog_adapters.py`를 통해 Qt static dialog 의존성을 분리해 테스트에서는 fake adapter를 주입한다.
 - `ui.settings_dialog.py`는 117줄 수준의 facade로 축소됐다. 설정 항목 확장은 `ui/_settings_dialog_content.py` 쪽이 주 수정 지점이다.
 - `ui/widgets.NewsBrowser`는 `app://...` 내부 URL 스키마를 이용한 액션 전달 구조를 갖고 있어, 카드 액션 확장이 상대적으로 쉽다.
 

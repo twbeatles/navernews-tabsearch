@@ -6,7 +6,7 @@ import logging
 import time
 import traceback
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from PyQt6.QtCore import QMutexLocker, QThread, QTimer
 from PyQt6.QtWidgets import QMessageBox
@@ -24,6 +24,48 @@ logger = logging.getLogger(__name__)
 
 
 class _MainWindowFetchMixin:
+    def _prepare_refresh_keywords(
+        self: MainApp,
+        keywords: List[str],
+    ) -> List[str]:
+        prepared: List[str] = []
+        for keyword in keywords:
+            try:
+                normalized_keyword = str(keyword or "").strip()
+                if not normalized_keyword or not has_positive_keyword(normalized_keyword):
+                    continue
+                if normalized_keyword not in prepared:
+                    prepared.append(normalized_keyword)
+            except Exception as e:
+                logger.error("Failed to normalize refresh keyword '%s': %s", keyword, e)
+        return prepared
+
+    def _begin_sequential_refresh(
+        self: MainApp,
+        keywords: List[str],
+    ) -> bool:
+        prepared_keywords = self._prepare_refresh_keywords(keywords)
+        if not prepared_keywords:
+            self._status_bar().showMessage("새로고침할 탭이 없습니다.")
+            return False
+
+        self._pending_refresh_keywords = prepared_keywords
+        self._sequential_refresh_active = True
+        self._current_refresh_idx = 0
+        self._total_refresh_count = len(prepared_keywords)
+        self._sequential_added_count = 0
+        self._sequential_dup_count = 0
+
+        self.progress.setVisible(True)
+        self.progress.setRange(0, self._total_refresh_count)
+        self.progress.setValue(0)
+        self._status_bar().showMessage(
+            f"새로고침 중... (0/{self._total_refresh_count})"
+        )
+        self.btn_refresh.setEnabled(False)
+        self._process_next_refresh()
+        return True
+
     def _safe_refresh_all(self: MainApp):
         """Timer-safe refresh wrapper."""
         if self.is_maintenance_mode_active():
@@ -91,40 +133,50 @@ class _MainWindowFetchMixin:
             except Exception as e:
                 logger.error("Bookmark tab reload failed: %s", e)
 
-            self._pending_refresh_keywords = []
+            refresh_keywords: List[str] = []
             for _index, widget in self._iter_news_tabs(start_index=1):
                 try:
                     if has_positive_keyword(widget.keyword):
-                        self._pending_refresh_keywords.append(widget.keyword)
+                        refresh_keywords.append(widget.keyword)
                 except Exception as e:
                     logger.error("Failed to inspect tab keyword: %s", e)
 
-            if not self._pending_refresh_keywords:
-                self._status_bar().showMessage("새로고침할 탭이 없습니다.")
-                return False
-
-            self._sequential_refresh_active = True
-            self._current_refresh_idx = 0
-            self._total_refresh_count = len(self._pending_refresh_keywords)
-            self._sequential_added_count = 0
-            self._sequential_dup_count = 0
-
-            self.progress.setVisible(True)
-            self.progress.setRange(0, self._total_refresh_count)
-            self.progress.setValue(0)
-            self._status_bar().showMessage(
-                f"새로고침 중... (0/{self._total_refresh_count})"
-            )
-            self.btn_refresh.setEnabled(False)
-
-            self._process_next_refresh()
-            return True
+            if self._begin_sequential_refresh(refresh_keywords):
+                return True
+            return False
         except Exception as e:
             logger.error("refresh_all failed: %s", e)
             traceback.print_exc()
             self._status_bar().showMessage(f"❌ 새로고침 오류: {e}")
             self._finish_sequential_refresh()
             return False
+
+    def refresh_selected_tabs(self: MainApp, keywords: List[str]) -> bool:
+        """Refresh a selected subset of tabs sequentially."""
+        logger.info("Starting refresh_selected_tabs: %s", keywords)
+
+        if self.is_maintenance_mode_active():
+            msg = self._maintenance_block_message("새로고침")
+            self._status_bar().showMessage(msg, 3000)
+            self.show_warning_toast(msg)
+            return False
+
+        if self._sequential_refresh_active:
+            logger.warning("Sequential refresh is already running")
+            return False
+
+        valid, msg = self._validate_api_credentials()
+        if not valid:
+            self._status_bar().showMessage(f"⚠ {msg}")
+            logger.warning("API credentials invalid: %s", msg)
+            return False
+
+        self._network_error_count = 0
+        self._network_available = True
+
+        if self._begin_sequential_refresh(keywords):
+            return True
+        return False
 
     def _process_next_refresh(self: MainApp):
         """Run the next queued tab refresh."""

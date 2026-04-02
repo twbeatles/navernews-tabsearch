@@ -10,12 +10,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core.config_store import normalize_import_settings
 from core.constants import VERSION
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker
+from ui.dialog_adapters import get_dialog_adapter
 from ui.settings_dialog import SettingsDialog
 from ui.styles import AppStyle
 
@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 EXPORT_CHUNK_SIZE = 200
+
+
+def _dialogs_for(target: Any):
+    return get_dialog_adapter(target)
 
 
 def _export_row(item: Dict[str, Any]) -> List[str]:
@@ -181,6 +185,7 @@ class _MainWindowSettingsIOMixin:
 
     def export_data(self: MainApp):
         """Export the current tab's rows as CSV."""
+        dialogs = _dialogs_for(self)
         export_worker = getattr(self, "_export_worker", None)
         if export_worker is not None and export_worker.isRunning():
             self._cancel_export_job()
@@ -188,18 +193,18 @@ class _MainWindowSettingsIOMixin:
 
         cur_widget = self._current_news_tab()
         if cur_widget is None:
-            QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
+            dialogs.information(self, "알림", "내보낼 뉴스가 없습니다.")
             return
 
         known_total = int(getattr(cur_widget, "_total_filtered_count", 0) or 0)
         loaded_count = len(getattr(cur_widget, "filtered_data_cache", []))
         if max(known_total, loaded_count) <= 0:
-            QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
+            dialogs.information(self, "알림", "내보낼 뉴스가 없습니다.")
             return
 
         keyword = cur_widget.keyword
         default_name = f"{keyword}_뉴스_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        fname, _ = QFileDialog.getSaveFileName(
+        fname, _ = dialogs.get_save_file_name(
             self,
             "데이터 내보내기",
             default_name,
@@ -215,17 +220,17 @@ class _MainWindowSettingsIOMixin:
 
         visible_items = list(getattr(cur_widget, "filtered_data_cache", []))
         if not visible_items:
-            QMessageBox.information(self, "알림", "내보낼 뉴스가 없습니다.")
+            dialogs.information(self, "알림", "내보낼 뉴스가 없습니다.")
             return
 
         try:
             result = export_items_to_csv(visible_items, fname, keyword)
         except Exception as e:
-            QMessageBox.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{e}")
+            dialogs.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{e}")
             return
 
         self.show_success_toast(f"총 {int(result.get('count', 0) or 0)}개 항목을 저장했습니다.")
-        QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
+        dialogs.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
 
     def _start_export_job(
         self: MainApp,
@@ -298,11 +303,11 @@ class _MainWindowSettingsIOMixin:
         self._reset_export_ui()
         self.show_success_toast(f"총 {exported_count}개 항목을 저장했습니다.")
         self._status_bar().showMessage(f"CSV 내보내기 완료 ({exported_count}개)", 4000)
-        QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{target_path}")
+        _dialogs_for(self).information(self, "완료", f"파일이 저장되었습니다:\n{target_path}")
 
     def _on_export_error(self: MainApp, error_msg: str) -> None:
         self._reset_export_ui()
-        QMessageBox.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{error_msg}")
+        _dialogs_for(self).warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{error_msg}")
 
     def _on_export_cancelled(self: MainApp) -> None:
         self._reset_export_ui()
@@ -384,7 +389,8 @@ class _MainWindowSettingsIOMixin:
 
     def export_settings(self: MainApp):
         """Export app settings without API credentials."""
-        fname, _ = QFileDialog.getSaveFileName(
+        dialogs = _dialogs_for(self)
+        fname, _ = dialogs.get_save_file_name(
             self,
             "설정 내보내기",
             f"news_scraper_settings_{datetime.now().strftime('%Y%m%d')}.json",
@@ -426,14 +432,28 @@ class _MainWindowSettingsIOMixin:
             with open(fname, "w", encoding="utf-8") as f:
                 json.dump(export_data, f, indent=4, ensure_ascii=False)
             self.show_success_toast("설정을 내보냈습니다.")
-            QMessageBox.information(
+            dialogs.information(
                 self,
                 "완료",
                 f"설정이 저장되었습니다:\n{fname}\n\n"
                 "API 자격증명은 보안상 제외되며, 자동 시작 설정은 함께 저장됩니다.",
             )
         except Exception as e:
-            QMessageBox.warning(self, "오류", f"설정 내보내기 오류:\n{e}")
+            dialogs.warning(self, "오류", f"설정 내보내기 오류:\n{e}")
+
+    def _prompt_refresh_imported_tabs(
+        self: MainApp,
+        imported_keywords: List[str],
+    ) -> bool:
+        if not imported_keywords:
+            return False
+        count = len(imported_keywords)
+        label = f"{count}개 새 탭" if count > 1 else f"'{imported_keywords[0]}' 탭"
+        return _dialogs_for(self).ask_yes_no(
+            self,
+            "새 탭 새로고침",
+            f"설정 가져오기로 {label}이 추가되었습니다.\n지금 새로고침할까요?",
+        )
 
     def _reconcile_startup_state_from_import(
         self: MainApp,
@@ -489,7 +509,8 @@ class _MainWindowSettingsIOMixin:
 
     def import_settings(self: MainApp):
         """Import settings JSON and merge user-state fields conservatively."""
-        fname, _ = QFileDialog.getOpenFileName(
+        dialogs = _dialogs_for(self)
+        fname, _ = dialogs.get_open_file_name(
             self,
             "설정 가져오기",
             "",
@@ -583,6 +604,7 @@ class _MainWindowSettingsIOMixin:
                 for _index, tab in self._iter_news_tabs(start_index=1)
                 if self._canonical_fetch_key_for_keyword(tab.keyword)
             }
+            imported_new_keywords: List[str] = []
             new_tabs = 0
             skipped_invalid_tabs = 0
             for keyword in imported_tabs:
@@ -595,6 +617,7 @@ class _MainWindowSettingsIOMixin:
                 if normalized_keyword and normalized_fetch_key and normalized_fetch_key not in existing_fetch_keys:
                     self.add_news_tab(normalized_keyword)
                     existing_fetch_keys.add(normalized_fetch_key)
+                    imported_new_keywords.append(normalized_keyword)
                     new_tabs += 1
                 elif not normalized_keyword:
                     skipped_invalid_tabs += 1
@@ -615,8 +638,11 @@ class _MainWindowSettingsIOMixin:
                 logger.warning("Import warnings:\n- %s", "\n- ".join(import_warnings))
                 msg += f" / 보정 {len(import_warnings)}건"
             self.show_toast(msg)
+
+            if self._prompt_refresh_imported_tabs(imported_new_keywords):
+                self.refresh_selected_tabs(imported_new_keywords)
         except Exception as e:
-            QMessageBox.warning(self, "오류", f"설정 가져오기 오류:\n{e}")
+            dialogs.warning(self, "오류", f"설정 가져오기 오류:\n{e}")
 
     def show_help(self: MainApp):
         """Open the Settings dialog directly on the help tab."""

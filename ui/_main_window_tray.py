@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 class _MainWindowTrayMixin:
+    def _cleanup_open_tabs_for_shutdown(self: MainApp) -> None:
+        for _index, tab in self._iter_news_tabs():
+            try:
+                tab.cleanup()
+            except Exception as e:
+                logger.warning("탭 종료 정리 오류 (%s): %s", getattr(tab, "keyword", "?"), e)
+
     def setup_system_tray(self: MainApp):
         """시스템 트레이 아이콘 설정"""
         try:
@@ -229,6 +236,7 @@ class _MainWindowTrayMixin:
         logger.info("프로그램 실제 종료 시작...")
 
         try:
+            self._shutdown_in_progress = True
             if hasattr(self, "timer") and self.timer:
                 self.timer.stop()
             if hasattr(self, "_countdown_timer") and self._countdown_timer:
@@ -236,6 +244,9 @@ class _MainWindowTrayMixin:
             if hasattr(self, "_tab_badge_timer") and self._tab_badge_timer:
                 self._tab_badge_timer.stop()
             logger.info("타이머 중지됨")
+
+            self._cleanup_open_tabs_for_shutdown()
+            logger.info("열린 탭 정리 완료")
 
             if hasattr(self, "_worker_registry"):
                 for handle in list(self._worker_registry.all_handles()):
@@ -286,6 +297,8 @@ class _MainWindowTrayMixin:
             logger.error(f"종료 처리 중 오류: {e}")
             traceback.print_exc()
             self._app_instance().quit()
+        finally:
+            self._shutdown_in_progress = False
 
         event.accept()
 

@@ -50,6 +50,12 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   tray-unavailable notification fallback rely on stdlib / already-bundled
 #   modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-04-02 review:
+# - Dialog adapter isolation for export/import/backup, shutdown cleanup
+#   sequencing, restorable-backup preflight tightening, selective imported-tab
+#   refresh, and workspace-local pytest tempdir alignment rely on stdlib /
+#   already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

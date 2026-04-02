@@ -307,13 +307,29 @@ class AutoBackup:
             except Exception as e:
                 logger.error(f"백업 디렉토리 생성 실패: {e}")
 
+    def validate_create_backup_prerequisites(
+        self,
+        include_db: bool = True,
+    ) -> tuple[bool, str]:
+        if not os.path.exists(self.config_file):
+            return False, "설정 파일이 없어 복원 가능한 백업을 만들 수 없습니다."
+        if include_db and not os.path.exists(self.db_file):
+            return False, "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다."
+        return True, ""
+
     def create_backup(self, include_db: bool = True, trigger: str = "manual") -> Optional[str]:
         try:
             normalized_trigger = str(trigger or "manual").strip().lower()
             if normalized_trigger not in {"auto", "manual"}:
                 normalized_trigger = "manual"
-            if include_db and not os.path.exists(self.db_file):
-                logger.error("백업 생성 실패: include_db=True but DB file is missing (%s)", self.db_file)
+            ok, reason = self.validate_create_backup_prerequisites(include_db=include_db)
+            if not ok:
+                logger.warning(
+                    "백업 생성 건너뜀: trigger=%s, include_db=%s, reason=%s",
+                    normalized_trigger,
+                    int(bool(include_db)),
+                    reason,
+                )
                 return None
 
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -336,8 +352,7 @@ class AutoBackup:
                 return None
 
             actual_include_db = False
-            if os.path.exists(self.config_file):
-                shutil.copy2(self.config_file, os.path.join(backup_path, os.path.basename(self.config_file)))
+            shutil.copy2(self.config_file, os.path.join(backup_path, os.path.basename(self.config_file)))
 
             if include_db:
                 backup_db = os.path.join(backup_path, os.path.basename(self.db_file))

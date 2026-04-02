@@ -5,7 +5,6 @@ from typing import Any, cast
 from unittest import mock
 
 import news_scraper_pro as app
-from PyQt6.QtWidgets import QMessageBox
 
 from ui.dialogs import BackupDialog
 
@@ -48,9 +47,10 @@ class _FakeListWidget:
 
 
 class _FakeAutoBackup:
-    def __init__(self, backup_dir: str, db_file: str):
+    def __init__(self, backup_dir: str, db_file: str, config_file: str | None = None):
         self.backup_dir = backup_dir
         self.db_file = db_file
+        self.config_file = config_file or str(Path(backup_dir) / "news_scraper_config.json")
         self.calls = []
         self.verify_calls = []
         self.backups = []
@@ -65,6 +65,13 @@ class _FakeAutoBackup:
     def create_backup(self, include_db: bool = True, trigger: str = "manual"):
         self.calls.append(("create_backup", bool(include_db)))
         return str(Path(self.backup_dir) / "safeguard_backup")
+
+    def validate_create_backup_prerequisites(self, include_db: bool = True):
+        if not Path(self.config_file).exists():
+            return False, "설정 파일이 없어 복원 가능한 백업을 만들 수 없습니다."
+        if include_db and not Path(self.db_file).exists():
+            return False, "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다."
+        return True, ""
 
     def verify_backup_by_name(self, backup_name: str, require_db: bool = True):
         self.verify_calls.append((backup_name, bool(require_db)))
@@ -102,9 +109,10 @@ class _FakeAutoBackup:
 
 
 class _DummyDialog:
-    def __init__(self, backup_list, auto_backup):
+    def __init__(self, backup_list, auto_backup, dialog_adapter=None):
         self.backup_list = backup_list
         self.auto_backup = auto_backup
+        self._dialog_adapter = dialog_adapter or _FakeDialogAdapter()
         self.format_backup_timestamp = BackupDialog.format_backup_timestamp
         self.load_backups = lambda: None
         self.start_backup_verification = mock.Mock()
@@ -120,20 +128,48 @@ class _DummyDialog:
         )
 
 
+class _FakeDialogAdapter:
+    def __init__(self, *, ask_yes_no_result=True, corrupt_action="ignore"):
+        self.ask_yes_no_result = ask_yes_no_result
+        self.corrupt_action = corrupt_action
+        self.info_calls = []
+        self.warning_calls = []
+        self.critical_calls = []
+        self.question_calls = []
+
+    def information(self, parent, title, message):
+        self.info_calls.append((parent, title, message))
+
+    def warning(self, parent, title, message):
+        self.warning_calls.append((parent, title, message))
+
+    def critical(self, parent, title, message):
+        self.critical_calls.append((parent, title, message))
+
+    def ask_yes_no(self, parent, title, message, default=None):
+        self.question_calls.append((parent, title, message, default))
+        return self.ask_yes_no_result
+
+    def ask_corrupt_backup_action(self, parent, backup_name, corrupt_error):
+        self.question_calls.append((parent, "손상된 백업", backup_name, corrupt_error))
+        return self.corrupt_action
+
+
 class TestBackupRestoreMode(unittest.TestCase):
     def test_restore_backup_uses_include_db_metadata(self):
         auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        dialogs = _FakeDialogAdapter(ask_yes_no_result=True)
         dialog = _DummyDialog(
             _FakeBackupList(_FakeItem({"backup_name": "backup_meta", "include_db": False})),
             auto_backup,
+            dialog_adapter=dialogs,
         )
 
-        with mock.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
-            with mock.patch.object(QMessageBox, "information"):
-                BackupDialog.restore_backup(cast(Any, dialog))
+        BackupDialog.restore_backup(cast(Any, dialog))
 
         self.assertEqual(auto_backup.verify_calls, [("backup_meta", False)])
         self.assertEqual(auto_backup.calls, [("create_backup", False), ("backup_meta", False)])
+        self.assertEqual(len(dialogs.info_calls), 1)
 
     def test_restore_backup_legacy_fallback_detects_db_file(self):
         with tempfile.TemporaryDirectory() as td:
@@ -147,14 +183,14 @@ class TestBackupRestoreMode(unittest.TestCase):
             db_backup.write_text("db", encoding="utf-8")
 
             auto_backup = _FakeAutoBackup(backup_dir=str(root), db_file=str(db_file))
+            dialogs = _FakeDialogAdapter(ask_yes_no_result=True)
             dialog = _DummyDialog(
                 _FakeBackupList(_FakeItem(backup_name)),
                 auto_backup,
+                dialog_adapter=dialogs,
             )
 
-            with mock.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
-                with mock.patch.object(QMessageBox, "information"):
-                    BackupDialog.restore_backup(cast(Any, dialog))
+            BackupDialog.restore_backup(cast(Any, dialog))
 
             self.assertEqual(auto_backup.verify_calls, [(backup_name, True)])
             self.assertEqual(auto_backup.calls, [("create_backup", True), (backup_name, True)])
@@ -327,29 +363,18 @@ class TestBackupRestoreMode(unittest.TestCase):
                     )
                 ),
                 auto_backup,
+                dialog_adapter=_FakeDialogAdapter(corrupt_action="delete"),
             )
             dialog.load_backups = mock.Mock()
 
-            delete_button = object()
-            ignore_button = object()
-            fake_message_box = mock.Mock()
-            fake_message_box.addButton.side_effect = [delete_button, ignore_button]
-            fake_message_box.clickedButton.return_value = delete_button
-
-            with mock.patch("ui.dialogs.QMessageBox") as msgbox_cls:
-                msgbox_cls.return_value = fake_message_box
-                msgbox_cls.Icon = mock.Mock(Warning=1)
-                msgbox_cls.ButtonRole = mock.Mock(AcceptRole=1, RejectRole=2)
-                msgbox_cls.information = mock.Mock()
-                msgbox_cls.warning = mock.Mock()
-
-                BackupDialog.restore_backup(cast(Any, dialog))
+            BackupDialog.restore_backup(cast(Any, dialog))
 
             self.assertFalse(backup_path.exists())
             dialog.load_backups.assert_called_once()
 
     def test_restore_backup_blocks_non_restorable_item(self):
         auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        dialogs = _FakeDialogAdapter()
         dialog = _DummyDialog(
             _FakeBackupList(
                 _FakeItem(
@@ -362,12 +387,12 @@ class TestBackupRestoreMode(unittest.TestCase):
                 )
             ),
             auto_backup,
+            dialog_adapter=dialogs,
         )
 
-        with mock.patch.object(QMessageBox, "warning") as warning_mock:
-            BackupDialog.restore_backup(cast(Any, dialog))
+        BackupDialog.restore_backup(cast(Any, dialog))
 
-        warning_mock.assert_called_once()
+        self.assertEqual(len(dialogs.warning_calls), 1)
         self.assertEqual(auto_backup.calls, [])
 
     def test_create_backup_returns_none_when_db_requested_but_missing(self):
@@ -381,25 +406,74 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             self.assertIsNone(auto_backup.create_backup(include_db=True, trigger="manual"))
 
+    def test_create_backup_returns_none_when_config_is_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "missing-config.json"
+            db = root / "news.sqlite"
+            db.write_text("", encoding="utf-8")
+
+            auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
+
+            self.assertIsNone(auto_backup.create_backup(include_db=False, trigger="manual"))
+            self.assertEqual(auto_backup.get_backup_list(), [])
+
+    def test_auto_backup_skips_when_config_is_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "missing-config.json"
+            db = root / "news.sqlite"
+            db.write_text("", encoding="utf-8")
+
+            auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
+
+            self.assertIsNone(auto_backup.create_backup(include_db=False, trigger="auto"))
+            self.assertEqual(auto_backup.get_backup_list(), [])
+
     def test_backup_dialog_prechecks_missing_db_before_create(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             auto_backup = _FakeAutoBackup(
                 backup_dir=str(root / "backups"),
                 db_file=str(root / "missing.sqlite"),
+                config_file=str(root / "config.json"),
             )
+            Path(auto_backup.config_file).write_text("{}", encoding="utf-8")
 
             class _Check:
                 def isChecked(self):
                     return True
 
-            dialog = _DummyDialog(_FakeBackupList(None), auto_backup)
+            dialogs = _FakeDialogAdapter()
+            dialog = _DummyDialog(_FakeBackupList(None), auto_backup, dialog_adapter=dialogs)
             setattr(dialog, "chk_include_db", _Check())
 
-            with mock.patch.object(QMessageBox, "warning") as warning_mock:
-                BackupDialog.create_backup(cast(Any, dialog))
+            BackupDialog.create_backup(cast(Any, dialog))
 
-            warning_mock.assert_called_once()
+            self.assertEqual(len(dialogs.warning_calls), 1)
+            self.assertEqual(auto_backup.calls, [])
+
+    def test_backup_dialog_prechecks_missing_config_before_create(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            auto_backup = _FakeAutoBackup(
+                backup_dir=str(root / "backups"),
+                db_file=str(root / "news.sqlite"),
+                config_file=str(root / "missing-config.json"),
+            )
+            Path(auto_backup.db_file).write_text("", encoding="utf-8")
+
+            class _Check:
+                def isChecked(self):
+                    return False
+
+            dialogs = _FakeDialogAdapter()
+            dialog = _DummyDialog(_FakeBackupList(None), auto_backup, dialog_adapter=dialogs)
+            setattr(dialog, "chk_include_db", _Check())
+
+            BackupDialog.create_backup(cast(Any, dialog))
+
+            self.assertEqual(len(dialogs.warning_calls), 1)
             self.assertEqual(auto_backup.calls, [])
 
     def test_get_backup_list_marks_missing_db_payload_as_not_restorable(self):

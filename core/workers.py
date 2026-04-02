@@ -58,6 +58,11 @@ class AsyncJobWorker(QThread):
             self.error.emit(str(e))
             traceback.print_exc()
 
+    def stop(self):
+        self.requestInterruption()
+        self.quit()
+        self.wait(100)
+
 
 class JobCancelledError(Exception):
     """Raised when a long-running worker is cancelled cooperatively."""

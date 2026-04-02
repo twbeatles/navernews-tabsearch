@@ -38,6 +38,7 @@ navernews-tabsearch/
 ├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
 ├── news_scraper_pro.spec        # PyInstaller 빌드 설정
 ├── pyrightconfig.json           # Pyright/Pylance 기준 설정
+├── pytest.ini                   # pytest 진입점/수집 경로 고정
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
@@ -70,6 +71,7 @@ navernews-tabsearch/
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
 │   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
+│   ├── dialog_adapters.py       # QFileDialog/QMessageBox adapter
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog facade
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
@@ -96,7 +98,10 @@ navernews-tabsearch/
 │   ├── test_symbol_resolution.py
 │   ├── test_keyword_groups_storage.py
 │   ├── test_backup_restore_mode.py
+│   ├── test_dialog_adapters_smoke.py
+│   ├── test_import_refresh_prompt.py
 │   ├── test_news_tab_ext_read_policy.py
+│   ├── test_shutdown_cleanup.py
 │   ├── test_news_tab_performance.py
 │   ├── test_settings_dialog_maintenance.py
 │   └── test_risk_fixes.py
@@ -121,9 +126,39 @@ navernews-tabsearch/
 ## ✅ 현재 검증 기준
 
 - `pyrightconfig.json`으로 repo-wide Pyright 게이트를 유지한다. 이번 패스에서는 로컬 PyQt6 import resolution 환경 차이로 재검증 기준에 포함하지 않았다.
-- `pytest -q` => `188 passed, 5 subtests passed`
+- `pytest -q` => `196 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-27 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-02 기준 다시 성공했다.
+
+---
+
+## 🚀 2026-04-02 Implementation Audit Full Adoption
+
+- Dialog isolation:
+  - Added `ui.dialog_adapters.QtDialogAdapter` and routed CSV export, settings export/import, and backup create/restore/delete through it.
+  - Unit tests now inject fake adapters instead of patching Qt static dialogs directly.
+  - Added offscreen smoke coverage for the real Qt dialog wiring.
+- Shutdown hardening:
+  - `MainApp._perform_real_close()` now cleans open `NewsTab` instances before DB/session teardown.
+  - `NewsTab.cleanup()` is now idempotent and stops timers, detaches worker signals, interrupts/waits active `DBWorker` and `AsyncJobWorker`, and clears request/render state.
+  - `AsyncJobWorker.stop()` was added so close paths can request interruption consistently.
+- Backup integrity:
+  - `AutoBackup.create_backup()` now requires a restorable payload preflight; config-file absence fails backup creation even for settings-only backups.
+  - Manual backup UI prechecks config/db presence before create.
+  - Startup auto-backup skips quietly when config is missing.
+- Settings import UX:
+  - Import tracks newly added tabs and asks once whether to refresh them immediately.
+  - Added `refresh_selected_tabs(...)` so only imported tabs are queued, without mutating the global refresh-all path.
+- Test/runtime alignment:
+  - Added `tests/conftest.py` so pytest temp files stay under workspace-local `.pytest_tmp` in restricted environments.
+  - Added regression coverage for backup preflight, import refresh prompt, shutdown cleanup, and dialog adapter wiring.
+- Packaging / repo hygiene:
+  - Re-reviewed `news_scraper_pro.spec`; dialog adapter isolation, shutdown cleanup sequencing, backup preflight tightening, and selective import refresh do not require additional hidden import/exclude/data changes.
+  - Re-reviewed `.gitignore`; existing runtime/build/test ignore rules already cover this pass, so no new ignore entry was required.
+
+### Validation
+- `python -m pytest -q` => `196 passed, 5 subtests passed`
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ---
 

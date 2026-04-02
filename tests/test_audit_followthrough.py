@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest import mock
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core.workers import DBQueryScope
 from ui._main_window_settings_io import _MainWindowSettingsIOMixin
@@ -95,10 +94,11 @@ class _ImmediateExportContext:
 class _DummyExportMain:
     export_data = _MainWindowSettingsIOMixin.export_data
 
-    def __init__(self, widget, db=None):
+    def __init__(self, widget, db=None, dialog_adapter=None):
         self._widget = widget
         self._db = db
         self.toast_messages = []
+        self._dialog_adapter = dialog_adapter or _FakeDialogAdapter()
 
     def _current_news_tab(self):
         return self._widget
@@ -116,7 +116,7 @@ class _DummyExportMain:
             chunk_size=1,
         )
         self.show_success_toast(f"총 {result['count']}개 항목을 저장했습니다.")
-        QMessageBox.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
+        self._dialog_adapter.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
 
 
 class _DummyCheck:
@@ -161,6 +161,51 @@ class _DummySyncMain:
 
     def update_tray_tooltip(self):
         self.tooltip_calls += 1
+
+
+class _FakeDialogAdapter:
+    def __init__(
+        self,
+        *,
+        save_result=("", ""),
+        open_result=("", ""),
+        ask_yes_no_result=False,
+        corrupt_action="ignore",
+    ):
+        self.save_result = save_result
+        self.open_result = open_result
+        self.ask_yes_no_result = ask_yes_no_result
+        self.corrupt_action = corrupt_action
+        self.save_calls = []
+        self.open_calls = []
+        self.info_calls = []
+        self.warning_calls = []
+        self.critical_calls = []
+        self.question_calls = []
+
+    def get_save_file_name(self, parent, title, default_name, filters):
+        self.save_calls.append((parent, title, default_name, filters))
+        return self.save_result
+
+    def get_open_file_name(self, parent, title, directory, filters):
+        self.open_calls.append((parent, title, directory, filters))
+        return self.open_result
+
+    def information(self, parent, title, message):
+        self.info_calls.append((parent, title, message))
+
+    def warning(self, parent, title, message):
+        self.warning_calls.append((parent, title, message))
+
+    def critical(self, parent, title, message):
+        self.critical_calls.append((parent, title, message))
+
+    def ask_yes_no(self, parent, title, message, default=None):
+        self.question_calls.append((parent, title, message, default))
+        return self.ask_yes_no_result
+
+    def ask_corrupt_backup_action(self, parent, backup_name, corrupt_error):
+        return self.corrupt_action
 
 
 class TestCanonicalHistory(unittest.TestCase):
@@ -216,22 +261,24 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
             },
         ]
         visible_items = [all_items[0]]
+        dialogs = _FakeDialogAdapter()
         dummy = _DummyExportMain(
             _DummyExportTab("AI", all_items, visible_items, all_items),
             db=_FakeExportDB(all_items),
+            dialog_adapter=dialogs,
         )
 
         with tempfile.TemporaryDirectory() as td:
             export_path = Path(td) / "export.csv"
-            with mock.patch.object(QFileDialog, "getSaveFileName", return_value=(str(export_path), "CSV")):
-                with mock.patch.object(QMessageBox, "information"):
-                    dummy.export_data()
+            dialogs.save_result = (str(export_path), "CSV")
+            dummy.export_data()
 
             rows = list(csv.reader(export_path.open("r", encoding="utf-8-sig")))
             self.assertEqual(len(rows), 3)
             self.assertEqual(rows[1][0], "one")
             self.assertEqual(rows[2][0], "two")
             self.assertEqual(dummy.toast_messages, ["총 2개 항목을 저장했습니다."])
+            self.assertEqual(len(dialogs.info_calls), 1)
 
     def test_export_data_falls_back_to_loaded_slice_when_helper_missing(self):
         all_items = [
@@ -266,18 +313,19 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
                 self.news_data_cache = list(all_items)
                 self.filtered_data_cache = list(visible_items)
 
-        dummy = _DummyExportMain(_LegacyTab())
+        dialogs = _FakeDialogAdapter()
+        dummy = _DummyExportMain(_LegacyTab(), dialog_adapter=dialogs)
 
         with tempfile.TemporaryDirectory() as td:
             export_path = Path(td) / "export.csv"
-            with mock.patch.object(QFileDialog, "getSaveFileName", return_value=(str(export_path), "CSV")):
-                with mock.patch.object(QMessageBox, "information"):
-                    dummy.export_data()
+            dialogs.save_result = (str(export_path), "CSV")
+            dummy.export_data()
 
             rows = list(csv.reader(export_path.open("r", encoding="utf-8-sig")))
             self.assertEqual(len(rows), 2)
             self.assertEqual(rows[1][0], "one")
             self.assertEqual(dummy.toast_messages, ["총 1개 항목을 저장했습니다."])
+            self.assertEqual(len(dialogs.info_calls), 1)
 
     def test_export_data_blocks_when_no_visible_items_exist(self):
         all_items = [
@@ -293,14 +341,13 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
                 "is_duplicate": 0,
             }
         ]
-        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, []))
+        dialogs = _FakeDialogAdapter()
+        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, []), dialog_adapter=dialogs)
 
-        with mock.patch.object(QFileDialog, "getSaveFileName") as save_mock:
-            with mock.patch.object(QMessageBox, "information") as info_mock:
-                dummy.export_data()
+        dummy.export_data()
 
-        save_mock.assert_not_called()
-        info_mock.assert_called_once()
+        self.assertEqual(dialogs.save_calls, [])
+        self.assertEqual(len(dialogs.info_calls), 1)
         self.assertEqual(dummy.toast_messages, [])
 
 

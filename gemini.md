@@ -23,6 +23,7 @@ navernews-tabsearch/
 ├── news_scraper_pro.py          # 엔트리포인트 + 호환 re-export 레이어
 ├── news_scraper_pro.spec        # PyInstaller 빌드 설정
 ├── pyrightconfig.json           # Pyright/Pylance 기준 설정
+├── pytest.ini                   # pytest 진입점/수집 경로 고정
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
@@ -55,6 +56,7 @@ navernews-tabsearch/
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
 │   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
+│   ├── dialog_adapters.py       # QFileDialog/QMessageBox adapter
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog facade
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
@@ -83,9 +85,20 @@ navernews-tabsearch/
 ### 현재 검증 기준
 
 - `pyrightconfig.json`으로 repo-wide Pyright 게이트를 유지한다. 이번 패스에서는 로컬 PyQt6 import resolution 환경 차이로 재검증 기준에 포함하지 않았다.
-- `pytest -q` => `188 passed, 5 subtests passed`
+- `pytest -q` => `196 passed, 5 subtests passed`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-03-27 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-02 기준 다시 성공했다.
+
+### 2026-04-02 Implementation Audit Full Adoption
+
+- `ui.dialog_adapters.QtDialogAdapter`를 추가해 CSV export, 설정 export/import, 백업 create/restore/delete에서 Qt static dialog 의존성을 분리했다.
+- `MainApp._perform_real_close()`는 열린 `NewsTab` cleanup을 먼저 수행하고, `NewsTab.cleanup()`은 timer/DB worker/job worker/request state를 idempotent하게 정리한다.
+- `AutoBackup.create_backup()`는 복원 가능한 payload preflight를 강제하며, 설정 파일이 없으면 manual backup은 실패하고 startup auto-backup은 조용히 skip한다.
+- 설정 import는 새로 추가된 탭 목록을 추적하고, 필요 시 `refresh_selected_tabs(...)`로 해당 탭만 순차 새로고침한다.
+- `news_scraper_pro.spec`와 `.gitignore`를 다시 검토했고, 이번 패스에서도 추가 packaging/ignore 변경은 필요하지 않았다.
+- 검증:
+  - `python -m pytest -q` => `196 passed, 5 subtests passed`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ### 2026-03-27 UI/UX Hardening + Docs/Packaging Revalidation
 

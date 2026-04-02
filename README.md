@@ -103,11 +103,15 @@
 - 트레이 미지원 환경에서도 자동 새로고침 완료 알림이 토스트/알림음 fallback으로 전달되도록 통일
 - 키워드 그룹 관리는 즉시 저장형에서 staged `저장`/`취소` 다이얼로그로 전환
 - 로그 검색은 debounce를 적용해 빠른 연속 입력에서 불필요한 reload를 줄임
+- 앱 종료 시 열린 `NewsTab`의 DB/job worker와 타이머를 먼저 정리한 뒤 DB/session 종료를 진행해 late callback 반영을 차단
+- CSV export, 설정 export/import, 백업 create/restore/delete는 공통 dialog adapter를 사용해 테스트와 실제 Qt wiring을 분리
+- 백업 생성은 복원 가능한 payload 기준으로만 성공 처리되며, 설정 파일이 없으면 수동 백업은 실패로 안내되고 시작 시 자동 백업은 조용히 건너뜀
+- 설정 가져오기로 새 탭이 추가되면 해당 탭만 지금 새로고침할지 한 번 확인하고, 동의 시 선택 탭만 순차 새로고침
 
-## 최신 검증 메모 (2026-03-27)
+## 최신 검증 메모 (2026-04-02)
 
-- `python -m pytest -q` => `188 passed, 5 subtests passed`
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공
+- `python -m pytest -q` => `196 passed, 5 subtests passed`
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
 - 산출물: `dist/NewsScraperPro_Safe.exe`
 
 ## 프로젝트 구조
@@ -118,6 +122,7 @@ navernews-tabsearch/
 ├── news_scraper_pro.spec        # PyInstaller 빌드 설정
 ├── pyrightconfig.json           # Pyright/Pylance 기준 설정 (Windows, Python 3.14)
 ├── pytest.ini                   # pytest 진입점/수집 경로 고정
+├── tests/conftest.py            # pytest 임시 디렉터리/세션 공통 설정
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
@@ -150,6 +155,7 @@ navernews-tabsearch/
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 언론사 분석 UI
 │   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
+│   ├── dialog_adapters.py       # QFileDialog/QMessageBox adapter
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol 정의
 │   ├── settings_dialog.py       # SettingsDialog facade
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
@@ -183,6 +189,9 @@ navernews-tabsearch/
 │   ├── test_backup_collision_and_restore.py
 │   ├── test_backup_restore_mode.py
 │   ├── test_audit_followthrough.py
+│   ├── test_dialog_adapters_smoke.py
+│   ├── test_import_refresh_prompt.py
+│   ├── test_shutdown_cleanup.py
 │   ├── test_stabilization_round1.py
 │   ├── test_load_more_total_guard.py
 │   ├── test_news_tab_ext_read_policy.py
@@ -265,6 +274,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-03-24 기준으로도 `.spec`과 `.gitignore`를 다시 재검토했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 성공해 추가 packaging/ignore 수정이 필요하지 않음을 재확인했습니다.
 - 2026-03-27 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, help/read-only 설정 다이얼로그, 수동 백업 검증 UX, unread count bookkeeping, 트레이 fallback 알림 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않았습니다.
 - 2026-03-27 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-02 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, dialog adapter 도입, 종료 cleanup 강화, 백업 restorable preflight, import 후 선택 refresh 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않았습니다.
+- 2026-04-02 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 
@@ -302,6 +313,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 백업 복원 예약은 선택한 백업의 `include_db` 메타를 기준으로 복원 범위(`설정만`/`설정+DB`)를 자동 적용합니다.
 - 백업 메타의 `trigger`는 `auto`/`manual` 값을 가지며, 자동 시작 백업은 수동 백업과 별도 보존 정책으로 관리됩니다.
 - 자동 시작 백업은 `설정만` 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
+- 수동 백업은 `news_scraper_config.json`이 있어 실제로 복원 가능한 payload를 만들 수 있을 때만 성공합니다.
+- 시작 시 자동 백업은 설정 파일이 없으면 사용자 차단 없이 skip되고 로그만 남깁니다.
 - 알림 키워드 매칭은 fetch 결과 전체가 아니라 이번 요청에서 새로 추가된 기사 집합에만 적용됩니다.
 - `app_settings`는 `client_secret_enc`, `client_secret_storage` 필드를 지원하며 Windows에서는 평문 `client_secret`를 비우고 암호문을 저장합니다.
 - pending restore 실패(검증/적용 실패) 시 pending 파일은 유지되며, 적용 중 오류가 나면 변경 파일을 롤백합니다.
@@ -349,6 +362,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - import는 `1.1`과 `1.2`를 모두 허용하며, 자동 시작/시작 최소화는 환경 가용성에 따라 안전한 값으로 보정됩니다.
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
 - 시작프로그램 기능을 사용할 수 없는 환경에서 import된 `auto_start_enabled=true`는 `False`로 강제되고, 가능한 환경에서는 실제 레지스트리 상태까지 동기화합니다.
+- import로 새 탭이 추가되면 해당 탭들을 지금 새로고침할지 한 번 묻고, 동의하면 새 탭만 순차 새로고침합니다.
 
 ## 트레이/시작 최소화 규칙
 

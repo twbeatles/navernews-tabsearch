@@ -162,6 +162,7 @@ class MainApp(
         self._system_shutdown = False       # Windows 시스템 종료
         self._user_requested_close = False  # 사용자가 종료 요청
         self._force_close = False           # 강제 종료 (확인 다이얼로그 스킵)
+        self._shutdown_in_progress = False
         
         # 안전한 초기화를 위해 기본 속성 미리 정의
         self.client_id = ""

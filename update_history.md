@@ -1,6 +1,36 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Audit Full Adoption + Docs/Spec Revalidation (2026-04-02)**:
+  - Dialog isolation / testability:
+    - Added `ui.dialog_adapters.QtDialogAdapter`.
+    - Routed CSV export, settings export/import, and backup create/restore/delete through adapter-backed helpers instead of patching Qt static dialogs directly in tests.
+    - Added an offscreen smoke test for the real Qt dialog wiring and converted export/backup tests to fake-adapter injection.
+  - Shutdown / worker lifecycle hardening:
+    - `MainApp._perform_real_close()` now cleans open `NewsTab` instances before DB/session teardown.
+    - `NewsTab.cleanup()` is now idempotent and stops timers, detaches worker signals, interrupts/waits active `DBWorker`/`AsyncJobWorker`, and clears pending request/render state.
+    - Added `AsyncJobWorker.stop()` so close paths can request interruption consistently.
+  - Backup integrity / import UX:
+    - `AutoBackup.create_backup()` now requires a restorable payload preflight; config-file absence fails backup creation even for settings-only/manual flows.
+    - Manual backup UI prechecks config/db presence before create, and startup auto-backup quietly skips when config is missing.
+    - Settings import now tracks newly added tabs, prompts once, and refreshes only those tabs via `refresh_selected_tabs(...)`.
+  - Docs / packaging / repo hygiene:
+    - Synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the current behavior and validation baseline.
+    - Re-reviewed `.gitignore`; existing runtime/build/test ignore rules already covered this pass, so no new ignore entry was required.
+  - Added/updated tests:
+    - Added:
+      - `tests/conftest.py`
+      - `tests/test_dialog_adapters_smoke.py`
+      - `tests/test_import_refresh_prompt.py`
+      - `tests/test_shutdown_cleanup.py`
+    - Expanded:
+      - `tests/test_audit_followthrough.py`
+      - `tests/test_backup_restore_mode.py`
+      - `tests/test_news_tab_mark_all_read_scope.py`
+      - `tests/test_risk_fixes.py`
+  - Validation:
+    - `python -m pytest -q` => `196 passed, 5 subtests passed`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **UI/UX Hardening + Docs/Spec Revalidation (2026-03-27)**:
   - Help/settings separation:
     - Added read-only `help_mode` / `initial_tab` support to `SettingsDialog`.
