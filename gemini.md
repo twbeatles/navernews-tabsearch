@@ -84,10 +84,22 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `pyrightconfig.json`으로 repo-wide Pyright 게이트를 유지한다. 이번 패스에서는 로컬 PyQt6 import resolution 환경 차이로 재검증 기준에 포함하지 않았다.
-- `pytest -q` => `196 passed, 5 subtests passed`
+- `python -m pytest -q` => `196 passed, 5 subtests passed`
+- `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-02 기준 다시 성공했다.
+
+### 2026-04-05 Implementation Risk Audit Full Adoption
+
+- 유지보수 모드는 fetch뿐 아니라 탭 DB 재조회, 필터/정렬/기간 변경 reload, CSV export, 통계/분석, `모두 읽음`, import 후 선택 refresh까지 전역 DB 작업을 차단한다.
+- `core.database.DatabaseQueryError`를 도입해 조회/집계 실패가 `[]`/`0`으로 숨지 않게 했고, `DBWorker`/`NewsTab`/분석 UI는 기존 캐시를 유지한 채 상태바/토스트/경고로 실패를 노출한다.
+- `KeywordGroupManager.save_groups()`는 저장 실패를 더 이상 삼키지 않으며, `KeywordGroupDialog`는 실패 시 닫히지 않아 재시도 UX를 보장한다.
+- `AutoBackup.create_backup()`는 생성 직후 self-verify를 수행하고, 실패한 백업은 삭제하지 않은 채 `복원 불가` 상태로 목록에 남긴다.
+- import로 새로 추가된 탭의 즉시 새로고침 prompt는 실제 refresh 가능 조건을 통과한 경우에만 표시된다.
+- `news_scraper_pro.spec`를 다시 검토했고, 이번 패스에서도 추가 packaging 변경은 필요하지 않았다.
+- 검증:
+  - `python -m pytest -q` => `196 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
 
 ### 2026-04-02 Implementation Audit Full Adoption
 

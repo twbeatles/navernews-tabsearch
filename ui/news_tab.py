@@ -1,6 +1,7 @@
 import html
 import hashlib
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
 
@@ -80,6 +81,7 @@ class NewsTab(QWidget):
         self._pending_append_request_ids: set[int] = set()
         self._pending_scroll_restore = 0
         self._date_filter_active = False
+        self._maintenance_mode_active = False
         self._is_closing = False
         self._cleanup_started = False
 
@@ -304,6 +306,7 @@ class NewsTab(QWidget):
         required_attrs = (
             "update_tab_badge",
             "refresh_bookmark_tab",
+            "should_block_db_action",
             "show_toast",
             "show_warning_toast",
             "sync_tab_load_more_state",
@@ -312,6 +315,73 @@ class NewsTab(QWidget):
         if not all(hasattr(candidate, attr) for attr in required_attrs):
             return None
         return cast(MainWindowProtocol, candidate)
+
+    def _should_block_db_action(self, action: str, *, notify: bool = True) -> bool:
+        main_window_getter = getattr(self, "_main_window", None)
+        if not callable(main_window_getter):
+            return False
+        parent = main_window_getter()
+        if parent is None:
+            return False
+        should_block_db_action = getattr(parent, "should_block_db_action", None)
+        if not callable(should_block_db_action):
+            return False
+        return bool(should_block_db_action(action, notify=notify))
+
+    def _request_db_reload(self, action: str, *, append: bool = False) -> None:
+        if self._should_block_db_action(action):
+            return
+        self.load_data_from_db(append=append)
+
+    def set_maintenance_mode(self, active: bool) -> None:
+        self._maintenance_mode_active = bool(active)
+        if self._maintenance_mode_active and hasattr(self, "filter_timer"):
+            self.filter_timer.stop()
+
+        controls = (
+            "inp_filter",
+            "combo_sort",
+            "chk_unread",
+            "chk_hide_dup",
+            "btn_date_toggle",
+            "btn_load",
+            "btn_read_all",
+        )
+        for attr_name in controls:
+            control = getattr(self, attr_name, None)
+            if control is not None:
+                control.setEnabled(not self._maintenance_mode_active)
+
+        self._refresh_date_filter_controls()
+
+    def cancel_background_tasks_for_maintenance(self, wait_ms: int = 500) -> bool:
+        deadline = time.monotonic() + (max(0, int(wait_ms)) / 1000.0)
+        finished = True
+
+        if self.worker is not None and self.worker.isRunning():
+            self._detach_worker_signals(self.worker, ("finished", "error"))
+            self.worker.stop()
+            remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
+            if not self.worker.wait(remaining_ms):
+                logger.warning("DBWorker maintenance wait timeout: %s", self.keyword)
+                finished = False
+
+        if self.job_worker is not None and self.job_worker.isRunning():
+            self._detach_worker_signals(self.job_worker, ("finished", "error"))
+            try:
+                self.job_worker.stop()
+            except Exception:
+                self.job_worker.requestInterruption()
+                self.job_worker.quit()
+            remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
+            if not self.job_worker.wait(remaining_ms):
+                logger.warning("AsyncJobWorker maintenance wait timeout: %s", self.keyword)
+                finished = False
+
+        self._is_loading_more = False
+        self._pending_append_request_ids.clear()
+        self._pending_scroll_restore = 0
+        return finished
 
     def _browser_scroll_bar(self) -> QScrollBar:
         scroll_bar = self.browser.verticalScrollBar()
@@ -545,7 +615,7 @@ class NewsTab(QWidget):
         
         self.combo_sort = NoScrollComboBox()
         self.combo_sort.addItems(["최신순", "오래된순"])
-        self.combo_sort.currentIndexChanged.connect(self.load_data_from_db)
+        self.combo_sort.currentIndexChanged.connect(self._on_sort_changed)
         
         row1_layout.addWidget(self.inp_filter, 4)
         row1_layout.addWidget(self.combo_sort, 1)
@@ -557,10 +627,10 @@ class NewsTab(QWidget):
         row2_layout.setSpacing(12)
         
         self.chk_unread = QCheckBox("안 읽은 것만")
-        self.chk_unread.stateChanged.connect(self.load_data_from_db)
+        self.chk_unread.stateChanged.connect(self._on_unread_filter_changed)
         
         self.chk_hide_dup = QCheckBox("중복 숨김")
-        self.chk_hide_dup.stateChanged.connect(self.load_data_from_db)
+        self.chk_hide_dup.stateChanged.connect(self._on_hide_duplicates_changed)
         
         row2_layout.addWidget(self.chk_unread)
         row2_layout.addWidget(self.chk_hide_dup)
@@ -644,6 +714,15 @@ class NewsTab(QWidget):
         self.btn_top.clicked.connect(lambda: self._browser_scroll_bar().setValue(0))
         self.btn_read_all.clicked.connect(self.mark_all_read)
     
+    def _on_sort_changed(self):
+        self._request_db_reload("?뺣젹 蹂寃?")
+
+    def _on_unread_filter_changed(self):
+        self._request_db_reload("??쎌? ?꾪꽣 蹂寃?")
+
+    def _on_hide_duplicates_changed(self):
+        self._request_db_reload("以묐났 ?⑥쓬 蹂寃?")
+
     def _toggle_date_filter(self, checked: bool):
         """날짜 필터 표시/숨김 토글"""
         self.date_container.setVisible(checked)
@@ -658,6 +737,8 @@ class NewsTab(QWidget):
         self._date_filter_active = False
         self._refresh_date_filter_controls()
         if was_active:
+            if NewsTab._should_block_db_action(cast(Any, self), "date filter clear"):
+                return
             self.load_data_from_db()
         else:
             self.update_status_label()
@@ -723,8 +804,11 @@ class NewsTab(QWidget):
     def _refresh_date_filter_controls(self):
         active = bool(self._date_filter_active)
         self.btn_date_toggle.setText("📅 기간 적용 중" if active else "📅 기간")
-        self.btn_apply_date.setEnabled(self.btn_date_toggle.isChecked())
-        self.btn_clear_date.setEnabled(active)
+        interactive = self.btn_date_toggle.isChecked() and not self._maintenance_mode_active
+        self.btn_apply_date.setEnabled(interactive)
+        self.btn_clear_date.setEnabled(active and not self._maintenance_mode_active)
+        self.date_start.setEnabled(interactive)
+        self.date_end.setEnabled(interactive)
         self._update_date_toggle_style(active)
 
     def _set_date_edit_value(self, widget: QDateEdit, date_value: QDate):
@@ -745,19 +829,19 @@ class NewsTab(QWidget):
         if selected_date > self.date_end.date():
             self._set_date_edit_value(self.date_end, selected_date)
         if self._date_filter_active:
-            self.load_data_from_db()
+            self._request_db_reload("?좎쭨 ?꾪꽣 蹂寃?")
 
     def _on_date_end_changed(self, selected_date: QDate):
         if selected_date < self.date_start.date():
             self._set_date_edit_value(self.date_start, selected_date)
         if self._date_filter_active:
-            self.load_data_from_db()
+            self._request_db_reload("?좎쭨 ?꾪꽣 蹂寃?")
 
     def _apply_date_filter(self):
         self._normalize_date_inputs()
         self._date_filter_active = True
         self._refresh_date_filter_controls()
-        self.load_data_from_db()
+        self._request_db_reload("?좎쭨 ?꾪꽣 ?곸슜")
 
     def _clear_date_filter(self):
         if not self._date_filter_active:
@@ -765,7 +849,7 @@ class NewsTab(QWidget):
             return
         self._date_filter_active = False
         self._refresh_date_filter_controls()
-        self.load_data_from_db()
+        self._request_db_reload("?좎쭨 ?꾪꽣 ?댁젣")
 
     def _on_filter_changed(self):
         """필터 입력 변경 시 디바운싱 타이머 시작"""
@@ -779,6 +863,8 @@ class NewsTab(QWidget):
     def load_data_from_db(self, append: bool = False):
         """DB에서 현재 필터 범위의 페이지를 로드한다."""
         if getattr(self, "_is_closing", False):
+            return
+        if NewsTab._should_block_db_action(cast(Any, self), "tab DB reload", notify=False):
             return
         with perf_timer("ui.load_data_from_db", f"kw={self.keyword}|append={int(append)}"):
             if self.worker and self.worker.isRunning():
@@ -920,6 +1006,10 @@ class NewsTab(QWidget):
         self._pending_scroll_restore = 0
         self.lbl_status.setText(f"⚠️ 오류: {err_msg}")
         self.btn_load.setEnabled(True)
+        parent = self._main_window()
+        if parent is not None:
+            parent.sync_tab_load_more_state(self.keyword)
+            parent.show_warning_toast(f"'{self.keyword}' DB 議고쉶瑜??ㅽ뙣?덉뒿?덈떎.")
 
     def apply_filter(self):
         """필터 변경 시 DB 기반으로 첫 페이지부터 다시 조회한다."""
@@ -937,7 +1027,7 @@ class NewsTab(QWidget):
                 return
 
             self._last_filter_text = filter_txt_lc
-            self.load_data_from_db(append=False)
+            self._request_db_reload("?꾪꽣 蹂寃?", append=False)
 
     def _render_single_item(self, item: Dict[str, Any], filter_word: str, base_badges_html: str) -> str:
         """단일 뉴스 아이템 HTML 렌더링"""
@@ -1029,7 +1119,7 @@ class NewsTab(QWidget):
             return
         if len(self.filtered_data_cache) >= self._total_filtered_count:
             return
-        self.load_data_from_db(append=True)
+        self._request_db_reload("??蹂닿린", append=True)
 
 
     def update_status_label(self):
@@ -1130,6 +1220,8 @@ class NewsTab(QWidget):
         link = target.get("link", "")
         if not link:
             return False
+        if NewsTab._should_block_db_action(cast(Any, self), "read-state update"):
+            return False
 
         was_read = bool(target.get("is_read", 0))
         now_read = bool(new_read)
@@ -1164,6 +1256,8 @@ class NewsTab(QWidget):
     ) -> bool:
         link = str(target.get("link", "") or "").strip()
         if not link:
+            return False
+        if NewsTab._should_block_db_action(cast(Any, self), "bookmark update"):
             return False
 
         new_value = 1 if bool(new_bookmarked) else 0
@@ -1209,6 +1303,8 @@ class NewsTab(QWidget):
         link = str(target.get("link", "") or "").strip()
         if not link:
             return False
+        if NewsTab._should_block_db_action(cast(Any, self), "note save"):
+            return False
 
         new_note = str(note or "")
         if not self.db.save_note(link, new_note):
@@ -1230,6 +1326,8 @@ class NewsTab(QWidget):
         link = str(target.get("link", "") or "").strip()
         if not link:
             return False
+        if NewsTab._should_block_db_action(cast(Any, self), "note edit"):
+            return False
         current_note = self.db.get_note(link)
         dialog = NoteDialog(current_note, self)
         if not dialog.exec():
@@ -1239,6 +1337,8 @@ class NewsTab(QWidget):
     def _delete_target(self, target: Dict[str, Any]) -> bool:
         link = str(target.get("link", "") or "").strip()
         if not link:
+            return False
+        if NewsTab._should_block_db_action(cast(Any, self), "delete article"):
             return False
 
         reply = QMessageBox.question(
@@ -1334,6 +1434,8 @@ class NewsTab(QWidget):
     def mark_all_read(self):
         """모두 읽음으로 표시 (비동기)"""
         if getattr(self, "_is_closing", False):
+            return
+        if NewsTab._should_block_db_action(cast(Any, self), "mark all read"):
             return
         mode_dialog = QMessageBox(self)
         mode_dialog.setIcon(QMessageBox.Icon.Question)

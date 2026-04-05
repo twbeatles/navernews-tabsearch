@@ -1,6 +1,30 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Risk Audit Full Adoption + Docs/Spec Revalidation (2026-04-05)**:
+  - DB query failure contract:
+    - Added `core.database.DatabaseQueryError` and removed silent empty/zero fallback from read/query/analytics helpers such as `fetch_news(...)`, `count_news(...)`, `get_counts(...)`, unread batch/count queries, `get_existing_links_for_query(...)`, `get_statistics(...)`, and `get_top_publishers(...)`.
+    - `DBWorker` now forwards query failures through `error`, while `NewsTab` preserves the current cache and surfaces failure via status/toast instead of replacing the view with a bogus empty state.
+    - Explicit user-triggered stats/analysis failures now warn instead of rendering misleading `0건` screens.
+  - Maintenance-mode closure:
+    - Added a shared maintenance guard contract on `MainApp` / `MainWindowProtocol` and expanded blocking beyond fetch/load-more to tab DB reloads, filter/sort/date-triggered reloads, CSV export, stats/analysis, `모두 읽음`, and import-follow-up selected-tab refresh.
+    - Maintenance entry/exit now locks and restores related UI controls consistently without forcing a synthetic global reload on exit.
+  - Keyword groups / backup / import UX:
+    - `KeywordGroupManager.save_groups()` no longer swallows persistence failures, and `KeywordGroupDialog.accept()` now stays open on save failure so the user can retry without losing edits.
+    - `AutoBackup.create_backup()` now self-verifies the freshly written payload immediately; verification failures keep the backup folder, return failure to the caller, and remain visible in the backup list as non-restorable entries.
+    - Import-created tab refresh prompts are now shown only when refresh is actually executable (not in maintenance, no sequential refresh already running, valid API credentials present).
+  - Docs / spec / typing sync:
+    - Synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the new failure/maintenance/backup contracts.
+    - Cleared the remaining test-side pyright binding issues around mixin aliasing and source inspection.
+  - Updated tests:
+    - Expanded:
+      - `tests/test_import_refresh_prompt.py`
+      - `tests/test_risk_fixes.py`
+      - `tests/test_shutdown_cleanup.py`
+      - `tests/test_stabilization_round1.py`
+  - Validation:
+    - `python -m pytest -q` => `196 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
 - **Implementation Audit Full Adoption + Docs/Spec Revalidation (2026-04-02)**:
   - Dialog isolation / testability:
     - Added `ui.dialog_adapters.QtDialogAdapter`.

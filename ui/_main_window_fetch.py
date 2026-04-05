@@ -40,6 +40,28 @@ class _MainWindowFetchMixin:
                 logger.error("Failed to normalize refresh keyword '%s': %s", keyword, e)
         return prepared
 
+    def _refresh_block_reason(
+        self: MainApp,
+        action_label: str = "?덈줈怨좎묠",
+    ) -> str:
+        if self.is_maintenance_mode_active():
+            return self._maintenance_block_message(action_label)
+        if self._sequential_refresh_active:
+            return "Another refresh is already running. Please try again after it finishes."
+        valid, msg = self._validate_api_credentials()
+        if not valid:
+            return f"API credentials are not ready, so {action_label} cannot run. {msg}"
+        return ""
+
+    def _notify_refresh_blocked(
+        self: MainApp,
+        message: str,
+    ) -> None:
+        if not message:
+            return
+        self._status_bar().showMessage(message, 4000)
+        self.show_warning_toast(message)
+
     def _begin_sequential_refresh(
         self: MainApp,
         keywords: List[str],
@@ -107,6 +129,10 @@ class _MainWindowFetchMixin:
     def refresh_all(self: MainApp) -> bool:
         """Refresh all tabs sequentially."""
         logger.info("Starting refresh_all")
+        block_reason = self._refresh_block_reason("?덈줈怨좎묠")
+        if block_reason:
+            self._notify_refresh_blocked(block_reason)
+            return False
 
         if self.is_maintenance_mode_active():
             msg = self._maintenance_block_message("새로고침")
@@ -154,6 +180,10 @@ class _MainWindowFetchMixin:
     def refresh_selected_tabs(self: MainApp, keywords: List[str]) -> bool:
         """Refresh a selected subset of tabs sequentially."""
         logger.info("Starting refresh_selected_tabs: %s", keywords)
+        block_reason = self._refresh_block_reason("?덈줈怨좎묠")
+        if block_reason:
+            self._notify_refresh_blocked(block_reason)
+            return False
 
         if self.is_maintenance_mode_active():
             msg = self._maintenance_block_message("새로고침")

@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QLabel,
     QListWidget,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -26,7 +27,18 @@ if TYPE_CHECKING:
 class _MainWindowAnalysisMixin:
     def show_statistics(self: MainApp):
         """통계 정보 표시"""
-        stats = self._require_db().get_statistics()
+        if self.should_block_db_action("통계 보기"):
+            return
+
+        try:
+            stats = self._require_db().get_statistics()
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "통계 오류",
+                f"통계 정보를 불러오지 못했습니다.\n\n{e}",
+            )
+            return
 
         if stats["total"] > 0:
             read_count = stats["total"] - stats["unread"]
@@ -40,17 +52,17 @@ class _MainWindowAnalysisMixin:
 
         layout = QVBoxLayout(dialog)
 
-        group = QGroupBox("📊 데이터베이스 통계")
+        group = QGroupBox("전체 데이터베이스 통계")
         grid = QGridLayout()
 
         items = [
             ("총 기사 수:", f"{stats['total']:,}개"),
-            ("안 읽은 기사:", f"{stats['unread']:,}개"),
+            ("미읽음 기사:", f"{stats['unread']:,}개"),
             ("읽은 기사:", f"{stats['total'] - stats['unread']:,}개"),
             ("북마크:", f"{stats['bookmarked']:,}개"),
             ("메모 작성:", f"{stats['with_notes']:,}개"),
             ("중복 기사:", f"{stats['duplicates']:,}개"),
-            ("읽은 비율:", f"{read_percent:.1f}%"),
+            ("읽음 비율:", f"{read_percent:.1f}%"),
             ("탭 개수:", f"{self.tabs.count() - 1}개"),
         ]
 
@@ -73,8 +85,21 @@ class _MainWindowAnalysisMixin:
 
     def show_stats_analysis(self: MainApp):
         """통계 및 분석 통합 다이얼로그"""
+        if self.should_block_db_action("통계/분석 보기"):
+            return
+
+        try:
+            stats = self._require_db().get_statistics()
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "분석 오류",
+                f"통계 및 분석 정보를 불러오지 못했습니다.\n\n{e}",
+            )
+            return
+
         dialog = QDialog(self)
-        dialog.setWindowTitle("📊 통계 및 분석")
+        dialog.setWindowTitle("통계 및 분석")
         dialog.resize(550, 500)
 
         main_layout = QVBoxLayout(dialog)
@@ -83,23 +108,22 @@ class _MainWindowAnalysisMixin:
         stats_widget = QWidget()
         stats_layout = QVBoxLayout(stats_widget)
 
-        stats = self._require_db().get_statistics()
         if stats["total"] > 0:
             read_percent = ((stats["total"] - stats["unread"]) / stats["total"]) * 100
         else:
             read_percent = 0
 
-        group = QGroupBox("📊 데이터베이스 통계")
+        group = QGroupBox("전체 데이터베이스 통계")
         grid = QGridLayout()
 
         items = [
             ("총 기사 수:", f"{stats['total']:,}개"),
-            ("안 읽은 기사:", f"{stats['unread']:,}개"),
+            ("미읽음 기사:", f"{stats['unread']:,}개"),
             ("읽은 기사:", f"{stats['total'] - stats['unread']:,}개"),
             ("북마크:", f"{stats['bookmarked']:,}개"),
             ("메모 작성:", f"{stats['with_notes']:,}개"),
             ("중복 기사:", f"{stats['duplicates']:,}개"),
-            ("읽은 비율:", f"{read_percent:.1f}%"),
+            ("읽음 비율:", f"{read_percent:.1f}%"),
             ("탭 개수:", f"{self.tabs.count() - 1}개"),
         ]
 
@@ -118,7 +142,7 @@ class _MainWindowAnalysisMixin:
         analysis_widget = QWidget()
         analysis_layout = QVBoxLayout(analysis_widget)
 
-        tab_label = QLabel("분석할 탭을 선택하세요:")
+        tab_label = QLabel("분석할 탭을 선택하세요")
         analysis_layout.addWidget(tab_label)
 
         tab_combo = QComboBox()
@@ -130,7 +154,7 @@ class _MainWindowAnalysisMixin:
             tab_combo.addItem(w.keyword, w.keyword)
         analysis_layout.addWidget(tab_combo)
 
-        result_label = QLabel("📈 언론사별 기사 수:")
+        result_label = QLabel("상위 언론사 기사 수")
         result_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
         analysis_layout.addWidget(result_label)
 
@@ -139,19 +163,28 @@ class _MainWindowAnalysisMixin:
 
         def update_analysis():
             result_list.clear()
-            tab_query = tab_combo.currentData()
-            if isinstance(tab_query, str) and tab_query.strip():
-                db_keyword, exclude_words = parse_tab_query(tab_query)
-                search_keyword, _ = parse_search_query(tab_query)
-                query_key = build_fetch_key(search_keyword, exclude_words)
-                publishers = self._require_db().get_top_publishers(
-                    db_keyword,
-                    exclude_words=exclude_words,
-                    limit=20,
-                    query_key=query_key,
+            try:
+                tab_query = tab_combo.currentData()
+                if isinstance(tab_query, str) and tab_query.strip():
+                    db_keyword, exclude_words = parse_tab_query(tab_query)
+                    search_keyword, _ = parse_search_query(tab_query)
+                    query_key = build_fetch_key(search_keyword, exclude_words)
+                    publishers = self._require_db().get_top_publishers(
+                        db_keyword,
+                        exclude_words=exclude_words,
+                        limit=20,
+                        query_key=query_key,
+                    )
+                else:
+                    publishers = self._require_db().get_top_publishers(None, limit=20)
+            except Exception as e:
+                result_list.addItem("언론사 분석 데이터를 불러오지 못했습니다.")
+                QMessageBox.warning(
+                    dialog,
+                    "분석 오류",
+                    f"언론사 분석 데이터를 불러오지 못했습니다.\n\n{e}",
                 )
-            else:
-                publishers = self._require_db().get_top_publishers(None, limit=20)
+                return
 
             if publishers:
                 for i, (pub, count) in enumerate(publishers, 1):
@@ -162,8 +195,8 @@ class _MainWindowAnalysisMixin:
         tab_combo.currentIndexChanged.connect(update_analysis)
         update_analysis()
 
-        tab_widget.addTab(stats_widget, "📊 통계")
-        tab_widget.addTab(analysis_widget, "📈 언론사 분석")
+        tab_widget.addTab(stats_widget, "전체 통계")
+        tab_widget.addTab(analysis_widget, "언론사 분석")
 
         main_layout.addWidget(tab_widget)
 

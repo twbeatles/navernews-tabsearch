@@ -133,8 +133,11 @@ class _FakeEvent:
 
 
 class _DummyCloseMain:
-    _cleanup_open_tabs_for_shutdown = _MainWindowTrayMixin._cleanup_open_tabs_for_shutdown
-    _perform_real_close = _MainWindowTrayMixin._perform_real_close
+    def _cleanup_open_tabs_for_shutdown(self):
+        return cast(Any, _MainWindowTrayMixin)._cleanup_open_tabs_for_shutdown(cast(Any, self))
+
+    def _perform_real_close(self, event):
+        return cast(Any, _MainWindowTrayMixin)._perform_real_close(cast(Any, self), event)
 
     def __init__(self):
         self.call_log: list[str] = []

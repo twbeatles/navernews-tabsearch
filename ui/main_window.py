@@ -422,6 +422,15 @@ class MainApp(
         reason = str(getattr(self, "_maintenance_reason", "") or "데이터 정리")
         return f"유지보수 중이라 {action}을(를) 실행할 수 없습니다. ({reason})"
 
+    def should_block_db_action(self, action: str, *, notify: bool = True) -> bool:
+        if not self.is_maintenance_mode_active():
+            return False
+        message = self._maintenance_block_message(action)
+        self._status_bar().showMessage(message, 3000)
+        if notify:
+            self.show_warning_toast(message)
+        return True
+
     def _set_countdown_status_text(self, text: str) -> None:
         label = getattr(self, "countdown_status_label", None)
         if label is None:
@@ -433,8 +442,15 @@ class MainApp(
             self.btn_refresh.setEnabled(enabled)
         if hasattr(self, "btn_add"):
             self.btn_add.setEnabled(enabled)
+        if hasattr(self, "btn_save"):
+            self.btn_save.setEnabled(enabled)
+        if hasattr(self, "btn_stats"):
+            self.btn_stats.setEnabled(enabled)
 
         for _index, tab in self._iter_news_tabs():
+            set_maintenance_mode = getattr(tab, "set_maintenance_mode", None)
+            if callable(set_maintenance_mode):
+                set_maintenance_mode(not enabled)
             if tab.is_bookmark_tab:
                 continue
             if enabled:
@@ -450,6 +466,12 @@ class MainApp(
             self._status_bar().showMessage(
                 f"🔧 유지보수 중: {self._maintenance_reason or '데이터 정리'}",
             )
+
+        else:
+            update_tray_tooltip = getattr(self, "update_tray_tooltip", None)
+            if callable(update_tray_tooltip):
+                update_tray_tooltip()
+                QTimer.singleShot(300, update_tray_tooltip)
 
     def _cancel_active_fetch_workers(self, wait_ms: int = 1500) -> tuple[bool, List[str]]:
         deadline = time.monotonic() + (max(0, int(wait_ms)) / 1000.0)
@@ -477,6 +499,32 @@ class MainApp(
             if not finished:
                 unfinished_keywords.append(handle.tab_keyword)
 
+        export_worker = getattr(self, "_export_worker", None)
+        if export_worker is not None and export_worker.isRunning():
+            try:
+                self._export_cancel_requested = True
+                export_worker.requestInterruption()
+                remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
+                if not export_worker.wait(remaining_ms):
+                    unfinished_keywords.append("CSV export")
+                else:
+                    self._reset_export_ui()
+            except Exception as e:
+                logger.warning("Failed to stop export worker before maintenance: %s", e)
+                unfinished_keywords.append("CSV export")
+
+        for _index, tab in self._iter_news_tabs():
+            cancel_background_tasks = getattr(tab, "cancel_background_tasks_for_maintenance", None)
+            if not callable(cancel_background_tasks):
+                continue
+            try:
+                remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
+                if not cancel_background_tasks(remaining_ms):
+                    unfinished_keywords.append(tab.keyword)
+            except Exception as e:
+                logger.warning("Failed to stop tab background tasks before maintenance (%s): %s", tab.keyword, e)
+                unfinished_keywords.append(tab.keyword)
+
         return len(unfinished_keywords) == 0, unfinished_keywords
 
     def begin_database_maintenance(self, operation: str) -> tuple[bool, str]:
@@ -499,6 +547,9 @@ class MainApp(
         self._maintenance_mode = True
         self._maintenance_reason = operation_label
         self._apply_maintenance_ui_state()
+        update_tray_tooltip = getattr(self, "update_tray_tooltip", None)
+        if callable(update_tray_tooltip):
+            update_tray_tooltip()
         self.show_warning_toast(f"{operation_label}를 위해 유지보수 모드로 전환했습니다.")
         return True, ""
 
@@ -921,6 +972,10 @@ class MainApp(
             logger.info("PERF|ui.update_all_tab_badges.skip|0.00ms|reason=already_running")
             return
 
+        if self.is_maintenance_mode_active():
+            logger.info("PERF|ui.update_all_tab_badges.skip|0.00ms|reason=maintenance")
+            return
+
         self._badge_refresh_running = True
         try:
             tab_infos: List[Tuple[int, str, str, str]] = []
@@ -1007,9 +1062,13 @@ class MainApp(
             return
 
         db = self._require_db()
-        if db.get_counts(db_keyword, query_key=query_key) > 0:
-            return
-        if db.get_counts(db_keyword) <= 0:
+        try:
+            if db.get_counts(db_keyword, query_key=query_key) > 0:
+                return
+            if db.get_counts(db_keyword) <= 0:
+                return
+        except Exception as e:
+            logger.warning("Query refresh hint skipped because DB read failed (%s): %s", normalized_keyword, e)
             return
 
         self._query_key_migration_hints_shown.add(normalized_keyword)

@@ -65,7 +65,12 @@ def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
     for target, snapshot in snapshots.items():
         try:
             if snapshot and os.path.exists(snapshot):
-                _atomic_copy_replace(snapshot, target)
+                try:
+                    _atomic_copy_replace(snapshot, target)
+                except Exception:
+                    directory = os.path.dirname(os.path.abspath(target)) or "."
+                    os.makedirs(directory, exist_ok=True)
+                    shutil.copy2(snapshot, target)
             elif os.path.exists(target):
                 os.remove(target)
         except Exception as rollback_error:
@@ -132,8 +137,18 @@ def _validate_config_backup_payload(cfg_backup: str) -> str:
 
 def _validate_sqlite_backup(db_backup: str) -> str:
     conn = None
+    temp_dir = None
+    temp_db_path = db_backup
     try:
-        conn = sqlite3.connect(db_backup)
+        temp_dir = tempfile.mkdtemp(prefix=".backup_verify_")
+        temp_db_path = os.path.join(temp_dir, os.path.basename(db_backup))
+        shutil.copy2(db_backup, temp_db_path)
+        for suffix in ("-wal", "-shm"):
+            src_sidecar = f"{db_backup}{suffix}"
+            if os.path.exists(src_sidecar):
+                shutil.copy2(src_sidecar, f"{temp_db_path}{suffix}")
+
+        conn = sqlite3.connect(temp_db_path)
         row = conn.execute("PRAGMA integrity_check").fetchone()
         if not row or str(row[0]).lower() != "ok":
             return f"데이터베이스 무결성 검사 실패: {row[0] if row else 'unknown'}"
@@ -144,6 +159,11 @@ def _validate_sqlite_backup(db_backup: str) -> str:
         if conn is not None:
             try:
                 conn.close()
+            except Exception:
+                pass
+        if temp_dir is not None:
+            try:
+                shutil.rmtree(temp_dir)
             except Exception:
                 pass
 
@@ -297,6 +317,7 @@ class AutoBackup:
         self.pending_restore_file = pending_restore_file or os.path.join(
             os.path.dirname(os.path.abspath(config_file)), PENDING_RESTORE_FILENAME
         )
+        self.last_create_error = ""
         self._ensure_backup_dir()
 
     def _ensure_backup_dir(self):
@@ -306,6 +327,12 @@ class AutoBackup:
                 logger.info(f"백업 디렉토리 생성: {self.backup_dir}")
             except Exception as e:
                 logger.error(f"백업 디렉토리 생성 실패: {e}")
+
+    def _backup_info_path(self, backup_path: str) -> str:
+        return os.path.join(str(backup_path), "backup_info.json")
+
+    def _write_backup_info(self, backup_path: str, info: Dict[str, Any]) -> None:
+        _write_json_atomic(self._backup_info_path(backup_path), info)
 
     def validate_create_backup_prerequisites(
         self,
@@ -319,6 +346,7 @@ class AutoBackup:
 
     def create_backup(self, include_db: bool = True, trigger: str = "manual") -> Optional[str]:
         try:
+            self.last_create_error = ""
             normalized_trigger = str(trigger or "manual").strip().lower()
             if normalized_trigger not in {"auto", "manual"}:
                 normalized_trigger = "manual"
@@ -330,6 +358,7 @@ class AutoBackup:
                     int(bool(include_db)),
                     reason,
                 )
+                self.last_create_error = reason
                 return None
 
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -371,10 +400,44 @@ class AutoBackup:
                 json.dump(info, f, indent=2, ensure_ascii=False)
 
             logger.info(f"백업 생성 완료: {backup_path}")
+            verification = verify_backup_payload(
+                backup_path=backup_path,
+                config_file=self.config_file,
+                db_file=self.db_file,
+                require_db=actual_include_db,
+            )
+            info.update(
+                {
+                    "verification_state": str(verification.get("verification_state", "failed") or "failed"),
+                    "verification_error": str(
+                        verification.get("verification_error", "")
+                        or verification.get("restore_error", "")
+                        or verification.get("error", "")
+                        or ""
+                    ),
+                    "is_restorable": bool(verification.get("is_restorable", False)),
+                    "restore_error": str(verification.get("restore_error", "") or ""),
+                    "is_corrupt": bool(verification.get("is_corrupt", False)),
+                    "error": str(verification.get("error", "") or ""),
+                }
+            )
+            self._write_backup_info(backup_path, info)
+            if not bool(verification.get("is_restorable", False)):
+                self.last_create_error = str(
+                    verification.get("verification_error", "")
+                    or verification.get("restore_error", "")
+                    or verification.get("error", "")
+                    or "backup self-verification failed"
+                )
+                logger.error("Backup self-verification failed: %s", self.last_create_error)
+                self._cleanup_old_backups()
+                return None
+
             self._cleanup_old_backups()
             return backup_path
         except Exception as e:
             logger.error(f"백업 생성 실패: {e}")
+            self.last_create_error = str(e)
             traceback.print_exc()
             if "backup_path" in locals() and backup_path:
                 try:
@@ -506,6 +569,23 @@ class AutoBackup:
                 trigger = str(raw_info.get("trigger", "manual") or "manual").strip().lower()
                 item["trigger"] = trigger if trigger in {"auto", "manual"} else "manual"
                 item["created_at"] = str(raw_info.get("created_at", "") or "")
+                item["verification_state"] = str(
+                    raw_info.get("verification_state", item["verification_state"]) or item["verification_state"]
+                ).lower()
+                item["verification_error"] = str(
+                    raw_info.get("verification_error", item["verification_error"]) or item["verification_error"]
+                )
+                item["is_restorable"] = bool(
+                    raw_info.get(
+                        "is_restorable",
+                        item["verification_state"] != "failed",
+                    )
+                )
+                item["restore_error"] = str(
+                    raw_info.get("restore_error", item["restore_error"]) or item["restore_error"]
+                )
+                item["is_corrupt"] = bool(raw_info.get("is_corrupt", False))
+                item["error"] = str(raw_info.get("error", item["error"]) or item["error"])
             except Exception as item_error:
                 item["is_corrupt"] = True
                 item["error"] = str(item_error)
@@ -517,6 +597,27 @@ class AutoBackup:
             else:
                 cfg_backup = os.path.join(backup_path, os.path.basename(self.config_file))
                 db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
+                if item["is_corrupt"]:
+                    item["is_restorable"] = False
+                    item["verification_state"] = "failed"
+                    if not item["restore_error"]:
+                        item["restore_error"] = item["error"] or item["verification_error"] or "backup is corrupt"
+                    if not item["verification_error"]:
+                        item["verification_error"] = item["restore_error"]
+                    backups.append(item)
+                    continue
+                if item["verification_state"] == "failed":
+                    item["is_restorable"] = False
+                    if not item["restore_error"]:
+                        item["restore_error"] = (
+                            item["verification_error"]
+                            or item["error"]
+                            or "backup self-verification failed"
+                        )
+                    if not item["verification_error"]:
+                        item["verification_error"] = item["restore_error"]
+                    backups.append(item)
+                    continue
                 if not os.path.exists(cfg_backup):
                     item["is_restorable"] = False
                     item["restore_error"] = "설정 백업 파일이 없습니다."
@@ -529,9 +630,10 @@ class AutoBackup:
                     item["verification_error"] = item["restore_error"]
                 else:
                     item["is_restorable"] = True
-                    item["restore_error"] = ""
-                    item["verification_state"] = "pending"
-                    item["verification_error"] = ""
+                    if item["verification_state"] != "ok":
+                        item["verification_state"] = "pending"
+                        item["verification_error"] = ""
+                        item["restore_error"] = ""
 
             backups.append(item)
 

@@ -4,6 +4,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from queue import Queue
+from typing import Optional
 
 from core._db_analytics import _DatabaseAnalyticsMixin
 from core._db_duplicates import _DatabaseDuplicatesMixin
@@ -15,6 +16,21 @@ from core.logging_setup import configure_logging
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+
+class DatabaseQueryError(RuntimeError):
+    """Raised when a read/query-style DB operation fails."""
+
+    def __init__(
+        self,
+        operation: str,
+        message: str,
+        *,
+        cause: Optional[BaseException] = None,
+    ):
+        self.operation = str(operation or "database query")
+        self.cause = cause
+        super().__init__(f"{self.operation} failed: {message}")
 
 
 class DatabaseManager(
@@ -165,3 +181,10 @@ class DatabaseManager(
             logger.info(f"DB 연결 {closed_count}개 정상 종료")
         except Exception as e:
             logger.error(f"DB 종료 중 오류: {e}")
+
+    def _new_query_error(
+        self,
+        operation: str,
+        error: BaseException,
+    ) -> DatabaseQueryError:
+        return DatabaseQueryError(operation, str(error), cause=error)

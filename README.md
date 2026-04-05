@@ -107,12 +107,17 @@
 - CSV export, 설정 export/import, 백업 create/restore/delete는 공통 dialog adapter를 사용해 테스트와 실제 Qt wiring을 분리
 - 백업 생성은 복원 가능한 payload 기준으로만 성공 처리되며, 설정 파일이 없으면 수동 백업은 실패로 안내되고 시작 시 자동 백업은 조용히 건너뜀
 - 설정 가져오기로 새 탭이 추가되면 해당 탭만 지금 새로고침할지 한 번 확인하고, 동의 시 선택 탭만 순차 새로고침
+- 유지보수 모드는 fetch뿐 아니라 탭 DB 재조회, 필터/정렬/기간 변경 reload, CSV export, 통계/분석, `모두 읽음`, import 직후 선택 refresh까지 전역 차단한다
+- DB 조회/집계 실패는 더 이상 빈 결과나 `0건`으로 숨기지 않고 `DatabaseQueryError` 계약으로 올려 상태바/토스트와 명시적 경고 다이얼로그로 노출한다
+- 키워드 그룹 저장 실패는 로그만 남기고 끝내지 않으며, `KeywordGroupDialog`는 실패 시 닫히지 않고 사용자 입력을 유지한 채 재시도할 수 있다
+- 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
+- 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-02)
+## 최신 검증 메모 (2026-04-05)
 
 - `python -m pytest -q` => `196 passed, 5 subtests passed`
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
-- 산출물: `dist/NewsScraperPro_Safe.exe`
+- `pyright` => `0 errors, 0 warnings, 0 informations`
+- PyInstaller 클린 빌드 최신 검증선은 아래 `PyInstaller 빌드 (onefile)` 섹션에 별도로 정리합니다.
 
 ## 프로젝트 구조
 
@@ -276,6 +281,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-03-27 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-04-02 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, dialog adapter 도입, 종료 cleanup 강화, 백업 restorable preflight, import 후 선택 refresh 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않았습니다.
 - 2026-04-02 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-05 기준으로 `.spec`을 다시 재검토했고, 유지보수 모드의 DB 작업 전면 차단, `DatabaseQueryError` 기반 조회 실패 표면화, 키워드 그룹 저장 실패 노출, 백업 self-verify, import 후 refresh 가능 여부 선검사는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 
 ## 네이버 API 키 설정
 
@@ -314,6 +320,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 백업 메타의 `trigger`는 `auto`/`manual` 값을 가지며, 자동 시작 백업은 수동 백업과 별도 보존 정책으로 관리됩니다.
 - 자동 시작 백업은 `설정만` 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
 - 수동 백업은 `news_scraper_config.json`이 있어 실제로 복원 가능한 payload를 만들 수 있을 때만 성공합니다.
+- 백업 생성은 payload 기록 직후 self-verify를 수행하며, 검증 실패 항목은 폴더를 지우지 않고 백업 목록에서 `복원 불가` 상태로 남깁니다.
 - 시작 시 자동 백업은 설정 파일이 없으면 사용자 차단 없이 skip되고 로그만 남깁니다.
 - 알림 키워드 매칭은 fetch 결과 전체가 아니라 이번 요청에서 새로 추가된 기사 집합에만 적용됩니다.
 - `app_settings`는 `client_secret_enc`, `client_secret_storage` 필드를 지원하며 Windows에서는 평문 `client_secret`를 비우고 암호문을 저장합니다.
@@ -342,6 +349,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `ui.news_tab.NewsTab`은 scope signature별 append/replace를 구분하고, HTML 렌더는 fragment cache를 재사용하면서 event-loop tick당 한 번만 flush합니다.
 - `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`가 추가되어 탭 배지를 `query_key` 기준으로 일괄 집계합니다.
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
+- `core.database.DatabaseQueryError`는 조회/집계 계열 DB 실패를 빈 결과로 삼키지 않는 표준 예외 계약이며, UI는 기존 캐시를 보존한 채 실패를 노출합니다.
 
 ## 키워드 입력 규칙
 
@@ -363,6 +371,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
 - 시작프로그램 기능을 사용할 수 없는 환경에서 import된 `auto_start_enabled=true`는 `False`로 강제되고, 가능한 환경에서는 실제 레지스트리 상태까지 동기화합니다.
 - import로 새 탭이 추가되면 해당 탭들을 지금 새로고침할지 한 번 묻고, 동의하면 새 탭만 순차 새로고침합니다.
+- 이 prompt는 실제 refresh가 가능한 경우에만 표시되며, 유지보수 중이거나 이미 순차 새로고침이 실행 중이거나 API 자격증명이 유효하지 않으면 이유를 먼저 안내하고 prompt는 생략합니다.
 
 ## 트레이/시작 최소화 규칙
 

@@ -10,6 +10,9 @@ class MainWindowProtocol(Protocol):
     def update_tab_badge(self, keyword: str) -> None:
         ...
 
+    def should_block_db_action(self, action: str, *, notify: bool = True) -> bool:
+        ...
+
     def refresh_bookmark_tab(self) -> None:
         ...
 

@@ -125,10 +125,30 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `pyrightconfig.json`으로 repo-wide Pyright 게이트를 유지한다. 이번 패스에서는 로컬 PyQt6 import resolution 환경 차이로 재검증 기준에 포함하지 않았다.
-- `pytest -q` => `196 passed, 5 subtests passed`
+- `python -m pytest -q` => `196 passed, 5 subtests passed`
+- `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-02 기준 다시 성공했다.
+
+---
+
+## 🚀 2026-04-05 Implementation Risk Audit Full Adoption
+
+- DB 조회 실패 계약:
+  - `core.database.DatabaseQueryError`를 도입해 `fetch_news(...)`, `count_news(...)`, `get_counts(...)`, unread 집계, `get_existing_links_for_query(...)`, `get_statistics(...)`, `get_top_publishers(...)`가 더 이상 `[]`/`0`으로 silent fallback 하지 않게 했다.
+  - `DBWorker`는 query failure를 `error` 시그널로 올리고, `NewsTab`은 기존 캐시를 보존한 채 상태바/토스트로 실패를 알린다.
+  - 통계/분석처럼 사용자가 명시적으로 연 작업은 bogus 빈 화면 대신 warning dialog를 사용한다.
+- 유지보수 모드 전면 차단:
+  - `MainApp` / `MainWindowProtocol`에 공용 maintenance guard를 추가했다.
+  - fetch/load-more뿐 아니라 탭 DB 재조회, 필터/정렬/기간 변경 reload, CSV export, 통계/분석, `모두 읽음`, import 후 선택 refresh까지 차단한다.
+  - 유지보수 진입/해제 시 관련 버튼/조작 가능 상태를 일관되게 잠그고 복원한다.
+- 저장/백업 UX 정리:
+  - `KeywordGroupManager.save_groups()`는 실패를 삼키지 않고, `KeywordGroupDialog.accept()`는 저장 실패 시 닫히지 않아 재시도 가능하다.
+  - `AutoBackup.create_backup()`는 생성 직후 self-verify를 수행하고, 실패한 백업도 삭제하지 않은 채 목록에 `복원 불가` 상태로 남긴다.
+  - import 후 새 탭 refresh prompt는 실제 실행 가능 여부를 먼저 확인한 뒤에만 노출한다.
+- 타입/문서/패키징:
+  - 테스트 더미의 direct mixin aliasing을 wrapper/cast 방식으로 정리해 `pyright`를 다시 `0 errors` 상태로 맞췄다.
+  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`를 현재 계약에 맞춰 갱신했다.
 
 ---
 
@@ -769,6 +789,7 @@ ews_scraper_pro.py` (thin compatibility layer + re-export)
 ### v32.7.3 추가 변경사항
 - 장시간 반복 작업용 `IterativeJobWorker` 추가 및 CSV export/백업 검증 경로 적용
 - 백업 검증 상태(`pending/ok/failed`)와 SQLite integrity/sidecar 정책 검사 도입
+- 백업 생성 직후 self-verify를 수행해 정상 생성 항목은 즉시 `ok`, 실패 항목은 `복원 불가` 상태로 유지
 - `StartupManager.get_startup_status()` 도입 및 설정 창 자동 시작 수리 버튼 추가
 - 설정 저장 시 `save_primary_config_file()`로 main config + `.backup` 원자 회전 저장
 - `NewsTab` 읽음/북마크/메모/삭제 로컬 변경 경로를 helper로 일원화

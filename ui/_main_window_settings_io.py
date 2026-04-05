@@ -161,7 +161,38 @@ class _MainWindowSettingsIOMixin:
 
     def refresh_bookmark_tab(self: MainApp):
         """Reload the bookmark tab."""
+        should_block_db_action = getattr(self, "should_block_db_action", None)
+        if callable(should_block_db_action) and should_block_db_action(
+            "遺곷쭏??DB ?щ줈怨좎묠",
+            notify=False,
+        ):
+            return
         self.bm_tab.load_data_from_db()
+
+    def _import_refresh_block_reason(
+        self: MainApp,
+    ) -> str:
+        refresh_block_reason = getattr(self, "_refresh_block_reason", None)
+        if callable(refresh_block_reason):
+            return str(refresh_block_reason("媛?몄삩 ??덈줈怨좎묠") or "")
+        return ""
+
+    def _maybe_refresh_imported_tabs(
+        self: MainApp,
+        imported_keywords: List[str],
+    ) -> None:
+        if not imported_keywords:
+            return
+
+        block_reason = self._import_refresh_block_reason()
+        if block_reason:
+            self._status_bar().showMessage(block_reason, 5000)
+            self.show_warning_toast(block_reason)
+            _dialogs_for(self).warning(self, "??덈줈怨좎묠 遺덇?", block_reason)
+            return
+
+        if self._prompt_refresh_imported_tabs(imported_keywords):
+            self.refresh_selected_tabs(imported_keywords)
 
     def on_database_maintenance_completed(
         self: MainApp,
@@ -169,6 +200,13 @@ class _MainWindowSettingsIOMixin:
         affected_count: int = 0,
     ):
         """Refresh open tabs and badges after direct DB maintenance."""
+        if self.is_maintenance_mode_active():
+            logger.info(
+                "Skipping UI sync while maintenance mode is still active: op=%s, count=%s",
+                operation,
+                affected_count,
+            )
+            return
         try:
             for _index, widget in self._iter_news_tabs():
                 widget.load_data_from_db()
@@ -189,6 +227,10 @@ class _MainWindowSettingsIOMixin:
         export_worker = getattr(self, "_export_worker", None)
         if export_worker is not None and export_worker.isRunning():
             self._cancel_export_job()
+            return
+
+        should_block_db_action = getattr(self, "should_block_db_action", None)
+        if callable(should_block_db_action) and should_block_db_action("CSV ?대낫?닿린"):
             return
 
         cur_widget = self._current_news_tab()
@@ -624,7 +666,20 @@ class _MainWindowSettingsIOMixin:
 
             imported_groups = import_data.get("keyword_groups", {})
             if isinstance(imported_groups, dict):
-                self.keyword_group_manager.merge_groups(imported_groups, save=True)
+                previous_groups = dict(getattr(self.keyword_group_manager, "groups", {}))
+                merged_groups = self.keyword_group_manager.merge_groups(imported_groups, save=True)
+                group_manager = self.keyword_group_manager
+                group_manager_error = str(getattr(group_manager, "last_error", "") or "")
+                if (
+                    group_manager_error
+                    and merged_groups == previous_groups
+                ):
+                    group_warning = (
+                        "?ㅼ썙??洹몃９???ν븯吏 紐삵빐 媛?몄삩 洹몃９ ?ㅼ젙??곸슜?섏? 紐삵뻽?듬땲??\n\n"
+                        f"{group_manager_error}"
+                    )
+                    import_warnings.append(group_warning)
+                    dialogs.warning(self, "洹몃９ ???ㅽ뙣", group_warning)
 
             self.apply_refresh_interval()
             self.save_config()
@@ -639,7 +694,10 @@ class _MainWindowSettingsIOMixin:
                 msg += f" / 보정 {len(import_warnings)}건"
             self.show_toast(msg)
 
-            if self._prompt_refresh_imported_tabs(imported_new_keywords):
+            maybe_refresh_imported_tabs = getattr(self, "_maybe_refresh_imported_tabs", None)
+            if callable(maybe_refresh_imported_tabs):
+                maybe_refresh_imported_tabs(imported_new_keywords)
+            elif self._prompt_refresh_imported_tabs(imported_new_keywords):
                 self.refresh_selected_tabs(imported_new_keywords)
         except Exception as e:
             dialogs.warning(self, "오류", f"설정 가져오기 오류:\n{e}")

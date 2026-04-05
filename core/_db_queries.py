@@ -52,7 +52,7 @@ class _DatabaseQueriesMixin:
         query_key: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch rows for a tab or bookmark view."""
-        conn = self.get_connection()
+        conn = None
         news_items: List[Dict[str, Any]] = []
         scope_meta = (
             f"kw={keyword}|query_key={query_key or ''}|bookmark={int(only_bookmark)}|"
@@ -60,6 +60,7 @@ class _DatabaseQueriesMixin:
             f"ex={len(exclude_words) if exclude_words else 0}|limit={limit}|offset={offset}"
         )
         try:
+            conn = self.get_connection()
             with perf_timer("db.fetch_news", scope_meta):
                 params: List[Any] = []
 
@@ -171,8 +172,10 @@ class _DatabaseQueriesMixin:
                     news_items.append(dict(zip(columns, row)))
         except Exception as e:
             logger.error("fetch_news failed: %s", e)
+            raise self._new_query_error("fetch_news", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
 
         return news_items
 
@@ -189,12 +192,13 @@ class _DatabaseQueriesMixin:
         query_key: Optional[str] = None,
     ) -> int:
         """Count rows for a tab or bookmark view."""
-        conn = self.get_connection()
+        conn = None
         scope_meta = (
             f"kw={keyword}|query_key={query_key or ''}|bookmark={int(only_bookmark)}|"
             f"unread={int(only_unread)}|hide_dup={int(hide_duplicates)}"
         )
         try:
+            conn = self.get_connection()
             with perf_timer("db.count_news", scope_meta):
                 params: List[Any] = []
                 if only_bookmark:
@@ -252,9 +256,10 @@ class _DatabaseQueriesMixin:
                 return int(row[0]) if row else 0
         except Exception as e:
             logger.error("count_news failed: %s", e)
-            return 0
+            raise self._new_query_error("count_news", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
 
     def get_counts(
         self: DatabaseManager,
@@ -262,8 +267,9 @@ class _DatabaseQueriesMixin:
         query_key: Optional[str] = None,
     ) -> int:
         """Count memberships for a keyword or a full query scope."""
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             with perf_timer("db.get_counts", f"kw={keyword}|query_key={query_key or ''}"):
                 if query_key:
                     row = conn.execute(
@@ -278,9 +284,10 @@ class _DatabaseQueriesMixin:
                 return int(row[0]) if row else 0
         except Exception as e:
             logger.error("get_counts failed: %s", e)
-            return 0
+            raise self._new_query_error("get_counts", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
 
     def get_unread_count(
         self: DatabaseManager,
@@ -288,8 +295,9 @@ class _DatabaseQueriesMixin:
         query_key: Optional[str] = None,
     ) -> int:
         """Count unread rows for a keyword or a full query scope."""
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             with perf_timer("db.get_unread_count", f"kw={keyword}|query_key={query_key or ''}"):
                 params: List[Any] = []
                 query = (
@@ -304,22 +312,25 @@ class _DatabaseQueriesMixin:
                 return int(row[0]) if row else 0
         except Exception as e:
             logger.error("get_unread_count failed: %s", e)
-            return 0
+            raise self._new_query_error("get_unread_count", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
 
     def get_total_unread_count(self: DatabaseManager) -> int:
         """Get unread count across all rows in news."""
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             with perf_timer("db.get_total_unread_count", "scope=all"):
                 row = conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()
                 return int(row[0]) if row else 0
         except Exception as e:
             logger.error("get_total_unread_count failed: %s", e)
-            return 0
+            raise self._new_query_error("get_total_unread_count", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
 
     def _get_grouped_unread_counts(
         self: DatabaseManager,
@@ -333,8 +344,9 @@ class _DatabaseQueriesMixin:
         if not cleaned:
             return {}
 
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             with perf_timer(f"db.get_unread_counts_by_{column_name}", f"count={len(cleaned)}"):
                 placeholders = ",".join(["?"] * len(cleaned))
                 query = f"""
@@ -351,9 +363,10 @@ class _DatabaseQueriesMixin:
                 return unread_by_value
         except Exception as e:
             logger.error("Grouped unread count lookup failed: %s", e)
-            return {value: 0 for value in cleaned}
+            raise self._new_query_error(f"get_unread_counts_by_{column_name}", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
 
     def get_unread_counts_by_keywords(
         self: DatabaseManager,
@@ -385,8 +398,9 @@ class _DatabaseQueriesMixin:
             return set()
 
         deduped_links = list(dict.fromkeys(cleaned_links))
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             with perf_timer(
                 "db.get_existing_links_for_query",
                 f"kw={keyword}|query_key={query_key or ''}|links={len(deduped_links)}",
@@ -405,6 +419,7 @@ class _DatabaseQueriesMixin:
                 return {str(row[0]) for row in rows if row and row[0]}
         except Exception as e:
             logger.error("get_existing_links_for_query failed: %s", e)
-            return set()
+            raise self._new_query_error("get_existing_links_for_query", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)

@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 from ui._main_window_settings_io import _MainWindowSettingsIOMixin
 from ui._main_window_tabs import _MainWindowTabsMixin
@@ -61,14 +62,40 @@ class _FakeTab:
 
 
 class _DummyImportMain:
-    import_settings = _MainWindowSettingsIOMixin.import_settings
-    _merge_search_history = _MainWindowSettingsIOMixin._merge_search_history
-    _merge_int_mapping_keep_max = _MainWindowSettingsIOMixin._merge_int_mapping_keep_max
-    _validated_import_window_geometry = _MainWindowSettingsIOMixin._validated_import_window_geometry
-    _prompt_refresh_imported_tabs = _MainWindowSettingsIOMixin._prompt_refresh_imported_tabs
-    _normalize_tab_keyword = _MainWindowTabsMixin._normalize_tab_keyword
-    _canonical_fetch_key_for_keyword = _MainWindowTabsMixin._canonical_fetch_key_for_keyword
-    _history_identity_for_keyword = _MainWindowTabsMixin._history_identity_for_keyword
+    def import_settings(self):
+        return cast(Any, _MainWindowSettingsIOMixin).import_settings(cast(Any, self))
+
+    def _merge_search_history(self, imported_history):
+        return cast(Any, _MainWindowSettingsIOMixin)._merge_search_history(cast(Any, self), imported_history)
+
+    def _merge_int_mapping_keep_max(self, current, incoming, minimum):
+        return cast(Any, _MainWindowSettingsIOMixin)._merge_int_mapping_keep_max(
+            cast(Any, self),
+            current,
+            incoming,
+            minimum,
+        )
+
+    def _validated_import_window_geometry(self, raw_geometry):
+        return cast(Any, _MainWindowSettingsIOMixin)._validated_import_window_geometry(
+            cast(Any, self),
+            raw_geometry,
+        )
+
+    def _prompt_refresh_imported_tabs(self, imported_keywords):
+        return cast(Any, _MainWindowSettingsIOMixin)._prompt_refresh_imported_tabs(
+            cast(Any, self),
+            imported_keywords,
+        )
+
+    def _normalize_tab_keyword(self, raw_keyword):
+        return cast(Any, _MainWindowTabsMixin)._normalize_tab_keyword(cast(Any, self), raw_keyword)
+
+    def _canonical_fetch_key_for_keyword(self, raw_keyword):
+        return cast(Any, _MainWindowTabsMixin)._canonical_fetch_key_for_keyword(cast(Any, self), raw_keyword)
+
+    def _history_identity_for_keyword(self, raw_keyword):
+        return cast(Any, _MainWindowTabsMixin)._history_identity_for_keyword(cast(Any, self), raw_keyword)
 
     def __init__(self, dialog_adapter):
         self._dialog_adapter = dialog_adapter

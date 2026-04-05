@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-02)
+작성일: 2026-03-16 (최근 갱신: 2026-04-05)
 
 ## 분석 범위
 
@@ -16,6 +16,18 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-04-05 구현 리스크 감사 반영 / 문서 재검증
+
+이번 재검증에서는 2026-04-05 구현 리스크 감사 반영 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- 유지보수 모드는 이제 fetch 계열뿐 아니라 탭 DB 재조회, 필터/정렬/기간 변경 reload, CSV export, 통계/분석, `모두 읽음`, import 직후 선택 refresh까지 DB 작업 전반을 차단한다.
+- `core.database.DatabaseQueryError`가 도입되어 조회/집계 실패가 `[]`/`0`으로 묻히지 않고, `DBWorker -> NewsTab/MainApp` 경로에서 상태바/토스트/명시적 경고로 surfaced된다.
+- 키워드 그룹 저장 실패는 더 이상 `KeywordGroupManager` 내부에서 로그만 남기고 삼키지 않으며, `KeywordGroupDialog`는 실패 시 닫히지 않아 사용자가 수정 내용을 유지한 채 재시도할 수 있다.
+- `AutoBackup.create_backup()`는 payload 기록 직후 self-verify를 수행하고, 실패한 백업도 폴더를 보존한 채 목록에서 `복원 불가` 항목으로 남겨 후속 진단이 가능하다.
+- 설정 import는 새 탭 추가 후 곧바로 묻지 않고, 실제 refresh 가능 여부(유지보수 중 아님, 순차 새로고침 미실행 중, API 자격증명 유효)를 먼저 확인한 뒤에만 선택 새로고침 프롬프트를 띄운다.
+- `news_scraper_pro.spec`는 2026-04-05 기준 다시 재검토되었고, 이번 패스의 유지보수 경계 강화/실패 표면화/self-verify 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `196 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`이다.
 
 ## 0. 2026-04-02 구현 감사 전면 반영 / 문서 재검증
 

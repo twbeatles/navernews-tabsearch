@@ -131,7 +131,7 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertNotIn('self._status_bar().showMessage(countdown_text)', block)
 
     def test_show_help_opens_help_mode_dialog(self):
-        block = inspect.getsource(_MainWindowSettingsIOMixin.show_help)
+        block = inspect.getsource(MainApp.show_help)
         self.assertIn("help_mode=True", block)
         self.assertIn("initial_tab=0", block)
 

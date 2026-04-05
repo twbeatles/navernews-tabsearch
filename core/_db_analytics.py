@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 class _DatabaseAnalyticsMixin:
     def get_statistics(self: DatabaseManager) -> Dict[str, int]:
         """Return top-level database statistics."""
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             stats = {}
             stats["total"] = conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
             stats["unread"] = conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()[0]
@@ -31,9 +32,10 @@ class _DatabaseAnalyticsMixin:
             return stats
         except Exception as e:
             logger.error("get_statistics failed: %s", e)
-            return {"total": 0, "unread": 0, "bookmarked": 0, "with_notes": 0, "duplicates": 0}
+            raise self._new_query_error("get_statistics", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
 
     def get_top_publishers(
         self: DatabaseManager,
@@ -43,8 +45,9 @@ class _DatabaseAnalyticsMixin:
         query_key: Optional[str] = None,
     ) -> List[Tuple[str, int]]:
         """Return publisher counts for all news or a specific tab scope."""
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             params: List[Any] = []
             if query_key:
                 query = """
@@ -90,6 +93,7 @@ class _DatabaseAnalyticsMixin:
             return [(str(row[0]), int(row[1])) for row in cursor.fetchall()]
         except Exception as e:
             logger.error("get_top_publishers failed: %s", e)
-            return []
+            raise self._new_query_error("get_top_publishers", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)

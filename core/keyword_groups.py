@@ -40,6 +40,7 @@ class KeywordGroupManager:
             "keyword_groups.json",
         )
         self.groups: Dict[str, List[str]] = {}  # {그룹명: [키워드 목록]}
+        self.last_error: str = ""
         self.load_groups()
 
     def _normalize_groups(self, groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
@@ -98,59 +99,97 @@ class KeywordGroupManager:
                 self.save_groups()
         except Exception as e:
             logger.error(f"키워드 그룹 로드 오류: {e}")
+            self.last_error = str(e)
             self.groups = {}
-    
-    def save_groups(self):
-        """그룹 설정 저장"""
+
+    def _persist_groups(self, groups: Dict[str, List[str]]) -> bool:
+        normalized_groups = self._normalize_groups(groups)
         try:
             config = load_config_file(self.config_file)
-            config["keyword_groups"] = self._normalize_groups(self.groups)
+            config["keyword_groups"] = normalized_groups
             save_primary_config_file(self.config_file, config)
+            self.groups = normalized_groups
+            self.last_error = ""
+            return True
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"키워드 그룹 저장 오류: {e}")
+            return False
+
+    def replace_groups(self, groups: Dict[str, List[str]]) -> bool:
+        """전체 그룹 구성을 저장 가능한 상태로 교체한다."""
+        return self._persist_groups(groups)
+    
+    def save_groups(self) -> bool:
+        """그룹 설정 저장"""
+        return self._persist_groups(self.groups)
 
     def merge_groups(self, incoming_groups: Dict[str, List[str]], save: bool = True) -> Dict[str, List[str]]:
         """가져온 그룹과 현재 그룹을 병합한다."""
         normalized_existing = self._normalize_groups(self.groups)
         normalized_incoming = self._normalize_groups(incoming_groups or {})
-        self.groups = merge_keyword_groups(normalized_existing, normalized_incoming)
+        merged = merge_keyword_groups(normalized_existing, normalized_incoming)
         if save:
-            self.save_groups()
+            if self.replace_groups(merged):
+                return self.groups
+            return normalized_existing
+
+        self.groups = merged
+        self.last_error = ""
         return self.groups
     
     def create_group(self, name: str) -> bool:
         """새 그룹 생성"""
-        if name in self.groups:
+        group_name = str(name or "").strip()
+        if not group_name:
+            self.last_error = "group_name_required"
             return False
-        self.groups[name] = []
-        self.save_groups()
-        return True
+        if group_name in self.groups:
+            self.last_error = "duplicate_group"
+            return False
+        candidate = self._normalize_groups(dict(self.groups))
+        candidate[group_name] = []
+        return self.replace_groups(candidate)
     
     def delete_group(self, name: str) -> bool:
         """그룹 삭제"""
         if name not in self.groups:
+            self.last_error = "group_not_found"
             return False
-        del self.groups[name]
-        self.save_groups()
-        return True
+        candidate = self._normalize_groups(dict(self.groups))
+        del candidate[name]
+        return self.replace_groups(candidate)
     
     def add_keyword_to_group(self, group: str, keyword: str) -> bool:
         """그룹에 키워드 추가"""
-        if group not in self.groups:
+        normalized_group = str(group or "").strip()
+        normalized_keyword = str(keyword or "").strip()
+        if normalized_group not in self.groups:
+            self.last_error = "group_not_found"
             return False
-        if keyword not in self.groups[group]:
-            self.groups[group].append(keyword)
-            self.save_groups()
-        return True
+        if not normalized_keyword:
+            self.last_error = "keyword_required"
+            return False
+        if normalized_keyword in self.groups[normalized_group]:
+            self.last_error = "duplicate_keyword"
+            return False
+        candidate = self._normalize_groups(dict(self.groups))
+        candidate.setdefault(normalized_group, []).append(normalized_keyword)
+        return self.replace_groups(candidate)
     
     def remove_keyword_from_group(self, group: str, keyword: str) -> bool:
         """그룹에서 키워드 제거"""
-        if group not in self.groups:
+        normalized_group = str(group or "").strip()
+        normalized_keyword = str(keyword or "").strip()
+        if normalized_group not in self.groups:
+            self.last_error = "group_not_found"
             return False
-        if keyword in self.groups[group]:
-            self.groups[group].remove(keyword)
-            self.save_groups()
-        return True
+        if normalized_keyword not in self.groups[normalized_group]:
+            self.last_error = "keyword_not_found"
+            return False
+        candidate = self._normalize_groups(dict(self.groups))
+        candidate[normalized_group].remove(normalized_keyword)
+        return self.replace_groups(candidate)
     
     def get_group_keywords(self, group: str) -> List[str]:
         """그룹의 키워드 목록 반환"""

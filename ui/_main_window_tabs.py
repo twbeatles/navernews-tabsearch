@@ -355,7 +355,10 @@ class _MainWindowTabsMixin:
                 w.total_api_count = int(self._fetch_total_by_key.get(new_fetch_key, 0) or 0)
 
             groups_changed = False
-            for group_name, keywords in self.keyword_group_manager.groups.items():
+            updated_groups = self.keyword_group_manager._normalize_groups(
+                dict(self.keyword_group_manager.groups)
+            )
+            for group_name, keywords in updated_groups.items():
                 if old_keyword in keywords:
                     keywords[:] = [new_keyword if keyword == old_keyword else keyword for keyword in keywords]
                     deduped: List[str] = []
@@ -365,7 +368,10 @@ class _MainWindowTabsMixin:
                     keywords[:] = deduped
                     groups_changed = True
             if groups_changed:
-                self.keyword_group_manager.save_groups()
+                if not self.keyword_group_manager.replace_groups(updated_groups):
+                    self.show_warning_toast(
+                        "키워드 그룹 저장에 실패해 탭 이름 변경 내용을 그룹 설정에 반영하지 못했습니다."
+                    )
 
             try:
                 w.load_data_from_db()
@@ -422,4 +428,8 @@ class _MainWindowTabsMixin:
         if self.keyword_group_manager.add_keyword_to_group(group, keyword):
             self.show_success_toast(f"'{keyword}'을(를) '{group}' 그룹에 추가했습니다.")
         else:
-            self.show_warning_toast(f"이미 '{group}' 그룹에 존재하는 키워드입니다.")
+            if self.keyword_group_manager.last_error == "duplicate_keyword":
+                self.show_warning_toast(f"이미 '{group}' 그룹에 존재하는 키워드입니다.")
+            else:
+                detail = self.keyword_group_manager.last_error or "알 수 없는 오류"
+                self.show_warning_toast(f"그룹 저장에 실패했습니다: {detail}")

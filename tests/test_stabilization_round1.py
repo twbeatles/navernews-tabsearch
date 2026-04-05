@@ -178,7 +178,7 @@ class TestBackupVerification(unittest.TestCase):
         self.assertEqual(result["verification_state"], "failed")
         self.assertIn("데이터베이스", result["error"])
 
-    def test_auto_backup_entry_moves_from_pending_to_ok_after_verification(self):
+    def test_auto_backup_entry_is_self_verified_before_listing(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             cfg = root / "config.json"
@@ -195,7 +195,7 @@ class TestBackupVerification(unittest.TestCase):
             quick_entry = next(item for item in backup.get_backup_list() if item["name"] == backup_name)
             verified_entry = backup.verify_backup_by_name(backup_name, require_db=True)
 
-        self.assertEqual(quick_entry["verification_state"], "pending")
+        self.assertEqual(quick_entry["verification_state"], "ok")
         self.assertTrue(quick_entry["is_restorable"])
         self.assertEqual(verified_entry["verification_state"], "ok")
         self.assertTrue(verified_entry["is_restorable"])
