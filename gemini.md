@@ -87,7 +87,7 @@ navernews-tabsearch/
 - `python -m pytest -q` => `196 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-02 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-05 기준 다시 성공했다.
 
 ### 2026-04-05 Implementation Risk Audit Full Adoption
 
@@ -100,6 +100,7 @@ navernews-tabsearch/
 - 검증:
   - `python -m pytest -q` => `196 passed, 5 subtests passed`
   - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ### 2026-04-02 Implementation Audit Full Adoption
 

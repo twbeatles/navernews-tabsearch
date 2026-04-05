@@ -25,6 +25,7 @@
   - Validation:
     - `python -m pytest -q` => `196 passed, 5 subtests passed`
     - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Implementation Audit Full Adoption + Docs/Spec Revalidation (2026-04-02)**:
   - Dialog isolation / testability:
     - Added `ui.dialog_adapters.QtDialogAdapter`.

@@ -117,7 +117,8 @@
 
 - `python -m pytest -q` => `196 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- PyInstaller 클린 빌드 최신 검증선은 아래 `PyInstaller 빌드 (onefile)` 섹션에 별도로 정리합니다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
+- 산출물: `dist/NewsScraperPro_Safe.exe`
 
 ## 프로젝트 구조
 
@@ -282,6 +283,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-02 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, dialog adapter 도입, 종료 cleanup 강화, 백업 restorable preflight, import 후 선택 refresh 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않았습니다.
 - 2026-04-02 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-04-05 기준으로 `.spec`을 다시 재검토했고, 유지보수 모드의 DB 작업 전면 차단, `DatabaseQueryError` 기반 조회 실패 표면화, 키워드 그룹 저장 실패 노출, 백업 self-verify, import 후 refresh 가능 여부 선검사는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
+- 2026-04-05 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 

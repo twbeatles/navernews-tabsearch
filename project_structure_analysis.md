@@ -27,7 +27,7 @@
 - `AutoBackup.create_backup()`는 payload 기록 직후 self-verify를 수행하고, 실패한 백업도 폴더를 보존한 채 목록에서 `복원 불가` 항목으로 남겨 후속 진단이 가능하다.
 - 설정 import는 새 탭 추가 후 곧바로 묻지 않고, 실제 refresh 가능 여부(유지보수 중 아님, 순차 새로고침 미실행 중, API 자격증명 유효)를 먼저 확인한 뒤에만 선택 새로고침 프롬프트를 띄운다.
 - `news_scraper_pro.spec`는 2026-04-05 기준 다시 재검토되었고, 이번 패스의 유지보수 경계 강화/실패 표면화/self-verify 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `196 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`이다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `196 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
 
 ## 0. 2026-04-02 구현 감사 전면 반영 / 문서 재검증
 
