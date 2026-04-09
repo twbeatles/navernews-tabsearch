@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import sqlite3
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -12,9 +14,29 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+RE_FTS_ACCEL_TOKEN = re.compile(r"[0-9A-Za-z\u3131-\u318E\uAC00-\uD7A3]{2,}")
 
 
 class _DatabaseQueriesMixin:
+    def _fts_match_expression(self: DatabaseManager, filter_txt: str) -> str:
+        raw = str(filter_txt or "").strip()
+        if not raw:
+            return ""
+        if not self.is_news_fts_backfill_complete():
+            return ""
+        tokens = RE_FTS_ACCEL_TOKEN.findall(raw)
+        if len(tokens) < 2:
+            return ""
+        lowered = []
+        for token in tokens:
+            normalized = token.strip().lower()
+            if not normalized:
+                continue
+            lowered.append(f'"{normalized}"')
+        if len(lowered) < 2:
+            return ""
+        return " AND ".join(lowered)
+
     def _append_news_scope_clause(
         self: DatabaseManager,
         params: List[Any],
@@ -50,9 +72,10 @@ class _DatabaseQueriesMixin:
         limit: Optional[int] = None,
         offset: int = 0,
         query_key: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch rows for a tab or bookmark view."""
-        conn = None
+        managed_conn = conn is None
         news_items: List[Dict[str, Any]] = []
         scope_meta = (
             f"kw={keyword}|query_key={query_key or ''}|bookmark={int(only_bookmark)}|"
@@ -60,9 +83,11 @@ class _DatabaseQueriesMixin:
             f"ex={len(exclude_words) if exclude_words else 0}|limit={limit}|offset={offset}"
         )
         try:
-            conn = self.get_connection()
+            if conn is None:
+                conn = self.get_connection()
             with perf_timer("db.fetch_news", scope_meta):
                 params: List[Any] = []
+                fts_match = self._fts_match_expression(filter_txt)
 
                 if only_bookmark:
                     query = (
@@ -112,6 +137,14 @@ class _DatabaseQueriesMixin:
                         """
                         + self._append_news_scope_clause(params, keyword, query_key)
                     )
+
+                if fts_match:
+                    query += (
+                        " AND n.rowid IN ("
+                        "SELECT rowid FROM news_fts WHERE news_fts MATCH ?"
+                        ")"
+                    )
+                    params.append(fts_match)
 
                 if only_unread:
                     query += " AND n.is_read = 0"
@@ -174,7 +207,7 @@ class _DatabaseQueriesMixin:
             logger.error("fetch_news failed: %s", e)
             raise self._new_query_error("fetch_news", e) from e
         finally:
-            if conn is not None:
+            if managed_conn and conn is not None:
                 self.return_connection(conn)
 
         return news_items
@@ -190,17 +223,20 @@ class _DatabaseQueriesMixin:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         query_key: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> int:
         """Count rows for a tab or bookmark view."""
-        conn = None
+        managed_conn = conn is None
         scope_meta = (
             f"kw={keyword}|query_key={query_key or ''}|bookmark={int(only_bookmark)}|"
             f"unread={int(only_unread)}|hide_dup={int(hide_duplicates)}"
         )
         try:
-            conn = self.get_connection()
+            if conn is None:
+                conn = self.get_connection()
             with perf_timer("db.count_news", scope_meta):
                 params: List[Any] = []
+                fts_match = self._fts_match_expression(filter_txt)
                 if only_bookmark:
                     query = "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1"
                 else:
@@ -210,6 +246,14 @@ class _DatabaseQueriesMixin:
                         "WHERE "
                         + self._append_news_scope_clause(params, keyword, query_key)
                     )
+
+                if fts_match:
+                    query += (
+                        " AND n.rowid IN ("
+                        "SELECT rowid FROM news_fts WHERE news_fts MATCH ?"
+                        ")"
+                    )
+                    params.append(fts_match)
 
                 if only_unread:
                     query += " AND n.is_read = 0"
@@ -258,7 +302,7 @@ class _DatabaseQueriesMixin:
             logger.error("count_news failed: %s", e)
             raise self._new_query_error("count_news", e) from e
         finally:
-            if conn is not None:
+            if managed_conn and conn is not None:
                 self.return_connection(conn)
 
     def get_counts(

@@ -45,6 +45,7 @@ navernews-tabsearch/
 │   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.3')
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
+│   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned session factory
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
@@ -125,10 +126,29 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `196 passed, 5 subtests passed`
-- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `python -m pytest -q` => `203 passed, 5 subtests passed`
+- `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
+  - 핵심 원인: `PyQt6`/`requests` import source 미해결 + 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-05 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-09 기준 다시 성공했다.
+
+---
+
+## 🚀 2026-04-09 Implementation Risk Audit Plan Completion
+
+- Fetch control plane:
+  - Added `core.http_client.HttpClientConfig` so `ApiWorker` now builds a worker-owned `requests.Session` from centralized HTTP settings instead of depending on a mutable shared session on `MainApp`.
+  - `ApiWorker.last_error_meta` now exposes `kind`, `status_code`, `cooldown_seconds`, `retryable`; `MainApp.on_fetch_error(...)` uses this to update a global fetch cooldown.
+  - Manual refresh, auto refresh, sequential refresh, and `더 불러오기` now all check the same cooldown gate before starting.
+- DB read/export stability:
+  - Added `DatabaseManager.iter_news_snapshot_batches(...)` so CSV export traverses one read snapshot from start to finish instead of live offset paging across separate reads.
+  - `DBWorker` now uses `open_read_connection(...)` / `interrupt_connection(...)` / `close_read_connection(...)` and requests interruption on `stop()` to improve cancellation during maintenance/close paths.
+- Analysis async + FTS accelerator:
+  - `show_statistics()` and `show_stats_analysis()` now open dialogs immediately and load DB-backed content through `AsyncJobWorker` with stale-result guards.
+  - Added SQLite FTS5 schema (`news_fts`), sync triggers, `app_meta`, and incremental backfill worker startup. Until backfill completes, the app keeps the old `LIKE/NOT LIKE` SQL path as the semantic source of truth.
+- Docs / spec / tests:
+  - Synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the new contracts.
+  - Added regression coverage for fetch cooldown, async analysis loading, FTS acceleration/backfill, snapshot export, and dedicated-read DB worker cancellation.
 
 ---
 
@@ -227,6 +247,7 @@ navernews-tabsearch/
 | `NewsBrowser` | 커스텀 브라우저 (링크 차단, 미리보기) | `ui/widgets.py` |
 | `NoScrollComboBox` | 휠 스크롤 방지 콤보박스 | `ui/widgets.py` |
 | `DatabaseManager` | 스레드 안전 DB 매니저 (연결 풀) | `core/database.py` |
+| `HttpClientConfig` | HTTP 풀/헤더 정책과 worker-owned session 생성기 | `core/http_client.py` |
 | `ApiWorker` | API 호출 워커 (재시도, DB 저장) | `core/workers.py` |
 | `DBWorker` | `DBQueryScope`를 소비하는 DB 조회 전용 워커 스레드 | `core/workers.py` |
 | `AsyncJobWorker` | 단발성 비동기 작업 워커 | `core/workers.py` |
@@ -235,7 +256,7 @@ navernews-tabsearch/
 | `WorkerRegistry` | 요청 ID 기반 워커 레지스트리 | `core/worker_registry.py` |
 | `WorkerHandle` | 워커 핸들 데이터클래스 | `core/worker_registry.py` |
 | `LockFileProtocol` | 단일 인스턴스 lock capability 계약 | `core/protocols.py` |
-| `RequestGetProtocol` / `ClosableProtocol` | requests 세션 계약 | `core/protocols.py` |
+| `RequestGetProtocol` / `ClosableProtocol` | requests 세션 capability 계약 | `core/protocols.py` |
 | `AutoBackup` | 설정/DB 자동 백업 | `core/backup.py` |
 | `KeywordGroupManager` | 키워드 그룹(폴더) 관리 | `core/keyword_groups.py` |
 | `StartupManager` | Windows 시작프로그램 레지스트리 | `core/startup.py` |

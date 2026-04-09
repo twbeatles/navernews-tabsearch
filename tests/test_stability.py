@@ -195,12 +195,13 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         for path in required:
             self.assertTrue(Path(path).exists(), path)
 
-    def test_main_session_transport_retry_disabled(self):
-        src = Path('ui/main_window.py').read_text(encoding='utf-8')
-        self.assertIn('HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=0)', src)
+    def test_main_http_client_config_disables_transport_retry(self):
+        src = Path('core/http_client.py').read_text(encoding='utf-8')
+        self.assertIn('max_retries=max(0, int(self.max_retries))', src)
 
-    def test_fetch_worker_does_not_share_main_session(self):
+    def test_fetch_worker_uses_http_client_factory(self):
         block = inspect.getsource(MainApp.fetch_news)
+        self.assertIn('session_factory=self._require_http_client_config().create_session', block)
         self.assertNotIn('session=self.session', block)
 
     def test_newstab_has_required_helper_methods(self):
@@ -231,8 +232,9 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         src = Path('core/workers.py').read_text(encoding='utf-8')
         start = src.index('class DBWorker')
         block = src[start:]
+        self.assertIn('open_read_connection(timeout=1.5)', block)
         self.assertIn('if self.include_total:', block)
-        self.assertIn('self.db.count_news(**self.scope.count_kwargs())', block)
+        self.assertIn('self.db.count_news(conn=conn, **self.scope.count_kwargs())', block)
         self.assertIn('total_count = int(self.known_total_count or 0)', block)
         self.assertIn('limit=self.limit', block)
         self.assertIn('offset=self.offset', block)

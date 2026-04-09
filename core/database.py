@@ -4,7 +4,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from queue import Queue
-from typing import Optional
+from typing import Iterator, Optional, TYPE_CHECKING
 
 from core._db_analytics import _DatabaseAnalyticsMixin
 from core._db_duplicates import _DatabaseDuplicatesMixin
@@ -16,6 +16,9 @@ from core.logging_setup import configure_logging
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from core.workers import DBQueryScope
 
 
 class DatabaseQueryError(RuntimeError):
@@ -188,3 +191,66 @@ class DatabaseManager(
         error: BaseException,
     ) -> DatabaseQueryError:
         return DatabaseQueryError(operation, str(error), cause=error)
+
+    def open_read_connection(self, timeout: float = 2.0):
+        """Create a dedicated read connection that can be interrupted independently."""
+        conn = sqlite3.connect(
+            self.db_file,
+            timeout=max(0.1, float(timeout)),
+            check_same_thread=False,
+        )
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-64000")
+        conn.execute(f"PRAGMA busy_timeout={max(100, int(timeout * 1000))}")
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def close_read_connection(self, conn) -> None:
+        try:
+            conn.close()
+        except sqlite3.Error:
+            pass
+
+    def interrupt_connection(self, conn) -> None:
+        try:
+            conn.interrupt()
+        except Exception:
+            pass
+
+    def iter_news_snapshot_batches(
+        self,
+        scope: "DBQueryScope",
+        chunk_size: int = 200,
+        timeout: float = 5.0,
+    ) -> tuple[int, Iterator[list[dict]]]:
+        """Iterate a stable snapshot for export/count style workflows."""
+        conn = self.open_read_connection(timeout=timeout)
+        try:
+            conn.execute("BEGIN")
+            total_count = int(self.count_news(conn=conn, **scope.count_kwargs()))
+        except Exception:
+            self.close_read_connection(conn)
+            raise
+
+        safe_chunk_size = max(1, int(chunk_size))
+
+        def _batch_iter() -> Iterator[list[dict]]:
+            offset = 0
+            try:
+                while offset < total_count:
+                    rows = self.fetch_news(
+                        conn=conn,
+                        limit=safe_chunk_size,
+                        offset=offset,
+                        **scope.fetch_kwargs(),
+                    )
+                    if not rows:
+                        break
+                    offset += len(rows)
+                    yield rows
+            finally:
+                self.close_read_connection(conn)
+
+        return total_count, _batch_iter()

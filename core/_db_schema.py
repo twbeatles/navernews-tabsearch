@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 class _DatabaseSchemaMixin:
+    FTS_BACKFILL_CURSOR_KEY = "news_fts.backfill_rowid"
+    FTS_BACKFILL_DONE_KEY = "news_fts.backfill_done"
+
     def _create_connection(self: DatabaseManager):
         """Create a pooled SQLite connection."""
         conn = sqlite3.connect(self.db_file, timeout=30.0, check_same_thread=False)
@@ -176,6 +179,141 @@ class _DatabaseSchemaMixin:
         if self._news_keywords_needs_rebuild(conn):
             self._rebuild_news_keywords_table(conn)
 
+    def _ensure_app_meta_table(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+
+    def _ensure_news_fts_schema(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+        legacy_map_exists = conn.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type='table' AND name='news_fts_map'
+            """
+        ).fetchone()
+        if legacy_map_exists:
+            for trigger_name in ("trg_news_fts_insert", "trg_news_fts_delete", "trg_news_fts_update"):
+                conn.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+            conn.execute("DROP TABLE IF EXISTS news_fts_map")
+            conn.execute("DROP TABLE IF EXISTS news_fts")
+            self._set_app_meta(conn, self.FTS_BACKFILL_CURSOR_KEY, "0")
+            self._set_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "0")
+
+        conn.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS news_fts
+            USING fts5(title, description, tokenize='unicode61')
+            """
+        )
+
+        trigger_specs = {
+            "trg_news_fts_insert": """
+                CREATE TRIGGER trg_news_fts_insert
+                AFTER INSERT ON news
+                BEGIN
+                    DELETE FROM news_fts WHERE rowid = NEW.rowid;
+                    INSERT INTO news_fts(rowid, title, description)
+                    VALUES (NEW.rowid, COALESCE(NEW.title, ''), COALESCE(NEW.description, ''));
+                END
+            """,
+            "trg_news_fts_delete": """
+                CREATE TRIGGER trg_news_fts_delete
+                BEFORE DELETE ON news
+                BEGIN
+                    DELETE FROM news_fts WHERE rowid = OLD.rowid;
+                END
+            """,
+            "trg_news_fts_update": """
+                CREATE TRIGGER trg_news_fts_update
+                AFTER UPDATE OF title, description ON news
+                BEGIN
+                    DELETE FROM news_fts WHERE rowid = NEW.rowid;
+                    INSERT INTO news_fts(rowid, title, description)
+                    VALUES (NEW.rowid, COALESCE(NEW.title, ''), COALESCE(NEW.description, ''));
+                END
+            """,
+        }
+        for trigger_name, ddl in trigger_specs.items():
+            exists = conn.execute(
+                """
+                SELECT 1 FROM sqlite_master
+                WHERE type='trigger' AND name=?
+                """,
+                (trigger_name,),
+            ).fetchone()
+            if not exists:
+                conn.execute(ddl)
+
+    def _set_app_meta(self: DatabaseManager, conn: sqlite3.Connection, key: str, value: str) -> None:
+        conn.execute(
+            """
+            INSERT INTO app_meta(key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (str(key), str(value)),
+        )
+
+    def _get_app_meta(self: DatabaseManager, conn: sqlite3.Connection, key: str, default: str = "") -> str:
+        row = conn.execute("SELECT value FROM app_meta WHERE key = ?", (str(key),)).fetchone()
+        return str(row[0]) if row and row[0] is not None else str(default)
+
+    def is_news_fts_backfill_complete(self: DatabaseManager) -> bool:
+        conn = self.get_connection()
+        try:
+            return self._get_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "0") == "1"
+        finally:
+            self.return_connection(conn)
+
+    def backfill_news_fts_chunk(self: DatabaseManager, limit: int = 250) -> dict[str, int | bool]:
+        conn = self.get_connection()
+        processed = 0
+        done = False
+        try:
+            safe_limit = max(1, int(limit))
+            with conn:
+                last_rowid = int(self._get_app_meta(conn, self.FTS_BACKFILL_CURSOR_KEY, "0") or 0)
+                rows = conn.execute(
+                    """
+                    SELECT rowid, title, description
+                    FROM news
+                    WHERE rowid > ?
+                    ORDER BY rowid
+                    LIMIT ?
+                    """,
+                    (last_rowid, safe_limit),
+                ).fetchall()
+                if not rows:
+                    self._set_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "1")
+                    done = True
+                    return {"processed": 0, "done": True}
+
+                for row in rows:
+                    news_rowid = int(row[0])
+                    conn.execute("DELETE FROM news_fts WHERE rowid = ?", (news_rowid,))
+                    conn.execute(
+                        "INSERT INTO news_fts(rowid, title, description) VALUES (?, ?, ?)",
+                        (news_rowid, str(row[1] or ""), str(row[2] or "")),
+                    )
+                    last_rowid = news_rowid
+                    processed += 1
+
+                self._set_app_meta(conn, self.FTS_BACKFILL_CURSOR_KEY, str(last_rowid))
+                next_row = conn.execute(
+                    "SELECT rowid FROM news WHERE rowid > ? ORDER BY rowid LIMIT 1",
+                    (last_rowid,),
+                ).fetchone()
+                done = next_row is None
+                if done:
+                    self._set_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "1")
+        finally:
+            self.return_connection(conn)
+        return {"processed": processed, "done": done}
+
     def init_db(self: DatabaseManager):
         """Initialize tables, migrations, and indexes."""
         conn = sqlite3.connect(self.db_file)
@@ -200,6 +338,8 @@ class _DatabaseSchemaMixin:
                 """
             )
             self._ensure_news_keywords_schema(conn)
+            self._ensure_app_meta_table(conn)
+            self._ensure_news_fts_schema(conn)
 
             columns_added = False
             try:
@@ -290,6 +430,12 @@ class _DatabaseSchemaMixin:
                 FROM news
                 WHERE keyword IS NOT NULL AND TRIM(keyword) != ''
                 """
+            )
+            self._set_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, self._get_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "0"))
+            self._set_app_meta(
+                conn,
+                self.FTS_BACKFILL_CURSOR_KEY,
+                self._get_app_meta(conn, self.FTS_BACKFILL_CURSOR_KEY, "0"),
             )
             self._recalculate_duplicate_flags_with_conn(conn)
 

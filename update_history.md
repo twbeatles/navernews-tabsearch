@@ -1,6 +1,34 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Risk Plan Completion + Docs/Spec Revalidation (2026-04-09)**:
+  - Fetch / HTTP control plane:
+    - Added `core.http_client.HttpClientConfig` so `ApiWorker` creates a worker-owned `requests.Session` from centralized pool/header settings rather than depending on a shared mutable session on `MainApp`.
+    - Added structured API error metadata (`kind`, `status_code`, `cooldown_seconds`, `retryable`) and wired `MainApp.on_fetch_error(...)` to a global fetch cooldown gate.
+    - Manual refresh, auto refresh, sequential refresh, and load-more now all respect the same cooldown window after 429/quota-style failures.
+  - DB snapshot/export + cancellation:
+    - Added `DatabaseManager.iter_news_snapshot_batches(...)` so CSV export walks the current tab's full filtered scope inside one read snapshot, preserving a start-of-export consistent view even while the live DB changes.
+    - Added `open_read_connection(...)`, `close_read_connection(...)`, and `interrupt_connection(...)`; `DBWorker` now uses a dedicated interruptible read connection and requests interruption on `stop()`.
+  - Analysis async + search acceleration:
+    - `show_statistics()` and `show_stats_analysis()` now open dialogs immediately and load DB-backed content via `AsyncJobWorker`, with stale-result guards for close/tab-change races.
+    - Added SQLite FTS5 schema (`news_fts`), sync triggers, `app_meta`, and resumable incremental backfill. Search semantics still fall back to the prior `LIKE/NOT LIKE` SQL truth path whenever the accelerator is unavailable/incomplete.
+  - Docs / spec / repo hygiene:
+    - Synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the new HTTP/export/analysis/FTS contracts.
+    - Re-reviewed `.gitignore`; existing runtime/build/test ignore rules already cover this pass, so no new ignore entry was required.
+  - Added/updated tests:
+    - Added:
+      - `tests/test_async_analysis.py`
+      - `tests/test_fetch_cooldown.py`
+      - `tests/test_fts_search_acceleration.py`
+    - Expanded:
+      - `tests/test_audit_followthrough.py`
+      - `tests/test_dbworker_pagination.py`
+      - `tests/test_shutdown_cleanup.py`
+      - `tests/test_stability.py`
+  - Validation:
+    - `python -m pytest -q` => `203 passed, 5 subtests passed`
+    - `pyright` => `55 errors, 5 warnings, 0 informations` in the current local environment (`PyQt6`/`requests` import-source resolution plus pre-existing type issues)
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Implementation Risk Audit Full Adoption + Docs/Spec Revalidation (2026-04-05)**:
   - DB query failure contract:
     - Added `core.database.DatabaseQueryError` and removed silent empty/zero fallback from read/query/analytics helpers such as `fetch_news(...)`, `count_news(...)`, `get_counts(...)`, unread batch/count queries, `get_existing_links_for_query(...)`, `get_statistics(...)`, and `get_top_publishers(...)`.

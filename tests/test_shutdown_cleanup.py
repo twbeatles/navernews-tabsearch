@@ -190,7 +190,6 @@ class TestShutdownCleanup(unittest.TestCase):
         self.assertIn("cleanup_worker:AI:7:0", dummy.call_log)
         self.assertIn("save_config", dummy.call_log)
         self.assertIn("db.close", dummy.call_log)
-        self.assertIn("session.close", dummy.call_log)
         self.assertIn("app.quit", dummy.call_log)
         self.assertLess(dummy.call_log.index("tab.cleanup:AI"), dummy.call_log.index("db.close"))
 

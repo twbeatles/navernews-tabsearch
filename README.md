@@ -30,6 +30,12 @@
 
 ## 안정화 포인트 (v32.7.3+ 작업 브랜치 반영)
 
+- 중앙 HTTP 구성 계층(`core.http_client.HttpClientConfig`)을 도입하고 `ApiWorker`가 worker-owned session으로 API를 호출하도록 정리
+- `ApiWorker.last_error_meta`와 전역 fetch cooldown을 추가해 429/quota 성격 오류 후 수동/자동/순차 refresh와 `더 불러오기`를 일관되게 차단/재개
+- CSV 내보내기를 단일 read snapshot 기반으로 고정해 export 중 DB가 변해도 결과가 시작 시점 기준으로 일관되게 유지
+- `DBWorker`가 interrupt 가능한 dedicated read connection을 사용하도록 바꿔 유지보수/종료/탭 정리 시 실제 취소 성공률을 높임
+- 통계/언론사 분석 다이얼로그는 즉시 열고 `AsyncJobWorker`로 비동기 로드해 메인 스레드 DB 블로킹 제거
+- SQLite FTS5(`news_fts`) + trigger + `app_meta` 기반 증분 backfill을 추가하고, backfill 완료 전에는 기존 `LIKE/NOT LIKE` 경로를 진실 원본으로 유지
 - 시작 시 단일 인스턴스 가드 적용
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
 - 설정 창의 API 키 검증/정리 작업 비동기 처리
@@ -113,10 +119,11 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-05)
+## 최신 검증 메모 (2026-04-09)
 
-- `python -m pytest -q` => `196 passed, 5 subtests passed`
-- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `python -m pytest -q` => `203 passed, 5 subtests passed`
+- `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
+  - 주된 원인: `PyQt6`/`requests` import source 해석 실패 + 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
 - 산출물: `dist/NewsScraperPro_Safe.exe`
 
@@ -135,6 +142,7 @@ navernews-tabsearch/
 │   ├── constants.py             # 경로/버전/앱 상수
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
+│   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
@@ -200,6 +208,9 @@ navernews-tabsearch/
 │   ├── test_shutdown_cleanup.py
 │   ├── test_stabilization_round1.py
 │   ├── test_load_more_total_guard.py
+│   ├── test_fetch_cooldown.py
+│   ├── test_async_analysis.py
+│   ├── test_fts_search_acceleration.py
 │   ├── test_news_tab_ext_read_policy.py
 │   ├── test_news_tab_performance.py
 │   ├── test_settings_dialog_maintenance.py
@@ -275,6 +286,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 실행형 리스크 전면 수정(2026-03-18)에서도 `.spec`을 다시 재검토했으며, 유지보수 모드, DB 기반 로컬 페이지네이션, 백업 복원 가능 메타, export/import 1.2는 기존 번들 의존성만 사용하므로 추가 hidden import 수정이 필요하지 않습니다.
 - v32.7.2 성능 최적화 리팩토링(2026-03-21)에서도 `.spec`을 다시 재검토했으며, `DBQueryScope`, append skip-count, `NewsTab` fragment cache/coalesced render, 복합 인덱스 추가는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - v32.7.3 운영 안정화 1차(2026-03-25)에서도 `.spec`을 다시 재검토했으며, `IterativeJobWorker`, 백업 full verification, 자동 시작 health/repair, config `.backup` 회전, DB emergency cap은 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
+- v32.7.3 구현 리스크 전면 반영(2026-04-09)에서도 `.spec`을 다시 재검토했으며, `HttpClientConfig`, fetch cooldown, snapshot export, dedicated read connection, async analysis, SQLite FTS5 backfill은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - 2026-03-25 기준으로 `.gitignore`에 `.pytest_tmp/`를 명시 추가했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 다시 성공해 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됨을 재확인했습니다.
 - 2026-03-21 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드를 다시 검증했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-03-24 기준으로도 `.spec`과 `.gitignore`를 다시 재검토했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 성공해 추가 packaging/ignore 수정이 필요하지 않음을 재확인했습니다.
@@ -348,6 +360,10 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `DatabaseManager.count_news(..., exclude_words: Optional[List[str]] = None)`가 확장되어 미읽음 배지 집계 시 제외어 조건을 반영할 수 있습니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, `get_top_publishers(...)`는 `query_key`를 받아 대표 키워드가 같은 탭도 독립 범위로 조회할 수 있습니다.
 - `core.workers.DBWorker`는 `DBQueryScope + include_total + known_total_count` 계약을 사용해 append 시 total count round-trip을 생략하고, full reload에서만 `count_news(...)`를 실행합니다.
+- `core.workers.ApiWorker`는 `last_error_meta(kind/status_code/cooldown_seconds/retryable)`를 남기며, `MainApp.on_fetch_error(...)`는 이를 읽어 전역 fetch cooldown을 갱신합니다.
+- `DatabaseManager.iter_news_snapshot_batches(...)`는 현재 탭 필터 전체 결과를 단일 read snapshot 위에서 순회해 CSV export 일관성을 보장합니다.
+- `DatabaseManager.open_read_connection(...)`, `close_read_connection(...)`, `interrupt_connection(...)`은 `DBWorker` 취소/종료 경로에서 사용하는 dedicated read connection helper입니다.
+- `DatabaseManager.is_news_fts_backfill_complete()`와 `backfill_news_fts_chunk(...)`는 `news_fts` 증분 백필 상태를 `app_meta`에 저장하며, FTS acceleration은 backfill 완료 후 positive token filter에만 사용됩니다.
 - `ui.news_tab.NewsTab`은 scope signature별 append/replace를 구분하고, HTML 렌더는 fragment cache를 재사용하면서 event-loop tick당 한 번만 flush합니다.
 - `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`가 추가되어 탭 배지를 `query_key` 기준으로 일괄 집계합니다.
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.

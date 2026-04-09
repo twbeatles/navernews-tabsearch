@@ -6,7 +6,7 @@ import logging
 import time
 import traceback
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from PyQt6.QtCore import QMutexLocker, QThread, QTimer
 from PyQt6.QtWidgets import QMessageBox
@@ -24,6 +24,36 @@ logger = logging.getLogger(__name__)
 
 
 class _MainWindowFetchMixin:
+    def _current_fetch_cooldown_seconds(self: MainApp) -> int:
+        remaining = int(max(0.0, float(getattr(self, "_fetch_cooldown_until", 0.0) or 0.0) - time.time()))
+        if remaining <= 0:
+            self._fetch_cooldown_until = 0.0
+            self._fetch_cooldown_reason = ""
+        return remaining
+
+    def _set_fetch_cooldown(
+        self: MainApp,
+        seconds: int,
+        *,
+        reason: str,
+    ) -> None:
+        safe_seconds = max(0, int(seconds))
+        if safe_seconds <= 0:
+            return
+        until = time.time() + safe_seconds
+        current_until = float(getattr(self, "_fetch_cooldown_until", 0.0) or 0.0)
+        if until > current_until:
+            self._fetch_cooldown_until = until
+            self._fetch_cooldown_reason = str(reason or "").strip()
+
+    def _fetch_cooldown_message(self: MainApp, action_label: str) -> str:
+        remaining = self._current_fetch_cooldown_seconds()
+        if remaining <= 0:
+            return ""
+        reason = str(getattr(self, "_fetch_cooldown_reason", "") or "").strip()
+        suffix = f" ({reason})" if reason else ""
+        return f"{action_label}은(는) 잠시 후 다시 시도해주세요. API 대기 시간 {remaining}초 남음{suffix}"
+
     def _prepare_refresh_keywords(
         self: MainApp,
         keywords: List[str],
@@ -48,6 +78,9 @@ class _MainWindowFetchMixin:
             return self._maintenance_block_message(action_label)
         if self._sequential_refresh_active:
             return "Another refresh is already running. Please try again after it finishes."
+        cooldown_msg = self._fetch_cooldown_message(action_label)
+        if cooldown_msg:
+            return cooldown_msg
         valid, msg = self._validate_api_credentials()
         if not valid:
             return f"API credentials are not ready, so {action_label} cannot run. {msg}"
@@ -217,6 +250,14 @@ class _MainWindowFetchMixin:
             self._finish_sequential_refresh()
             return
 
+        cooldown_seconds = self._current_fetch_cooldown_seconds()
+        if cooldown_seconds > 0:
+            self._status_bar().showMessage(
+                f"API 대기 시간으로 순차 새로고침을 {cooldown_seconds}초 후 재개합니다."
+            )
+            QTimer.singleShot(cooldown_seconds * 1000, self._process_next_refresh)
+            return
+
         keyword = self._pending_refresh_keywords[self._current_refresh_idx]
         logger.info(
             "Sequential refresh: [%s/%s] %s",
@@ -352,6 +393,13 @@ class _MainWindowFetchMixin:
             db_keyword = search_keyword
         fetch_key = build_fetch_key(search_keyword, exclude_words)
         query_key = fetch_key
+        cooldown_msg = self._fetch_cooldown_message("더 불러오기" if is_more else "새로고침")
+        if cooldown_msg:
+            logger.info("Fetch blocked by cooldown: kw=%s", keyword)
+            self._status_bar().showMessage(cooldown_msg, 3000)
+            if not is_sequential:
+                self.show_warning_toast(cooldown_msg)
+            return
 
         if not is_more and not is_sequential:
             now_ts = time.time()
@@ -405,6 +453,7 @@ class _MainWindowFetchMixin:
             query_key=query_key,
             start_idx=start_idx,
             timeout=self.api_timeout,
+            session_factory=self._require_http_client_config().create_session,
             display_keyword=keyword,
         )
         thread = QThread()
@@ -428,7 +477,13 @@ class _MainWindowFetchMixin:
             lambda res, rid=request_id: self.on_fetch_done(res, keyword, is_more, is_sequential, rid)
         )
         worker.error.connect(
-            lambda err, rid=request_id: self.on_fetch_error(err, keyword, is_sequential, rid)
+            lambda err, rid=request_id, worker_ref=worker: self.on_fetch_error(
+                err,
+                keyword,
+                is_sequential,
+                rid,
+                getattr(worker_ref, "last_error_meta", None),
+            )
         )
         if not is_sequential:
             worker.progress.connect(self._status_bar().showMessage)
@@ -568,6 +623,7 @@ class _MainWindowFetchMixin:
         keyword: str,
         is_sequential: bool = False,
         request_id: Optional[int] = None,
+        error_meta: Optional[Dict[str, Any]] = None,
     ):
         """Handle a failed fetch."""
         if not self._is_active_worker_request(keyword, request_id):
@@ -581,6 +637,14 @@ class _MainWindowFetchMixin:
         self._last_fetch_request_ts.pop(fetch_key, None)
         if request_id is not None:
             self._request_start_index.pop(request_id, None)
+
+        normalized_error_meta: Dict[str, Any] = dict(error_meta or {})
+        cooldown_seconds = max(0, int(normalized_error_meta.get("cooldown_seconds", 0) or 0))
+        if cooldown_seconds > 0:
+            self._set_fetch_cooldown(
+                cooldown_seconds,
+                reason=str(normalized_error_meta.get("kind", "") or "rate_limit"),
+            )
 
         if self._find_news_tab(keyword) is not None:
             self.sync_tab_load_more_state(keyword)

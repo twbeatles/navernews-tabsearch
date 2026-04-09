@@ -62,6 +62,12 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   self-verification, and import-refresh prechecks rely on stdlib /
 #   already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-04-09 review:
+# - HttpClientConfig-based worker-owned sessions, global fetch cooldown
+#   gating, snapshot-based CSV export, dedicated interruptible read
+#   connections, async analysis loading, and SQLite FTS5 incremental
+#   backfill rely on stdlib / already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

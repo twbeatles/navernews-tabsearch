@@ -30,6 +30,7 @@ navernews-tabsearch/
 │   ├── constants.py             # 경로/버전/앱 상수
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
+│   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
@@ -84,10 +85,20 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `196 passed, 5 subtests passed`
-- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `python -m pytest -q` => `203 passed, 5 subtests passed`
+- `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
+- 원인 메모: `PyQt6`/`requests` import source 미해결과 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈가 같이 남아 있다.
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-05 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-09 기준 다시 성공했다.
+
+### 2026-04-09 Implementation Risk Audit Plan Completion
+
+- `core.http_client.HttpClientConfig`를 추가해 `ApiWorker`가 중앙 HTTP 설정에서 worker-owned session을 생성한다.
+- `ApiWorker.last_error_meta`와 `MainApp` 전역 fetch cooldown을 연결해 429/quota 성격 오류 후 수동/자동/순차 refresh 및 `더 불러오기`를 함께 제어한다.
+- `DatabaseManager.iter_news_snapshot_batches(...)`가 CSV export를 단일 read snapshot 기준으로 고정하고, `DBWorker`는 dedicated read connection + `interrupt_connection(...)`으로 취소 가능성을 높인다.
+- `show_statistics()`와 `show_stats_analysis()`는 `AsyncJobWorker` 기반 비동기 로드로 전환됐고, stale-result guard를 포함한다.
+- SQLite FTS5(`news_fts`) + trigger + `app_meta` 기반 증분 backfill이 추가됐으며, backfill 완료 전 검색의 의미 보장은 기존 `LIKE/NOT LIKE` 경로가 맡는다.
+- `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`를 위 계약에 맞춰 갱신했다.
 
 ### 2026-04-05 Implementation Risk Audit Full Adoption
 

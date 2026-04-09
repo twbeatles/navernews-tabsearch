@@ -16,9 +16,6 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Dict, Iterator, List, Optional, Tuple, cast
 
-import requests
-from requests.adapters import HTTPAdapter
-
 from PyQt6.QtCore import QEvent, QMutex, QMutexLocker, QRect, QThread, Qt, QTimer, QUrl
 from PyQt6.QtGui import QAction, QCloseEvent, QDesktopServices, QIcon, QKeySequence, QResizeEvent, QShortcut
 from PyQt6.QtWidgets import (
@@ -74,6 +71,7 @@ from core.constants import (
     VERSION,
 )
 from core.database import DatabaseManager
+from core.http_client import HttpClientConfig
 from core.keyword_groups import KeywordGroupManager
 from core.logging_setup import configure_logging
 from core.notifications import NotificationSound
@@ -169,17 +167,12 @@ class MainApp(
         self.client_secret = ""
         self.toast_queue: Optional[ToastQueue] = None
         self.db: Optional[DatabaseManager] = None
-        self.session: Optional[requests.Session] = None
+        self.http_client_config: Optional[HttpClientConfig] = None
         
         try:
             self.db = DatabaseManager(DB_FILE)
             
-            # Requests Session 설정 (성능 최적화: 연결 재사용)
-            self.session = requests.Session()
-            # Connection Pool 크기 증가 (동시 요청 처리)
-            adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=0)
-            self._require_session().mount('https://', adapter)
-            self._require_session().mount('http://', adapter)
+            self.http_client_config = HttpClientConfig()
             
             self.workers = {}  # legacy compatibility mapping
             self._worker_registry = WorkerRegistry()
@@ -213,6 +206,9 @@ class MainApp(
             self._export_worker: Optional[IterativeJobWorker] = None
             self._export_target_path: str = ""
             self._export_cancel_requested = False
+            self._fts_backfill_worker: Optional[IterativeJobWorker] = None
+            self._fetch_cooldown_until = 0.0
+            self._fetch_cooldown_reason = ""
             
             # 알림 관련 설정
             self.notification_enabled = True  # 데스크톱 알림 활성화
@@ -245,6 +241,7 @@ class MainApp(
             self.load_config()
             self.init_ui()
             self.setup_shortcuts()
+            QTimer.singleShot(0, self._start_fts_backfill)
             
             # 타이머 설정 (안정성 개선)
             self.timer = QTimer(self)
@@ -333,10 +330,46 @@ class MainApp(
             raise RuntimeError("Database manager is unavailable")
         return self.db
 
-    def _require_session(self) -> requests.Session:
-        if self.session is None:
-            raise RuntimeError("HTTP session is unavailable")
-        return self.session
+    def _require_http_client_config(self) -> HttpClientConfig:
+        if self.http_client_config is None:
+            raise RuntimeError("HTTP client config is unavailable")
+        return self.http_client_config
+
+    def _start_fts_backfill(self) -> None:
+        if self._shutdown_in_progress:
+            return
+        worker = getattr(self, "_fts_backfill_worker", None)
+        if worker is not None and worker.isRunning():
+            return
+        if self._require_db().is_news_fts_backfill_complete():
+            return
+
+        def _job(context):
+            total_processed = 0
+            while True:
+                context.check_cancelled()
+                result = self._require_db().backfill_news_fts_chunk(limit=250)
+                processed = int(result.get("processed", 0) or 0)
+                total_processed += processed
+                context.report(current=total_processed, total=0, message="FTS backfill running")
+                if bool(result.get("done", False)) or processed <= 0:
+                    return {"processed": total_processed, "done": True}
+
+        self._fts_backfill_worker = IterativeJobWorker(_job, parent=self)
+        self._fts_backfill_worker.finished.connect(self._on_fts_backfill_finished)
+        self._fts_backfill_worker.error.connect(self._on_fts_backfill_error)
+        self._fts_backfill_worker.cancelled.connect(self._on_fts_backfill_cancelled)
+        self._fts_backfill_worker.start()
+
+    def _on_fts_backfill_finished(self, _result) -> None:
+        self._fts_backfill_worker = None
+
+    def _on_fts_backfill_error(self, error_msg: str) -> None:
+        logger.warning("FTS backfill failed: %s", error_msg)
+        self._fts_backfill_worker = None
+
+    def _on_fts_backfill_cancelled(self) -> None:
+        self._fts_backfill_worker = None
 
     def _require_toast_queue(self) -> ToastQueue:
         if self.toast_queue is None:

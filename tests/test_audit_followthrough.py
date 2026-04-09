@@ -75,12 +75,26 @@ class _DummyExportTab:
 class _FakeExportDB:
     def __init__(self, items):
         self.items = list(items)
+        self.snapshot_calls = 0
+        self.live_calls = []
 
     def count_news(self, **_kwargs):
+        self.live_calls.append("count")
         return len(self.items)
 
     def fetch_news(self, limit=50, offset=0, **_kwargs):
+        self.live_calls.append(("fetch", offset, limit))
         return list(self.items[offset : offset + limit])
+
+    def iter_news_snapshot_batches(self, _scope, chunk_size=200):
+        self.snapshot_calls += 1
+        total = len(self.items)
+
+        def _iter():
+            for offset in range(0, total, chunk_size):
+                yield list(self.items[offset : offset + chunk_size])
+
+        return total, _iter()
 
 
 class _ImmediateExportContext:
@@ -279,6 +293,9 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
             self.assertEqual(rows[2][0], "two")
             self.assertEqual(dummy.toast_messages, ["총 2개 항목을 저장했습니다."])
             self.assertEqual(len(dialogs.info_calls), 1)
+            self.assertIsNotNone(dummy._db)
+            self.assertEqual(dummy._db.snapshot_calls, 1)
+            self.assertEqual(dummy._db.live_calls, [])
 
     def test_export_data_falls_back_to_loaded_slice_when_helper_missing(self):
         all_items = [

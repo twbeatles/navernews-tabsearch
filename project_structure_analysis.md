@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-05)
+작성일: 2026-03-16 (최근 갱신: 2026-04-09)
 
 ## 분석 범위
 
@@ -16,6 +16,20 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-04-09 구현 리스크 개선 전면 반영 / 문서 재검증
+
+이번 재검증에서는 2026-04-09 구현 리스크 개선 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- `core.http_client.HttpClientConfig`가 도입되어 `ApiWorker`는 이제 메인 윈도우의 mutable shared session이 아니라 worker-owned `requests.Session`을 중앙 HTTP 설정에서 생성해 사용한다.
+- `ApiWorker.last_error_meta`와 `MainApp` 전역 fetch cooldown이 연결되어 429/quota 성격 오류 후 수동 refresh, 자동 refresh, 순차 refresh, `더 불러오기`가 동일한 차단/재개 규칙을 따른다.
+- CSV export는 `DatabaseManager.iter_news_snapshot_batches(...)`로 한 read snapshot 안에서 `count + paged fetch`를 끝까지 순회하므로 export 중 DB 변화가 있어도 결과가 시작 시점 기준으로 고정된다.
+- `DBWorker`는 일반 pool connection 대신 `open_read_connection(...)`으로 연 dedicated read connection을 사용하고 `stop()` 시 `interrupt_connection(...)`을 요청해 종료/유지보수 시 취소 성공률을 높인다.
+- 통계/언론사 분석은 메인 스레드 동기 DB 조회가 아니라 `AsyncJobWorker` 기반 비동기 로딩으로 전환되었고, 다이얼로그 close/탭 변경 후 stale 결과를 버리는 가드가 추가됐다.
+- `news_fts` FTS5 가상 테이블, 동기화 trigger, `app_meta` 기반 백필 상태 저장, UI 초기화 후 incremental backfill worker가 추가됐다. 다만 검색 의미의 진실 원본은 계속 기존 `LIKE/NOT LIKE` SQL이고, FTS는 backfill 완료 후 positive token filter의 candidate pruning에만 사용된다.
+- `news_scraper_pro.spec`는 2026-04-09 기준 다시 재검토되었고, 이번 패스의 HTTP 구성 계층/FTS5/backfill/async analysis는 기존 번들 의존성만 사용하므로 hidden import/exclude/data 추가 수정이 필요하지 않았다.
+- `.gitignore`는 build/dist/runtime/test 산출물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `203 passed, 5 subtests passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이며, `pyright`는 로컬 환경에서 `PyQt6`/`requests` import source 미해결과 기존 타입 이슈 때문에 `55 errors, 5 warnings, 0 informations` 상태다.
 
 ## 0. 2026-04-05 구현 리스크 감사 반영 / 문서 재검증
 
@@ -177,12 +191,12 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
    - `ui.main_window.MainApp` 생성 및 표시
 3. `MainApp.__init__()`이 다음을 초기화한다.
    - `DatabaseManager`
-   - `requests.Session`
+   - `HttpClientConfig`
    - `WorkerRegistry`
    - `ToastQueue`
    - `KeywordGroupManager`
    - `AutoBackup`
-   - 설정 로드, UI 구성, 타이머/트레이 설정
+   - 설정 로드, UI 구성, 타이머/트레이 설정, FTS incremental backfill kickoff
 
 ### 3-2. 뉴스 가져오기
 
@@ -190,7 +204,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 2. `MainApp.fetch_news()`가 탭 쿼리를 파싱한다.
    - `parse_search_query()` = API 검색용, 양(+) 키워드 전체
    - `parse_tab_query()` = DB 그룹 키, 첫 번째 양(+) 키워드
-3. `ApiWorker`가 별도 `QThread`에서 Naver API를 호출한다.
+3. `ApiWorker`가 별도 `QThread`에서 worker-owned `requests.Session`으로 Naver API를 호출한다.
 4. 응답 결과는 `core.database.DatabaseManager.upsert_news()`로 저장된다.
 5. `MainApp.on_fetch_done()`이 완료 콜백을 받아 탭 재로딩, 배지 업데이트, 토스트/트레이 알림을 처리한다.
 6. `NewsTab.load_data_from_db()`는 다시 `DBWorker`를 돌려 DB에서 탭 목록을 비동기로 읽는다.
@@ -222,6 +236,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `core/_db_queries.py` | 조회, count, unread 집계 |
 | `core/_db_mutations.py` | upsert, 상태 변경, 삭제, mark-read |
 | `core/_db_analytics.py` | 통계, 언론사별 집계 |
+| `core/http_client.py` | 중앙 HTTP 설정, session factory |
 | `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker`, `IterativeJobWorker`, `DBQueryScope` |
 | `core/worker_registry.py` | 요청 ID 기반 워커 활성 상태 관리 |
 | `core/query_parser.py` | 검색어 파싱 정책의 단일 기준 |

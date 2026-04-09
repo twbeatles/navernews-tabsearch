@@ -84,7 +84,14 @@ def export_scope_to_csv(
     keyword: str,
     chunk_size: int = EXPORT_CHUNK_SIZE,
 ) -> Dict[str, Any]:
-    total_count = int(db_manager.count_news(**scope.count_kwargs()))
+    if hasattr(db_manager, "iter_news_snapshot_batches"):
+        total_count, batch_iter = db_manager.iter_news_snapshot_batches(
+            scope,
+            chunk_size=max(1, int(chunk_size)),
+        )
+    else:
+        total_count = int(db_manager.count_news(**scope.count_kwargs()))
+        batch_iter = None
     context.report(current=0, total=total_count, message="내보내기 준비 중...", payload={"stage": "count"})
     context.check_cancelled()
 
@@ -101,14 +108,24 @@ def export_scope_to_csv(
             writer = csv.writer(f)
             writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복"])
 
-            offset = 0
-            while written < total_count:
+            if batch_iter is None:
+                def _fallback_iter():
+                    offset = 0
+                    while written < total_count:
+                        rows = db_manager.fetch_news(
+                            limit=max(1, int(chunk_size)),
+                            offset=max(0, int(offset)),
+                            **scope.fetch_kwargs(),
+                        )
+                        if not rows:
+                            break
+                        offset += len(rows)
+                        yield rows
+
+                batch_iter = _fallback_iter()
+
+            for rows in batch_iter:
                 context.check_cancelled()
-                rows = db_manager.fetch_news(
-                    limit=max(1, int(chunk_size)),
-                    offset=max(0, int(offset)),
-                    **scope.fetch_kwargs(),
-                )
                 if not rows:
                     break
 
@@ -117,7 +134,6 @@ def export_scope_to_csv(
                     writer.writerow(_export_row(item))
                     written += 1
 
-                offset += len(rows)
                 f.flush()
                 os.fsync(f.fileno())
                 context.report(
@@ -126,9 +142,6 @@ def export_scope_to_csv(
                     message=f"CSV 내보내는 중... ({written}/{total_count})",
                     payload={"stage": "write", "written": written, "path": output_path},
                 )
-
-                if len(rows) < max(1, int(chunk_size)):
-                    break
 
         os.replace(tmp_path, output_path)
         return {"count": written, "path": output_path, "keyword": keyword}

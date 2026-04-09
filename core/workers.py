@@ -8,7 +8,7 @@ import traceback
 import urllib.parse
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, cast
 
 import requests
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
@@ -66,6 +66,13 @@ class AsyncJobWorker(QThread):
 
 class JobCancelledError(Exception):
     """Raised when a long-running worker is cancelled cooperatively."""
+
+
+class ApiErrorMeta(TypedDict):
+    kind: str
+    status_code: int
+    cooldown_seconds: int
+    retryable: bool
 
 
 class LongTaskContext:
@@ -187,6 +194,7 @@ class ApiWorker(QObject):
         max_retries: int = 3,
         timeout: int = 15,
         session: Optional[RequestGetProtocol] = None,
+        session_factory: Optional[Callable[[], RequestGetProtocol]] = None,
         display_keyword: Optional[str] = None,
     ):
         super().__init__()
@@ -205,11 +213,18 @@ class ApiWorker(QObject):
         self.max_retries = max_retries
         self.timeout = timeout
         self.session = session
+        self.session_factory = session_factory
         self._is_running = True
         self._lock = threading.Lock()
         self._destroyed = False
         self._request_session: Optional[ClosableProtocol] = None
         self._owns_request_session = False
+        self.last_error_meta: ApiErrorMeta = {
+            "kind": "unknown",
+            "status_code": 0,
+            "cooldown_seconds": 0,
+            "retryable": False,
+        }
 
     @property
     def is_running(self):
@@ -230,6 +245,23 @@ class ApiWorker(QObject):
         except Exception as e:
             logger.error(f"시그널 발신 오류: {e}")
 
+    def _emit_error(
+        self,
+        message: str,
+        *,
+        kind: str = "unknown",
+        status_code: int = 0,
+        cooldown_seconds: int = 0,
+        retryable: bool = False,
+    ) -> None:
+        self.last_error_meta = {
+            "kind": str(kind or "unknown"),
+            "status_code": max(0, int(status_code or 0)),
+            "cooldown_seconds": max(0, int(cooldown_seconds or 0)),
+            "retryable": bool(retryable),
+        }
+        self._safe_emit(self.error, message)
+
     def run(self):
         logger.info(f"ApiWorker 시작: {self.display_keyword}")
 
@@ -246,7 +278,19 @@ class ApiWorker(QObject):
             "X-Naver-Client-Secret": self.csec.strip(),
         }
         url = "https://openapi.naver.com/v1/search/news.json"
-        session: RequestGetProtocol = self.session or requests.Session()
+        self.last_error_meta = {
+            "kind": "unknown",
+            "status_code": 0,
+            "cooldown_seconds": 0,
+            "retryable": False,
+        }
+        session: RequestGetProtocol
+        if self.session is not None:
+            session = self.session
+        elif self.session_factory is not None:
+            session = self.session_factory()
+        else:
+            session = requests.Session()
         owns_session = self.session is None
         self._request_session = cast(ClosableProtocol, session) if hasattr(session, "close") else None
         self._owns_request_session = owns_session
@@ -278,6 +322,7 @@ class ApiWorker(QObject):
                             return
 
                         if resp.status_code == 429:
+                            cooldown_seconds = max(5, (attempt + 1) * 5)
                             if attempt < self.max_retries - 1:
                                 wait_time = (attempt + 1) * 2
                                 self._safe_emit(self.progress, f"요청 제한 초과. {wait_time}초 후 재시도...")
@@ -286,7 +331,13 @@ class ApiWorker(QObject):
                                         return
                                     time.sleep(1)
                                 continue
-                            self._safe_emit(self.error, "API 요청 제한 초과. 잠시 후 다시 시도해주세요.")
+                            self._emit_error(
+                                "API 요청 제한 초과. 잠시 후 다시 시도해주세요.",
+                                kind="rate_limit",
+                                status_code=429,
+                                cooldown_seconds=cooldown_seconds,
+                                retryable=True,
+                            )
                             return
 
                         if resp.status_code != 200:
@@ -297,7 +348,12 @@ class ApiWorker(QObject):
                             except (json.JSONDecodeError, KeyError, ValueError):
                                 error_msg = f"HTTP {resp.status_code}"
                                 error_code = ""
-                            self._safe_emit(self.error, f"API 오류 {resp.status_code} ({error_code}): {error_msg}")
+                            self._emit_error(
+                                f"API 오류 {resp.status_code} ({error_code}): {error_msg}",
+                                kind="http_error",
+                                status_code=resp.status_code,
+                                retryable=500 <= int(resp.status_code) < 600,
+                            )
                             return
 
                         with perf_timer("api.parse", f"kw={self.display_keyword}"):
@@ -405,7 +461,11 @@ class ApiWorker(QObject):
                             self._safe_emit(self.progress, "요청 시간 초과. 재시도 중...")
                             time.sleep(1)
                             continue
-                        self._safe_emit(self.error, "요청 시간이 초과되었습니다. 네트워크 연결을 확인해주세요.")
+                        self._emit_error(
+                            "요청 시간이 초과되었습니다. 네트워크 연결을 확인해주세요.",
+                            kind="timeout",
+                            retryable=True,
+                        )
                         return
 
                     except requests.RequestException as e:
@@ -417,7 +477,11 @@ class ApiWorker(QObject):
                             self._safe_emit(self.progress, "네트워크 오류. 재시도 중...")
                             time.sleep(1)
                             continue
-                        self._safe_emit(self.error, f"네트워크 오류: {str(e)}")
+                        self._emit_error(
+                            f"네트워크 오류: {str(e)}",
+                            kind="network_error",
+                            retryable=True,
+                        )
                         return
 
                     except Exception as e:
@@ -426,7 +490,7 @@ class ApiWorker(QObject):
                         if not self.is_running:
                             logger.info(f"ApiWorker cancelled on exception: {self.display_keyword}")
                             return
-                        self._safe_emit(self.error, f"오류 발생: {str(e)}")
+                        self._emit_error(f"오류 발생: {str(e)}", kind="internal_error")
                         return
         finally:
             if owns_session and self._request_session is not None:
@@ -473,9 +537,17 @@ class DBWorker(QThread):
         self.known_total_count = known_total_count
         self._is_cancelled = False
         self.last_unread_count = 0
+        self._conn = None
 
     def stop(self):
         self._is_cancelled = True
+        if self._conn is not None:
+            try:
+                interrupt_connection = getattr(self.db, "interrupt_connection", None)
+                if callable(interrupt_connection):
+                    interrupt_connection(self._conn)
+            except Exception:
+                pass
         self.quit()
         self.wait(100)
 
@@ -488,6 +560,16 @@ class DBWorker(QThread):
                 if self._is_cancelled:
                     return
 
+                open_read_connection = getattr(self.db, "open_read_connection", None)
+                conn: Any
+                if callable(open_read_connection):
+                    conn = open_read_connection(timeout=1.5)
+                else:
+                    conn = None
+                self._conn = conn
+                if conn is not None:
+                    conn.execute("BEGIN")
+
                 if not self.scope.only_bookmark and not str(self.scope.keyword or "").strip():
                     self.finished.emit([], 0)
                     return
@@ -495,20 +577,21 @@ class DBWorker(QThread):
                 count_kwargs = self.scope.count_kwargs()
                 total_count = int(self.known_total_count or 0)
                 if self.include_total:
-                    total_count = self.db.count_news(**self.scope.count_kwargs())
+                    total_count = self.db.count_news(conn=conn, **self.scope.count_kwargs())
 
                 if count_kwargs.get("only_unread", False):
                     unread_count = total_count
                 else:
                     unread_count_kwargs = dict(count_kwargs)
                     unread_count_kwargs["only_unread"] = True
-                    unread_count = self.db.count_news(**unread_count_kwargs)
+                    unread_count = self.db.count_news(conn=conn, **unread_count_kwargs)
                 self.last_unread_count = int(unread_count or 0)
 
                 if self._is_cancelled:
                     return
 
                 data = self.db.fetch_news(
+                    conn=conn,
                     limit=self.limit,
                     offset=self.offset,
                     **self.scope.fetch_kwargs(),
@@ -521,3 +604,12 @@ class DBWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
             traceback.print_exc()
+        finally:
+            if self._conn is not None:
+                try:
+                    close_read_connection = getattr(self.db, "close_read_connection", None)
+                    if callable(close_read_connection):
+                        close_read_connection(self._conn)
+                except Exception:
+                    pass
+                self._conn = None

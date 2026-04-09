@@ -274,6 +274,14 @@ class _MainWindowTrayMixin:
                 except Exception as e:
                     logger.error(f"CSV export worker 종료 오류: {e}")
 
+            fts_backfill_worker = getattr(self, "_fts_backfill_worker", None)
+            if fts_backfill_worker is not None and fts_backfill_worker.isRunning():
+                try:
+                    fts_backfill_worker.requestInterruption()
+                    fts_backfill_worker.wait(1000)
+                except Exception as e:
+                    logger.error(f"FTS backfill worker 종료 오류: {e}")
+
             try:
                 self.save_config()
                 logger.info("설정 저장 완료")
@@ -286,13 +294,6 @@ class _MainWindowTrayMixin:
                     logger.info("DB 연결 종료")
                 except Exception as e:
                     logger.error(f"DB 종료 오류: {e}")
-
-            if self.session is not None:
-                try:
-                    self.session.close()
-                    logger.info("HTTP 세션 종료")
-                except Exception as e:
-                    logger.error(f"세션 종료 오류: {e}")
 
             logger.info("프로그램 종료 처리 완료")
             self._app_instance().quit()
