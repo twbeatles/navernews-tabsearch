@@ -798,25 +798,25 @@ class BackupDialog(QDialog):
             dialogs.warning(self, "오류", "백업 생성에 실패했습니다.")
 
     def create_backup(self):
-        """諛깆뾽 ?앹꽦"""
+        """백업 생성"""
         dialogs = get_dialog_adapter(self)
         include_db = self.chk_include_db.isChecked()
         ok, reason = self.auto_backup.validate_create_backup_prerequisites(include_db=include_db)
         if not ok:
-            dialogs.warning(self, "諛깆뾽 ?앹꽦 ?ㅽ뙣", reason)
+            dialogs.warning(self, "백업 생성 실패", reason)
             return
 
         result = self.auto_backup.create_backup(include_db)
         self.load_backups()
         if result:
-            dialogs.information(self, "?꾨즺", f"諛깆뾽??앹꽦?섏뿀?듬땲??\n{result}")
+            dialogs.information(self, "완료", f"백업이 생성되었습니다.\n{result}")
             return
 
         error_detail = str(getattr(self.auto_backup, "last_create_error", "") or "").strip()
         if error_detail:
-            dialogs.warning(self, "??", f"?? ??? ??????.\n\n{error_detail}")
+            dialogs.warning(self, "오류", f"백업 생성에 실패했습니다.\n\n{error_detail}")
         else:
-            dialogs.warning(self, "??", "?? ??? ??????.")
+            dialogs.warning(self, "오류", "백업 생성에 실패했습니다.")
 
     def _handle_corrupt_backup(self, backup_name: str, corrupt_error: str) -> None:
         dialogs = get_dialog_adapter(self)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 if TYPE_CHECKING:
     from ui.news_tab import NewsTab
@@ -64,4 +64,7 @@ class SettingsDialogParentProtocol(Protocol):
         ...
 
     def show_keyword_groups(self) -> None:
+        ...
+
+    def create_http_session(self) -> Any:
         ...

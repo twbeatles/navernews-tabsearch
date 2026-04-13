@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+import re
 
 
 class TestEncodingSmoke(unittest.TestCase):
@@ -16,7 +17,25 @@ class TestEncodingSmoke(unittest.TestCase):
         ".yaml",
     }
     _SKIP_DIRS = {".git", "build", "dist", "__pycache__", ".pytest_cache"}
-    _BROKEN_TOKENS = {_KNOWN_BROKEN_TOKEN}
+    _BROKEN_TOKENS = {
+        _KNOWN_BROKEN_TOKEN,
+        "\u907a\uacf7\ucb4f",
+        "\u5a9b\x80?\uba84\uc0a9",
+        "\u8b70\uace0\uc276",
+        "\u8adb\uae46",
+        "\u4ee5\ubb10\ub0ac",
+        "?\uafaa\uaf63",
+        "?\ub348\uc908",
+        "?\uc88e\ucb68",
+        "?\u0448\ud00e",
+        "\u5bc3\x80\uf9dd",
+    }
+    _BROKEN_PATTERNS = (
+        re.compile(r"\?[가-힣]{2,}"),
+        re.compile(r"[가-힣][一-龥]|[一-龥][가-힣]"),
+        re.compile(r"[가-힣][Ѐ-ӿ]|[Ѐ-ӿ][가-힣]"),
+        re.compile(r"[가-힣][À-ÿ]|[À-ÿ][가-힣]"),
+    )
 
     def _iter_repo_text_files(self):
         for path in Path(".").rglob("*"):
@@ -34,6 +53,7 @@ class TestEncodingSmoke(unittest.TestCase):
     def test_repo_text_assets_are_valid_utf8_without_replacement_chars(self):
         bad_files = []
         broken_token_files = []
+        broken_pattern_files = []
 
         for path in self._iter_repo_text_files():
             try:
@@ -46,6 +66,11 @@ class TestEncodingSmoke(unittest.TestCase):
                 bad_files.append(str(path))
             if any(token in src for token in self._BROKEN_TOKENS):
                 broken_token_files.append(str(path))
+            for pattern in self._BROKEN_PATTERNS:
+                match = pattern.search(src)
+                if match is not None:
+                    broken_pattern_files.append(f"{path}: {match.group(0)}")
+                    break
 
         self.assertEqual(
             bad_files,
@@ -56,5 +81,10 @@ class TestEncodingSmoke(unittest.TestCase):
             broken_token_files,
             [],
             msg=f"Known broken token found in: {', '.join(broken_token_files)}",
+        )
+        self.assertEqual(
+            broken_pattern_files,
+            [],
+            msg=f"Suspicious mojibake pattern found in: {', '.join(broken_pattern_files)}",
         )
 

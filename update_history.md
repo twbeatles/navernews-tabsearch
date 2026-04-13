@@ -1,6 +1,27 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Risk Plan Closure + Docs/Spec Revalidation (2026-04-13)**:
+  - Fetch / DB write contract:
+    - Added `core.database.DatabaseWriteError`.
+    - `DatabaseManager.upsert_news(...)` no longer swallows `sqlite3.Error` as `(0, 0)`; write failures now surface explicitly.
+    - `ApiWorker` now routes DB read failures and DB write failures through dedicated error paths, and fetch success UI only runs after DB upsert succeeds.
+    - `MainApp.on_fetch_error(...)` now distinguishes database errors from API/network failures in user-facing dialogs.
+  - Legacy DB migration completion:
+    - Replaced the one-shot startup backfills for `title_hash IS NULL` (`LIMIT 1000`) and `pubDate_ts IS NULL` (`LIMIT 5000`) with repeated chunk loops that continue until no `NULL` rows remain.
+    - Added regression coverage for databases larger than the previous chunk boundaries.
+  - Encoding / validation parity:
+    - Cleaned remaining mojibake literals in UI/test/doc assets.
+    - Expanded `tests/test_encoding_smoke.py` from a single-token guard to a multi-token + suspicious-pattern scan.
+    - Settings-dialog API validation now uses `HttpClientConfig` session policy and the current timeout value instead of raw `requests.get(...)` with a fixed timeout.
+    - Added `tests/test_settings_validation_http_policy.py`.
+  - Docs / packaging / repo hygiene:
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, and `news_scraper_pro.spec`.
+    - Re-reviewed `.gitignore`; existing runtime/build/test ignore rules still cover this pass, so no new ignore entry was required.
+  - Validation:
+    - `python -m pytest -q` => `209 passed, 5 subtests passed`
+    - `pyright` => `55 errors, 5 warnings, 0 informations` in the current local environment (`PyQt6`/`requests` import-source resolution plus pre-existing type issues)
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Implementation Risk Plan Completion + Docs/Spec Revalidation (2026-04-09)**:
   - Fetch / HTTP control plane:
     - Added `core.http_client.HttpClientConfig` so `ApiWorker` creates a worker-owned `requests.Session` from centralized pool/header settings rather than depending on a shared mutable session on `MainApp`.

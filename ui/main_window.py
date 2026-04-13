@@ -335,6 +335,9 @@ class MainApp(
             raise RuntimeError("HTTP client config is unavailable")
         return self.http_client_config
 
+    def create_http_session(self):
+        return self._require_http_client_config().create_session()
+
     def _start_fts_backfill(self) -> None:
         if self._shutdown_in_progress:
             return

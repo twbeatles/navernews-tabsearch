@@ -68,6 +68,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   connections, async analysis loading, and SQLite FTS5 incremental
 #   backfill rely on stdlib / already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-04-13 review:
+# - DatabaseWriteError-based fetch success gating, repeated legacy backfill
+#   loops, settings validation HTTP-policy unification, and stricter encoding
+#   guards rely on stdlib / already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

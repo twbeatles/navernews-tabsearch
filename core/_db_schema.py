@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 class _DatabaseSchemaMixin:
     FTS_BACKFILL_CURSOR_KEY = "news_fts.backfill_rowid"
     FTS_BACKFILL_DONE_KEY = "news_fts.backfill_done"
+    TITLE_HASH_BACKFILL_CHUNK_SIZE = 1000
+    PUBDATE_TS_BACKFILL_CHUNK_SIZE = 5000
 
     def _create_connection(self: DatabaseManager):
         """Create a pooled SQLite connection."""
@@ -314,6 +316,72 @@ class _DatabaseSchemaMixin:
             self.return_connection(conn)
         return {"processed": processed, "done": done}
 
+    def _backfill_missing_title_hashes(self: DatabaseManager, conn: sqlite3.Connection) -> int:
+        total_updated = 0
+        safe_chunk_size = max(1, int(self.TITLE_HASH_BACKFILL_CHUNK_SIZE))
+
+        while True:
+            rows = conn.execute(
+                "SELECT link, title FROM news WHERE title_hash IS NULL LIMIT ?",
+                (safe_chunk_size,),
+            ).fetchall()
+            if not rows:
+                break
+
+            updates = [
+                (self._calculate_title_hash(str(title or "")), str(link or ""))
+                for link, title in rows
+                if str(link or "").strip()
+            ]
+            if not updates:
+                break
+
+            conn.executemany("UPDATE news SET title_hash = ? WHERE link = ?", updates)
+            conn.commit()
+            total_updated += len(updates)
+
+        remaining = int(
+            conn.execute("SELECT COUNT(*) FROM news WHERE title_hash IS NULL").fetchone()[0]
+        )
+        if remaining > 0:
+            logger.warning("title_hash backfill incomplete: remaining=%s", remaining)
+        elif total_updated > 0:
+            logger.info("Backfilled title_hash for %s rows", total_updated)
+        return total_updated
+
+    def _backfill_missing_pubdate_ts(self: DatabaseManager, conn: sqlite3.Connection) -> int:
+        total_updated = 0
+        safe_chunk_size = max(1, int(self.PUBDATE_TS_BACKFILL_CHUNK_SIZE))
+
+        while True:
+            rows = conn.execute(
+                "SELECT link, pubDate FROM news WHERE pubDate_ts IS NULL LIMIT ?",
+                (safe_chunk_size,),
+            ).fetchall()
+            if not rows:
+                break
+
+            updates = [
+                (parse_date_to_ts(str(pub_date or "")), str(link or ""))
+                for link, pub_date in rows
+                if str(link or "").strip()
+            ]
+            if not updates:
+                break
+
+            conn.executemany("UPDATE news SET pubDate_ts = ? WHERE link = ?", updates)
+            conn.commit()
+            total_updated += len(updates)
+
+        remaining = int(
+            conn.execute("SELECT COUNT(*) FROM news WHERE pubDate_ts IS NULL").fetchone()[0]
+        )
+        if remaining > 0:
+            logger.warning("pubDate_ts backfill incomplete: remaining=%s", remaining)
+        elif total_updated > 0:
+            logger.info("Backfilled pubDate_ts for %s rows", total_updated)
+        return total_updated
+
     def init_db(self: DatabaseManager):
         """Initialize tables, migrations, and indexes."""
         conn = sqlite3.connect(self.db_file)
@@ -341,7 +409,6 @@ class _DatabaseSchemaMixin:
             self._ensure_app_meta_table(conn)
             self._ensure_news_fts_schema(conn)
 
-            columns_added = False
             try:
                 conn.execute("ALTER TABLE news ADD COLUMN pubDate_ts REAL")
                 logger.info("Added pubDate_ts column")
@@ -360,8 +427,6 @@ class _DatabaseSchemaMixin:
                 try:
                     conn.execute(f"ALTER TABLE news ADD COLUMN {col} {dtype}")
                     logger.info("Added news.%s column", col)
-                    if col == "title_hash":
-                        columns_added = True
                 except sqlite3.OperationalError:
                     pass
 
@@ -394,30 +459,8 @@ class _DatabaseSchemaMixin:
                 except sqlite3.OperationalError as e:
                     logger.debug("Index creation skipped: %s", e)
 
-            if columns_added:
-                rows = conn.execute(
-                    "SELECT link, title FROM news WHERE title_hash IS NULL LIMIT 1000"
-                ).fetchall()
-                if rows:
-                    logger.info("Backfilling title_hash for %s existing rows", len(rows))
-                    for link, title in rows:
-                        if title:
-                            conn.execute(
-                                "UPDATE news SET title_hash = ? WHERE link = ?",
-                                (self._calculate_title_hash(title), link),
-                            )
-
-            rows = conn.execute(
-                "SELECT link, pubDate FROM news WHERE pubDate_ts IS NULL LIMIT 5000"
-            ).fetchall()
-            if rows:
-                logger.info("Backfilling pubDate_ts for %s existing rows", len(rows))
-                updates = [
-                    (parse_date_to_ts(pub_date), link)
-                    for link, pub_date in rows
-                ]
-                if updates:
-                    conn.executemany("UPDATE news SET pubDate_ts = ? WHERE link = ?", updates)
+            self._backfill_missing_title_hashes(conn)
+            self._backfill_missing_pubdate_ts(conn)
 
             conn.execute(
                 """

@@ -72,7 +72,7 @@ class _MainWindowFetchMixin:
 
     def _refresh_block_reason(
         self: MainApp,
-        action_label: str = "?덈줈怨좎묠",
+        action_label: str = "새로고침",
     ) -> str:
         if self.is_maintenance_mode_active():
             return self._maintenance_block_message(action_label)
@@ -162,7 +162,7 @@ class _MainWindowFetchMixin:
     def refresh_all(self: MainApp) -> bool:
         """Refresh all tabs sequentially."""
         logger.info("Starting refresh_all")
-        block_reason = self._refresh_block_reason("?덈줈怨좎묠")
+        block_reason = self._refresh_block_reason("새로고침")
         if block_reason:
             self._notify_refresh_blocked(block_reason)
             return False
@@ -213,7 +213,7 @@ class _MainWindowFetchMixin:
     def refresh_selected_tabs(self: MainApp, keywords: List[str]) -> bool:
         """Refresh a selected subset of tabs sequentially."""
         logger.info("Starting refresh_selected_tabs: %s", keywords)
-        block_reason = self._refresh_block_reason("?덈줈怨좎묠")
+        block_reason = self._refresh_block_reason("새로고침")
         if block_reason:
             self._notify_refresh_blocked(block_reason)
             return False
@@ -654,12 +654,22 @@ class _MainWindowFetchMixin:
             self.progress.setRange(0, 100)
             self.btn_refresh.setEnabled(True)
 
+            error_kind = str(normalized_error_meta.get("kind", "") or "").strip()
+            if error_kind in {"db_query_error", "db_write_error", "db_error"}:
+                dialog_title = "데이터베이스 오류"
+                detail_hint = "로컬 데이터베이스 처리 중 오류가 발생했습니다.\n\n프로그램을 다시 시도하거나 로그를 확인해주세요."
+            elif error_kind in {"network_error", "timeout"}:
+                dialog_title = "네트워크 오류"
+                detail_hint = "네트워크 연결 상태를 확인한 뒤 다시 시도해주세요."
+            else:
+                dialog_title = "API 오류"
+                detail_hint = "API 키와 네트워크 연결 상태를 확인해주세요."
+
             self._status_bar().showMessage(f"❌ '{keyword}' 오류: {error_msg}", 5000)
             QMessageBox.critical(
                 self,
-                "API 오류",
-                f"'{keyword}' 검색 중 오류가 발생했습니다:\n\n{error_msg}\n\n"
-                "API 키와 네트워크 연결 상태를 확인해주세요.",
+                dialog_title,
+                f"'{keyword}' 처리 중 오류가 발생했습니다:\n\n{error_msg}\n\n{detail_hint}",
             )
         else:
             logger.warning("Sequential refresh failed for '%s': %s", keyword, error_msg)

@@ -36,6 +36,21 @@ class DatabaseQueryError(RuntimeError):
         super().__init__(f"{self.operation} failed: {message}")
 
 
+class DatabaseWriteError(RuntimeError):
+    """Raised when a write/mutation-style DB operation fails."""
+
+    def __init__(
+        self,
+        operation: str,
+        message: str,
+        *,
+        cause: Optional[BaseException] = None,
+    ):
+        self.operation = str(operation or "database write")
+        self.cause = cause
+        super().__init__(f"{self.operation} failed: {message}")
+
+
 class DatabaseManager(
     _DatabaseSchemaMixin,
     _DatabaseDuplicatesMixin,
@@ -191,6 +206,13 @@ class DatabaseManager(
         error: BaseException,
     ) -> DatabaseQueryError:
         return DatabaseQueryError(operation, str(error), cause=error)
+
+    def _new_write_error(
+        self,
+        operation: str,
+        error: BaseException,
+    ) -> DatabaseWriteError:
+        return DatabaseWriteError(operation, str(error), cause=error)
 
     def open_read_connection(self, timeout: float = 2.0):
         """Create a dedicated read connection that can be interrupted independently."""

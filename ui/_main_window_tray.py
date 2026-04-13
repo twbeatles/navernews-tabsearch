@@ -87,7 +87,7 @@ class _MainWindowTrayMixin:
 
         try:
             if self.is_maintenance_mode_active():
-                self.tray.setToolTip(f"{APP_NAME}\nDB ?좎?蹂댁닔 以?..")
+                self.tray.setToolTip(f"{APP_NAME}\nDB 유지보수 중...")
                 return
 
             unread_count = int(self.db.get_total_unread_count()) if self.db else 0

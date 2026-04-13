@@ -715,13 +715,13 @@ class NewsTab(QWidget):
         self.btn_read_all.clicked.connect(self.mark_all_read)
     
     def _on_sort_changed(self):
-        self._request_db_reload("?뺣젹 蹂寃?")
+        self._request_db_reload("정렬 변경")
 
     def _on_unread_filter_changed(self):
-        self._request_db_reload("??쎌? ?꾪꽣 蹂寃?")
+        self._request_db_reload("안 읽음 필터 변경")
 
     def _on_hide_duplicates_changed(self):
-        self._request_db_reload("以묐났 ?⑥쓬 蹂寃?")
+        self._request_db_reload("중복 숨김 변경")
 
     def _toggle_date_filter(self, checked: bool):
         """날짜 필터 표시/숨김 토글"""
@@ -829,19 +829,19 @@ class NewsTab(QWidget):
         if selected_date > self.date_end.date():
             self._set_date_edit_value(self.date_end, selected_date)
         if self._date_filter_active:
-            self._request_db_reload("?좎쭨 ?꾪꽣 蹂寃?")
+            self._request_db_reload("날짜 필터 변경")
 
     def _on_date_end_changed(self, selected_date: QDate):
         if selected_date < self.date_start.date():
             self._set_date_edit_value(self.date_start, selected_date)
         if self._date_filter_active:
-            self._request_db_reload("?좎쭨 ?꾪꽣 蹂寃?")
+            self._request_db_reload("날짜 필터 변경")
 
     def _apply_date_filter(self):
         self._normalize_date_inputs()
         self._date_filter_active = True
         self._refresh_date_filter_controls()
-        self._request_db_reload("?좎쭨 ?꾪꽣 ?곸슜")
+        self._request_db_reload("날짜 필터 적용")
 
     def _clear_date_filter(self):
         if not self._date_filter_active:
@@ -849,7 +849,7 @@ class NewsTab(QWidget):
             return
         self._date_filter_active = False
         self._refresh_date_filter_controls()
-        self._request_db_reload("?좎쭨 ?꾪꽣 ?댁젣")
+        self._request_db_reload("날짜 필터 해제")
 
     def _on_filter_changed(self):
         """필터 입력 변경 시 디바운싱 타이머 시작"""
@@ -1009,7 +1009,7 @@ class NewsTab(QWidget):
         parent = self._main_window()
         if parent is not None:
             parent.sync_tab_load_more_state(self.keyword)
-            parent.show_warning_toast(f"'{self.keyword}' DB 議고쉶瑜??ㅽ뙣?덉뒿?덈떎.")
+            parent.show_warning_toast(f"'{self.keyword}' DB 조회에 실패했습니다.")
 
     def apply_filter(self):
         """필터 변경 시 DB 기반으로 첫 페이지부터 다시 조회한다."""
@@ -1027,7 +1027,7 @@ class NewsTab(QWidget):
                 return
 
             self._last_filter_text = filter_txt_lc
-            self._request_db_reload("?꾪꽣 蹂寃?", append=False)
+            self._request_db_reload("필터 변경", append=False)
 
     def _render_single_item(self, item: Dict[str, Any], filter_word: str, base_badges_html: str) -> str:
         """단일 뉴스 아이템 HTML 렌더링"""
@@ -1119,7 +1119,7 @@ class NewsTab(QWidget):
             return
         if len(self.filtered_data_cache) >= self._total_filtered_count:
             return
-        self._request_db_reload("??蹂닿린", append=True)
+        self._request_db_reload("더 보기", append=True)
 
 
     def update_status_label(self):

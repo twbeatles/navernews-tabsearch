@@ -126,11 +126,32 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `203 passed, 5 subtests passed`
+- `python -m pytest -q` => `209 passed, 5 subtests passed`
 - `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
   - 핵심 원인: `PyQt6`/`requests` import source 미해결 + 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈
-- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰을 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-09 기준 다시 성공했다.
+- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 감시
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-13 기준 다시 성공했다.
+
+---
+
+## 🚀 2026-04-13 Implementation Risk Plan Closure
+
+- Fetch / DB write correctness:
+  - Added `core.database.DatabaseWriteError` and changed `upsert_news(...)` to raise on write failures instead of silently returning `(0, 0)`.
+  - `ApiWorker` now routes DB read failures and DB write failures through explicit error paths, so fetch success toasts/notifications only happen after a successful DB upsert.
+  - `MainApp.on_fetch_error(...)` now distinguishes DB errors from API/network errors in user-facing messaging.
+- Legacy migration completion:
+  - Replaced one-shot `LIMIT 1000` / `LIMIT 5000` startup backfills for `title_hash` and `pubDate_ts` with repeated chunk loops that run until no `NULL` rows remain.
+  - Added regression coverage for legacy databases larger than the old chunk limits.
+- Encoding / repo text hygiene:
+  - Cleaned remaining mojibake UI/test literals in the repository.
+  - Expanded `tests/test_encoding_smoke.py` from a single-token check to a multi-token + suspicious-pattern guard.
+- Settings validation HTTP parity:
+  - Settings-dialog API validation now uses the same `HttpClientConfig` session policy and the current `api_timeout` value from the dialog.
+  - Added dedicated regression coverage so validation does not regress to raw `requests.get(...)` + fixed timeout behavior.
+- Docs / spec / repo hygiene:
+  - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`.
+  - Re-reviewed `.gitignore`; this pass does not require new ignore rules.
 
 ---
 

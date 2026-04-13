@@ -212,7 +212,7 @@ class _DatabaseMutationsMixin:
             return added_count, duplicate_count
         except sqlite3.Error as e:
             logger.error("DB batch upsert failed: %s", e)
-            return 0, 0
+            raise self._new_write_error("upsert_news", e) from e
         finally:
             self.return_connection(conn)
 

@@ -19,7 +19,7 @@ from core.config_store import (
     normalize_import_settings,
     save_config_file_atomic,
 )
-from core.database import DatabaseManager
+from core.database import DatabaseManager, DatabaseQueryError, DatabaseWriteError
 from core.keyword_groups import KeywordGroupManager
 from core.notifications import NotificationSound
 from core.query_parser import (
@@ -77,6 +77,8 @@ __all__ = [
     'has_positive_keyword',
     'build_fetch_key',
     'DatabaseManager',
+    'DatabaseQueryError',
+    'DatabaseWriteError',
     'AutoBackup',
     'apply_pending_restore_if_any',
     'WorkerHandle',

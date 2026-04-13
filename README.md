@@ -31,11 +31,15 @@
 ## 안정화 포인트 (v32.7.3+ 작업 브랜치 반영)
 
 - 중앙 HTTP 구성 계층(`core.http_client.HttpClientConfig`)을 도입하고 `ApiWorker`가 worker-owned session으로 API를 호출하도록 정리
+- fetch 성공 기준을 "API 응답 수신"이 아니라 "DB upsert 완료"로 강화하고, `DatabaseWriteError`를 통해 저장 실패를 명시적으로 error 경로로 승격
 - `ApiWorker.last_error_meta`와 전역 fetch cooldown을 추가해 429/quota 성격 오류 후 수동/자동/순차 refresh와 `더 불러오기`를 일관되게 차단/재개
 - CSV 내보내기를 단일 read snapshot 기반으로 고정해 export 중 DB가 변해도 결과가 시작 시점 기준으로 일관되게 유지
 - `DBWorker`가 interrupt 가능한 dedicated read connection을 사용하도록 바꿔 유지보수/종료/탭 정리 시 실제 취소 성공률을 높임
 - 통계/언론사 분석 다이얼로그는 즉시 열고 `AsyncJobWorker`로 비동기 로드해 메인 스레드 DB 블로킹 제거
 - SQLite FTS5(`news_fts`) + trigger + `app_meta` 기반 증분 backfill을 추가하고, backfill 완료 전에는 기존 `LIKE/NOT LIKE` 경로를 진실 원본으로 유지
+- 레거시 DB의 `title_hash IS NULL` / `pubDate_ts IS NULL` backfill을 반복 배치 루프로 바꿔 대용량 DB에서도 startup migration 누락이 남지 않도록 보강
+- 설정 창의 API 키 검증도 `HttpClientConfig` 기반 공용 session과 현재 `api_timeout` 값을 사용하도록 통합
+- 저장소 주요 텍스트 자산의 mojibake 문자열을 정리하고, 인코딩 스모크 테스트를 다중 suspicious token/패턴 감시로 강화
 - 시작 시 단일 인스턴스 가드 적용
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
 - 설정 창의 API 키 검증/정리 작업 비동기 처리
@@ -115,13 +119,14 @@
 - 설정 가져오기로 새 탭이 추가되면 해당 탭만 지금 새로고침할지 한 번 확인하고, 동의 시 선택 탭만 순차 새로고침
 - 유지보수 모드는 fetch뿐 아니라 탭 DB 재조회, 필터/정렬/기간 변경 reload, CSV export, 통계/분석, `모두 읽음`, import 직후 선택 refresh까지 전역 차단한다
 - DB 조회/집계 실패는 더 이상 빈 결과나 `0건`으로 숨기지 않고 `DatabaseQueryError` 계약으로 올려 상태바/토스트와 명시적 경고 다이얼로그로 노출한다
+- DB 쓰기 실패는 더 이상 `(0, 0)` 성공값으로 숨기지 않고 `DatabaseWriteError` 계약으로 올려 fetch 성공 토스트/알림이 잘못 발생하지 않게 한다
 - 키워드 그룹 저장 실패는 로그만 남기고 끝내지 않으며, `KeywordGroupDialog`는 실패 시 닫히지 않고 사용자 입력을 유지한 채 재시도할 수 있다
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-09)
+## 최신 검증 메모 (2026-04-13)
 
-- `python -m pytest -q` => `203 passed, 5 subtests passed`
+- `python -m pytest -q` => `209 passed, 5 subtests passed`
 - `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
   - 주된 원인: `PyQt6`/`requests` import source 해석 실패 + 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
@@ -213,6 +218,7 @@ navernews-tabsearch/
 │   ├── test_fts_search_acceleration.py
 │   ├── test_news_tab_ext_read_policy.py
 │   ├── test_news_tab_performance.py
+│   ├── test_settings_validation_http_policy.py
 │   ├── test_settings_dialog_maintenance.py
 │   └── test_version_history_guard.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
@@ -261,7 +267,8 @@ pyright
 
 참고:
 - `pyrightconfig.json`은 루트 Python 파일, `core/`, `ui/`, `tests/`를 검사 대상으로 고정합니다.
-- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산(`.py`, `.md`, `.json`, `.ini`, `.spec`, `.txt`, `.yml`, `.yaml`)의 UTF-8 decode 실패, `\ufffd`, 알려진 깨진 토큰 재등장을 함께 감시합니다.
+- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산(`.py`, `.md`, `.json`, `.ini`, `.spec`, `.txt`, `.yml`, `.yaml`)의 UTF-8 decode 실패, `\ufffd`, 알려진 깨진 토큰, 대표적인 mojibake 정규식 패턴 재등장을 함께 감시합니다.
+- `tests/test_settings_validation_http_policy.py`는 설정 창 API 검증이 raw `requests.get(...)`가 아니라 공용 session + 현재 timeout 정책을 쓰는지 회귀 테스트로 검증합니다.
 - facade 공개 경로(`ui.main_window.MainApp`, `core.database.DatabaseManager`, `ui.settings_dialog.SettingsDialog`)는 유지하고, 내부 구현만 private helper module로 분리했습니다.
 
 ## PyInstaller 빌드 (onefile)
@@ -287,6 +294,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.2 성능 최적화 리팩토링(2026-03-21)에서도 `.spec`을 다시 재검토했으며, `DBQueryScope`, append skip-count, `NewsTab` fragment cache/coalesced render, 복합 인덱스 추가는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - v32.7.3 운영 안정화 1차(2026-03-25)에서도 `.spec`을 다시 재검토했으며, `IterativeJobWorker`, 백업 full verification, 자동 시작 health/repair, config `.backup` 회전, DB emergency cap은 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - v32.7.3 구현 리스크 전면 반영(2026-04-09)에서도 `.spec`을 다시 재검토했으며, `HttpClientConfig`, fetch cooldown, snapshot export, dedicated read connection, async analysis, SQLite FTS5 backfill은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
+- v32.7.3 구현 리스크 후속 정합화(2026-04-13)에서도 `.spec`을 다시 재검토했으며, `DatabaseWriteError`, 반복 backfill loop, 설정 검증 HTTP 정책 통합, 인코딩 가드 강화는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - 2026-03-25 기준으로 `.gitignore`에 `.pytest_tmp/`를 명시 추가했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 다시 성공해 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됨을 재확인했습니다.
 - 2026-03-21 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드를 다시 검증했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-03-24 기준으로도 `.spec`과 `.gitignore`를 다시 재검토했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 성공해 추가 packaging/ignore 수정이 필요하지 않음을 재확인했습니다.
@@ -296,6 +304,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-02 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-04-05 기준으로 `.spec`을 다시 재검토했고, 유지보수 모드의 DB 작업 전면 차단, `DatabaseQueryError` 기반 조회 실패 표면화, 키워드 그룹 저장 실패 노출, 백업 self-verify, import 후 refresh 가능 여부 선검사는 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - 2026-04-05 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-13 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, DB write failure 승격, legacy backfill 반복 처리, 설정 검증 HTTP 정책 통합, mojibake 정리/인코딩 가드 강화 이후에도 추가 packaging/ignore 수정은 필요하지 않음을 재확인했습니다.
+- 2026-04-13 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 
@@ -368,6 +378,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`가 추가되어 탭 배지를 `query_key` 기준으로 일괄 집계합니다.
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
 - `core.database.DatabaseQueryError`는 조회/집계 계열 DB 실패를 빈 결과로 삼키지 않는 표준 예외 계약이며, UI는 기존 캐시를 보존한 채 실패를 노출합니다.
+- `core.database.DatabaseWriteError`는 쓰기/변경 계열 DB 실패를 성공처럼 삼키지 않는 표준 예외 계약이며, `ApiWorker`와 fetch UI는 저장 실패를 성공 완료와 명확히 분리합니다.
 
 ## 키워드 입력 규칙
 

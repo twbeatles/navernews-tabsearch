@@ -3,6 +3,7 @@ from typing import Optional
 
 import requests
 
+from core.database import DatabaseWriteError
 from core.workers import ApiWorker
 
 
@@ -76,6 +77,11 @@ class _ExistingLinkDB(_FakeDB):
 
     def get_existing_links_for_query(self, links, keyword="", query_key=None):
         return self.existing_links.intersection(set(links))
+
+
+class _FailingWriteDB(_FakeDB):
+    def upsert_news(self, items, keyword, query_key=None):
+        raise DatabaseWriteError("upsert_news", "disk full")
 
 
 class _StaticSession:
@@ -187,3 +193,41 @@ class TestWorkerCancellation(unittest.TestCase):
             [item["link"] for item in finished[0]["new_items"]],
             ["https://news.naver.com/new"],
         )
+
+    def test_db_write_failure_emits_error_instead_of_finished(self):
+        payload = {
+            "total": 1,
+            "items": [
+                {
+                    "title": "AI update",
+                    "description": "desc",
+                    "link": "https://news.naver.com/test-1",
+                    "originallink": "https://example.com/test-1",
+                    "pubDate": "2026-02-27T10:00:00",
+                }
+            ],
+        }
+        worker = ApiWorker(
+            client_id="id",
+            client_secret="secret",
+            search_query="AI",
+            db_keyword="AI",
+            exclude_words=[],
+            db_manager=_FailingWriteDB(),
+            start_idx=1,
+            max_retries=1,
+            timeout=1,
+            session=_StaticSession(_FakeResponse(200, payload)),
+        )
+
+        errors = []
+        finished = []
+        worker.error.connect(lambda msg: errors.append(msg))
+        worker.finished.connect(lambda result: finished.append(result))
+
+        worker.run()
+
+        self.assertEqual(finished, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("데이터베이스 저장 실패", errors[0])
+        self.assertEqual(worker.last_error_meta["kind"], "db_write_error")

@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-09)
+작성일: 2026-03-16 (최근 갱신: 2026-04-13)
 
 ## 분석 범위
 
@@ -16,6 +16,20 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-04-13 구현 리스크 후속 정합화 / 문서 재검증
+
+이번 재검증에서는 2026-04-13 구현 리스크 후속 정합화 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- `core.database.DatabaseWriteError`가 추가되었고 `core._db_mutations.upsert_news(...)`는 더 이상 `sqlite3.Error`를 `(0, 0)`으로 삼키지 않는다.
+- `core.workers.ApiWorker`는 `get_existing_links_for_query(...)` 실패와 `upsert_news(...)` 실패를 각각 DB error 경로로 올리며, 상위 UI는 이를 fetch 성공 완료와 분리해 처리한다.
+- `ui._main_window_fetch.on_fetch_error(...)`는 DB 오류와 API/네트워크 오류를 구분해 다른 제목/안내 문구를 보여준다.
+- `core._db_schema.init_db()`는 `title_hash IS NULL` / `pubDate_ts IS NULL` backfill을 반복 배치 루프로 수행해 대용량 legacy DB에서도 startup migration 잔여분이 남지 않게 한다.
+- `ui._settings_dialog_tasks.py`의 API 키 검증은 이제 `HttpClientConfig` 기반 공용 session과 현재 `spn_api_timeout` 값을 사용하고, timeout/network/http failure를 구분해 반환한다.
+- 저장소에 남아 있던 mojibake UI/테스트 문자열이 정리되었고, `tests/test_encoding_smoke.py`는 단일 토큰이 아니라 다중 suspicious token/정규식 패턴을 감시한다.
+- `news_scraper_pro.spec`는 2026-04-13 기준 다시 재검토되었고, 이번 패스의 DB write failure 승격, 반복 backfill, 설정 검증 HTTP 정책 통합, 인코딩 가드 강화는 기존 번들 의존성만 사용하므로 hidden import/exclude/data 추가 수정이 필요하지 않았다.
+- `.gitignore`는 build/dist/runtime/test 산출물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `209 passed, 5 subtests passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이며, `pyright`는 로컬 환경에서 `PyQt6`/`requests` import source 미해결과 기존 타입 이슈 때문에 `55 errors, 5 warnings, 0 informations` 상태다.
 
 ## 0. 2026-04-09 구현 리스크 개선 전면 반영 / 문서 재검증
 

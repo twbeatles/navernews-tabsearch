@@ -176,7 +176,7 @@ class _MainWindowSettingsIOMixin:
         """Reload the bookmark tab."""
         should_block_db_action = getattr(self, "should_block_db_action", None)
         if callable(should_block_db_action) and should_block_db_action(
-            "遺곷쭏??DB ?щ줈怨좎묠",
+            "북마크 DB 새로고침",
             notify=False,
         ):
             return
@@ -187,7 +187,7 @@ class _MainWindowSettingsIOMixin:
     ) -> str:
         refresh_block_reason = getattr(self, "_refresh_block_reason", None)
         if callable(refresh_block_reason):
-            return str(refresh_block_reason("媛?몄삩 ??덈줈怨좎묠") or "")
+            return str(refresh_block_reason("가져온 탭 새로고침") or "")
         return ""
 
     def _maybe_refresh_imported_tabs(
@@ -201,7 +201,7 @@ class _MainWindowSettingsIOMixin:
         if block_reason:
             self._status_bar().showMessage(block_reason, 5000)
             self.show_warning_toast(block_reason)
-            _dialogs_for(self).warning(self, "??덈줈怨좎묠 遺덇?", block_reason)
+            _dialogs_for(self).warning(self, "새로고침 불가", block_reason)
             return
 
         if self._prompt_refresh_imported_tabs(imported_keywords):
@@ -243,7 +243,7 @@ class _MainWindowSettingsIOMixin:
             return
 
         should_block_db_action = getattr(self, "should_block_db_action", None)
-        if callable(should_block_db_action) and should_block_db_action("CSV ?대낫?닿린"):
+        if callable(should_block_db_action) and should_block_db_action("CSV 내보내기"):
             return
 
         cur_widget = self._current_news_tab()
@@ -688,11 +688,11 @@ class _MainWindowSettingsIOMixin:
                     and merged_groups == previous_groups
                 ):
                     group_warning = (
-                        "?ㅼ썙??洹몃９???ν븯吏 紐삵빐 媛?몄삩 洹몃９ ?ㅼ젙??곸슜?섏? 紐삵뻽?듬땲??\n\n"
+                        "키워드 그룹을 저장하지 못해 가져온 그룹 설정을 적용하지 못했습니다.\n\n"
                         f"{group_manager_error}"
                     )
                     import_warnings.append(group_warning)
-                    dialogs.warning(self, "洹몃９ ???ㅽ뙣", group_warning)
+                    dialogs.warning(self, "그룹 저장 실패", group_warning)
 
             self.apply_refresh_interval()
             self.save_config()

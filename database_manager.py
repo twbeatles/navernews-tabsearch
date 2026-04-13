@@ -1,3 +1,3 @@
-from core.database import DatabaseManager
+from core.database import DatabaseManager, DatabaseQueryError, DatabaseWriteError
 
-__all__ = ['DatabaseManager']
+__all__ = ['DatabaseManager', 'DatabaseQueryError', 'DatabaseWriteError']

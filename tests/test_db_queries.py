@@ -176,8 +176,100 @@ class TestDbQueries(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_upsert_news_raises_database_write_error_and_rolls_back(self):
+        item = self._make_item(999, "2026-01-01T09:00:00")
+
+        with mock.patch.object(
+            self.mgr,
+            "_recalculate_duplicate_flags_for_query_key_hashes",
+            side_effect=sqlite3.Error("disk full"),
+        ):
+            with self.assertRaises(app.DatabaseWriteError):
+                self.mgr.upsert_news([item], "AI")
+
+        self.assertEqual(self.mgr.count_news("AI"), 0)
+
+    def test_init_db_backfills_all_missing_fields_beyond_chunk_limits(self):
+        self.mgr.close()
+        self.db_path.unlink(missing_ok=True)
+
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute(
+                """
+                CREATE TABLE news (
+                    link TEXT PRIMARY KEY,
+                    keyword TEXT,
+                    title TEXT,
+                    description TEXT,
+                    pubDate TEXT,
+                    publisher TEXT,
+                    is_read INTEGER DEFAULT 0,
+                    is_bookmarked INTEGER DEFAULT 0,
+                    pubDate_ts REAL,
+                    created_at REAL DEFAULT (strftime('%s', 'now')),
+                    notes TEXT,
+                    title_hash TEXT,
+                    is_duplicate INTEGER DEFAULT 0
+                )
+                """
+            )
+            rows = [
+                (
+                    f"https://example.com/legacy-{idx}",
+                    "AI",
+                    f"legacy-title-{idx}",
+                    f"legacy-desc-{idx}",
+                    f"2026-01-{(idx % 28) + 1:02d}T09:00:00",
+                    "example.com",
+                    0,
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    0,
+                )
+                for idx in range(5005)
+            ]
+            conn.executemany(
+                """
+                INSERT INTO news (
+                    link, keyword, title, description, pubDate, publisher,
+                    is_read, is_bookmarked, pubDate_ts, created_at, notes, title_hash, is_duplicate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.mgr = app.DatabaseManager(str(self.db_path), max_connections=2)
+
+        verify_conn = sqlite3.connect(str(self.db_path))
+        try:
+            title_hash_nulls = verify_conn.execute(
+                "SELECT COUNT(*) FROM news WHERE title_hash IS NULL"
+            ).fetchone()[0]
+            pubdate_ts_nulls = verify_conn.execute(
+                "SELECT COUNT(*) FROM news WHERE pubDate_ts IS NULL"
+            ).fetchone()[0]
+            sample_row = verify_conn.execute(
+                "SELECT title_hash, pubDate_ts FROM news ORDER BY link LIMIT 1"
+            ).fetchone()
+        finally:
+            verify_conn.close()
+
+        self.assertEqual(title_hash_nulls, 0)
+        self.assertEqual(pubdate_ts_nulls, 0)
+        self.assertIsNotNone(sample_row)
+        assert sample_row is not None
+        self.assertTrue(sample_row[0])
+        self.assertGreater(sample_row[1], 0)
+
     def test_get_statistics_duplicates_uses_news_keywords(self):
-        same_title = "以묐났 湲곗? ?쒕ぉ"
+        same_title = "duplicate stats title"
         items = [
             {
                 "title": same_title,
@@ -216,7 +308,7 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(stats["duplicates"], 0)
 
     def test_recalculate_duplicate_flags_repairs_wrong_values(self):
-        same_title = "?ш퀎??寃利??쒕ぉ"
+        same_title = "duplicate repair title"
         self.mgr.upsert_news(
             [
                 {

@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QMessageBox
 
 from core.constants import CONFIG_FILE, DB_FILE
 from core.database import DatabaseManager
+from core.http_client import HttpClientConfig
 from core.validation import ValidationUtils
 from core.workers import AsyncJobWorker
 
@@ -19,6 +20,77 @@ if TYPE_CHECKING:
 
 
 class _SettingsDialogTasksMixin:
+    def _current_api_timeout(self: SettingsDialog) -> int:
+        timeout_value = 15
+        if hasattr(self, "spn_api_timeout"):
+            try:
+                timeout_value = int(self.spn_api_timeout.value())
+            except Exception:
+                timeout_value = 15
+        return max(5, min(60, timeout_value))
+
+    def _create_validation_session(self: SettingsDialog):
+        parent = self._typed_parent()
+        if parent is not None:
+            create_http_session = getattr(parent, "create_http_session", None)
+            if callable(create_http_session):
+                return create_http_session()
+        return HttpClientConfig().create_session()
+
+    def _run_api_validation_request(
+        self: SettingsDialog,
+        client_id: str,
+        client_secret: str,
+        *,
+        timeout: int,
+    ) -> Dict[str, Any]:
+        headers = {
+            "X-Naver-Client-Id": client_id,
+            "X-Naver-Client-Secret": client_secret,
+        }
+        session = self._create_validation_session()
+        try:
+            response = session.get(
+                "https://openapi.naver.com/v1/search/news.json",
+                headers=headers,
+                params={"query": "테스트", "display": 1},
+                timeout=max(5, int(timeout)),
+            )
+            payload: Dict[str, Any] = {
+                "status_code": int(response.status_code),
+                "error_kind": "",
+                "error_message": "",
+            }
+            if response.status_code != 200:
+                payload["error_kind"] = "http_error"
+                try:
+                    payload["error_message"] = response.json().get(
+                        "errorMessage",
+                        "알 수 없는 오류",
+                    )
+                except (ValueError, TypeError, KeyError):
+                    payload["error_message"] = (
+                        response.text[:200] if response.text else "응답 파싱 실패"
+                    )
+            return payload
+        except requests.Timeout:
+            return {
+                "status_code": 0,
+                "error_kind": "timeout",
+                "error_message": f"{max(5, int(timeout))}초 내 응답이 없어 검증에 실패했습니다.",
+            }
+        except requests.RequestException as e:
+            return {
+                "status_code": 0,
+                "error_kind": "network_error",
+                "error_message": str(e) or "네트워크 요청 실패",
+            }
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
     def _detach_worker_signals(
         self: SettingsDialog,
         worker: Optional[AsyncJobWorker],
@@ -99,33 +171,14 @@ class _SettingsDialogTasksMixin:
 
         self.btn_validate.setEnabled(False)
         self.btn_validate.setText("⏳ 검증 중...")
+        timeout = self._current_api_timeout()
 
         def validate_job() -> Dict[str, Any]:
-            headers = {
-                "X-Naver-Client-Id": client_id,
-                "X-Naver-Client-Secret": client_secret,
-            }
-            response = requests.get(
-                "https://openapi.naver.com/v1/search/news.json",
-                headers=headers,
-                params={"query": "테스트", "display": 1},
-                timeout=10,
+            return self._run_api_validation_request(
+                client_id,
+                client_secret,
+                timeout=timeout,
             )
-            payload: Dict[str, Any] = {
-                "status_code": response.status_code,
-                "error_message": "",
-            }
-            if response.status_code != 200:
-                try:
-                    payload["error_message"] = response.json().get(
-                        "errorMessage",
-                        "알 수 없는 오류",
-                    )
-                except (ValueError, TypeError, KeyError):
-                    payload["error_message"] = (
-                        response.text[:200] if response.text else "응답 파싱 실패"
-                    )
-            return payload
 
         self._api_validate_worker = self._create_worker(validate_job)
         self._api_validate_worker.finished.connect(self._on_validate_api_key_done)
@@ -140,10 +193,26 @@ class _SettingsDialogTasksMixin:
         if int(result.get("status_code", 0)) == 200:
             QMessageBox.information(self, "검증 성공", "✓ API 키가 정상적으로 작동합니다!")
             return
+        error_kind = str(result.get("error_kind", "") or "")
+        error_message = str(result.get("error_message", "알 수 없는 오류") or "알 수 없는 오류")
+        if error_kind == "timeout":
+            QMessageBox.warning(
+                self,
+                "검증 시간 초과",
+                f"API 키 검증 중 시간이 초과되었습니다.\n\n오류: {error_message}",
+            )
+            return
+        if error_kind == "network_error":
+            QMessageBox.warning(
+                self,
+                "네트워크 오류",
+                f"API 키 검증 중 네트워크 오류가 발생했습니다.\n\n오류: {error_message}",
+            )
+            return
         QMessageBox.warning(
             self,
             "검증 실패",
-            f"API 키가 올바르지 않습니다.\n\n오류: {result.get('error_message', '알 수 없는 오류')}",
+            f"API 키가 올바르지 않습니다.\n\n오류: {error_message}",
         )
 
     def _on_validate_api_key_error(self: SettingsDialog, error_msg: str):

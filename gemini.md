@@ -85,11 +85,20 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `203 passed, 5 subtests passed`
+- `python -m pytest -q` => `209 passed, 5 subtests passed`
 - `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
 - 원인 메모: `PyQt6`/`requests` import source 미해결과 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈가 같이 남아 있다.
-- `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-09 기준 다시 성공했다.
+- `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 감시
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-13 기준 다시 성공했다.
+
+### 2026-04-13 Implementation Risk Plan Closure
+
+- `core.database.DatabaseWriteError`를 추가했고, `DatabaseManager.upsert_news(...)`는 DB write failure를 더 이상 `(0, 0)` 성공값으로 삼키지 않는다.
+- `ApiWorker`는 DB 조회 실패와 저장 실패를 각각 error 경로로 올리며, fetch 성공 토스트/알림은 DB upsert 완료 후에만 발생한다.
+- `core._db_schema.init_db()`는 `title_hash IS NULL`, `pubDate_ts IS NULL` backfill을 반복 배치 루프로 수행해 대용량 legacy DB에서도 startup migration 잔여분이 남지 않게 했다.
+- 설정 창 API 키 검증은 이제 `HttpClientConfig` 기반 공용 session과 현재 `spn_api_timeout` 값을 사용하며, timeout/network/http failure를 구분해 사용자에게 보여준다.
+- `tests/test_settings_validation_http_policy.py`를 추가했고, `tests/test_encoding_smoke.py`는 다중 suspicious token/패턴 회귀 검사로 강화됐다.
+- `news_scraper_pro.spec`와 `.gitignore`를 다시 검토했고, 이번 패스에서는 추가 packaging/ignore 수정이 필요하지 않았다.
 
 ### 2026-04-09 Implementation Risk Audit Plan Completion
 
@@ -402,7 +411,7 @@ class DatabaseManager:
     def get_connection(self) -> sqlite3.Connection
     def return_connection(self, conn)
     def fetch_news(keyword, filter_txt, sort_mode, ...) -> List[Dict]
-    def upsert_news(items, keyword) -> Tuple[int, int]  # (added, duplicates)
+    def upsert_news(items, keyword, query_key=None) -> Tuple[int, int]  # may raise DatabaseWriteError
     def update_status(link, field, value) -> bool
     def delete_link(link) -> bool
     def mark_links_as_read(links) -> int

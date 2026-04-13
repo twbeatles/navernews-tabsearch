@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, cast
 import requests
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
+from core.database import DatabaseQueryError, DatabaseWriteError
 from core.protocols import ClosableProtocol, RequestGetProtocol
 from core.query_parser import build_fetch_key
 
@@ -416,25 +417,49 @@ class ApiWorker(QObject):
                             logger.info(f"ApiWorker cancelled before upsert: {self.display_keyword}")
                             return
 
-                        existing_links = self.db.get_existing_links_for_query(
-                            [str(item.get("link", "") or "") for item in items],
-                            keyword=self.db_keyword,
-                            query_key=self.query_key,
-                        )
-                        seen_new_links = set()
-                        for item in items:
-                            link = str(item.get("link", "") or "").strip()
-                            if not link or link in existing_links or link in seen_new_links:
-                                continue
-                            seen_new_links.add(link)
-                            new_items.append(item)
-
-                        with perf_timer("api.upsert", f"kw={self.db_keyword}|query_key={self.query_key}|items={len(items)}"):
-                            added_count, dup_count = self.db.upsert_news(
-                                items,
-                                self.db_keyword,
+                        try:
+                            existing_links = self.db.get_existing_links_for_query(
+                                [str(item.get("link", "") or "") for item in items],
+                                keyword=self.db_keyword,
                                 query_key=self.query_key,
                             )
+                            seen_new_links = set()
+                            for item in items:
+                                link = str(item.get("link", "") or "").strip()
+                                if not link or link in existing_links or link in seen_new_links:
+                                    continue
+                                seen_new_links.add(link)
+                                new_items.append(item)
+
+                            with perf_timer(
+                                "api.upsert",
+                                f"kw={self.db_keyword}|query_key={self.query_key}|items={len(items)}",
+                            ):
+                                added_count, dup_count = self.db.upsert_news(
+                                    items,
+                                    self.db_keyword,
+                                    query_key=self.query_key,
+                                )
+                        except DatabaseQueryError as e:
+                            logger.error("ApiWorker DB read failed: %s - %s", self.display_keyword, e)
+                            if not self.is_running:
+                                logger.info(f"ApiWorker cancelled on DB read error: {self.display_keyword}")
+                                return
+                            self._emit_error(
+                                f"데이터베이스 조회 실패: {e}",
+                                kind="db_query_error",
+                            )
+                            return
+                        except DatabaseWriteError as e:
+                            logger.error("ApiWorker DB write failed: %s - %s", self.display_keyword, e)
+                            if not self.is_running:
+                                logger.info(f"ApiWorker cancelled on DB write error: {self.display_keyword}")
+                                return
+                            self._emit_error(
+                                f"데이터베이스 저장 실패: {e}",
+                                kind="db_write_error",
+                            )
+                            return
 
                         result = {
                             "items": items,
