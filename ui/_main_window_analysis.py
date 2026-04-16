@@ -19,14 +19,14 @@ from PyQt6.QtWidgets import (
 )
 
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
-from core.workers import AsyncJobWorker
+from core.workers import InterruptibleReadWorker
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
 
 
 class _MainWindowAnalysisMixin:
-    def _cleanup_analysis_worker(self: MainApp, worker: Optional[AsyncJobWorker]) -> None:
+    def _cleanup_analysis_worker(self: MainApp, worker: Optional[Any]) -> None:
         if worker is None:
             return
         try:
@@ -35,6 +35,10 @@ class _MainWindowAnalysisMixin:
             pass
         try:
             worker.error.disconnect()
+        except Exception:
+            pass
+        try:
+            worker.cancelled.disconnect()
         except Exception:
             pass
         try:
@@ -60,10 +64,10 @@ class _MainWindowAnalysisMixin:
         btn_close.clicked.connect(dialog.accept)
         layout.addWidget(btn_close)
 
-        def load_stats() -> Dict[str, int]:
-            return self._require_db().get_statistics()
+        def load_stats(conn) -> Dict[str, int]:
+            return self._require_db().get_statistics(conn=conn)
 
-        worker = AsyncJobWorker(load_stats, parent=dialog)
+        worker = InterruptibleReadWorker(self._require_db(), load_stats, parent=dialog)
 
         def render_stats(stats: Dict[str, int]) -> None:
             if not dialog.isVisible():
@@ -167,8 +171,8 @@ class _MainWindowAnalysisMixin:
             "publisher_request_id": 0,
         }
 
-        def load_stats() -> Dict[str, int]:
-            return self._require_db().get_statistics()
+        def load_stats(conn) -> Dict[str, int]:
+            return self._require_db().get_statistics(conn=conn)
 
         def render_stats(stats: Dict[str, int]) -> None:
             if not dialog.isVisible():
@@ -211,7 +215,7 @@ class _MainWindowAnalysisMixin:
             else:
                 result_list.addItem("데이터가 없습니다.")
 
-        def load_publishers(tab_query: Optional[str]) -> List[tuple[str, int]]:
+        def load_publishers(conn, tab_query: Optional[str]) -> List[tuple[str, int]]:
             if isinstance(tab_query, str) and tab_query.strip():
                 db_keyword, exclude_words = parse_tab_query(tab_query)
                 search_keyword, _ = parse_search_query(tab_query)
@@ -221,8 +225,9 @@ class _MainWindowAnalysisMixin:
                     exclude_words=exclude_words,
                     limit=20,
                     query_key=query_key,
+                    conn=conn,
                 )
-            return self._require_db().get_top_publishers(None, limit=20)
+            return self._require_db().get_top_publishers(None, limit=20, conn=conn)
 
         def update_analysis() -> None:
             state["publisher_request_id"] += 1
@@ -231,7 +236,7 @@ class _MainWindowAnalysisMixin:
             result_list.addItem("불러오는 중...")
             self._cleanup_analysis_worker(state["publisher_worker"])
             tab_query = tab_combo.currentData()
-            worker = AsyncJobWorker(load_publishers, tab_query, parent=dialog)
+            worker = InterruptibleReadWorker(self._require_db(), load_publishers, tab_query, parent=dialog)
             state["publisher_worker"] = worker
             worker.finished.connect(lambda publishers, rid=request_id: render_publishers(publishers, rid))
             worker.error.connect(
@@ -251,9 +256,10 @@ class _MainWindowAnalysisMixin:
             )
             worker.finished.connect(lambda *_args: state.__setitem__("publisher_worker", None))
             worker.error.connect(lambda *_args: state.__setitem__("publisher_worker", None))
+            worker.cancelled.connect(lambda *_args: state.__setitem__("publisher_worker", None))
             worker.start()
 
-        stats_worker = AsyncJobWorker(load_stats, parent=dialog)
+        stats_worker = InterruptibleReadWorker(self._require_db(), load_stats, parent=dialog)
         state["stats_worker"] = stats_worker
         stats_worker.finished.connect(render_stats)
         stats_worker.error.connect(
@@ -266,6 +272,7 @@ class _MainWindowAnalysisMixin:
         )
         stats_worker.finished.connect(lambda *_args: state.__setitem__("stats_worker", None))
         stats_worker.error.connect(lambda *_args: state.__setitem__("stats_worker", None))
+        stats_worker.cancelled.connect(lambda *_args: state.__setitem__("stats_worker", None))
 
         def cleanup_workers(_result: int) -> None:
             self._cleanup_analysis_worker(state.get("stats_worker"))

@@ -92,6 +92,19 @@ class _StaticSession:
         return self.response
 
 
+class _SequenceSession:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = 0
+
+    def get(self, *_args, **_kwargs):
+        response = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
 class TestWorkerCancellation(unittest.TestCase):
     def _make_worker(self, session):
         db = _FakeDB()
@@ -231,3 +244,62 @@ class TestWorkerCancellation(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("데이터베이스 저장 실패", errors[0])
         self.assertEqual(worker.last_error_meta["kind"], "db_write_error")
+
+    def test_http_500_retries_then_succeeds(self):
+        payload = {
+            "total": 1,
+            "items": [
+                {
+                    "title": "AI retry success",
+                    "description": "desc",
+                    "link": "https://news.naver.com/retry-success",
+                    "originallink": "https://example.com/retry-success",
+                    "pubDate": "2026-02-27T10:00:00",
+                }
+            ],
+        }
+        session = _SequenceSession(
+            [
+                _FakeResponse(500, {"errorMessage": "temporary", "errorCode": "E500"}),
+                _FakeResponse(200, payload),
+            ]
+        )
+        worker, db = self._make_worker(session)
+        worker.max_retries = 2
+
+        errors = []
+        finished = []
+        worker.error.connect(lambda msg: errors.append(msg))
+        worker.finished.connect(lambda result: finished.append(result))
+
+        worker.run()
+
+        self.assertEqual(session.calls, 2)
+        self.assertEqual(db.upsert_calls, 1)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(finished), 1)
+
+    def test_http_503_final_failure_is_retryable_http_error(self):
+        session = _SequenceSession(
+            [
+                _FakeResponse(503, {"errorMessage": "down", "errorCode": "E503"}),
+                _FakeResponse(503, {"errorMessage": "down", "errorCode": "E503"}),
+            ]
+        )
+        worker, db = self._make_worker(session)
+        worker.max_retries = 2
+
+        errors = []
+        finished = []
+        worker.error.connect(lambda msg: errors.append(msg))
+        worker.finished.connect(lambda result: finished.append(result))
+
+        worker.run()
+
+        self.assertEqual(session.calls, 2)
+        self.assertEqual(db.upsert_calls, 0)
+        self.assertEqual(finished, [])
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(worker.last_error_meta["kind"], "http_error")
+        self.assertEqual(worker.last_error_meta["status_code"], 503)
+        self.assertTrue(worker.last_error_meta["retryable"])

@@ -639,6 +639,52 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(int(rows[0]["is_duplicate"]), 0)
         self.assertEqual(self.mgr.get_statistics()["duplicates"], 0)
 
+    def test_delete_old_news_raises_database_write_error_on_failure(self):
+        with mock.patch.object(
+            self.mgr,
+            "_run_chunked_news_delete",
+            side_effect=app.DatabaseWriteError("delete_old_news", "locked"),
+        ):
+            with self.assertRaises(app.DatabaseWriteError):
+                self.mgr.delete_old_news(30)
+
+    def test_delete_all_news_raises_database_write_error_on_failure(self):
+        with mock.patch.object(
+            self.mgr,
+            "_run_chunked_news_delete",
+            side_effect=app.DatabaseWriteError("delete_all_news", "locked"),
+        ):
+            with self.assertRaises(app.DatabaseWriteError):
+                self.mgr.delete_all_news()
+
+    def test_mark_query_as_read_chunked_matches_scope_rules(self):
+        q1 = build_fetch_key("AI finance", [])
+        items = [
+            {
+                "title": "AI launch",
+                "description": "plain item",
+                "link": "https://example.com/chunked-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "AI ad market",
+                "description": "contains ad keyword",
+                "link": "https://example.com/chunked-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI", query_key=q1)
+
+        updated = self.mgr.mark_query_as_read_chunked("AI", exclude_words=["ad"], query_key=q1, chunk_size=1)
+        self.assertEqual(updated, 1)
+
+        rows = self.mgr.fetch_news("AI", query_key=q1)
+        read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
+        self.assertEqual(read_by_link["https://example.com/chunked-1"], 1)
+        self.assertEqual(read_by_link["https://example.com/chunked-2"], 0)
+
     def test_connection_context_manager_releases_connection(self):
         with self.mgr.connection() as conn:
             row = conn.execute("SELECT 1").fetchone()

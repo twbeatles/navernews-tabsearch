@@ -13,7 +13,7 @@ from core.constants import CONFIG_FILE, DB_FILE
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
 from core.validation import ValidationUtils
-from core.workers import AsyncJobWorker
+from core.workers import AsyncJobWorker, IterativeJobWorker
 
 if TYPE_CHECKING:
     from ui.settings_dialog import SettingsDialog
@@ -93,7 +93,7 @@ class _SettingsDialogTasksMixin:
 
     def _detach_worker_signals(
         self: SettingsDialog,
-        worker: Optional[AsyncJobWorker],
+        worker: Optional[Any],
     ):
         if not worker:
             return
@@ -105,10 +105,18 @@ class _SettingsDialogTasksMixin:
             worker.error.disconnect()
         except Exception:
             pass
+        try:
+            worker.cancelled.disconnect()
+        except Exception:
+            pass
+        try:
+            worker.progress.disconnect()
+        except Exception:
+            pass
 
     def _shutdown_worker(
         self: SettingsDialog,
-        worker: Optional[AsyncJobWorker],
+        worker: Optional[Any],
         wait_ms: int = 500,
     ):
         if not worker:
@@ -151,6 +159,21 @@ class _SettingsDialogTasksMixin:
         worker = AsyncJobWorker(job_func, parent=None)
         try:
             worker.finished.connect(worker.deleteLater)
+        except Exception:
+            pass
+        return worker
+
+    def _create_iterative_worker(
+        self: SettingsDialog,
+        job_func: Callable[..., Any],
+    ) -> IterativeJobWorker:
+        worker = IterativeJobWorker(job_func, parent=None)
+        try:
+            worker.finished.connect(worker.deleteLater)
+        except Exception:
+            pass
+        try:
+            worker.cancelled.connect(worker.deleteLater)
         except Exception:
             pass
         return worker
@@ -243,10 +266,21 @@ class _SettingsDialogTasksMixin:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        def job_func() -> int:
+        def job_func(context) -> int:
             db = DatabaseManager(DB_FILE)
             try:
-                return int(db.delete_old_news(30))
+                return int(
+                    db.delete_old_news_chunked(
+                        30,
+                        chunk_size=200,
+                        progress_callback=lambda current, total: context.report(
+                            current=current,
+                            total=total,
+                            message="오래된 기사 삭제 중...",
+                        ),
+                        cancel_check=context.check_cancelled,
+                    )
+                )
             finally:
                 db.close()
 
@@ -265,10 +299,20 @@ class _SettingsDialogTasksMixin:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        def job_func() -> int:
+        def job_func(context) -> int:
             db = DatabaseManager(DB_FILE)
             try:
-                return int(db.delete_all_news())
+                return int(
+                    db.delete_all_news_chunked(
+                        chunk_size=200,
+                        progress_callback=lambda current, total: context.report(
+                            current=current,
+                            total=total,
+                            message="기사 삭제 중...",
+                        ),
+                        cancel_check=context.check_cancelled,
+                    )
+                )
             finally:
                 db.close()
 
@@ -276,7 +320,7 @@ class _SettingsDialogTasksMixin:
 
     def _start_data_task(
         self: SettingsDialog,
-        job_func: Callable[[], int],
+        job_func: Callable[[Any], int],
         done_handler: Callable[[Any], None],
         operation: str,
     ):
@@ -309,11 +353,13 @@ class _SettingsDialogTasksMixin:
         self.btn_clean.setText("⏳ 작업 중...")
         self.btn_all.setText("⏳ 작업 중...")
 
-        self._data_task_worker = self._create_worker(job_func)
+        self._data_task_worker = self._create_iterative_worker(job_func)
         self._data_task_worker.finished.connect(done_handler)
         self._data_task_worker.error.connect(self._on_data_task_error)
+        self._data_task_worker.cancelled.connect(self._on_data_task_cancelled)
         self._data_task_worker.finished.connect(self._on_data_task_finished)
         self._data_task_worker.error.connect(self._on_data_task_finished)
+        self._data_task_worker.cancelled.connect(self._on_data_task_finished)
         self._data_task_worker.start()
 
     def _on_clean_data_done(self: SettingsDialog, result: Any):
@@ -334,6 +380,11 @@ class _SettingsDialogTasksMixin:
         if self._is_closing or not self.isVisible():
             return
         QMessageBox.critical(self, "작업 오류", f"데이터 작업 중 오류가 발생했습니다:\n\n{error_msg}")
+
+    def _on_data_task_cancelled(self: SettingsDialog):
+        if self._is_closing or not self.isVisible():
+            return
+        QMessageBox.information(self, "작업 취소", "데이터 정리 작업이 취소되었습니다.")
 
     def _on_data_task_finished(self: SettingsDialog, *_args):
         maintenance_active = bool(getattr(self, "_maintenance_active_for_data_task", False))

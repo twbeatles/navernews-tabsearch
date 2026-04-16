@@ -163,7 +163,8 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         block = src[start:end]
         self.assertIn("현재 표시 결과만", block)
         self.assertIn("탭 전체", block)
-        self.assertIn("self.db.mark_query_as_read", block)
+        self.assertIn("self.db.mark_query_as_read_chunked", block)
+        self.assertIn("IterativeJobWorker", block)
         self.assertIn("self._current_filter_text()", block)
         self.assertIn("self.chk_hide_dup.isChecked()", block)
 
@@ -181,4 +182,11 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         self.assertIn("db_keyword, exclude_words = parse_tab_query(tab_query)", block)
         self.assertIn("exclude_words=exclude_words", block)
         self.assertIn("query_key=query_key", block)
+
+    def test_main_window_has_tab_hydration_queue(self):
+        src = Path("ui/main_window.py").read_text(encoding="utf-8")
+        self.assertIn("self._tab_hydration_queue: deque[str] = deque()", src)
+        self.assertIn("def _bootstrap_tab_hydration", src)
+        self.assertIn("def _process_tab_hydration", src)
+        self.assertIn("self.tabs.currentChanged.connect(self._on_current_tab_changed)", src)
 

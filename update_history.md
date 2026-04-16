@@ -1,6 +1,38 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Follow-up Risk Fixes + Docs/Spec Revalidation (2026-04-16)**:
+  - Fetch / hydration / long-task correctness:
+    - `ApiWorker` now retries `500/502/503/504` and other `5xx` responses through the retry path instead of surfacing them immediately; final failure still keeps `last_error_meta(kind=http_error, retryable=True)`.
+    - Startup tab loading now hydrates bookmarks/current tab first and defers remaining news tabs through a sequential hydration queue; initial hydration cancellation uses request-id tracking + late cleanup so timeout paths do not wedge the queue.
+    - Tab-wide mark-all-read and settings-dialog maintenance mutations now run through chunked `IterativeJobWorker` paths so `stop()` has real effect during maintenance/close boundaries.
+    - Stats / publisher analysis dialogs now use `InterruptibleReadWorker` with dedicated interruptible SQLite read connections instead of `AsyncJobWorker`.
+  - Import / backup / FTS resilience:
+    - Settings import now runs as `stage -> persist -> apply-runtime -> startup reconcile`; failed runtime apply rolls local config/runtime state back before startup reconciliation.
+    - Backup metadata now treats `include_db` as tri-state on read, falls back to actual payload-file presence for legacy entries, and persists explicit verification metadata (`verification_state`, `verification_error`, `is_restorable`, `restore_error`, `is_corrupt`, `error`, `last_verified_at`) on manual verify / pre-restore verify.
+    - Startup FTS backfill now uses a dedicated retry scheduler with capped backoff (`5s -> 15s -> 30s`) and resumes after maintenance / refresh boundaries instead of failing once per session.
+  - Docs / packaging / repo hygiene:
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, and `news_scraper_pro.spec` to the current worker/import/backup/FTS contracts.
+    - Re-reviewed `.gitignore` after a clean build; existing runtime/build/test ignore rules still cover this pass, so no new ignore entry was required.
+  - Added/updated tests:
+    - Expanded:
+      - `tests/test_async_analysis.py`
+      - `tests/test_backup_restore_mode.py`
+      - `tests/test_db_queries.py`
+      - `tests/test_fetch_cooldown.py`
+      - `tests/test_fts_search_acceleration.py`
+      - `tests/test_import_refresh_prompt.py`
+      - `tests/test_import_settings_dedupe.py`
+      - `tests/test_maintenance_mode.py`
+      - `tests/test_news_tab_mark_all_read_scope.py`
+      - `tests/test_news_tab_performance.py`
+      - `tests/test_risk_fixes.py`
+      - `tests/test_shutdown_cleanup.py`
+      - `tests/test_worker_cancellation.py`
+  - Validation:
+    - `python -m pytest -q` => `228 passed, 5 subtests passed`
+    - `pyright` => `74 errors, 5 warnings, 0 informations` in the current local environment (`PyQt6`/`requests` import-source resolution plus optional/member typing gaps in a few runtime/test paths)
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Implementation Risk Plan Closure + Docs/Spec Revalidation (2026-04-13)**:
   - Fetch / DB write contract:
     - Added `core.database.DatabaseWriteError`.

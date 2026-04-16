@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
@@ -12,21 +13,26 @@ logger = logging.getLogger(__name__)
 
 
 class _DatabaseAnalyticsMixin:
-    def get_statistics(self: DatabaseManager) -> Dict[str, int]:
+    def get_statistics(
+        self: DatabaseManager,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> Dict[str, int]:
         """Return top-level database statistics."""
-        conn = None
+        owns_connection = conn is None
+        active_conn = conn
         try:
-            conn = self.get_connection()
+            if active_conn is None:
+                active_conn = self.get_connection()
             stats = {}
-            stats["total"] = conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
-            stats["unread"] = conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()[0]
-            stats["bookmarked"] = conn.execute(
+            stats["total"] = active_conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
+            stats["unread"] = active_conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()[0]
+            stats["bookmarked"] = active_conn.execute(
                 "SELECT COUNT(*) FROM news WHERE is_bookmarked = 1"
             ).fetchone()[0]
-            stats["with_notes"] = conn.execute(
+            stats["with_notes"] = active_conn.execute(
                 "SELECT COUNT(*) FROM news WHERE notes IS NOT NULL AND notes != ''"
             ).fetchone()[0]
-            stats["duplicates"] = conn.execute(
+            stats["duplicates"] = active_conn.execute(
                 "SELECT COUNT(DISTINCT link) FROM news_keywords WHERE is_duplicate = 1"
             ).fetchone()[0]
             return stats
@@ -34,8 +40,8 @@ class _DatabaseAnalyticsMixin:
             logger.error("get_statistics failed: %s", e)
             raise self._new_query_error("get_statistics", e) from e
         finally:
-            if conn is not None:
-                self.return_connection(conn)
+            if owns_connection and active_conn is not None:
+                self.return_connection(active_conn)
 
     def get_top_publishers(
         self: DatabaseManager,
@@ -43,11 +49,14 @@ class _DatabaseAnalyticsMixin:
         limit: int = 10,
         exclude_words: Optional[List[str]] = None,
         query_key: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> List[Tuple[str, int]]:
         """Return publisher counts for all news or a specific tab scope."""
-        conn = None
+        owns_connection = conn is None
+        active_conn = conn
         try:
-            conn = self.get_connection()
+            if active_conn is None:
+                active_conn = self.get_connection()
             params: List[Any] = []
             if query_key:
                 query = """
@@ -89,11 +98,11 @@ class _DatabaseAnalyticsMixin:
                 LIMIT ?
             """
             params.append(limit)
-            cursor = conn.execute(query, params)
+            cursor = active_conn.execute(query, params)
             return [(str(row[0]), int(row[1])) for row in cursor.fetchall()]
         except Exception as e:
             logger.error("get_top_publishers failed: %s", e)
             raise self._new_query_error("get_top_publishers", e) from e
         finally:
-            if conn is not None:
-                self.return_connection(conn)
+            if owns_connection and active_conn is not None:
+                self.return_connection(active_conn)

@@ -83,6 +83,9 @@ class _DummyFetchMain:
     def _find_news_tab(self, keyword):
         return None
 
+    def _schedule_tab_hydration(self, _delay_ms=0):
+        return None
+
 
 class _DummyButton:
     def __init__(self):

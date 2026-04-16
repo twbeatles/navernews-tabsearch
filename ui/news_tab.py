@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from PyQt6.QtCore import QDate, Qt, QTimer, QUrl
+from PyQt6.QtCore import QDate, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QClipboard, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
@@ -27,7 +27,7 @@ from core.database import DatabaseManager
 from core.logging_setup import configure_logging
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.text_utils import TextUtils, parse_date_string, perf_timer
-from core.workers import AsyncJobWorker, DBQueryScope, DBWorker
+from core.workers import DBQueryScope, DBWorker, IterativeJobWorker
 from ui.dialogs import NoteDialog
 from ui.protocols import MainWindowProtocol
 from ui.styles import AppStyle, Colors
@@ -41,8 +41,18 @@ class NewsTab(QWidget):
 
     PAGE_SIZE = 50
     FILTER_DEBOUNCE_MS = 250
+    hydration_finished = pyqtSignal(str)
+    hydration_failed = pyqtSignal(str, str)
     
-    def __init__(self, keyword: str, db_manager: DatabaseManager, theme_mode: int = 0, parent=None):
+    def __init__(
+        self,
+        keyword: str,
+        db_manager: DatabaseManager,
+        theme_mode: int = 0,
+        parent=None,
+        *,
+        defer_initial_load: bool = False,
+    ):
         super().__init__(parent)
         self.keyword = keyword
         self.db = db_manager
@@ -84,17 +94,25 @@ class NewsTab(QWidget):
         self._maintenance_mode_active = False
         self._is_closing = False
         self._cleanup_started = False
+        self._initial_load_deferred = bool(defer_initial_load)
+        self._initial_load_inflight = False
+        self._initial_load_completed = False
+        self._initial_request_id: Optional[int] = None
+        self._cancelled_initial_request_ids: set[int] = set()
 
         # Async DB Worker
         self.worker: Optional[DBWorker] = None
-        self.job_worker: Optional[AsyncJobWorker] = None
+        self.job_worker: Optional[Any] = None
         self._mark_all_mode_label = "탭 전체"
         self._render_timer = QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._flush_render)
         
         self.setup_ui()
-        self.load_data_from_db()
+        if self._initial_load_deferred:
+            self.lbl_status.setText("⏳ 로딩 대기 중...")
+        else:
+            self.request_initial_hydration()
 
     @property
     def db_keyword(self):
@@ -333,6 +351,35 @@ class NewsTab(QWidget):
             return
         self.load_data_from_db(append=append)
 
+    def needs_initial_hydration(self) -> bool:
+        return not self._initial_load_completed
+
+    def is_initial_hydration_inflight(self) -> bool:
+        return bool(self._initial_load_inflight)
+
+    def request_initial_hydration(self) -> bool:
+        if self._is_closing or self._initial_load_completed or self._initial_load_inflight:
+            return False
+        self._initial_load_deferred = False
+        self.load_data_from_db()
+        return True
+
+    def cancel_initial_hydration(self, wait_ms: int = 300) -> bool:
+        request_id = self._initial_request_id
+        if not self._initial_load_inflight or request_id is None:
+            return True
+        self._cancelled_initial_request_ids.add(request_id)
+        self._initial_load_inflight = False
+        self._initial_request_id = None
+        if self.worker is None or not self.worker.isRunning():
+            self._finalize_cancelled_initial_request(request_id)
+            return True
+        self.worker.stop()
+        finished = self.worker.wait(max(50, int(wait_ms)))
+        if finished:
+            self._finalize_cancelled_initial_request(request_id)
+        return finished
+
     def set_maintenance_mode(self, active: bool) -> None:
         self._maintenance_mode_active = bool(active)
         if self._maintenance_mode_active and hasattr(self, "filter_timer"):
@@ -359,15 +406,23 @@ class NewsTab(QWidget):
         finished = True
 
         if self.worker is not None and self.worker.isRunning():
-            self._detach_worker_signals(self.worker, ("finished", "error"))
-            self.worker.stop()
-            remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
-            if not self.worker.wait(remaining_ms):
-                logger.warning("DBWorker maintenance wait timeout: %s", self.keyword)
-                finished = False
+            if self._initial_load_inflight and self._initial_request_id is not None:
+                remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
+                if not self.cancel_initial_hydration(wait_ms=remaining_ms):
+                    logger.warning("DBWorker maintenance wait timeout: %s", self.keyword)
+                    finished = False
+            else:
+                self._detach_worker_signals(self.worker, ("finished", "error"))
+                self.worker.stop()
+                remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
+                if not self.worker.wait(remaining_ms):
+                    logger.warning("DBWorker maintenance wait timeout: %s", self.keyword)
+                    finished = False
+                else:
+                    self._initial_load_inflight = False
 
         if self.job_worker is not None and self.job_worker.isRunning():
-            self._detach_worker_signals(self.job_worker, ("finished", "error"))
+            self._detach_worker_signals(self.job_worker, ("finished", "error", "cancelled", "progress"))
             try:
                 self.job_worker.stop()
             except Exception:
@@ -375,7 +430,7 @@ class NewsTab(QWidget):
                 self.job_worker.quit()
             remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
             if not self.job_worker.wait(remaining_ms):
-                logger.warning("AsyncJobWorker maintenance wait timeout: %s", self.keyword)
+                logger.warning("Job worker maintenance wait timeout: %s", self.keyword)
                 finished = False
 
         self._is_loading_more = False
@@ -398,6 +453,22 @@ class NewsTab(QWidget):
                 signal.disconnect()
             except Exception:
                 pass
+
+    def _finalize_cancelled_initial_request(self, request_id: Optional[int]) -> bool:
+        if request_id is None or request_id not in self._cancelled_initial_request_ids:
+            return False
+        self._cancelled_initial_request_ids.discard(request_id)
+        self._request_scope_signatures.pop(request_id, None)
+        self._pending_append_request_ids.discard(request_id)
+        if self._initial_request_id == request_id:
+            self._initial_request_id = None
+        self._initial_load_inflight = False
+        self._pending_scroll_restore = 0
+        self._is_loading_more = False
+        self.btn_load.setEnabled(True)
+        if not self._initial_load_completed:
+            self.lbl_status.setText("⏳ 로딩 대기 중...")
+        return True
 
     def _clipboard(self) -> QClipboard:
         clipboard = QApplication.clipboard()
@@ -868,14 +939,23 @@ class NewsTab(QWidget):
             return
         with perf_timer("ui.load_data_from_db", f"kw={self.keyword}|append={int(append)}"):
             if self.worker and self.worker.isRunning():
+                previous_request_id = self._load_request_id
                 self._detach_worker_signals(self.worker, ("finished", "error"))
                 self.worker.stop()
                 if not self.worker.wait(150):
                     logger.warning(f"DBWorker wait timeout: {self.keyword}")
+                else:
+                    self._initial_load_inflight = False
+                self._cancelled_initial_request_ids.discard(previous_request_id)
+                if self._initial_request_id == previous_request_id:
+                    self._initial_request_id = None
 
             if not append:
                 self._loaded_offset = 0
                 self._is_loading_more = False
+                if not self._initial_load_completed:
+                    self._initial_load_inflight = True
+                    self._initial_load_deferred = False
             elif self._is_loading_more:
                 return
 
@@ -888,6 +968,9 @@ class NewsTab(QWidget):
             else:
                 self._pending_append_request_ids.clear()
                 self._pending_scroll_restore = 0
+                if not self._initial_load_completed:
+                    self._initial_request_id = current_request_id
+                    self._cancelled_initial_request_ids.discard(current_request_id)
 
             self.lbl_status.setText("⏳ 데이터 로딩 중...")
             self.btn_load.setEnabled(False)
@@ -922,6 +1005,13 @@ class NewsTab(QWidget):
         unread_count: Optional[int] = None,
     ):
         """데이터 로드 완료 시 호출"""
+        if request_id is not None and self._finalize_cancelled_initial_request(request_id):
+            logger.info(
+                "PERF|ui.on_data_loaded.cancelled|0.00ms|kw=%s|rid=%s",
+                self.keyword,
+                request_id,
+            )
+            return
         if getattr(self, "_is_closing", False):
             if request_id is not None:
                 self._request_scope_signatures.pop(request_id, None)
@@ -933,6 +1023,7 @@ class NewsTab(QWidget):
             return
 
         with perf_timer("ui.on_data_loaded", f"kw={self.keyword}|rows={len(data)}"):
+            was_initial_hydration = not self._initial_load_completed
             scope_signature = None
             if request_id is not None:
                 scope_signature = self._request_scope_signatures.pop(request_id, None)
@@ -970,6 +1061,10 @@ class NewsTab(QWidget):
             self._last_render_signature = None
             self._is_loading_more = False
             self.btn_load.setEnabled(True)
+            if not is_append:
+                self._initial_request_id = None
+                self._initial_load_completed = True
+                self._initial_load_inflight = False
 
             if self.total_api_count <= 0 and self._total_filtered_count > self.total_api_count:
                 self.total_api_count = self._total_filtered_count
@@ -988,9 +1083,18 @@ class NewsTab(QWidget):
                 parent.sync_tab_load_more_state(self.keyword)
                 if not self.news_data_cache and not self.is_bookmark_tab:
                     parent.maybe_show_query_refresh_hint(self.keyword)
+            if was_initial_hydration and not is_append:
+                self.hydration_finished.emit(self.keyword)
 
     def on_data_error(self, err_msg, request_id: Optional[int] = None):
         """데이터 로드 오류 시 호출"""
+        if request_id is not None and self._finalize_cancelled_initial_request(request_id):
+            logger.info(
+                "PERF|ui.on_data_error.cancelled|0.00ms|kw=%s|rid=%s",
+                self.keyword,
+                request_id,
+            )
+            return
         if getattr(self, "_is_closing", False):
             if request_id is not None:
                 self._request_scope_signatures.pop(request_id, None)
@@ -1002,14 +1106,19 @@ class NewsTab(QWidget):
         if request_id is not None:
             self._pending_append_request_ids.discard(request_id)
             self._request_scope_signatures.pop(request_id, None)
+        was_initial_hydration = not self._initial_load_completed
         self._is_loading_more = False
         self._pending_scroll_restore = 0
+        self._initial_request_id = None
+        self._initial_load_inflight = False
         self.lbl_status.setText(f"⚠️ 오류: {err_msg}")
         self.btn_load.setEnabled(True)
         parent = self._main_window()
         if parent is not None:
             parent.sync_tab_load_more_state(self.keyword)
             parent.show_warning_toast(f"'{self.keyword}' DB 조회에 실패했습니다.")
+        if was_initial_hydration:
+            self.hydration_failed.emit(self.keyword, str(err_msg))
 
     def apply_filter(self):
         """필터 변경 시 DB 기반으로 첫 페이지부터 다시 조회한다."""
@@ -1458,6 +1567,7 @@ class NewsTab(QWidget):
         self.lbl_status.setText("⏳ 처리 중...")
         self.btn_read_all.setEnabled(False)
         start_date, end_date = self._current_date_range()
+        job_kwargs: Dict[str, Any]
 
         if clicked == btn_visible_only:
             if self._total_filtered_count <= 0:
@@ -1469,33 +1579,51 @@ class NewsTab(QWidget):
                 return
 
             self._mark_all_mode_label = "현재 표시 결과"
-            self.job_worker = AsyncJobWorker(
-                self.db.mark_query_as_read,
-                self.db_keyword,
-                self.exclude_words,
-                self.is_bookmark_tab,
-                self._current_filter_text(),
-                self.chk_hide_dup.isChecked(),
-                start_date,
-                end_date,
-                query_key=self.query_key,
-            )
+            job_kwargs = {
+                "keyword": self.db_keyword,
+                "exclude_words": self.exclude_words,
+                "only_bookmark": self.is_bookmark_tab,
+                "filter_txt": self._current_filter_text(),
+                "hide_duplicates": self.chk_hide_dup.isChecked(),
+                "start_date": start_date,
+                "end_date": end_date,
+                "query_key": self.query_key,
+            }
         else:
             self._mark_all_mode_label = "탭 전체"
-            self.job_worker = AsyncJobWorker(
-                self.db.mark_query_as_read,
-                self.db_keyword,
-                self.exclude_words,
-                self.is_bookmark_tab,
-                "",
-                False,
-                None,
-                None,
-                query_key=self.query_key,
+            job_kwargs = {
+                "keyword": self.db_keyword,
+                "exclude_words": self.exclude_words,
+                "only_bookmark": self.is_bookmark_tab,
+                "filter_txt": "",
+                "hide_duplicates": False,
+                "start_date": None,
+                "end_date": None,
+                "query_key": self.query_key,
+            }
+
+        def job_func(context) -> int:
+            def report_progress(current: int, total: int) -> None:
+                context.check_cancelled()
+                context.report(
+                    current=current,
+                    total=total,
+                    message="읽음 상태 반영 중...",
+                )
+
+            return int(
+                self.db.mark_query_as_read_chunked(
+                    chunk_size=200,
+                    progress_callback=report_progress,
+                    cancel_check=context.check_cancelled,
+                    **job_kwargs,
+                )
             )
 
+        self.job_worker = IterativeJobWorker(job_func, parent=None)
         self.job_worker.finished.connect(self._on_mark_all_read_done)
         self.job_worker.error.connect(self._on_mark_all_read_error)
+        self.job_worker.cancelled.connect(self._on_mark_all_read_cancelled)
         self.job_worker.start()
              
     def _on_mark_all_read_done(self, count):
@@ -1518,6 +1646,12 @@ class NewsTab(QWidget):
         self.btn_read_all.setEnabled(True)
         self.lbl_status.setText("오류 발생")
         QMessageBox.critical(self, "오류", f"처리 중 오류가 발생했습니다:\n\n{err_msg}")
+
+    def _on_mark_all_read_cancelled(self):
+        if getattr(self, "_is_closing", False):
+            return
+        self.btn_read_all.setEnabled(True)
+        self.lbl_status.setText("읽음 처리 작업이 취소되었습니다.")
 
     def update_timestamp(self):
         """업데이트 시간 갱신"""
@@ -1578,8 +1712,10 @@ class NewsTab(QWidget):
             self._render_timer.stop()
         self._request_scope_signatures.clear()
         self._pending_append_request_ids.clear()
+        self._cancelled_initial_request_ids.clear()
         self._pending_scroll_restore = 0
         self._render_scheduled = False
+        self._initial_request_id = None
         
         # DB 워커 정리
         if hasattr(self, 'worker') and self.worker:
@@ -1596,7 +1732,7 @@ class NewsTab(QWidget):
         
         # Job 워커 정리
         if hasattr(self, 'job_worker') and self.job_worker:
-            self._detach_worker_signals(self.job_worker, ("finished", "error"))
+            self._detach_worker_signals(self.job_worker, ("finished", "error", "cancelled", "progress"))
             try:
                 if self.job_worker.isRunning():
                     try:
@@ -1614,14 +1750,14 @@ class NewsTab(QWidget):
                             self.job_worker.finished.connect(self.job_worker.deleteLater)
                         except Exception:
                             pass
-                        logger.warning("AsyncJobWorker cleanup wait timeout: %s", self.keyword)
+                        logger.warning("Job worker cleanup wait timeout: %s", self.keyword)
                 else:
                     try:
                         self.job_worker.deleteLater()
                     except Exception:
                         pass
             except Exception as e:
-                logger.warning("AsyncJobWorker cleanup failed (%s): %s", self.keyword, e)
+                logger.warning("Job worker cleanup failed (%s): %s", self.keyword, e)
             finally:
                 self.job_worker = None
         

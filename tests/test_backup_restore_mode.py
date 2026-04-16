@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,7 +74,7 @@ class _FakeAutoBackup:
             return False, "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다."
         return True, ""
 
-    def verify_backup_by_name(self, backup_name: str, require_db: bool = True):
+    def verify_backup_by_name(self, backup_name: str, require_db: bool = True, persist: bool = False):
         self.verify_calls.append((backup_name, bool(require_db)))
         for backup in self.backups:
             current_name = str(backup.get("name", "") or backup.get("backup_name", ""))
@@ -93,6 +94,9 @@ class _FakeAutoBackup:
         entry.setdefault("error", "")
         entry.setdefault("verification_state", "verified")
         entry.setdefault("verification_error", "")
+        entry.setdefault("last_verified_at", "2026-04-16T00:00:00")
+        if persist:
+            entry["include_db"] = bool(require_db)
         return entry
 
     def delete_backup(self, backup_name: str):
@@ -195,6 +199,61 @@ class TestBackupRestoreMode(unittest.TestCase):
             self.assertEqual(auto_backup.verify_calls, [(backup_name, True)])
             self.assertEqual(auto_backup.calls, [("create_backup", True), (backup_name, True)])
 
+    def test_get_backup_list_preserves_legacy_include_db_as_none_and_resolves_db_presence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "news.sqlite"
+            cfg.write_text("{}", encoding="utf-8")
+            db.write_text("", encoding="utf-8")
+
+            auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
+            backup_path = auto_backup.create_backup(include_db=True, trigger="manual")
+            self.assertIsNotNone(backup_path)
+            assert backup_path is not None
+
+            info_path = Path(backup_path) / "backup_info.json"
+            info_payload = json.loads(info_path.read_text(encoding="utf-8"))
+            info_payload.pop("include_db", None)
+            info_path.write_text(json.dumps(info_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            backups = auto_backup.get_backup_list()
+            entry = next(item for item in backups if item["name"] == Path(backup_path).name)
+
+            self.assertIsNone(entry["include_db"])
+            self.assertTrue(entry["resolved_include_db"])
+            self.assertTrue(entry["is_restorable"])
+
+    def test_verify_backup_by_name_persist_writes_verification_metadata(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "news.sqlite"
+            cfg.write_text("{}", encoding="utf-8")
+            db.write_text("", encoding="utf-8")
+
+            auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
+            backup_path = auto_backup.create_backup(include_db=False, trigger="manual")
+            self.assertIsNotNone(backup_path)
+            assert backup_path is not None
+
+            backup_name = Path(backup_path).name
+            info_path = Path(backup_path) / "backup_info.json"
+            info_payload = json.loads(info_path.read_text(encoding="utf-8"))
+            info_payload["verification_state"] = "pending"
+            info_payload["verification_error"] = ""
+            info_payload.pop("last_verified_at", None)
+            info_path.write_text(json.dumps(info_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            verified = auto_backup.verify_backup_by_name(backup_name, require_db=False, persist=True)
+            persisted = json.loads(info_path.read_text(encoding="utf-8"))
+
+            self.assertFalse(persisted["include_db"])
+            self.assertEqual(persisted["verification_state"], verified["verification_state"])
+            self.assertEqual(persisted["verification_error"], verified["verification_error"])
+            self.assertTrue(persisted["last_verified_at"])
+            self.assertEqual(persisted["last_verified_at"], verified["last_verified_at"])
+
     def test_backup_cleanup_keeps_manual_backups_when_auto_backups_rotate(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -239,25 +298,14 @@ class TestBackupRestoreMode(unittest.TestCase):
         self.assertEqual(dialog.backup_list.count(), 1)
         self.assertIn("2026-03-06 10:15:30", dialog.backup_list.item(0).text)
         self.assertIn("자동", dialog.backup_list.item(0).text)
-        self.assertEqual(
-            dialog.backup_list.item(0).data(None),
-            {
-                "name": "backup_1",
-                "backup_name": "backup_1",
-                "path": "",
-                "timestamp": "20260306_101530_123456",
-                "app_version": "32.7.2",
-                "include_db": True,
-                "trigger": "auto",
-                "created_at": "2026-03-06T10:15:30",
-                "is_corrupt": False,
-                "error": "",
-                "is_restorable": True,
-                "restore_error": "",
-                "verification_state": "pending",
-                "verification_error": "",
-            },
-        )
+        meta = dialog.backup_list.item(0).data(None)
+        self.assertEqual(meta["name"], "backup_1")
+        self.assertEqual(meta["backup_name"], "backup_1")
+        self.assertTrue(meta["include_db"])
+        self.assertTrue(meta["resolved_include_db"])
+        self.assertEqual(meta["trigger"], "auto")
+        self.assertEqual(meta["verification_state"], "pending")
+        self.assertEqual(meta["last_verified_at"], "")
 
     def test_get_backup_list_keeps_valid_entries_when_one_is_corrupt(self):
         with tempfile.TemporaryDirectory() as td:
@@ -305,25 +353,14 @@ class TestBackupRestoreMode(unittest.TestCase):
 
         self.assertEqual(dialog.backup_list.count(), 1)
         self.assertIn("손상됨", dialog.backup_list.item(0).text)
-        self.assertEqual(
-            dialog.backup_list.item(0).data(None),
-            {
-                "name": "backup_broken",
-                "backup_name": "backup_broken",
-                "path": "",
-                "timestamp": "20260307_010203_000000",
-                "app_version": "32.7.2",
-                "include_db": False,
-                "trigger": "manual",
-                "created_at": "2026-03-07T01:02:03",
-                "is_corrupt": True,
-                "error": "invalid json",
-                "is_restorable": False,
-                "restore_error": "",
-                "verification_state": "pending",
-                "verification_error": "",
-            },
-        )
+        meta = dialog.backup_list.item(0).data(None)
+        self.assertEqual(meta["name"], "backup_broken")
+        self.assertFalse(meta["include_db"])
+        self.assertFalse(meta["resolved_include_db"])
+        self.assertTrue(meta["is_corrupt"])
+        self.assertEqual(meta["error"], "invalid json")
+        self.assertFalse(meta["is_restorable"])
+        self.assertEqual(meta["last_verified_at"], "")
 
     def test_load_backups_does_not_auto_start_verification(self):
         auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")

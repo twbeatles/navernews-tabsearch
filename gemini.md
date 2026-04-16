@@ -37,7 +37,7 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session capability Protocol
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
 │   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
@@ -85,11 +85,21 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `209 passed, 5 subtests passed`
-- `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
-- 원인 메모: `PyQt6`/`requests` import source 미해결과 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈가 같이 남아 있다.
+- `python -m pytest -q` => `228 passed, 5 subtests passed`
+- `pyright` => 로컬 환경 기준 `74 errors, 5 warnings, 0 informations`
+- 원인 메모: `PyQt6`/`requests` import source 미해결과 `core/bootstrap.py`, `ui/settings_dialog.py`, `ui/_settings_dialog_tasks.py`, 일부 테스트 더미의 optional/member 타입 이슈가 같이 남아 있다.
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-13 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-16 기준 다시 성공했다.
+
+### 2026-04-16 Follow-up Risk Fixes + Docs/Spec Revalidation
+
+- `ApiWorker`는 `500/502/503/504` 등 `5xx`를 재시도 경로로 편입하고, 최종 실패 시 `retryable=True`인 `http_error` 메타를 유지한다.
+- `NewsTab` 초기 hydration은 request-id 취소 + late cleanup으로 hardened 되었고, 시작 시 북마크/현재 탭만 즉시 로드하며 나머지 탭은 순차 hydration queue로 처리한다.
+- 설정 import는 `stage -> persist -> apply-runtime -> startup reconcile` 순서로 재구성되어 부분 적용된 runtime 상태를 남기지 않는다.
+- backup metadata는 legacy `include_db` 누락을 실제 payload 존재 여부로 보정하고, 수동 검증/복원 직전 검증은 `last_verified_at`을 포함한 verification 메타를 `backup_info.json`에 저장한다.
+- `show_statistics()`와 `show_stats_analysis()`는 이제 `InterruptibleReadWorker` 기반 비동기 로드로 전환되었고, 다이얼로그 종료 시 SQLite read interruption을 요청한다.
+- startup FTS backfill은 dedicated retry scheduler로 `5s -> 15s -> 30s cap` backoff를 사용하며 maintenance/fetch/shutdown 경계에서 pause/resume 된다.
+- `news_scraper_pro.spec`와 `.gitignore`를 다시 검토했고, 이번 패스에서도 추가 packaging/ignore 수정은 필요하지 않았다.
 
 ### 2026-04-13 Implementation Risk Plan Closure
 

@@ -110,6 +110,9 @@ class _MainWindowFetchMixin:
         self._total_refresh_count = len(prepared_keywords)
         self._sequential_added_count = 0
         self._sequential_dup_count = 0
+        pause_fts_backfill = getattr(self, "_pause_fts_backfill", None)
+        if callable(pause_fts_backfill):
+            pause_fts_backfill(retry_delay_ms=1000)
 
         self.progress.setVisible(True)
         self.progress.setRange(0, self._total_refresh_count)
@@ -318,6 +321,10 @@ class _MainWindowFetchMixin:
             )
 
         self.apply_refresh_interval()
+        request_fts_backfill_resume = getattr(self, "_request_fts_backfill_resume", None)
+        if callable(request_fts_backfill_resume):
+            request_fts_backfill_resume(delay_ms=250)
+        self._schedule_tab_hydration(50)
 
     def _next_worker_request_id(self: MainApp) -> int:
         self._worker_request_seq += 1
@@ -607,6 +614,7 @@ class _MainWindowFetchMixin:
             self._network_error_count = 0
             self._network_available = True
             self.update_tab_badge(keyword)
+            self._schedule_tab_hydration(50)
         except Exception as e:
             logger.error("on_fetch_done failed: %s", e)
             traceback.print_exc()
@@ -616,6 +624,7 @@ class _MainWindowFetchMixin:
                 self.btn_refresh.setEnabled(True)
             else:
                 self._on_sequential_fetch_done(keyword)
+            self._schedule_tab_hydration(50)
 
     def on_fetch_error(
         self: MainApp,
@@ -686,6 +695,7 @@ class _MainWindowFetchMixin:
             )
         else:
             self._network_error_count = 0
+        self._schedule_tab_hydration(50)
 
     def cleanup_worker(
         self: MainApp,
@@ -744,6 +754,7 @@ class _MainWindowFetchMixin:
             self.workers.pop(handle.tab_keyword, None)
             self._request_start_index.pop(request_id, None)
             logger.info("Worker cleaned up: %s (rid=%s)", handle.tab_keyword, request_id)
+            self._schedule_tab_hydration(25)
             return finished
         except Exception as e:
             logger.error("cleanup_worker failed (keyword=%s, rid=%s): %s", keyword, request_id, e)

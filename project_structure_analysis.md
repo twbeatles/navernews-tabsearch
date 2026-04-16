@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-13)
+작성일: 2026-03-16 (최근 갱신: 2026-04-16)
 
 ## 분석 범위
 
@@ -16,6 +16,20 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-04-16 구현 리스크 후속/문서 정합화 재검증
+
+이번 재검증에서는 2026-04-16 follow-up risk fixes 배치와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- `core.workers.ApiWorker`는 `500/502/503/504` 등 `5xx`를 재시도 경로로 편입하고, 최종 실패 시에도 `last_error_meta(kind=http_error, retryable=True)`를 유지한다.
+- `ui.news_tab.NewsTab`의 초기 hydration은 request-id 취소 + late cleanup 방식으로 강화되었고, 시작 시 북마크/현재 탭만 즉시 로드한 뒤 나머지 뉴스 탭은 순차 hydration queue로 읽어들인다.
+- `ui._main_window_settings_io.py`의 설정 import는 `stage -> persist -> apply-runtime -> startup reconcile` 순서로 재구성되어, 중간 실패 시 부분 적용된 UI/runtime 상태를 남기지 않는다.
+- `core.backup.AutoBackup`은 legacy `include_db` 누락을 tri-state로 읽고 실제 payload 파일로 복원 범위를 자동 판정하며, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 저장한다.
+- 통계/언론사 분석은 `AsyncJobWorker`가 아니라 `InterruptibleReadWorker` 기반 비동기 로드로 전환되었고, 다이얼로그 종료 시 SQLite read interruption을 함께 요청한다.
+- startup FTS backfill은 dedicated retry scheduler로 `5초 -> 15초 -> 30초 cap` backoff를 사용하며 유지보수/전체 fetch/순차 refresh/종료 경계에서 pause/resume 된다.
+- `news_scraper_pro.spec`는 2026-04-16 기준 다시 재검토되었고, 이번 패스의 hydration late-cleanup, staged import atomicity, backup metadata compatibility/persistence, interruptible analysis read, FTS retry scheduler는 기존 번들 의존성만 사용하므로 hidden import/exclude/data 추가 수정이 필요하지 않았다.
+- `.gitignore`는 빌드 직후 `git status --ignored` 기준으로 다시 확인했으며, `build/`, `dist/`, `.pytest_tmp/`, 로그/캐시 산출물을 계속 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `228 passed, 5 subtests passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이며, `pyright`는 로컬 환경에서 `PyQt6`/`requests` import source 미해결과 일부 optional/member 타입 이슈 때문에 `74 errors, 5 warnings, 0 informations` 상태다.
 
 ## 0. 2026-04-13 구현 리스크 후속 정합화 / 문서 재검증
 
@@ -251,7 +265,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `core/_db_mutations.py` | upsert, 상태 변경, 삭제, mark-read |
 | `core/_db_analytics.py` | 통계, 언론사별 집계 |
 | `core/http_client.py` | 중앙 HTTP 설정, session factory |
-| `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker`, `IterativeJobWorker`, `DBQueryScope` |
+| `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker`, `IterativeJobWorker`, `InterruptibleReadWorker`, `DBQueryScope` |
 | `core/worker_registry.py` | 요청 ID 기반 워커 활성 상태 관리 |
 | `core/query_parser.py` | 검색어 파싱 정책의 단일 기준 |
 | `core/backup.py` | 백업 생성, 검증, 복원 예약, pending restore staging/rollback |
@@ -381,7 +395,9 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 |---|---|
 | `ApiWorker(QObject)` | 외부 API 호출 + DB 저장 |
 | `DBWorker(QThread)` | DB 조회 전용 |
-| `AsyncJobWorker(QThread)` | 단발성 작업(API 검증, 데이터 정리 등) |
+| `AsyncJobWorker(QThread)` | 가벼운 단발성 작업(API 검증 등) |
+| `IterativeJobWorker(QThread)` | 취소 가능한 반복형 장시간 작업(CSV export, 탭 전체 읽음, DB 유지보수 등) |
+| `InterruptibleReadWorker(QThread)` | SQLite read interruption을 지원하는 분석/집계 전용 워커 |
 | `WorkerRegistry` | 탭별 활성 요청 추적, stale callback 차단 |
 | `DatabaseManager` | WAL + 연결 풀 + busy timeout |
 
@@ -516,7 +532,9 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 추천 진입점:
 
-- 단발성: `AsyncJobWorker`
+- 단발성: `AsyncJobWorker` (가벼운 검증/단건 job)
+- 장시간 반복형: `IterativeJobWorker`
+- 조회 전용 + close/cancel 친화: `InterruptibleReadWorker`
 - API/네트워크성: `ApiWorker` 패턴 복제 또는 분리
 - 조회 전용: `DBWorker`
 

@@ -52,7 +52,7 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session Protocol 계약
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
 │   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
@@ -126,11 +126,28 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `209 passed, 5 subtests passed`
-- `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
-  - 핵심 원인: `PyQt6`/`requests` import source 미해결 + 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈
+- `python -m pytest -q` => `228 passed, 5 subtests passed`
+- `pyright` => 로컬 환경 기준 `74 errors, 5 warnings, 0 informations`
+  - 핵심 원인: `PyQt6`/`requests` import source 미해결 + `core/bootstrap.py`, `ui/settings_dialog.py`, `ui/_settings_dialog_tasks.py`, 일부 테스트 더미의 optional/member 타입 이슈
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-13 기준 다시 성공했다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-16 기준 다시 성공했다.
+
+---
+
+## 🚀 2026-04-16 Follow-up Risk Fixes + Docs/Spec Revalidation
+
+- Fetch / hydration / long-task correctness:
+  - `ApiWorker`는 `500/502/503/504` 등 `5xx`를 재시도 경로로 편입하고, 최종 실패 시에도 `retryable=True`인 `http_error` 메타를 유지한다.
+  - `NewsTab` 초기 hydration은 request-id 취소 + late cleanup으로 hardened 되었고, 현재 탭 우선/나머지 순차 hydration queue가 maintenance, sequential refresh, shutdown 경계에서 멈추고 다시 이어진다.
+  - `모두 읽음`, 오래된 기사 삭제, 전체 기사 삭제는 chunked `IterativeJobWorker` 경로로 이동해 `stop()`이 실제로 작업 중단에 반영된다.
+- Import / backup / analysis / FTS:
+  - 설정 import는 `stage -> persist -> apply-runtime -> startup reconcile` 순서로 재구성돼 부분 적용된 UI/runtime 상태를 남기지 않는다.
+  - backup metadata는 legacy `include_db` 누락을 tri-state로 읽고 실제 payload 파일로 보정하며, 수동 검증/복원 직전 검증은 `last_verified_at`을 포함한 verification/restorable 메타를 `backup_info.json`에 저장한다.
+  - 통계/언론사 분석은 `InterruptibleReadWorker`로 로드되고, 다이얼로그 종료 시 SQLite read interruption을 같이 요청한다.
+  - startup FTS backfill은 dedicated retry scheduler로 `5s -> 15s -> 30s cap` backoff를 사용하며 maintenance/fetch 경계에서 pause/resume 된다.
+- Docs / packaging / repo hygiene:
+  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`를 현재 구현/검증선으로 다시 동기화했다.
+  - `.gitignore`는 빌드 후 `git status --ignored` 기준으로 다시 확인했으며, 기존 규칙이 `build/`, `dist/`, `.pytest_tmp/`, 로그/캐시 산출물을 계속 충분히 덮고 있어 추가 규칙이 필요하지 않았다.
 
 ---
 
@@ -273,6 +290,7 @@ navernews-tabsearch/
 | `DBWorker` | `DBQueryScope`를 소비하는 DB 조회 전용 워커 스레드 | `core/workers.py` |
 | `AsyncJobWorker` | 단발성 비동기 작업 워커 | `core/workers.py` |
 | `IterativeJobWorker` | 취소 가능한 반복형 장시간 작업 워커 | `core/workers.py` |
+| `InterruptibleReadWorker` | SQLite read interruption을 지원하는 분석/집계 전용 워커 | `core/workers.py` |
 | `DBQueryScope` | 탭 조회 scope를 정규화한 내부 dataclass | `core/workers.py` |
 | `WorkerRegistry` | 요청 ID 기반 워커 레지스트리 | `core/worker_registry.py` |
 | `WorkerHandle` | 워커 핸들 데이터클래스 | `core/worker_registry.py` |

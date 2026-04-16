@@ -7,12 +7,13 @@ import logging
 import os
 import tempfile
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QTimer
 
-from core.config_store import normalize_import_settings
-from core.constants import VERSION
+from core.config_store import AppConfig, encode_client_secret_for_storage, normalize_import_settings, save_primary_config_file
+from core.constants import CONFIG_FILE, VERSION
+from core.keyword_groups import merge_keyword_groups
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker
 from ui.dialog_adapters import get_dialog_adapter
@@ -222,10 +223,14 @@ class _MainWindowSettingsIOMixin:
             return
         try:
             for _index, widget in self._iter_news_tabs():
+                if widget.needs_initial_hydration():
+                    self._enqueue_tab_hydration(widget.keyword, prioritize=False)
+                    continue
                 widget.load_data_from_db()
             self._schedule_badge_refresh(delay_ms=0)
             self.update_tray_tooltip()
             QTimer.singleShot(300, self.update_tray_tooltip)
+            self._schedule_tab_hydration(25)
             logger.info(
                 "UI sync completed after DB maintenance: op=%s, count=%s",
                 operation,
@@ -442,6 +447,408 @@ class _MainWindowSettingsIOMixin:
             return None
         return parsed
 
+    def _config_path_for_persistence(self: MainApp) -> str:
+        group_manager = getattr(self, "keyword_group_manager", None)
+        config_path = getattr(group_manager, "config_file", None)
+        if isinstance(config_path, str) and config_path.strip():
+            return config_path
+        return CONFIG_FILE
+
+    def _build_runtime_config_payload(
+        self: MainApp,
+        *,
+        app_settings_overrides: Optional[Dict[str, Any]] = None,
+        tab_keywords: Optional[List[str]] = None,
+        search_history: Optional[List[str]] = None,
+        keyword_groups: Optional[Dict[str, List[str]]] = None,
+        pagination_state: Optional[Dict[str, int]] = None,
+        pagination_totals: Optional[Dict[str, int]] = None,
+        window_geometry: Optional[Dict[str, int]] = None,
+    ) -> AppConfig:
+        app_settings_overrides = dict(app_settings_overrides or {})
+        client_id = str(getattr(self, "client_id", "") or "")
+        client_secret = str(getattr(self, "client_secret", "") or "")
+
+        def _safe_int_attr(attr_name: str, fallback: int) -> int:
+            value = getattr(self, attr_name, None)
+            if callable(value):
+                try:
+                    return int(value())
+                except Exception:
+                    return fallback
+            try:
+                return int(value)
+            except Exception:
+                return fallback
+
+        geometry = window_geometry or {
+            "x": _safe_int_attr("x", 100),
+            "y": _safe_int_attr("y", 100),
+            "width": _safe_int_attr("width", 1100),
+            "height": _safe_int_attr("height", 850),
+        }
+        secret_payload = encode_client_secret_for_storage(client_secret)
+        tabs_payload = (
+            list(tab_keywords)
+            if tab_keywords is not None
+            else [tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)]
+        )
+        history_payload = (
+            list(search_history)
+            if search_history is not None
+            else [str(item) for item in self.search_history if isinstance(item, str)]
+        )
+        groups_payload = (
+            dict(keyword_groups)
+            if keyword_groups is not None
+            else dict(getattr(self.keyword_group_manager, "groups", {}))
+        )
+        pagination_state_payload = (
+            {
+                str(fetch_key): max(1, min(1000, int(start_idx)))
+                for fetch_key, start_idx in pagination_state.items()
+                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+            }
+            if pagination_state is not None
+            else {
+                str(fetch_key): max(1, min(1000, int(start_idx)))
+                for fetch_key, start_idx in self._fetch_cursor_by_key.items()
+                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+            }
+        )
+        pagination_totals_payload = (
+            {
+                str(fetch_key): int(total)
+                for fetch_key, total in pagination_totals.items()
+                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
+            }
+            if pagination_totals is not None
+            else {
+                str(fetch_key): int(total)
+                for fetch_key, total in self._fetch_total_by_key.items()
+                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
+            }
+        )
+        return {
+            "app_settings": {
+                "client_id": str(app_settings_overrides.get("client_id", client_id)),
+                "client_secret": str(
+                    app_settings_overrides.get("client_secret", secret_payload.get("client_secret", ""))
+                ),
+                "client_secret_enc": str(
+                    app_settings_overrides.get("client_secret_enc", secret_payload.get("client_secret_enc", ""))
+                ),
+                "client_secret_storage": str(
+                    app_settings_overrides.get(
+                        "client_secret_storage",
+                        secret_payload.get("client_secret_storage", "plain"),
+                    )
+                ),
+                "theme_index": int(app_settings_overrides.get("theme_index", self.theme_idx)),
+                "refresh_interval_index": int(
+                    app_settings_overrides.get("refresh_interval_index", self.interval_idx)
+                ),
+                "notification_enabled": bool(
+                    app_settings_overrides.get("notification_enabled", self.notification_enabled)
+                ),
+                "alert_keywords": list(app_settings_overrides.get("alert_keywords", self.alert_keywords)),
+                "sound_enabled": bool(app_settings_overrides.get("sound_enabled", self.sound_enabled)),
+                "minimize_to_tray": bool(
+                    app_settings_overrides.get("minimize_to_tray", self.minimize_to_tray)
+                ),
+                "close_to_tray": bool(app_settings_overrides.get("close_to_tray", self.close_to_tray)),
+                "start_minimized": bool(
+                    app_settings_overrides.get("start_minimized", self.start_minimized)
+                ),
+                "auto_start_enabled": bool(
+                    app_settings_overrides.get("auto_start_enabled", self.auto_start_enabled)
+                ),
+                "notify_on_refresh": bool(
+                    app_settings_overrides.get("notify_on_refresh", self.notify_on_refresh)
+                ),
+                "api_timeout": int(app_settings_overrides.get("api_timeout", self.api_timeout)),
+                "window_geometry": {
+                    "x": int(geometry["x"]),
+                    "y": int(geometry["y"]),
+                    "width": int(geometry["width"]),
+                    "height": int(geometry["height"]),
+                },
+            },
+            "tabs": tabs_payload,
+            "search_history": history_payload,
+            "keyword_groups": groups_payload,
+            "pagination_state": pagination_state_payload,
+            "pagination_totals": pagination_totals_payload,
+        }
+
+    def _compute_imported_new_tabs(
+        self: MainApp,
+        imported_tabs: Any,
+    ) -> Tuple[List[str], int]:
+        existing_fetch_keys = {
+            self._canonical_fetch_key_for_keyword(tab.keyword)
+            for _index, tab in self._iter_news_tabs(start_index=1)
+            if self._canonical_fetch_key_for_keyword(tab.keyword)
+        }
+        imported_new_keywords: List[str] = []
+        skipped_invalid_tabs = 0
+        for keyword in imported_tabs if isinstance(imported_tabs, list) else []:
+            normalized_keyword = self._normalize_tab_keyword(keyword.strip()) if isinstance(keyword, str) else None
+            normalized_fetch_key = (
+                self._canonical_fetch_key_for_keyword(normalized_keyword)
+                if normalized_keyword
+                else ""
+            )
+            if normalized_keyword and normalized_fetch_key and normalized_fetch_key not in existing_fetch_keys:
+                existing_fetch_keys.add(normalized_fetch_key)
+                imported_new_keywords.append(normalized_keyword)
+            elif not normalized_keyword:
+                skipped_invalid_tabs += 1
+        return imported_new_keywords, skipped_invalid_tabs
+
+    def _merge_imported_keyword_groups(
+        self: MainApp,
+        imported_groups: Any,
+    ) -> Dict[str, List[str]]:
+        group_manager = self.keyword_group_manager
+        normalize_groups = getattr(group_manager, "_normalize_groups", None)
+        existing_groups = dict(getattr(group_manager, "groups", {}))
+        if callable(normalize_groups):
+            normalized_existing = normalize_groups(existing_groups)
+            normalized_incoming = normalize_groups(imported_groups if isinstance(imported_groups, dict) else {})
+        else:
+            normalized_existing = existing_groups
+            normalized_incoming = imported_groups if isinstance(imported_groups, dict) else {}
+        return merge_keyword_groups(normalized_existing, normalized_incoming)
+
+    def _snapshot_runtime_state_for_import(self: MainApp) -> Dict[str, Any]:
+        config_payload = self._build_runtime_config_payload()
+        return {
+            "theme_idx": self.theme_idx,
+            "interval_idx": self.interval_idx,
+            "notification_enabled": self.notification_enabled,
+            "alert_keywords": list(self.alert_keywords),
+            "sound_enabled": self.sound_enabled,
+            "minimize_to_tray": self.minimize_to_tray,
+            "close_to_tray": self.close_to_tray,
+            "start_minimized": self.start_minimized,
+            "auto_start_enabled": self.auto_start_enabled,
+            "notify_on_refresh": self.notify_on_refresh,
+            "api_timeout": self.api_timeout,
+            "search_history": list(self.search_history),
+            "fetch_cursor_by_key": dict(self._fetch_cursor_by_key),
+            "fetch_total_by_key": dict(self._fetch_total_by_key),
+            "saved_geometry": self._saved_geometry,
+            "window_geometry": dict(config_payload["app_settings"]["window_geometry"]),
+            "keyword_groups": dict(getattr(self.keyword_group_manager, "groups", {})),
+            "config_payload": config_payload,
+        }
+
+    def _remove_imported_tab_for_rollback(self: MainApp, keyword: str) -> None:
+        locate_tab = getattr(self, "_find_news_tab", None)
+        located_tab = locate_tab(str(keyword or "").strip()) if callable(locate_tab) else None
+        if located_tab is None:
+            tabs_list = getattr(self, "_tabs", None)
+            if isinstance(tabs_list, list):
+                setattr(
+                    self,
+                    "_tabs",
+                    [tab for tab in tabs_list if str(getattr(tab, "keyword", "")) != str(keyword or "").strip()],
+                )
+            return
+        index, widget = located_tab
+        try:
+            widget.cleanup()
+        except Exception:
+            pass
+        try:
+            widget.deleteLater()
+        except Exception:
+            pass
+        tabs_widget = getattr(self, "tabs", None)
+        if tabs_widget is not None and hasattr(tabs_widget, "removeTab"):
+            tabs_widget.removeTab(index)
+        else:
+            tabs_list = getattr(self, "_tabs", None)
+            if isinstance(tabs_list, list) and 0 <= index < len(tabs_list):
+                tabs_list.pop(index)
+        remove_tab_hydration = getattr(self, "_remove_tab_hydration", None)
+        if callable(remove_tab_hydration):
+            remove_tab_hydration(keyword)
+        tab_fetch_state = getattr(self, "_tab_fetch_state", None)
+        if isinstance(tab_fetch_state, dict):
+            tab_fetch_state.pop(keyword, None)
+        removed_fetch_key = self._canonical_fetch_key_for_keyword(keyword)
+        prune_fetch_key_state = getattr(self, "_prune_fetch_key_state", None)
+        if callable(prune_fetch_key_state):
+            prune_fetch_key_state(removed_fetch_key)
+
+    def _rollback_import_runtime_state(
+        self: MainApp,
+        runtime_snapshot: Dict[str, Any],
+        added_keywords: List[str],
+    ) -> None:
+        for keyword in reversed(added_keywords):
+            self._remove_imported_tab_for_rollback(keyword)
+        self.theme_idx = int(runtime_snapshot["theme_idx"])
+        self.interval_idx = int(runtime_snapshot["interval_idx"])
+        self.notification_enabled = bool(runtime_snapshot["notification_enabled"])
+        self.alert_keywords = list(runtime_snapshot["alert_keywords"])
+        self.sound_enabled = bool(runtime_snapshot["sound_enabled"])
+        self.minimize_to_tray = bool(runtime_snapshot["minimize_to_tray"])
+        self.close_to_tray = bool(runtime_snapshot["close_to_tray"])
+        self.start_minimized = bool(runtime_snapshot["start_minimized"])
+        self.auto_start_enabled = bool(runtime_snapshot["auto_start_enabled"])
+        self.notify_on_refresh = bool(runtime_snapshot["notify_on_refresh"])
+        self.api_timeout = int(runtime_snapshot["api_timeout"])
+        self.search_history = list(runtime_snapshot["search_history"])
+        self._fetch_cursor_by_key = dict(runtime_snapshot["fetch_cursor_by_key"])
+        self._fetch_total_by_key = dict(runtime_snapshot["fetch_total_by_key"])
+        self._saved_geometry = runtime_snapshot["saved_geometry"]
+        previous_geometry = dict(runtime_snapshot["window_geometry"])
+        self.setGeometry(
+            previous_geometry["x"],
+            previous_geometry["y"],
+            previous_geometry["width"],
+            previous_geometry["height"],
+        )
+        self.keyword_group_manager.groups = dict(runtime_snapshot["keyword_groups"])
+        self.keyword_group_manager.last_error = ""
+        self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+        for _index, widget in self._iter_news_tabs():
+            widget.theme = self.theme_idx
+            widget.render_html()
+        self.apply_refresh_interval()
+
+    def _apply_import_runtime_stage(
+        self: MainApp,
+        stage: Dict[str, Any],
+    ) -> List[str]:
+        normalized_settings = dict(stage["normalized_settings"])
+        imported_geometry = stage.get("imported_geometry")
+        self.theme_idx = normalized_settings["theme_index"]
+        self.interval_idx = normalized_settings["refresh_interval_index"]
+        self.notification_enabled = normalized_settings["notification_enabled"]
+        self.alert_keywords = normalized_settings["alert_keywords"]
+        self.sound_enabled = normalized_settings["sound_enabled"]
+        self.minimize_to_tray = normalized_settings["minimize_to_tray"]
+        self.close_to_tray = normalized_settings["close_to_tray"]
+        self.start_minimized = normalized_settings["start_minimized"]
+        self.auto_start_enabled = normalized_settings["auto_start_enabled"]
+        self.notify_on_refresh = normalized_settings["notify_on_refresh"]
+        self.api_timeout = normalized_settings["api_timeout"]
+        self.search_history = list(stage["merged_search_history"])
+        self._fetch_cursor_by_key = dict(stage["merged_pagination_state"])
+        self._fetch_total_by_key = dict(stage["merged_pagination_totals"])
+        if imported_geometry is not None:
+            self._saved_geometry = imported_geometry
+            self.setGeometry(
+                imported_geometry["x"],
+                imported_geometry["y"],
+                imported_geometry["width"],
+                imported_geometry["height"],
+            )
+        self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+        for _index, widget in self._iter_news_tabs():
+            widget.theme = self.theme_idx
+            widget.render_html()
+        added_keywords = stage.setdefault("applied_new_keywords", [])
+        added_keywords.clear()
+        for keyword in stage["imported_new_keywords"]:
+            self.add_news_tab(keyword)
+            added_keywords.append(keyword)
+        self.keyword_group_manager.groups = dict(stage["merged_keyword_groups"])
+        self.keyword_group_manager.last_error = ""
+        self.apply_refresh_interval()
+        return added_keywords
+
+    def _stage_settings_import(
+        self: MainApp,
+        import_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        settings = import_data.get("settings", {})
+        fallback_settings = {
+            "theme_index": self.theme_idx,
+            "refresh_interval_index": self.interval_idx,
+            "notification_enabled": self.notification_enabled,
+            "alert_keywords": self.alert_keywords,
+            "sound_enabled": self.sound_enabled,
+            "minimize_to_tray": self.minimize_to_tray,
+            "close_to_tray": self.close_to_tray,
+            "start_minimized": self.start_minimized,
+            "auto_start_enabled": self.auto_start_enabled,
+            "notify_on_refresh": self.notify_on_refresh,
+            "api_timeout": self.api_timeout,
+        }
+        normalized_settings, import_warnings = normalize_import_settings(
+            settings,
+            fallback_settings,
+        )
+
+        if normalized_settings["start_minimized"] and not getattr(self, "tray", None):
+            normalized_settings["start_minimized"] = False
+            import_warnings.append(
+                "트레이를 사용할 수 없어 start_minimized 값을 False로 강제했습니다."
+            )
+            self.show_warning_toast(
+                "트레이를 사용할 수 없어 '시작 시 최소화' 설정은 꺼진 상태로 가져왔습니다."
+            )
+
+        merged_search_history = self._merge_search_history(import_data.get("search_history", []))
+        merged_pagination_state = self._merge_int_mapping_keep_max(
+            self._fetch_cursor_by_key,
+            import_data.get("pagination_state", {}),
+            minimum=1,
+        )
+        merged_pagination_totals = self._merge_int_mapping_keep_max(
+            self._fetch_total_by_key,
+            import_data.get("pagination_totals", {}),
+            minimum=0,
+        )
+
+        imported_geometry = self._validated_import_window_geometry(import_data.get("window_geometry"))
+        if imported_geometry is None and "window_geometry" in import_data:
+            import_warnings.append("window_geometry 값이 유효 범위를 벗어나 적용하지 않았습니다.")
+
+        imported_new_keywords, skipped_invalid_tabs = self._compute_imported_new_tabs(import_data.get("tabs", []))
+        merged_keyword_groups = self._merge_imported_keyword_groups(import_data.get("keyword_groups", {}))
+        staged_config = self._build_runtime_config_payload(
+            app_settings_overrides={
+                "theme_index": normalized_settings["theme_index"],
+                "refresh_interval_index": normalized_settings["refresh_interval_index"],
+                "notification_enabled": normalized_settings["notification_enabled"],
+                "alert_keywords": normalized_settings["alert_keywords"],
+                "sound_enabled": normalized_settings["sound_enabled"],
+                "minimize_to_tray": normalized_settings["minimize_to_tray"],
+                "close_to_tray": normalized_settings["close_to_tray"],
+                "start_minimized": normalized_settings["start_minimized"],
+                "auto_start_enabled": normalized_settings["auto_start_enabled"],
+                "notify_on_refresh": normalized_settings["notify_on_refresh"],
+                "api_timeout": normalized_settings["api_timeout"],
+            },
+            tab_keywords=[
+                tab.keyword
+                for _index, tab in self._iter_news_tabs(start_index=1)
+            ] + imported_new_keywords,
+            search_history=merged_search_history,
+            keyword_groups=merged_keyword_groups,
+            pagination_state=merged_pagination_state,
+            pagination_totals=merged_pagination_totals,
+            window_geometry=imported_geometry,
+        )
+        return {
+            "normalized_settings": normalized_settings,
+            "import_warnings": import_warnings,
+            "merged_search_history": merged_search_history,
+            "merged_pagination_state": merged_pagination_state,
+            "merged_pagination_totals": merged_pagination_totals,
+            "imported_geometry": imported_geometry,
+            "imported_new_keywords": imported_new_keywords,
+            "skipped_invalid_tabs": skipped_invalid_tabs,
+            "merged_keyword_groups": merged_keyword_groups,
+            "staged_config": staged_config,
+        }
+
     def export_settings(self: MainApp):
         """Export app settings without API credentials."""
         dialogs = _dialogs_for(self)
@@ -579,127 +986,40 @@ class _MainWindowSettingsIOMixin:
                 import_data = json.load(f)
             if not isinstance(import_data, dict):
                 raise ValueError("설정 파일 루트가 JSON object가 아닙니다.")
+            runtime_snapshot = self._snapshot_runtime_state_for_import()
+            config_path = self._config_path_for_persistence()
+            stage = self._stage_settings_import(import_data)
+            normalized_settings = stage["normalized_settings"]
+            import_warnings = stage["import_warnings"]
+            imported_new_keywords = list(stage["imported_new_keywords"])
+            skipped_invalid_tabs = int(stage["skipped_invalid_tabs"])
 
-            settings = import_data.get("settings", {})
-            fallback_settings = {
-                "theme_index": self.theme_idx,
-                "refresh_interval_index": self.interval_idx,
-                "notification_enabled": self.notification_enabled,
-                "alert_keywords": self.alert_keywords,
-                "sound_enabled": self.sound_enabled,
-                "minimize_to_tray": self.minimize_to_tray,
-                "close_to_tray": self.close_to_tray,
-                "start_minimized": self.start_minimized,
-                "auto_start_enabled": self.auto_start_enabled,
-                "notify_on_refresh": self.notify_on_refresh,
-                "api_timeout": self.api_timeout,
-            }
-            normalized_settings, import_warnings = normalize_import_settings(
-                settings,
-                fallback_settings,
-            )
+            save_primary_config_file(config_path, stage["staged_config"])
 
-            if normalized_settings["start_minimized"] and not getattr(self, "tray", None):
-                normalized_settings["start_minimized"] = False
-                import_warnings.append(
-                    "트레이를 사용할 수 없어 start_minimized 값을 False로 강제했습니다."
-                )
-                self.show_warning_toast(
-                    "트레이를 사용할 수 없어 '시작 시 최소화' 설정은 꺼진 상태로 가져왔습니다."
-                )
+            added_keywords: List[str] = []
+            try:
+                added_keywords = self._apply_import_runtime_stage(stage)
+            except Exception:
+                added_keywords = list(stage.get("applied_new_keywords", added_keywords))
+                try:
+                    save_primary_config_file(config_path, runtime_snapshot["config_payload"])
+                except Exception as rollback_save_error:
+                    logger.error("Import config rollback failed: %s", rollback_save_error)
+                self._rollback_import_runtime_state(runtime_snapshot, added_keywords)
+                raise
 
             self._reconcile_startup_state_from_import(normalized_settings, import_warnings)
-
-            self.theme_idx = normalized_settings["theme_index"]
-            self.interval_idx = normalized_settings["refresh_interval_index"]
-            self.notification_enabled = normalized_settings["notification_enabled"]
-            self.alert_keywords = normalized_settings["alert_keywords"]
-            self.sound_enabled = normalized_settings["sound_enabled"]
-            self.minimize_to_tray = normalized_settings["minimize_to_tray"]
-            self.close_to_tray = normalized_settings["close_to_tray"]
-            self.start_minimized = normalized_settings["start_minimized"]
-            self.auto_start_enabled = normalized_settings["auto_start_enabled"]
-            self.notify_on_refresh = normalized_settings["notify_on_refresh"]
-            self.api_timeout = normalized_settings["api_timeout"]
-
-            self.search_history = self._merge_search_history(import_data.get("search_history", []))
-            self._fetch_cursor_by_key = self._merge_int_mapping_keep_max(
-                self._fetch_cursor_by_key,
-                import_data.get("pagination_state", {}),
-                minimum=1,
-            )
-            self._fetch_total_by_key = self._merge_int_mapping_keep_max(
-                self._fetch_total_by_key,
-                import_data.get("pagination_totals", {}),
-                minimum=0,
-            )
-
-            imported_geometry = self._validated_import_window_geometry(
-                import_data.get("window_geometry")
-            )
-            if imported_geometry is not None:
-                self._saved_geometry = imported_geometry
-                self.setGeometry(
-                    imported_geometry["x"],
-                    imported_geometry["y"],
-                    imported_geometry["width"],
-                    imported_geometry["height"],
+            corrected_auto_start = bool(normalized_settings.get("auto_start_enabled", self.auto_start_enabled))
+            if self.auto_start_enabled != corrected_auto_start:
+                self.auto_start_enabled = corrected_auto_start
+                corrected_config = self._build_runtime_config_payload(
+                    app_settings_overrides={"auto_start_enabled": corrected_auto_start}
                 )
-            elif "window_geometry" in import_data:
-                import_warnings.append("window_geometry 값이 유효 범위를 벗어나 적용하지 않았습니다.")
-
-            self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
-            for _index, widget in self._iter_news_tabs():
-                widget.theme = self.theme_idx
-                widget.render_html()
-
-            imported_tabs = import_data.get("tabs", [])
-            existing_fetch_keys = {
-                self._canonical_fetch_key_for_keyword(tab.keyword)
-                for _index, tab in self._iter_news_tabs(start_index=1)
-                if self._canonical_fetch_key_for_keyword(tab.keyword)
-            }
-            imported_new_keywords: List[str] = []
-            new_tabs = 0
-            skipped_invalid_tabs = 0
-            for keyword in imported_tabs:
-                normalized_keyword = self._normalize_tab_keyword(keyword.strip()) if isinstance(keyword, str) else None
-                normalized_fetch_key = (
-                    self._canonical_fetch_key_for_keyword(normalized_keyword)
-                    if normalized_keyword
-                    else ""
-                )
-                if normalized_keyword and normalized_fetch_key and normalized_fetch_key not in existing_fetch_keys:
-                    self.add_news_tab(normalized_keyword)
-                    existing_fetch_keys.add(normalized_fetch_key)
-                    imported_new_keywords.append(normalized_keyword)
-                    new_tabs += 1
-                elif not normalized_keyword:
-                    skipped_invalid_tabs += 1
-
-            imported_groups = import_data.get("keyword_groups", {})
-            if isinstance(imported_groups, dict):
-                previous_groups = dict(getattr(self.keyword_group_manager, "groups", {}))
-                merged_groups = self.keyword_group_manager.merge_groups(imported_groups, save=True)
-                group_manager = self.keyword_group_manager
-                group_manager_error = str(getattr(group_manager, "last_error", "") or "")
-                if (
-                    group_manager_error
-                    and merged_groups == previous_groups
-                ):
-                    group_warning = (
-                        "키워드 그룹을 저장하지 못해 가져온 그룹 설정을 적용하지 못했습니다.\n\n"
-                        f"{group_manager_error}"
-                    )
-                    import_warnings.append(group_warning)
-                    dialogs.warning(self, "그룹 저장 실패", group_warning)
-
-            self.apply_refresh_interval()
-            self.save_config()
+                save_primary_config_file(config_path, corrected_config)
 
             msg = "설정을 가져왔습니다."
-            if new_tabs > 0:
-                msg += f" ({new_tabs}개 탭 추가)"
+            if imported_new_keywords:
+                msg += f" ({len(imported_new_keywords)}개 탭 추가)"
             if skipped_invalid_tabs > 0:
                 msg += f" / 유효하지 않은 탭 {skipped_invalid_tabs}개 건너뜀"
             if import_warnings:

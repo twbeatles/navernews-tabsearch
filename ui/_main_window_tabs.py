@@ -123,7 +123,7 @@ class _MainWindowTabsMixin:
         self._fetch_total_by_key.pop(fetch_key, None)
         self._last_fetch_request_ts.pop(fetch_key, None)
 
-    def add_news_tab(self: MainApp, keyword: str):
+    def add_news_tab(self: MainApp, keyword: str, *, defer_initial_load: bool = True):
         """뉴스 탭 추가"""
         normalized_keyword = self._normalize_tab_keyword(keyword)
         if not normalized_keyword:
@@ -137,7 +137,14 @@ class _MainWindowTabsMixin:
             self.tabs.setCurrentIndex(existing_tab[0])
             return
 
-        tab = NewsTab(keyword, self._require_db(), self.theme_idx, self)
+        tab = NewsTab(
+            keyword,
+            self._require_db(),
+            self.theme_idx,
+            self,
+            defer_initial_load=defer_initial_load,
+        )
+        self._connect_news_tab_hydration(tab)
         tab.btn_load.clicked.connect(lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True))
         fetch_state = self._tab_fetch_state.setdefault(keyword, self._make_tab_fetch_state())
         persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
@@ -146,6 +153,8 @@ class _MainWindowTabsMixin:
         tab.total_api_count = int(self._fetch_total_by_key.get(fetch_key, 0) or 0)
         self.tabs.addTab(tab, self._format_tab_title(keyword, unread_count=0))
         self.sync_tab_load_more_state(keyword)
+        if defer_initial_load:
+            self._enqueue_tab_hydration(keyword, prioritize=False)
 
     def add_tab_dialog(self: MainApp):
         """새 탭 추가 다이얼로그 - 검색 히스토리 지원"""
@@ -271,6 +280,7 @@ class _MainWindowTabsMixin:
             widget.deleteLater()
         self.tabs.removeTab(idx)
         if removed_keyword:
+            self._remove_tab_hydration(removed_keyword)
             self._tab_fetch_state.pop(removed_keyword, None)
             removed_search_query, removed_exclude_words = parse_search_query(removed_keyword)
             removed_fetch_key = build_fetch_key(removed_search_query, removed_exclude_words)
@@ -326,6 +336,7 @@ class _MainWindowTabsMixin:
                 return
 
             w.keyword = new_keyword
+            self._remove_tab_hydration(old_keyword)
             self.tabs.setTabText(idx, self._format_tab_title(new_keyword, unread_count=0))
 
             old_search_keyword, old_exclude_words = parse_search_query(old_keyword)
@@ -377,6 +388,12 @@ class _MainWindowTabsMixin:
                 w.load_data_from_db()
             except Exception as e:
                 logger.warning(f"리네임 직후 탭 재조회 실패: {e}")
+
+            if w.needs_initial_hydration():
+                self._enqueue_tab_hydration(
+                    new_keyword,
+                    prioritize=(idx == self.tabs.currentIndex()),
+                )
 
             self.fetch_news(new_keyword)
             self.save_config()

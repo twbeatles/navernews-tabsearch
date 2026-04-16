@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple
 
 from core.query_parser import build_fetch_key
 from core.text_utils import parse_date_to_ts, perf_timer
@@ -270,45 +270,20 @@ class _DatabaseMutationsMixin:
 
     def delete_old_news(self: DatabaseManager, days: int) -> int:
         """Delete old non-bookmarked rows and repair duplicates."""
-        conn = self.get_connection()
         cutoff = (datetime.now() - timedelta(days=days)).timestamp()
         try:
-            with conn:
-                affected = self._collect_affected_query_key_hashes(
-                    conn,
-                    "n.is_bookmarked = 0 AND n.pubDate_ts > 0 AND n.pubDate_ts < ?",
-                    [cutoff],
-                )
-                cur = conn.execute(
-                    "DELETE FROM news WHERE is_bookmarked = 0 AND pubDate_ts > 0 AND pubDate_ts < ?",
-                    (cutoff,),
-                )
-                deleted = int(cur.rowcount or 0)
-                if deleted > 0:
-                    self._recalculate_duplicates_for_affected(conn, affected)
-                return deleted
-        except Exception as e:
+            return self.delete_old_news_chunked(days, operation="delete_old_news")
+        except sqlite3.Error as e:
             logger.error("delete_old_news failed: %s", e)
-            return 0
-        finally:
-            self.return_connection(conn)
+            raise self._new_write_error("delete_old_news", e) from e
 
     def delete_all_news(self: DatabaseManager) -> int:
         """Delete all non-bookmarked rows and repair duplicates."""
-        conn = self.get_connection()
         try:
-            with conn:
-                affected = self._collect_affected_query_key_hashes(conn, "n.is_bookmarked = 0", [])
-                cur = conn.execute("DELETE FROM news WHERE is_bookmarked = 0")
-                deleted = int(cur.rowcount or 0)
-                if deleted > 0:
-                    self._recalculate_duplicates_for_affected(conn, affected)
-                return deleted
-        except Exception as e:
+            return self.delete_all_news_chunked(operation="delete_all_news")
+        except sqlite3.Error as e:
             logger.error("delete_all_news failed: %s", e)
-            return 0
-        finally:
-            self.return_connection(conn)
+            raise self._new_write_error("delete_all_news", e) from e
 
     def _dedupe_links(self: DatabaseManager, links: List[str]) -> List[str]:
         deduped_links: List[str] = []
@@ -338,6 +313,124 @@ class _DatabaseMutationsMixin:
             if cursor.rowcount and cursor.rowcount > 0:
                 updated_count += int(cursor.rowcount)
         return updated_count
+
+    def _run_chunked_news_delete(
+        self: DatabaseManager,
+        where_sql: str,
+        params: List[Any],
+        *,
+        chunk_size: int = 200,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        cancel_check: Optional[Callable[[], None]] = None,
+        operation: str,
+    ) -> int:
+        conn = self.get_connection()
+        deleted_total = 0
+        safe_chunk_size = max(1, int(chunk_size or 200))
+        try:
+            total = int(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM news WHERE {where_sql}",
+                    params,
+                ).fetchone()[0]
+                or 0
+            )
+            batch_query = f"SELECT link FROM news WHERE {where_sql} ORDER BY link LIMIT ?"
+            while True:
+                if callable(cancel_check):
+                    cancel_check()
+                rows = conn.execute(batch_query, [*params, safe_chunk_size]).fetchall()
+                links = [str(row[0]) for row in rows if row and row[0]]
+                if not links:
+                    break
+                placeholders = ",".join(["?"] * len(links))
+                with conn:
+                    affected = self._collect_affected_query_key_hashes(
+                        conn,
+                        f"n.link IN ({placeholders})",
+                        links,
+                    )
+                    cursor = conn.execute(
+                        f"DELETE FROM news WHERE link IN ({placeholders})",
+                        links,
+                    )
+                    deleted = int(cursor.rowcount or 0)
+                    if deleted > 0:
+                        self._recalculate_duplicates_for_affected(conn, affected)
+                deleted_total += deleted
+                if callable(progress_callback):
+                    progress_callback(deleted_total, total)
+                if deleted <= 0:
+                    break
+            return deleted_total
+        except sqlite3.Error as e:
+            logger.error("%s failed: %s", operation, e)
+            raise self._new_write_error(operation, e) from e
+        finally:
+            self.return_connection(conn)
+
+    def _build_mark_query_scope_sql(
+        self: DatabaseManager,
+        keyword: str,
+        exclude_words: Optional[List[str]] = None,
+        only_bookmark: bool = False,
+        filter_txt: str = "",
+        hide_duplicates: bool = False,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        query_key: Optional[str] = None,
+    ) -> Tuple[str, List[Any]]:
+        params: List[Any] = []
+        if only_bookmark:
+            scope_query = "SELECT n.link FROM news n WHERE n.is_bookmarked = 1 AND n.is_read = 0"
+        else:
+            scope_query = (
+                "SELECT n.link FROM news n "
+                "JOIN news_keywords nk ON nk.link = n.link "
+                "WHERE "
+                + self._append_query_scope_sql(params, keyword, query_key)
+                + " AND n.is_read = 0"
+            )
+
+        if hide_duplicates:
+            if only_bookmark:
+                scope_query += (
+                    " AND NOT EXISTS ("
+                    "SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
+                )
+            else:
+                scope_query += " AND nk.is_duplicate = 0"
+
+        if filter_txt:
+            scope_query += " AND (n.title LIKE ? OR n.description LIKE ?)"
+            wildcard = f"%{filter_txt}%"
+            params.extend([wildcard, wildcard])
+
+        if exclude_words:
+            for exclude_word in exclude_words:
+                if not exclude_word:
+                    continue
+                scope_query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
+                wildcard = f"%{exclude_word}%"
+                params.extend([wildcard, wildcard])
+
+        if start_date:
+            try:
+                s_ts = datetime.strptime(start_date, "%Y-%m-%d").timestamp()
+                scope_query += " AND n.pubDate_ts >= ?"
+                params.append(s_ts)
+            except ValueError:
+                logger.warning("Invalid start_date format for mark_query_as_read: %s", start_date)
+
+        if end_date:
+            try:
+                e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                scope_query += " AND n.pubDate_ts < ?"
+                params.append(e_ts)
+            except ValueError:
+                logger.warning("Invalid end_date format for mark_query_as_read: %s", end_date)
+
+        return scope_query, params
 
     def mark_links_as_read(self: DatabaseManager, links: List[str]) -> int:
         """Mark selected links as read."""
@@ -404,56 +497,16 @@ class _DatabaseMutationsMixin:
         """Mark unread rows in the current query scope as read."""
         conn = self.get_connection()
         try:
-            params: List[Any] = []
-            if only_bookmark:
-                scope_query = "SELECT n.link FROM news n WHERE n.is_bookmarked = 1 AND n.is_read = 0"
-            else:
-                scope_query = (
-                    "SELECT n.link FROM news n "
-                    "JOIN news_keywords nk ON nk.link = n.link "
-                    "WHERE "
-                    + self._append_query_scope_sql(params, keyword, query_key)
-                    + " AND n.is_read = 0"
-                )
-
-            if hide_duplicates:
-                if only_bookmark:
-                    scope_query += (
-                        " AND NOT EXISTS ("
-                        "SELECT 1 FROM news_keywords nk WHERE nk.link = n.link AND nk.is_duplicate = 1)"
-                    )
-                else:
-                    scope_query += " AND nk.is_duplicate = 0"
-
-            if filter_txt:
-                scope_query += " AND (n.title LIKE ? OR n.description LIKE ?)"
-                wildcard = f"%{filter_txt}%"
-                params.extend([wildcard, wildcard])
-
-            if exclude_words:
-                for exclude_word in exclude_words:
-                    if not exclude_word:
-                        continue
-                    scope_query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
-                    wildcard = f"%{exclude_word}%"
-                    params.extend([wildcard, wildcard])
-
-            if start_date:
-                try:
-                    s_ts = datetime.strptime(start_date, "%Y-%m-%d").timestamp()
-                    scope_query += " AND n.pubDate_ts >= ?"
-                    params.append(s_ts)
-                except ValueError:
-                    logger.warning("Invalid start_date format for mark_query_as_read: %s", start_date)
-
-            if end_date:
-                try:
-                    e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
-                    scope_query += " AND n.pubDate_ts < ?"
-                    params.append(e_ts)
-                except ValueError:
-                    logger.warning("Invalid end_date format for mark_query_as_read: %s", end_date)
-
+            scope_query, params = self._build_mark_query_scope_sql(
+                keyword,
+                exclude_words=exclude_words,
+                only_bookmark=only_bookmark,
+                filter_txt=filter_txt,
+                hide_duplicates=hide_duplicates,
+                start_date=start_date,
+                end_date=end_date,
+                query_key=query_key,
+            )
             query = (
                 "UPDATE news SET is_read = 1 WHERE is_read = 0 AND link IN ("
                 + scope_query
@@ -467,3 +520,95 @@ class _DatabaseMutationsMixin:
             raise
         finally:
             self.return_connection(conn)
+
+    def mark_query_as_read_chunked(
+        self: DatabaseManager,
+        keyword: str,
+        exclude_words: Optional[List[str]] = None,
+        only_bookmark: bool = False,
+        filter_txt: str = "",
+        hide_duplicates: bool = False,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        query_key: Optional[str] = None,
+        *,
+        chunk_size: int = 200,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        cancel_check: Optional[Callable[[], None]] = None,
+    ) -> int:
+        """Mark unread rows in the current query scope as read in cancel-aware batches."""
+        conn = self.get_connection()
+        updated_total = 0
+        safe_chunk_size = max(1, int(chunk_size or 200))
+        try:
+            scope_query, params = self._build_mark_query_scope_sql(
+                keyword,
+                exclude_words=exclude_words,
+                only_bookmark=only_bookmark,
+                filter_txt=filter_txt,
+                hide_duplicates=hide_duplicates,
+                start_date=start_date,
+                end_date=end_date,
+                query_key=query_key,
+            )
+            total = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM (" + scope_query + ")",
+                    params,
+                ).fetchone()[0]
+                or 0
+            )
+            batch_query = scope_query + " ORDER BY n.link LIMIT ?"
+            while True:
+                if callable(cancel_check):
+                    cancel_check()
+                rows = conn.execute(batch_query, [*params, safe_chunk_size]).fetchall()
+                links = [str(row[0]) for row in rows if row and row[0]]
+                if not links:
+                    break
+                with conn:
+                    updated_total += self._mark_links_as_read_with_conn(conn, links)
+                if callable(progress_callback):
+                    progress_callback(updated_total, total)
+            return updated_total
+        except sqlite3.Error as e:
+            logger.error("mark_query_as_read_chunked failed: %s", e)
+            raise self._new_write_error("mark_query_as_read_chunked", e) from e
+        finally:
+            self.return_connection(conn)
+
+    def delete_old_news_chunked(
+        self: DatabaseManager,
+        days: int,
+        *,
+        chunk_size: int = 200,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        cancel_check: Optional[Callable[[], None]] = None,
+        operation: str = "delete_old_news_chunked",
+    ) -> int:
+        cutoff = (datetime.now() - timedelta(days=days)).timestamp()
+        return self._run_chunked_news_delete(
+            "is_bookmarked = 0 AND pubDate_ts > 0 AND pubDate_ts < ?",
+            [cutoff],
+            chunk_size=chunk_size,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+            operation=operation,
+        )
+
+    def delete_all_news_chunked(
+        self: DatabaseManager,
+        *,
+        chunk_size: int = 200,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        cancel_check: Optional[Callable[[], None]] = None,
+        operation: str = "delete_all_news_chunked",
+    ) -> int:
+        return self._run_chunked_news_delete(
+            "is_bookmarked = 0",
+            [],
+            chunk_size=chunk_size,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+            operation=operation,
+        )

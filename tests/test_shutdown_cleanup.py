@@ -33,6 +33,8 @@ class _FakeWorker:
         self.delete_later_calls = 0
         self.finished = _FakeSignal()
         self.error = _FakeSignal()
+        self.cancelled = _FakeSignal()
+        self.progress = _FakeSignal()
 
     def isRunning(self):
         return self.running
@@ -216,6 +218,31 @@ class TestShutdownCleanup(unittest.TestCase):
         self.assertEqual(job_worker.parent_values, [None])
         self.assertIsNone(tab.worker)
         self.assertIsNone(tab.job_worker)
+
+    def test_cancel_initial_hydration_ignores_late_success_callback(self):
+        with mock.patch.object(NewsTab, "load_data_from_db", autospec=True):
+            tab = NewsTab("AI", cast(Any, _FakeDb()), theme_mode=0)
+        self.addCleanup(tab.deleteLater)
+
+        worker = _FakeWorker(running=True, wait_result=False)
+        tab.worker = cast(Any, worker)
+        tab._load_request_id = 7
+        tab._initial_request_id = 7
+        tab._initial_load_inflight = True
+        tab._initial_load_completed = False
+
+        finished = tab.cancel_initial_hydration(wait_ms=200)
+
+        self.assertFalse(finished)
+        self.assertFalse(tab._initial_load_inflight)
+        self.assertIsNone(tab._initial_request_id)
+        self.assertIn(7, tab._cancelled_initial_request_ids)
+
+        tab.on_data_loaded([{"title": "ignored"}], 1, request_id=7)
+
+        self.assertNotIn(7, tab._cancelled_initial_request_ids)
+        self.assertEqual(tab.news_data_cache, [])
+        self.assertFalse(tab._initial_load_completed)
 
 
 if __name__ == "__main__":

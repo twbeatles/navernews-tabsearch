@@ -2,6 +2,7 @@ import html
 import json
 import logging
 import re
+import sqlite3
 import threading
 import time
 import traceback
@@ -139,6 +140,79 @@ class IterativeJobWorker(QThread):
 
     def stop(self):
         self.requestInterruption()
+        self.quit()
+        self.wait(100)
+
+
+class InterruptibleReadWorker(QThread):
+    """Dedicated read worker backed by an interruptible SQLite connection."""
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    cancelled = pyqtSignal()
+
+    def __init__(self, db_manager, job_func, *args, parent=None, **kwargs):
+        super().__init__(parent)
+        self.db = db_manager
+        self.job_func = job_func
+        self.args = args
+        self.kwargs = kwargs
+        self._conn = None
+
+    def run(self):
+        try:
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+
+            open_read_connection = getattr(self.db, "open_read_connection", None)
+            conn = open_read_connection(timeout=1.5) if callable(open_read_connection) else None
+            self._conn = conn
+            if conn is not None:
+                conn.execute("BEGIN")
+
+            result = self.job_func(conn, *self.args, **self.kwargs)
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+            self.finished.emit(result)
+        except JobCancelledError:
+            self.cancelled.emit()
+        except sqlite3.OperationalError as e:
+            interrupted = "interrupted" in str(e).lower()
+            if self.isInterruptionRequested() or interrupted:
+                self.cancelled.emit()
+                return
+            self.error.emit(str(e))
+            traceback.print_exc()
+        except Exception as e:
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+            self.error.emit(str(e))
+            traceback.print_exc()
+        finally:
+            conn = self._conn
+            self._conn = None
+            if conn is not None:
+                try:
+                    close_read_connection = getattr(self.db, "close_read_connection", None)
+                    if callable(close_read_connection):
+                        close_read_connection(conn)
+                    else:
+                        conn.close()
+                except Exception:
+                    pass
+
+    def stop(self):
+        self.requestInterruption()
+        if self._conn is not None:
+            try:
+                interrupt_connection = getattr(self.db, "interrupt_connection", None)
+                if callable(interrupt_connection):
+                    interrupt_connection(self._conn)
+            except Exception:
+                pass
         self.quit()
         self.wait(100)
 
@@ -349,6 +423,10 @@ class ApiWorker(QObject):
                             except (json.JSONDecodeError, KeyError, ValueError):
                                 error_msg = f"HTTP {resp.status_code}"
                                 error_code = ""
+                            if 500 <= int(resp.status_code) < 600 and attempt < self.max_retries - 1:
+                                self._safe_emit(self.progress, "서버 오류. 재시도 중...")
+                                time.sleep(1)
+                                continue
                             self._emit_error(
                                 f"API 오류 {resp.status_code} ({error_code}): {error_msg}",
                                 kind="http_error",

@@ -73,6 +73,13 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   loops, settings validation HTTP-policy unification, and stricter encoding
 #   guards rely on stdlib / already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-04-16 review:
+# - 5xx retry promotion, request-id-based hydration cancellation cleanup,
+#   staged settings import/startup reconcile, legacy backup metadata
+#   compatibility + persisted verification metadata, interruptible analysis
+#   reads, and FTS retry scheduling rely on stdlib / already-bundled modules
+#   only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

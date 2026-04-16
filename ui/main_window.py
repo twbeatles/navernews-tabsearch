@@ -207,8 +207,19 @@ class MainApp(
             self._export_target_path: str = ""
             self._export_cancel_requested = False
             self._fts_backfill_worker: Optional[IterativeJobWorker] = None
+            self._fts_backfill_retry_attempt = 0
+            self._fts_backfill_pause_requested = False
+            self._fts_backfill_pause_delay_ms = 1000
+            self._fts_backfill_retry_timer = QTimer(self)
+            self._fts_backfill_retry_timer.setSingleShot(True)
+            self._fts_backfill_retry_timer.timeout.connect(self._start_fts_backfill)
             self._fetch_cooldown_until = 0.0
             self._fetch_cooldown_reason = ""
+            self._tab_hydration_queue: deque[str] = deque()
+            self._hydration_inflight_keyword = ""
+            self._hydration_timer = QTimer(self)
+            self._hydration_timer.setSingleShot(True)
+            self._hydration_timer.timeout.connect(self._process_tab_hydration)
             
             # 알림 관련 설정
             self.notification_enabled = True  # 데스크톱 알림 활성화
@@ -345,7 +356,16 @@ class MainApp(
         if worker is not None and worker.isRunning():
             return
         if self._require_db().is_news_fts_backfill_complete():
+            self._fts_backfill_retry_attempt = 0
+            self._fts_backfill_pause_requested = False
+            if self._fts_backfill_retry_timer.isActive():
+                self._fts_backfill_retry_timer.stop()
             return
+        if self._is_fts_backfill_paused():
+            self._schedule_fts_backfill_retry(max(1000, int(self._fts_backfill_pause_delay_ms or 1000)))
+            return
+        if self._fts_backfill_retry_timer.isActive():
+            self._fts_backfill_retry_timer.stop()
 
         def _job(context):
             total_processed = 0
@@ -366,13 +386,84 @@ class MainApp(
 
     def _on_fts_backfill_finished(self, _result) -> None:
         self._fts_backfill_worker = None
+        self._fts_backfill_retry_attempt = 0
+        self._fts_backfill_pause_requested = False
+        if self._fts_backfill_retry_timer.isActive():
+            self._fts_backfill_retry_timer.stop()
 
     def _on_fts_backfill_error(self, error_msg: str) -> None:
         logger.warning("FTS backfill failed: %s", error_msg)
         self._fts_backfill_worker = None
+        self._fts_backfill_pause_requested = False
+        self._fts_backfill_retry_attempt += 1
+        self._schedule_fts_backfill_retry(self._next_fts_backfill_retry_delay_ms(), force=True)
 
     def _on_fts_backfill_cancelled(self) -> None:
         self._fts_backfill_worker = None
+        if self._shutdown_in_progress:
+            self._fts_backfill_pause_requested = False
+            return
+        if self._fts_backfill_pause_requested:
+            delay_ms = max(0, int(self._fts_backfill_pause_delay_ms or 0))
+            self._fts_backfill_pause_requested = False
+            self._request_fts_backfill_resume(delay_ms=max(250, delay_ms))
+
+    def _is_fts_backfill_paused(self) -> bool:
+        if self._shutdown_in_progress:
+            return True
+        if self.is_maintenance_mode_active():
+            return True
+        if self._refresh_in_progress or self._sequential_refresh_active:
+            return True
+        return False
+
+    def _next_fts_backfill_retry_delay_ms(self) -> int:
+        attempt = max(1, int(getattr(self, "_fts_backfill_retry_attempt", 0) or 0))
+        if attempt <= 1:
+            return 5000
+        if attempt == 2:
+            return 15000
+        return 30000
+
+    def _schedule_fts_backfill_retry(self, delay_ms: int, *, force: bool = False) -> None:
+        if self._shutdown_in_progress:
+            return
+        if self._require_db().is_news_fts_backfill_complete():
+            return
+        timer = getattr(self, "_fts_backfill_retry_timer", None)
+        if timer is None:
+            return
+        safe_delay = max(0, int(delay_ms))
+        if timer.isActive():
+            remaining = timer.remainingTime()
+            if not force and 0 <= remaining <= safe_delay:
+                return
+            timer.stop()
+        timer.start(safe_delay)
+
+    def _request_fts_backfill_resume(self, *, delay_ms: int = 250) -> None:
+        if self._shutdown_in_progress:
+            return
+        if self._require_db().is_news_fts_backfill_complete():
+            return
+        if self._is_fts_backfill_paused():
+            self._schedule_fts_backfill_retry(max(1000, int(delay_ms)))
+            return
+        self._schedule_fts_backfill_retry(delay_ms)
+
+    def _pause_fts_backfill(self, *, retry_delay_ms: int = 1000) -> None:
+        if self._shutdown_in_progress:
+            return
+        self._fts_backfill_pause_delay_ms = max(250, int(retry_delay_ms))
+        worker = getattr(self, "_fts_backfill_worker", None)
+        if worker is None or not worker.isRunning():
+            self._request_fts_backfill_resume(delay_ms=self._fts_backfill_pause_delay_ms)
+            return
+        self._fts_backfill_pause_requested = True
+        try:
+            worker.requestInterruption()
+        except Exception:
+            pass
 
     def _require_toast_queue(self) -> ToastQueue:
         if self.toast_queue is None:
@@ -399,6 +490,159 @@ class MainApp(
             if tab.keyword == keyword:
                 return index, tab
         return None
+
+    def _connect_news_tab_hydration(self, tab: NewsTab) -> None:
+        try:
+            tab.hydration_finished.connect(self._on_tab_hydration_finished)
+        except Exception:
+            pass
+        try:
+            tab.hydration_failed.connect(self._on_tab_hydration_failed)
+        except Exception:
+            pass
+
+    def _remove_tab_hydration(self, keyword: str) -> None:
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword:
+            return
+        self._tab_hydration_queue = deque(
+            queued_keyword
+            for queued_keyword in self._tab_hydration_queue
+            if queued_keyword != normalized_keyword
+        )
+        if self._hydration_inflight_keyword == normalized_keyword:
+            self._hydration_inflight_keyword = ""
+
+    def _enqueue_tab_hydration(self, keyword: str, *, prioritize: bool = False) -> None:
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword:
+            return
+        located_tab = self._find_news_tab(normalized_keyword)
+        if located_tab is None:
+            return
+        _index, tab = located_tab
+        if not tab.needs_initial_hydration():
+            self._remove_tab_hydration(normalized_keyword)
+            return
+        self._tab_hydration_queue = deque(
+            queued_keyword
+            for queued_keyword in self._tab_hydration_queue
+            if queued_keyword != normalized_keyword
+        )
+        if self._hydration_inflight_keyword != normalized_keyword:
+            if prioritize:
+                self._tab_hydration_queue.appendleft(normalized_keyword)
+            else:
+                self._tab_hydration_queue.append(normalized_keyword)
+        self._schedule_tab_hydration(0 if prioritize else 50)
+
+    def _is_tab_hydration_paused(self) -> bool:
+        if self._shutdown_in_progress:
+            return True
+        if self.is_maintenance_mode_active():
+            return True
+        if self._refresh_in_progress or self._sequential_refresh_active:
+            return True
+        try:
+            if self._worker_registry.all_handles():
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _schedule_tab_hydration(self, delay_ms: int = 0) -> None:
+        if self._hydration_inflight_keyword:
+            return
+        if self._is_tab_hydration_paused():
+            return
+        if self._hydration_timer.isActive():
+            self._hydration_timer.stop()
+        self._hydration_timer.start(max(0, int(delay_ms)))
+
+    def _start_tab_hydration(self, tab: NewsTab) -> bool:
+        if tab.is_bookmark_tab or not tab.needs_initial_hydration():
+            return False
+        if tab.is_initial_hydration_inflight():
+            self._hydration_inflight_keyword = tab.keyword
+            return True
+        if tab.request_initial_hydration():
+            self._hydration_inflight_keyword = tab.keyword
+            return True
+        return False
+
+    def _cancel_active_tab_hydration(self, *, requeue: bool = True, wait_ms: int = 250) -> bool:
+        active_keyword = str(getattr(self, "_hydration_inflight_keyword", "") or "").strip()
+        if not active_keyword:
+            return True
+        located_tab = self._find_news_tab(active_keyword)
+        if located_tab is None:
+            self._hydration_inflight_keyword = ""
+            return True
+        _index, tab = located_tab
+        finished = tab.cancel_initial_hydration(wait_ms=wait_ms)
+        self._hydration_inflight_keyword = ""
+        if requeue and tab.needs_initial_hydration():
+            self._enqueue_tab_hydration(tab.keyword, prioritize=False)
+        return finished
+
+    def _process_tab_hydration(self) -> None:
+        if self._hydration_inflight_keyword or self._is_tab_hydration_paused():
+            return
+
+        current_tab = self._current_news_tab()
+        if current_tab is not None and not current_tab.is_bookmark_tab and current_tab.needs_initial_hydration():
+            self._remove_tab_hydration(current_tab.keyword)
+            if self._start_tab_hydration(current_tab):
+                return
+
+        while self._tab_hydration_queue:
+            next_keyword = self._tab_hydration_queue.popleft()
+            located_tab = self._find_news_tab(next_keyword)
+            if located_tab is None:
+                continue
+            _index, tab = located_tab
+            if not tab.needs_initial_hydration():
+                continue
+            if self._start_tab_hydration(tab):
+                return
+
+    def _bootstrap_tab_hydration(self) -> None:
+        current_tab = self._current_news_tab()
+        current_keyword = ""
+        if current_tab is not None and not current_tab.is_bookmark_tab:
+            current_keyword = current_tab.keyword
+        for _index, tab in self._iter_news_tabs(start_index=1):
+            if not tab.needs_initial_hydration():
+                continue
+            if current_keyword and tab.keyword == current_keyword:
+                continue
+            self._enqueue_tab_hydration(tab.keyword, prioritize=False)
+        if current_keyword:
+            self._enqueue_tab_hydration(current_keyword, prioritize=True)
+        else:
+            self._schedule_tab_hydration(0)
+
+    def _on_tab_hydration_finished(self, keyword: str) -> None:
+        self._remove_tab_hydration(keyword)
+        self._schedule_tab_hydration(25)
+
+    def _on_tab_hydration_failed(self, keyword: str, error_msg: str) -> None:
+        logger.warning("Initial tab hydration failed (%s): %s", keyword, error_msg)
+        self._remove_tab_hydration(keyword)
+        self._schedule_tab_hydration(100)
+
+    def _on_current_tab_changed(self, index: int) -> None:
+        current_tab = self._news_tab_at(index)
+        if current_tab is None or current_tab.is_bookmark_tab:
+            self._schedule_tab_hydration(0)
+            return
+        if not current_tab.needs_initial_hydration():
+            self._schedule_tab_hydration(0)
+            return
+        active_keyword = str(getattr(self, "_hydration_inflight_keyword", "") or "").strip()
+        if active_keyword and active_keyword != current_tab.keyword:
+            self._cancel_active_tab_hydration(requeue=True, wait_ms=200)
+        self._enqueue_tab_hydration(current_tab.keyword, prioritize=True)
 
     def sync_link_state_across_tabs(
         self,
@@ -561,6 +805,7 @@ class MainApp(
                 logger.warning("Failed to stop tab background tasks before maintenance (%s): %s", tab.keyword, e)
                 unfinished_keywords.append(tab.keyword)
 
+        self._hydration_inflight_keyword = ""
         return len(unfinished_keywords) == 0, unfinished_keywords
 
     def begin_database_maintenance(self, operation: str) -> tuple[bool, str]:
@@ -582,6 +827,7 @@ class MainApp(
         }.get(str(operation or "").strip(), "데이터 정리")
         self._maintenance_mode = True
         self._maintenance_reason = operation_label
+        self._pause_fts_backfill(retry_delay_ms=1000)
         self._apply_maintenance_ui_state()
         update_tray_tooltip = getattr(self, "update_tray_tooltip", None)
         if callable(update_tray_tooltip):
@@ -597,6 +843,8 @@ class MainApp(
         self._apply_maintenance_ui_state()
         self._status_bar().showMessage("✅ 유지보수 모드가 해제되었습니다.", 3000)
         self.show_toast("유지보수 모드가 해제되었습니다.")
+        self._request_fts_backfill_resume(delay_ms=250)
+        self._schedule_tab_hydration(50)
 
     
     def _update_countdown(self):
@@ -912,6 +1160,7 @@ class MainApp(
         tab_bar.setUsesScrollButtons(True)
         tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.tabCloseRequested.connect(self.close_tab)
+        self.tabs.currentChanged.connect(self._on_current_tab_changed)
         tab_bar.tabBarDoubleClicked.connect(self.rename_tab)
         tab_bar.tabMoved.connect(self.on_tab_moved)  # 탭 순서 저장
         tab_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -927,12 +1176,15 @@ class MainApp(
         self.btn_save.clicked.connect(self.export_data)
         
         self.bm_tab = NewsTab("북마크", self._require_db(), self.theme_idx, self)
+        self._connect_news_tab_hydration(self.bm_tab)
         self.tabs.addTab(self.bm_tab, "⭐ 북마크")
         self._tab_bar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
         
         for key in self.tabs_data:
             if key and key != "북마크":
                 self.add_news_tab(key)
+
+        QTimer.singleShot(0, self._bootstrap_tab_hydration)
         
         # 초기 탭 배지 업데이트
         QTimer.singleShot(100, self.update_all_tab_badges)

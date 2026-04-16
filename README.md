@@ -10,7 +10,7 @@
 
 - 개발/정적 분석 기준: Windows, Python 3.14, PyQt6
 - 소스 실행 최소 기준: Python 3.10+
-- 품질 게이트: `pyright`(`pyrightconfig.json`) + `pytest -q`
+- 기본 검증 명령: `pyright`(`pyrightconfig.json`) + `pytest -q`
 
 ## 주요 기능
 
@@ -33,13 +33,19 @@
 - 중앙 HTTP 구성 계층(`core.http_client.HttpClientConfig`)을 도입하고 `ApiWorker`가 worker-owned session으로 API를 호출하도록 정리
 - fetch 성공 기준을 "API 응답 수신"이 아니라 "DB upsert 완료"로 강화하고, `DatabaseWriteError`를 통해 저장 실패를 명시적으로 error 경로로 승격
 - `ApiWorker.last_error_meta`와 전역 fetch cooldown을 추가해 429/quota 성격 오류 후 수동/자동/순차 refresh와 `더 불러오기`를 일관되게 차단/재개
+- `500/502/503/504` 등 `5xx`는 네트워크/timeout과 같은 재시도 경로로 편입하고, 최종 실패 시에도 `retryable=True`인 `http_error` 메타를 유지
 - CSV 내보내기를 단일 read snapshot 기반으로 고정해 export 중 DB가 변해도 결과가 시작 시점 기준으로 일관되게 유지
 - `DBWorker`가 interrupt 가능한 dedicated read connection을 사용하도록 바꿔 유지보수/종료/탭 정리 시 실제 취소 성공률을 높임
-- 통계/언론사 분석 다이얼로그는 즉시 열고 `AsyncJobWorker`로 비동기 로드해 메인 스레드 DB 블로킹 제거
+- 통계/언론사 분석 다이얼로그는 즉시 열고 `InterruptibleReadWorker`로 비동기 로드해 닫힘 시 SQLite read interruption까지 함께 요청
 - SQLite FTS5(`news_fts`) + trigger + `app_meta` 기반 증분 backfill을 추가하고, backfill 완료 전에는 기존 `LIKE/NOT LIKE` 경로를 진실 원본으로 유지
+- SQLite FTS5(`news_fts`) 증분 backfill은 유지보수/전체 fetch/순차 refresh/종료 경계에서 pause/retry/resume 되며 `5초 -> 15초 -> 30초 cap` backoff로 재개
 - 레거시 DB의 `title_hash IS NULL` / `pubDate_ts IS NULL` backfill을 반복 배치 루프로 바꿔 대용량 DB에서도 startup migration 누락이 남지 않도록 보강
+- 시작 시 북마크와 현재 탭만 즉시 로드하고, 나머지 뉴스 탭은 hydration queue로 순차 로드하며 초기 hydration 취소는 request-id 기반 late cleanup으로 정리
 - 설정 창의 API 키 검증도 `HttpClientConfig` 기반 공용 session과 현재 `api_timeout` 값을 사용하도록 통합
+- 설정 import는 `stage -> persist -> apply-runtime -> startup reconcile` 순서로 처리해 중간 실패 시 부분 적용된 UI/runtime 상태를 남기지 않도록 보강
+- `모두 읽음`, 오래된 기사 삭제, 전체 기사 삭제는 chunked `IterativeJobWorker` 경로로 옮겨 유지보수/종료 시 `stop()`이 실제 효력을 갖도록 조정
 - 저장소 주요 텍스트 자산의 mojibake 문자열을 정리하고, 인코딩 스모크 테스트를 다중 suspicious token/패턴 감시로 강화
+- 백업 메타는 legacy `include_db` 누락을 실제 payload 파일 기준으로 자동 판별하고, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 다시 기록
 - 시작 시 단일 인스턴스 가드 적용
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
 - 설정 창의 API 키 검증/정리 작업 비동기 처리
@@ -94,7 +100,7 @@
 - 자동 정리(`delete_old_news`)는 `pubDate_ts <= 0` 레코드를 삭제 대상에서 제외
 - 트레이 미읽음 수는 탭 캐시 합산 대신 DB 총계(`get_total_unread_count`) 기준으로 계산
 - 트레이 미지원 환경에서도 `show_desktop_notification()`이 토스트 fallback + 알림음으로 동작
-- `pyrightconfig.json`을 추가하고 `core.protocols`/`ui.protocols` 기반 타입 계약을 도입해 `pyright` 기준 0 errors를 유지
+- `pyrightconfig.json`을 추가하고 `core.protocols`/`ui.protocols` 기반 타입 계약과 검사 범위를 명시해 정적 분석 대상면을 고정
 - UTF-8 인코딩 스모크 테스트를 리포지토리 주요 텍스트 자산 전체로 확장
 - 단건 기사 상태 변경(`읽음/북마크/메모/삭제`) 시 열린 뉴스/북마크 탭 캐시를 `link` 기준으로 즉시 동기화
 - `모두 읽음`/DB 유지보수 완료 후에는 열린 탭과 북마크 탭을 full refresh 경로로 재정렬해 정합성 보장
@@ -124,11 +130,11 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-13)
+## 최신 검증 메모 (2026-04-16)
 
-- `python -m pytest -q` => `209 passed, 5 subtests passed`
-- `pyright` => 로컬 환경 기준 `55 errors, 5 warnings, 0 informations`
-  - 주된 원인: `PyQt6`/`requests` import source 해석 실패 + 기존 `core/bootstrap.py`, `ui/settings_dialog.py`, 일부 테스트의 pre-existing 타입 이슈
+- `python -m pytest -q` => `228 passed, 5 subtests passed`
+- `pyright` => 로컬 환경 기준 `74 errors, 5 warnings, 0 informations`
+  - 주된 원인: `PyQt6`/`requests` import source 해석 실패 + `core/bootstrap.py`, `ui/settings_dialog.py`, `ui/_settings_dialog_tasks.py`, 일부 테스트 더미의 optional/member 타입 이슈
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
 - 산출물: `dist/NewsScraperPro_Safe.exe`
 
@@ -154,7 +160,7 @@ navernews-tabsearch/
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── protocols.py             # lock/session capability Protocol 정의
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/DBQueryScope
+│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
 │   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
@@ -295,6 +301,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - v32.7.3 운영 안정화 1차(2026-03-25)에서도 `.spec`을 다시 재검토했으며, `IterativeJobWorker`, 백업 full verification, 자동 시작 health/repair, config `.backup` 회전, DB emergency cap은 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - v32.7.3 구현 리스크 전면 반영(2026-04-09)에서도 `.spec`을 다시 재검토했으며, `HttpClientConfig`, fetch cooldown, snapshot export, dedicated read connection, async analysis, SQLite FTS5 backfill은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - v32.7.3 구현 리스크 후속 정합화(2026-04-13)에서도 `.spec`을 다시 재검토했으며, `DatabaseWriteError`, 반복 backfill loop, 설정 검증 HTTP 정책 통합, 인코딩 가드 강화는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
+- v32.7.3 구현 리스크 후속/문서 정합화(2026-04-16)에서도 `.spec`과 `.gitignore`를 다시 재검토했으며, `5xx` retry 승격, hydration cancellation hardening, staged import atomicity, legacy backup metadata compatibility, persisted verification metadata, interruptible analysis reads, FTS retry scheduler는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않습니다.
 - 2026-03-25 기준으로 `.gitignore`에 `.pytest_tmp/`를 명시 추가했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 다시 성공해 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됨을 재확인했습니다.
 - 2026-03-21 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드를 다시 검증했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-03-24 기준으로도 `.spec`과 `.gitignore`를 다시 재검토했고, 동일한 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`로 클린 빌드가 성공해 추가 packaging/ignore 수정이 필요하지 않음을 재확인했습니다.
@@ -306,6 +313,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-05 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-04-13 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, DB write failure 승격, legacy backfill 반복 처리, 설정 검증 HTTP 정책 통합, mojibake 정리/인코딩 가드 강화 이후에도 추가 packaging/ignore 수정은 필요하지 않음을 재확인했습니다.
 - 2026-04-13 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-16 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, hydration late-cleanup, import staged persistence, legacy backup metadata 보정/검증 결과 영속화, interruptible analysis read, FTS retry/resume 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않음을 재확인했습니다.
+- 2026-04-16 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 
@@ -340,11 +349,12 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
 - `pagination_totals`는 `fetch_key -> 마지막으로 확인한 API total` 매핑이며 `0`도 유효한 값으로 저장됩니다.
 - `search_history`는 `canonical query` 기준으로 dedupe되며 공백/대소문자만 다른 변형은 별도 항목으로 누적되지 않습니다.
-- 백업 복원 예약은 선택한 백업의 `include_db` 메타를 기준으로 복원 범위(`설정만`/`설정+DB`)를 자동 적용합니다.
+- 백업 복원 예약은 선택한 백업의 `include_db` 메타를 우선 사용하고, legacy 백업처럼 메타가 없으면 실제 DB payload 존재 여부로 복원 범위(`설정만`/`설정+DB`)를 자동 판별합니다.
 - 백업 메타의 `trigger`는 `auto`/`manual` 값을 가지며, 자동 시작 백업은 수동 백업과 별도 보존 정책으로 관리됩니다.
 - 자동 시작 백업은 `설정만` 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
 - 수동 백업은 `news_scraper_config.json`이 있어 실제로 복원 가능한 payload를 만들 수 있을 때만 성공합니다.
 - 백업 생성은 payload 기록 직후 self-verify를 수행하며, 검증 실패 항목은 폴더를 지우지 않고 백업 목록에서 `복원 불가` 상태로 남깁니다.
+- 수동 검증과 복원 직전 검증은 `verification_state`, `verification_error`, `is_restorable`, `restore_error`, `is_corrupt`, `error`, `last_verified_at`를 `backup_info.json`에 다시 기록합니다.
 - 시작 시 자동 백업은 설정 파일이 없으면 사용자 차단 없이 skip되고 로그만 남깁니다.
 - 알림 키워드 매칭은 fetch 결과 전체가 아니라 이번 요청에서 새로 추가된 기사 집합에만 적용됩니다.
 - `app_settings`는 `client_secret_enc`, `client_secret_storage` 필드를 지원하며 Windows에서는 평문 `client_secret`를 비우고 암호문을 저장합니다.

@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QTabWidget, 
 from core.startup import StartupManager
 from core.startup import StartupStatus
 from core.validation import ValidationUtils
-from core.workers import AsyncJobWorker
+from PyQt6.QtCore import QThread
 from ui._settings_dialog_content import _SettingsDialogContentMixin
 from ui._settings_dialog_docs import _SettingsDialogDocsMixin
 from ui._settings_dialog_tasks import _SettingsDialogTasksMixin
@@ -35,8 +35,8 @@ class SettingsDialog(
         self.setWindowTitle("도움말" if self._help_mode else "설정 및 도움말")
         self.resize(600, 550)
         self.config = config
-        self._api_validate_worker: Optional[AsyncJobWorker] = None
-        self._data_task_worker: Optional[AsyncJobWorker] = None
+        self._api_validate_worker: Optional[QThread] = None
+        self._data_task_worker: Optional[QThread] = None
         self._is_closing = False
         self._maintenance_active_for_data_task = False
         self._startup_status: Optional[StartupStatus] = None

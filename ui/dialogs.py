@@ -44,7 +44,7 @@ def _verify_backups_job(context, auto_backup: AutoBackup, backup_entries: List[D
     for index, entry in enumerate(backup_entries, start=1):
         context.check_cancelled()
         backup_name = str(entry.get("backup_name") or entry.get("name") or "").strip()
-        verified_entry = auto_backup.verify_backup_entry(entry)
+        verified_entry = auto_backup.verify_backup_entry(entry, persist=True)
         verified_entry["backup_name"] = backup_name
         verified_entries.append(verified_entry)
         context.report(
@@ -588,7 +588,14 @@ class BackupDialog(QDialog):
     def _backup_item_text(self, backup: Dict[str, Any]) -> str:
         timestamp = backup.get("timestamp", "Unknown")
         version = backup.get("app_version", "?")
-        include_db = "DB 포함" if backup.get("include_db") else "설정만"
+        include_db_value = backup.get("include_db")
+        resolved_include_db = backup.get("resolved_include_db")
+        if isinstance(include_db_value, bool):
+            include_db = "DB 포함" if include_db_value else "설정만"
+        elif isinstance(resolved_include_db, bool):
+            include_db = "DB 포함" if resolved_include_db else "설정만"
+        else:
+            include_db = "자동 판별"
         trigger_label = "자동" if str(backup.get("trigger", "manual")).lower() == "auto" else "수동"
         date_str = self.format_backup_timestamp(
             str(timestamp),
@@ -626,7 +633,8 @@ class BackupDialog(QDialog):
             "path": str(backup.get("path", "") or ""),
             "timestamp": str(backup.get("timestamp", "") or ""),
             "app_version": str(backup.get("app_version", "") or ""),
-            "include_db": bool(backup.get("include_db", False)),
+            "include_db": backup.get("include_db") if isinstance(backup.get("include_db"), bool) else None,
+            "resolved_include_db": bool(backup.get("resolved_include_db", backup.get("include_db", False))),
             "trigger": str(backup.get("trigger", "manual")).lower(),
             "created_at": str(backup.get("created_at", "") or ""),
             "is_corrupt": is_corrupt,
@@ -635,6 +643,7 @@ class BackupDialog(QDialog):
             "restore_error": str(backup.get("restore_error", "") or ""),
             "verification_state": str(backup.get("verification_state", "pending") or "pending"),
             "verification_error": str(backup.get("verification_error", "") or ""),
+            "last_verified_at": str(backup.get("last_verified_at", "") or ""),
         }
 
     def _apply_backup_item_state(self, item, backup: Dict[str, Any]):
@@ -875,7 +884,11 @@ class BackupDialog(QDialog):
             db_backup_path = os.path.join(self.auto_backup.backup_dir, backup_name, db_name)
             restore_db = os.path.exists(db_backup_path)
 
-        verified_item = self.auto_backup.verify_backup_by_name(backup_name, require_db=restore_db)
+        verified_item = self.auto_backup.verify_backup_by_name(
+            backup_name,
+            require_db=restore_db,
+            persist=True,
+        )
         self._apply_backup_item_state(current_item, verified_item)
         if bool(verified_item.get("is_corrupt", False)):
             self._handle_corrupt_backup(backup_name, str(verified_item.get("error", "") or ""))

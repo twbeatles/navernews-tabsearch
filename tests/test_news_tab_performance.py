@@ -34,6 +34,16 @@ class TestNewsTabPerformance(unittest.TestCase):
         self.addCleanup(tab.deleteLater)
         return tab
 
+    def test_constructor_can_defer_initial_db_load(self):
+        with mock.patch.object(NewsTab, "load_data_from_db", autospec=True) as load_mock:
+            tab = NewsTab("AI", cast(Any, _FakeDb()), theme_mode=0, defer_initial_load=True)
+        self.addCleanup(tab.cleanup)
+        self.addCleanup(tab.deleteLater)
+
+        load_mock.assert_not_called()
+        self.assertTrue(tab.needs_initial_hydration())
+        self.assertIn("로딩 대기", tab.lbl_status.text())
+
     def _seed_rows(self, tab: NewsTab, rows):
         tab.news_data_cache = [tab._prepare_item(dict(row)) for row in rows]
         tab.filtered_data_cache = list(tab.news_data_cache)

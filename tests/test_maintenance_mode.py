@@ -1,4 +1,5 @@
 import unittest
+from collections import deque
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -75,6 +76,9 @@ class _DummyMain:
         self._status = _DummyStatusBar()
         self.warning_toasts = []
         self.toasts = []
+        self.hydration_delays = []
+        self.fts_pause_delays = []
+        self.fts_resume_delays = []
         self.cleanup_results = dict(cleanup_results)
         self.cleanup_calls = []
         self._worker_registry = _DummyRegistry(
@@ -104,6 +108,15 @@ class _DummyMain:
     def show_toast(self, message):
         self.toasts.append(str(message))
 
+    def _schedule_tab_hydration(self, delay_ms=0):
+        self.hydration_delays.append(int(delay_ms))
+
+    def _pause_fts_backfill(self, *, retry_delay_ms=1000):
+        self.fts_pause_delays.append(int(retry_delay_ms))
+
+    def _request_fts_backfill_resume(self, *, delay_ms=250):
+        self.fts_resume_delays.append(int(delay_ms))
+
 
 class _DummyFetchBlockMain:
     is_maintenance_mode_active = MainApp.is_maintenance_mode_active
@@ -130,6 +143,67 @@ class _DummyFetchBlockMain:
         )
 
 
+class _DummyHydrationTab:
+    def __init__(self, keyword, *, needs=True, cancel_result=True):
+        self.keyword = keyword
+        self.is_bookmark_tab = False
+        self._needs = needs
+        self.request_calls = 0
+        self.cancel_calls = []
+        self.cancel_result = bool(cancel_result)
+
+    def needs_initial_hydration(self):
+        return self._needs
+
+    def is_initial_hydration_inflight(self):
+        return False
+
+    def request_initial_hydration(self):
+        self.request_calls += 1
+        return True
+
+    def cancel_initial_hydration(self, wait_ms=300):
+        self.cancel_calls.append(int(wait_ms))
+        return self.cancel_result
+
+
+class _DummyHydrationMain:
+    _remove_tab_hydration = MainApp._remove_tab_hydration
+    _enqueue_tab_hydration = MainApp._enqueue_tab_hydration
+    _is_tab_hydration_paused = MainApp._is_tab_hydration_paused
+    _start_tab_hydration = MainApp._start_tab_hydration
+    _cancel_active_tab_hydration = MainApp._cancel_active_tab_hydration
+    _process_tab_hydration = MainApp._process_tab_hydration
+
+    def __init__(self):
+        self._shutdown_in_progress = False
+        self._maintenance_mode = False
+        self._refresh_in_progress = False
+        self._sequential_refresh_active = False
+        self._hydration_inflight_keyword = ""
+        self._tab_hydration_queue = deque(["OTHER"])
+        self.current_tab = _DummyHydrationTab("AI", needs=True)
+        self.other_tab = _DummyHydrationTab("OTHER", needs=True)
+        self._worker_registry = _DummyRegistry([])
+        self.hydration_delays = []
+
+    def is_maintenance_mode_active(self):
+        return self._maintenance_mode
+
+    def _current_news_tab(self):
+        return self.current_tab
+
+    def _find_news_tab(self, keyword):
+        if keyword == "AI":
+            return 1, self.current_tab
+        if keyword == "OTHER":
+            return 2, self.other_tab
+        return None
+
+    def _schedule_tab_hydration(self, delay_ms=0):
+        self.hydration_delays.append(int(delay_ms))
+
+
 class TestMaintenanceMode(unittest.TestCase):
     def test_begin_database_maintenance_cancels_workers_and_disables_fetch_controls(self):
         dummy = _DummyMain({(1, "AI"): True})
@@ -144,12 +218,15 @@ class TestMaintenanceMode(unittest.TestCase):
         self.assertFalse(dummy.btn_add.enabled)
         self.assertFalse(dummy._tabs[0].btn_load.enabled)
         self.assertIn("유지보수 모드", dummy.warning_toasts[0])
+        self.assertEqual(dummy.fts_pause_delays, [1000])
 
         dummy.end_database_maintenance()
         self.assertFalse(dummy.is_maintenance_mode_active())
         self.assertTrue(dummy.btn_refresh.enabled)
         self.assertTrue(dummy.btn_add.enabled)
         self.assertEqual(dummy._tabs[0].btn_load.text, "📄 더 불러오기")
+        self.assertEqual(dummy.hydration_delays, [50])
+        self.assertEqual(dummy.fts_resume_delays, [250])
 
     def test_begin_database_maintenance_fails_when_worker_cleanup_times_out(self):
         dummy = _DummyMain({(1, "AI"): False})
@@ -168,6 +245,27 @@ class TestMaintenanceMode(unittest.TestCase):
         self.assertEqual(len(dummy.warning_toasts), 1)
         self.assertIn("유지보수 중", dummy.warning_toasts[0])
         self.assertIn("유지보수 중", dummy._status.messages[0][0])
+
+    def test_tab_hydration_prioritizes_current_tab_before_queue(self):
+        dummy = _DummyHydrationMain()
+
+        dummy._process_tab_hydration()
+
+        self.assertEqual(dummy.current_tab.request_calls, 1)
+        self.assertEqual(dummy.other_tab.request_calls, 0)
+        self.assertEqual(dummy._hydration_inflight_keyword, "AI")
+
+    def test_cancel_active_tab_hydration_requeues_even_when_worker_wait_times_out(self):
+        dummy = _DummyHydrationMain()
+        dummy.current_tab = _DummyHydrationTab("AI", needs=True, cancel_result=False)
+        dummy._hydration_inflight_keyword = "AI"
+
+        finished = dummy._cancel_active_tab_hydration(requeue=True, wait_ms=200)
+
+        self.assertFalse(finished)
+        self.assertEqual(dummy._hydration_inflight_keyword, "")
+        self.assertEqual(dummy.current_tab.cancel_calls, [200])
+        self.assertEqual(list(dummy._tab_hydration_queue), ["OTHER", "AI"])
 
 
 if __name__ == "__main__":
