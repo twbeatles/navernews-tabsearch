@@ -9,7 +9,9 @@ import traceback
 import urllib.parse
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, cast
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, TypedDict, cast
 
 import requests
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
@@ -22,6 +24,54 @@ from core.query_parser import build_fetch_key
 logger = logging.getLogger(__name__)
 
 RE_BOLD_TAGS = re.compile(r"</?b>")
+
+
+class ReadConnectionProtocol(Protocol):
+    def execute(self, sql: str) -> Any:
+        ...
+
+    def close(self) -> None:
+        ...
+
+
+def _parse_retry_after_seconds(
+    header_value: Any,
+    *,
+    now: Optional[datetime] = None,
+) -> int:
+    raw_value = str(header_value or "").strip()
+    if not raw_value:
+        return 0
+    if raw_value.isdigit():
+        return max(0, int(raw_value))
+
+    try:
+        retry_at = parsedate_to_datetime(raw_value)
+    except (TypeError, ValueError, IndexError):
+        return 0
+
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    reference_time = now or datetime.now(timezone.utc)
+    return max(0, int((retry_at - reference_time).total_seconds()))
+
+
+def _retry_after_seconds_from_response(response: Any) -> int:
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return 0
+
+    header_value = None
+    try:
+        header_value = headers.get("Retry-After")
+    except Exception:
+        header_value = None
+    if header_value is None:
+        try:
+            header_value = headers.get("retry-after")
+        except Exception:
+            header_value = None
+    return _parse_retry_after_seconds(header_value)
 
 
 @contextmanager
@@ -157,7 +207,7 @@ class InterruptibleReadWorker(QThread):
         self.job_func = job_func
         self.args = args
         self.kwargs = kwargs
-        self._conn = None
+        self._conn: Optional[ReadConnectionProtocol] = None
 
     def run(self):
         try:
@@ -166,7 +216,11 @@ class InterruptibleReadWorker(QThread):
                 return
 
             open_read_connection = getattr(self.db, "open_read_connection", None)
-            conn = open_read_connection(timeout=1.5) if callable(open_read_connection) else None
+            conn: Optional[ReadConnectionProtocol]
+            if callable(open_read_connection):
+                conn = cast(Optional[ReadConnectionProtocol], open_read_connection(timeout=1.5))
+            else:
+                conn = None
             self._conn = conn
             if conn is not None:
                 conn.execute("BEGIN")
@@ -337,6 +391,12 @@ class ApiWorker(QObject):
         }
         self._safe_emit(self.error, message)
 
+    def _rate_limit_wait_seconds(self, response: Any, attempt: int) -> int:
+        retry_after_seconds = _retry_after_seconds_from_response(response)
+        if retry_after_seconds > 0:
+            return retry_after_seconds
+        return max(5, (int(attempt) + 1) * 5)
+
     def run(self):
         logger.info(f"ApiWorker 시작: {self.display_keyword}")
 
@@ -397,11 +457,10 @@ class ApiWorker(QObject):
                             return
 
                         if resp.status_code == 429:
-                            cooldown_seconds = max(5, (attempt + 1) * 5)
+                            cooldown_seconds = self._rate_limit_wait_seconds(resp, attempt)
                             if attempt < self.max_retries - 1:
-                                wait_time = (attempt + 1) * 2
-                                self._safe_emit(self.progress, f"요청 제한 초과. {wait_time}초 후 재시도...")
-                                for _ in range(wait_time):
+                                self._safe_emit(self.progress, f"요청 제한 초과. {cooldown_seconds}초 후 재시도...")
+                                for _ in range(cooldown_seconds):
                                     if not self.is_running:
                                         return
                                     time.sleep(1)
@@ -539,9 +598,11 @@ class ApiWorker(QObject):
                             )
                             return
 
+                        new_count = len(new_items)
                         result = {
                             "items": items,
                             "new_items": new_items,
+                            "new_count": new_count,
                             "total": data.get("total", 0),
                             "filtered": filtered_count,
                             "added_count": added_count,
@@ -549,9 +610,9 @@ class ApiWorker(QObject):
                         }
 
                         logger.info(
-                            f"ApiWorker 완료: {self.display_keyword} ({len(items)}개, 추가 {added_count}, 중복 {dup_count})"
+                            f"ApiWorker 완료: {self.display_keyword} ({len(items)}개, 새 링크 {new_count}, 추가 {added_count}, 중복 {dup_count})"
                         )
-                        self._safe_emit(self.progress, f"'{self.display_keyword}' 완료 (추가: {added_count}개)")
+                        self._safe_emit(self.progress, f"'{self.display_keyword}' 완료 (새 링크: {new_count}개)")
                         self._safe_emit(self.finished, result)
                         return
 

@@ -192,6 +192,7 @@ class MainApp(
             self._sequential_refresh_active = False
             self._current_refresh_idx = 0
             self._total_refresh_count = 0
+            self._sequential_new_count = 0    # 누적 새 링크 건수
             self._sequential_added_count = 0  # 누적 추가 건수
             self._sequential_dup_count = 0    # 누적 중복 건수
             self._last_fetch_request_ts: Dict[str, float] = {}

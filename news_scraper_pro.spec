@@ -80,6 +80,12 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   reads, and FTS retry scheduling rely on stdlib / already-bundled modules
 #   only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-04-18 review:
+# - Maintenance completion sync ordering, sequential per-tab notifications,
+#   `new_count`-based alert semantics, and 429 `Retry-After` parsing rely on
+#   stdlib / already-bundled modules only (`email.utils` is already kept
+#   explicit below for onefile runtime safety).
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

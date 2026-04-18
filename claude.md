@@ -126,13 +126,28 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `228 passed, 5 subtests passed`
-- `pyright` => 로컬 환경 기준 `74 errors, 5 warnings, 0 informations`
-  - 핵심 원인: `PyQt6`/`requests` import source 미해결 + `core/bootstrap.py`, `ui/settings_dialog.py`, `ui/_settings_dialog_tasks.py`, 일부 테스트 더미의 optional/member 타입 이슈
-- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-16 기준 다시 성공했다.
+- `python -m pytest -q` => `236 passed, 5 subtests passed`
+- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ---
+
+## 🚀 2026-04-18 Implementation Follow-through + Docs/Spec/Gitignore Revalidation
+
+- Current verification line:
+  - `python -m pytest -q` => `236 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- Maintenance / refresh / alert correctness:
+  - Settings-dialog maintenance actions now stage their completion result and flush parent sync only after maintenance teardown, so open-tab reload, badge refresh, and tray tooltip sync no longer race with the maintenance guard.
+  - Sequential refresh now shares the same success-side notification path as manual refresh, including per-tab desktop/tray notifications and alert-keyword checks.
+  - Fetch success UI now treats `new_items` / `new_count` as the canonical "new article" contract, so duplicate-titled-but-new links still participate in notifications and summary text.
+  - `ApiWorker` now honors HTTP `Retry-After` for 429 responses in both delta-seconds and HTTP-date forms, and uses the same computed value for retry sleep and final cooldown metadata.
+- Docs / packaging / repo hygiene:
+  - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`.
+  - Re-reviewed `.gitignore` with `git status --ignored --short`; existing rules still cover build outputs, caches, and local runtime artifacts, so no new ignore entry was required.
+  - Recreated `implementation_audit_2026-04-18.md` as a checked-in follow-through summary for the resolved audit scope.
 
 ## 🚀 2026-04-16 Follow-up Risk Fixes + Docs/Spec Revalidation
 

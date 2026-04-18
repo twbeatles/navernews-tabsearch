@@ -294,8 +294,10 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
             self.assertEqual(dummy.toast_messages, ["총 2개 항목을 저장했습니다."])
             self.assertEqual(len(dialogs.info_calls), 1)
             self.assertIsNotNone(dummy._db)
-            self.assertEqual(dummy._db.snapshot_calls, 1)
-            self.assertEqual(dummy._db.live_calls, [])
+            db = dummy._db
+            assert db is not None
+            self.assertEqual(db.snapshot_calls, 1)
+            self.assertEqual(db.live_calls, [])
 
     def test_export_data_falls_back_to_loaded_slice_when_helper_missing(self):
         all_items = [

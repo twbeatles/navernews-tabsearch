@@ -81,7 +81,7 @@ class _DummyFtsMain:
         self._maintenance_mode = False
         self._refresh_in_progress = False
         self._sequential_refresh_active = False
-        self._fts_backfill_worker = None
+        self._fts_backfill_worker: _FakeIterativeWorker | None = None
         self._fts_backfill_retry_attempt = 0
         self._fts_backfill_pause_requested = False
         self._fts_backfill_pause_delay_ms = 1000
@@ -217,8 +217,10 @@ class TestFtsSearchAcceleration(unittest.TestCase):
         with mock.patch("ui.main_window.IterativeJobWorker", _FakeIterativeWorker):
             dummy._start_fts_backfill()
 
-        self.assertIsNotNone(dummy._fts_backfill_worker)
-        self.assertTrue(dummy._fts_backfill_worker.running)
+        worker = dummy._fts_backfill_worker
+        self.assertIsNotNone(worker)
+        assert worker is not None
+        self.assertTrue(worker.running)
 
 
 if __name__ == "__main__":

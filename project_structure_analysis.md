@@ -17,6 +17,18 @@
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
 
+## 0. 2026-04-18 구현 수정 반영 / 문서·spec·gitignore 재검증
+
+이번 재검증에서는 2026-04-18 감사 후속 수정 배치와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- `ui.settings_dialog.SettingsDialog`는 유지보수 작업 완료 결과를 즉시 부모로 흘리지 않고, `end_database_maintenance()` 이후에만 flush하도록 바뀌어 열린 탭 reload, 배지 refresh, tray tooltip sync가 유지보수 가드에 막히지 않는다.
+- 순차 새로고침은 수동 새로고침과 동일한 성공 후처리 경로를 공유하게 되어, 각 탭 완료 시점마다 데스크톱 알림, 트레이 알림, 알림 키워드 검사가 다시 실행된다.
+- fetch 성공 후 "새 기사" 의미는 `new_items` / `new_count`로 통일되었고, 제목 중복이더라도 새 링크인 기사는 알림과 요약 집계에 계속 포함된다.
+- `core.workers.ApiWorker`는 HTTP `429` 응답에서 `Retry-After`의 delta-seconds / HTTP-date 형식을 모두 해석하고, 재시도 대기와 최종 cooldown 메타 계산에 같은 값을 사용한다.
+- `news_scraper_pro.spec`는 2026-04-18 기준 다시 재검토되었고, 이번 패스의 유지보수 완료 sync 순서 고정, 순차 새로고침 즉시 알림, `new_count` 의미 통일, `Retry-After` 지원, 남은 pyright 정리는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않았다.
+- `.gitignore`는 `git status --ignored --short` 기준으로 다시 확인했으며, `build/`, `dist/`, `__pycache__/`, `.pytest_cache/`, 로컬 DB/설정/로그 산출물을 계속 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `236 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
+
 ## 0. 2026-04-16 구현 리스크 후속/문서 정합화 재검증
 
 이번 재검증에서는 2026-04-16 follow-up risk fixes 배치와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.

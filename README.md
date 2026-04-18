@@ -21,7 +21,7 @@
 - 자동 새로고침(10분~6시간) 및 수동 전체 새로고침
 - 기사 북마크/읽음 처리/메모 작성
 - 열린 탭/북마크 탭 사이의 기사 상태 즉시 동기화
-- 알림 키워드는 이번 fetch에서 새로 추가된 기사에만 적용
+- 알림 키워드와 새 기사 알림은 이번 fetch에서 새로 감지된 링크(`new_items` / `new_count`)에만 적용
 - 현재 탭 필터 전체 결과 CSV 내보내기
 - 키워드 그룹 관리
 - 시스템 트레이 동작(최소화/닫기 동작 커스터마이징)
@@ -46,6 +46,10 @@
 - `모두 읽음`, 오래된 기사 삭제, 전체 기사 삭제는 chunked `IterativeJobWorker` 경로로 옮겨 유지보수/종료 시 `stop()`이 실제 효력을 갖도록 조정
 - 저장소 주요 텍스트 자산의 mojibake 문자열을 정리하고, 인코딩 스모크 테스트를 다중 suspicious token/패턴 감시로 강화
 - 백업 메타는 legacy `include_db` 누락을 실제 payload 파일 기준으로 자동 판별하고, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 다시 기록
+- 설정 창의 오래된 기사 정리/전체 기사 삭제는 완료 결과를 유지보수 해제 직후에 flush해 열린 탭, 배지, 트레이 툴팁 동기화가 skip되지 않도록 보장
+- 순차 새로고침도 수동 새로고침과 같은 성공 후처리를 사용해 탭별 즉시 새 기사 알림, 트레이 알림, 알림 키워드 체크를 동일하게 수행
+- fetch 성공 메시지와 최종 순차 요약은 `added_count`가 아니라 `new_items` / `new_count`를 기본 의미로 사용해 "중복 제목이지만 새 링크"도 새 기사로 취급
+- `ApiWorker`는 HTTP 429에서 `Retry-After`의 delta-seconds / HTTP-date를 모두 해석하고, 재시도 대기와 최종 cooldown 메타 계산을 같은 값으로 맞춤
 - 시작 시 단일 인스턴스 가드 적용
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
 - 설정 창의 API 키 검증/정리 작업 비동기 처리
@@ -130,11 +134,10 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-16)
+## 최신 검증 메모 (2026-04-18)
 
-- `python -m pytest -q` => `228 passed, 5 subtests passed`
-- `pyright` => 로컬 환경 기준 `74 errors, 5 warnings, 0 informations`
-  - 주된 원인: `PyQt6`/`requests` import source 해석 실패 + `core/bootstrap.py`, `ui/settings_dialog.py`, `ui/_settings_dialog_tasks.py`, 일부 테스트 더미의 optional/member 타입 이슈
+- `python -m pytest -q` => `236 passed, 5 subtests passed`
+- `pyright` => `0 errors, 0 warnings, 0 informations`
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
 - 산출물: `dist/NewsScraperPro_Safe.exe`
 
@@ -315,6 +318,9 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-13 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-04-16 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, hydration late-cleanup, import staged persistence, legacy backup metadata 보정/검증 결과 영속화, interruptible analysis read, FTS retry/resume 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않음을 재확인했습니다.
 - 2026-04-16 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-18 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 유지보수 완료 sync 순서 고정, 순차 새로고침 즉시 알림, `new_count` 의미 통일, `Retry-After` 지원, 남은 pyright 정리 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않음을 재확인했습니다.
+- 2026-04-18 기준 `git status --ignored --short`로 `build/`, `dist/`, `__pycache__/`, `.pytest_cache/`, 런타임 DB/설정/로그 산출물이 계속 무시되는 것도 확인했습니다.
+- 2026-04-18 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 

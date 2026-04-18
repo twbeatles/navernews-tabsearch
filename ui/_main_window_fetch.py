@@ -108,6 +108,7 @@ class _MainWindowFetchMixin:
         self._sequential_refresh_active = True
         self._current_refresh_idx = 0
         self._total_refresh_count = len(prepared_keywords)
+        self._sequential_new_count = 0
         self._sequential_added_count = 0
         self._sequential_dup_count = 0
         pause_fts_backfill = getattr(self, "_pause_fts_backfill", None)
@@ -281,6 +282,52 @@ class _MainWindowFetchMixin:
             self._current_refresh_idx += 1
             QTimer.singleShot(500, self._process_next_refresh)
 
+    def _build_fetch_summary_message(
+        self: MainApp,
+        keyword: str,
+        *,
+        new_count: int,
+        dup_count: int,
+        filtered_count: int = 0,
+    ) -> str:
+        msg = f"✅ '{keyword}' 업데이트 완료 ({new_count}건 새 링크"
+        if dup_count > 0:
+            msg += f", {dup_count}건 중복"
+        if filtered_count > 0:
+            msg += f", {filtered_count}건 제외"
+        msg += ")"
+        return msg
+
+    def _notify_fetch_new_items(
+        self: MainApp,
+        keyword: str,
+        *,
+        new_count: int,
+        new_items: List[Dict[str, Any]],
+    ) -> None:
+        if new_count <= 0:
+            return
+
+        self.show_desktop_notification(
+            f"📰 {keyword}",
+            f"{new_count}건의 새 뉴스가 있습니다.",
+        )
+        if not self.isVisible():
+            self.show_tray_notification(
+                f"📰 {keyword}",
+                f"{new_count}건의 새 뉴스가 도착했습니다.",
+            )
+        self.update_tray_tooltip()
+
+        matched = self.check_alert_keywords(new_items)
+        if matched:
+            for item, alert_keyword in matched[:3]:
+                title = html.unescape(RE_HTML_TAGS.sub("", item.get("title", "")))
+                self.show_desktop_notification(
+                    f"🔔 알림 키워드: {alert_keyword}",
+                    title[:50],
+                )
+
     def _on_sequential_fetch_done(self: MainApp, keyword: str):
         """Advance the sequential refresh chain."""
         if not self._sequential_refresh_active:
@@ -302,10 +349,10 @@ class _MainWindowFetchMixin:
         self.progress.setVisible(False)
         self.btn_refresh.setEnabled(True)
 
-        added = self._sequential_added_count
+        new_count = self._sequential_new_count
         dup = self._sequential_dup_count
 
-        toast_msg = f"총 {self._total_refresh_count}개 탭 새로고침 완료 ({added}건 추가"
+        toast_msg = f"총 {self._total_refresh_count}개 탭 새로고침 완료 ({new_count}건 새 링크"
         if dup > 0:
             toast_msg += f", {dup}건 중복"
         toast_msg += ")"
@@ -314,10 +361,10 @@ class _MainWindowFetchMixin:
         self._status_bar().showMessage(toast_msg, 5000)
         self.show_toast(toast_msg)
 
-        if self.notify_on_refresh and added > 0:
+        if self.notify_on_refresh and new_count > 0:
             self.show_desktop_notification(
                 "뉴스 자동 새로고침 완료",
-                f"{added}건의 새 기사가 업데이트되었습니다.",
+                f"{new_count}건의 새 기사가 업데이트되었습니다.",
             )
 
         self.apply_refresh_interval()
@@ -531,9 +578,12 @@ class _MainWindowFetchMixin:
                 search_keyword = keyword
             fetch_key = build_fetch_key(search_keyword, exclude_words)
 
+            new_items = list(result.get("new_items", []) or [])
+            new_count = int(result.get("new_count", len(new_items)) or 0)
             added_count = int(result.get("added_count", 0) or 0)
             dup_count = int(result.get("dup_count", 0) or 0)
             total = int(result.get("total", 0) or 0)
+            filtered_count = int(result.get("filtered", 0) or 0)
 
             completed_start_idx = None
             if request_id is not None:
@@ -563,15 +613,15 @@ class _MainWindowFetchMixin:
                 self._apply_load_more_button_state(tab_widget, total, last_api_start_index)
                 tab_widget.load_data_from_db()
 
-                if not is_more and not is_sequential:
-                    msg = f"✅ '{keyword}' 업데이트 완료 ({added_count}건 추가"
-                    if dup_count > 0:
-                        msg += f", {dup_count}건 중복"
-                    filtered_count = int(result.get("filtered", 0) or 0)
-                    if filtered_count > 0:
-                        msg += f", {filtered_count}건 제외"
-                    msg += ")"
-                    tab_widget.lbl_status.setText(msg)
+                if not is_more:
+                    tab_widget.lbl_status.setText(
+                        self._build_fetch_summary_message(
+                            keyword,
+                            new_count=new_count,
+                            dup_count=dup_count,
+                            filtered_count=filtered_count,
+                        )
+                    )
 
             if not is_sequential:
                 self.progress.setVisible(False)
@@ -579,34 +629,26 @@ class _MainWindowFetchMixin:
                 self.btn_refresh.setEnabled(True)
 
                 if not is_more:
-                    toast_msg = f"✅ '{keyword}' 업데이트 완료 ({added_count}건 추가"
-                    if dup_count > 0:
-                        toast_msg += f", {dup_count}건 유사"
-                    toast_msg += ")"
+                    toast_msg = self._build_fetch_summary_message(
+                        keyword,
+                        new_count=new_count,
+                        dup_count=dup_count,
+                        filtered_count=filtered_count,
+                    )
                     self.show_toast(toast_msg)
                     self._status_bar().showMessage(toast_msg, 3000)
-
-                    if added_count > 0:
-                        self.show_desktop_notification(
-                            f"📰 {keyword}",
-                            f"{added_count}건의 새 뉴스가 있습니다.",
-                        )
-                        if not self.isVisible():
-                            self.show_tray_notification(
-                                f"📰 {keyword}",
-                                f"{added_count}건의 새 뉴스가 도착했습니다.",
-                            )
-                        self.update_tray_tooltip()
-
-                    matched = self.check_alert_keywords(result.get("new_items", [])) if added_count > 0 else []
-                    if matched:
-                        for item, alert_keyword in matched[:3]:
-                            title = html.unescape(RE_HTML_TAGS.sub("", item.get("title", "")))
-                            self.show_desktop_notification(
-                                f"🔔 알림 키워드: {alert_keyword}",
-                                title[:50],
-                            )
+                    self._notify_fetch_new_items(
+                        keyword,
+                        new_count=new_count,
+                        new_items=new_items,
+                    )
             else:
+                self._notify_fetch_new_items(
+                    keyword,
+                    new_count=new_count,
+                    new_items=new_items,
+                )
+                self._sequential_new_count += new_count
                 self._sequential_added_count += added_count
                 self._sequential_dup_count += dup_count
                 self._on_sequential_fetch_done(keyword)

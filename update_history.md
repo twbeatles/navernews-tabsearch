@@ -1,6 +1,23 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Follow-through + Docs/Spec/Gitignore Revalidation (2026-04-18)**:
+  - Maintenance / refresh / alert correctness:
+    - Settings-dialog maintenance mutations now stage their completion result and flush `on_database_maintenance_completed(...)` only after `end_database_maintenance()`, so open-tab reload, badge refresh, and tray-tooltip sync no longer skip behind an active maintenance guard.
+    - Sequential refresh now runs the same success-side notification path as manual refresh, including per-tab desktop/tray notifications and alert-keyword checks as each tab completes.
+    - Fetch success UI now treats `new_items` / `new_count` as the canonical "new article" contract, so duplicate-titled-but-new links still participate in new-article notifications and summaries.
+    - `ApiWorker` now honors HTTP `Retry-After` for 429 responses in both delta-seconds and HTTP-date forms, and uses the same computed value for retry sleep and final cooldown metadata.
+  - Typing / regression coverage:
+    - Cleared the remaining pyright issues in `core.workers.InterruptibleReadWorker` and the affected test doubles.
+    - Added regression coverage for maintenance completion ordering, sequential immediate notifications, `new_count`-based alert behavior, and `Retry-After` parsing/fallback.
+  - Docs / packaging / repo hygiene:
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the current maintenance/notification/rate-limit contract.
+    - Re-reviewed `.gitignore` with `git status --ignored --short`; existing rules still cover build outputs, caches, and local runtime data, so no new ignore entry was required.
+    - Restored `implementation_audit_2026-04-18.md` as a checked-in follow-through summary for the resolved audit items.
+  - Validation:
+    - `python -m pytest -q` => `236 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Follow-up Risk Fixes + Docs/Spec Revalidation (2026-04-16)**:
   - Fetch / hydration / long-task correctness:
     - `ApiWorker` now retries `500/502/503/504` and other `5xx` responses through the retry path instead of surfacing them immediately; final failure still keeps `last_error_meta(kind=http_error, retryable=True)`.

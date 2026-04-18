@@ -85,11 +85,23 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `228 passed, 5 subtests passed`
-- `pyright` => 로컬 환경 기준 `74 errors, 5 warnings, 0 informations`
-- 원인 메모: `PyQt6`/`requests` import source 미해결과 `core/bootstrap.py`, `ui/settings_dialog.py`, `ui/_settings_dialog_tasks.py`, 일부 테스트 더미의 optional/member 타입 이슈가 같이 남아 있다.
-- `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 감시
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드는 2026-04-16 기준 다시 성공했다.
+- `python -m pytest -q` => `236 passed, 5 subtests passed`
+- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+
+### 2026-04-18 Implementation Follow-through + Docs/Spec/Gitignore Revalidation
+
+- Current verification line:
+  - `python -m pytest -q` => `236 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- Settings-dialog maintenance mutations now stage their completion result and flush parent sync only after maintenance teardown, preventing open-tab reload, badge refresh, and tray-tooltip sync from being skipped by the maintenance guard.
+- Sequential refresh now shares the same success-side notification path as manual refresh, including per-tab desktop/tray notifications and alert-keyword checks.
+- Fetch success UI now treats `new_items` / `new_count` as the canonical "new article" contract, so duplicate-titled-but-new links still participate in notifications and summary text.
+- `ApiWorker` now honors HTTP `Retry-After` for 429 responses in both delta-seconds and HTTP-date forms, and uses the same computed value for retry sleep and final cooldown metadata.
+- The remaining pyright issues were cleared in `core.workers.InterruptibleReadWorker` and the affected test doubles.
+- `news_scraper_pro.spec` and `.gitignore` were re-reviewed again for this pass; no additional packaging or ignore change was required.
 
 ### 2026-04-16 Follow-up Risk Fixes + Docs/Spec Revalidation
 

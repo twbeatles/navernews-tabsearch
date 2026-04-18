@@ -1,16 +1,20 @@
 import unittest
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from typing import Optional
+from unittest import mock
 
 import requests
 
 from core.database import DatabaseWriteError
-from core.workers import ApiWorker
+from core.workers import ApiWorker, _parse_retry_after_seconds
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, payload: dict):
+    def __init__(self, status_code: int, payload: dict, headers: Optional[dict] = None):
         self.status_code = status_code
         self._payload = payload
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -206,6 +210,7 @@ class TestWorkerCancellation(unittest.TestCase):
             [item["link"] for item in finished[0]["new_items"]],
             ["https://news.naver.com/new"],
         )
+        self.assertEqual(finished[0]["new_count"], 1)
 
     def test_db_write_failure_emits_error_instead_of_finished(self):
         payload = {
@@ -303,3 +308,84 @@ class TestWorkerCancellation(unittest.TestCase):
         self.assertEqual(worker.last_error_meta["kind"], "http_error")
         self.assertEqual(worker.last_error_meta["status_code"], 503)
         self.assertTrue(worker.last_error_meta["retryable"])
+
+    def test_parse_retry_after_supports_seconds_and_http_date(self):
+        fixed_now = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        retry_at = format_datetime(fixed_now + timedelta(seconds=9), usegmt=True)
+
+        self.assertEqual(_parse_retry_after_seconds("7", now=fixed_now), 7)
+        self.assertEqual(_parse_retry_after_seconds(retry_at, now=fixed_now), 9)
+
+    def test_http_429_retry_after_seconds_header_controls_retry_delay(self):
+        payload = {
+            "total": 1,
+            "items": [
+                {
+                    "title": "AI retry success",
+                    "description": "desc",
+                    "link": "https://news.naver.com/retry-after-success",
+                    "originallink": "https://example.com/retry-after-success",
+                    "pubDate": "2026-02-27T10:00:00",
+                }
+            ],
+        }
+        session = _SequenceSession(
+            [
+                _FakeResponse(429, {"errorMessage": "limited", "errorCode": "E429"}, headers={"Retry-After": "7"}),
+                _FakeResponse(200, payload),
+            ]
+        )
+        worker, db = self._make_worker(session)
+        worker.max_retries = 2
+
+        with mock.patch("core.workers.time.sleep") as sleep_mock:
+            worker.run()
+
+        self.assertEqual(session.calls, 2)
+        self.assertEqual(db.upsert_calls, 1)
+        self.assertEqual(sleep_mock.call_count, 7)
+
+    def test_http_429_final_failure_uses_retry_after_http_date_for_cooldown(self):
+        retry_at = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=6), usegmt=True)
+        session = _SequenceSession(
+            [
+                _FakeResponse(
+                    429,
+                    {"errorMessage": "limited", "errorCode": "E429"},
+                    headers={"Retry-After": retry_at},
+                )
+            ]
+        )
+        worker, db = self._make_worker(session)
+        worker.max_retries = 1
+
+        errors = []
+        worker.error.connect(lambda msg: errors.append(msg))
+        worker.run()
+
+        self.assertEqual(db.upsert_calls, 0)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(worker.last_error_meta["kind"], "rate_limit")
+        self.assertGreaterEqual(worker.last_error_meta["cooldown_seconds"], 1)
+        self.assertLessEqual(worker.last_error_meta["cooldown_seconds"], 6)
+
+    def test_http_429_invalid_retry_after_falls_back_to_default_cooldown(self):
+        session = _SequenceSession(
+            [
+                _FakeResponse(
+                    429,
+                    {"errorMessage": "limited", "errorCode": "E429"},
+                    headers={"Retry-After": "not-a-date"},
+                )
+            ]
+        )
+        worker, db = self._make_worker(session)
+        worker.max_retries = 1
+
+        errors = []
+        worker.error.connect(lambda msg: errors.append(msg))
+        worker.run()
+
+        self.assertEqual(db.upsert_calls, 0)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(worker.last_error_meta["cooldown_seconds"], 5)

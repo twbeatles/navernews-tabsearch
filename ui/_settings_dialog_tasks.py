@@ -347,6 +347,7 @@ class _SettingsDialogTasksMixin:
                 return
             maintenance_active = True
         setattr(self, "_maintenance_active_for_data_task", maintenance_active)
+        setattr(self, "_pending_parent_data_change", None)
 
         self.btn_clean.setEnabled(False)
         self.btn_all.setEnabled(False)
@@ -363,39 +364,46 @@ class _SettingsDialogTasksMixin:
         self._data_task_worker.start()
 
     def _on_clean_data_done(self: SettingsDialog, result: Any):
+        count = int(result)
+        setattr(self, "_pending_parent_data_change", ("delete_old_news", count))
         if self._is_closing or not self.isVisible():
             return
-        count = int(result)
-        self._notify_parent_data_changed("delete_old_news", count)
         QMessageBox.information(self, "완료", f"✓ {count:,}개의 오래된 기사를 삭제했습니다.")
 
     def _on_clean_all_done(self: SettingsDialog, result: Any):
+        count = int(result)
+        setattr(self, "_pending_parent_data_change", ("delete_all_news", count))
         if self._is_closing or not self.isVisible():
             return
-        count = int(result)
-        self._notify_parent_data_changed("delete_all_news", count)
         QMessageBox.information(self, "완료", f"✓ {count:,}개의 기사를 삭제했습니다.")
 
     def _on_data_task_error(self: SettingsDialog, error_msg: str):
+        setattr(self, "_pending_parent_data_change", None)
         if self._is_closing or not self.isVisible():
             return
         QMessageBox.critical(self, "작업 오류", f"데이터 작업 중 오류가 발생했습니다:\n\n{error_msg}")
 
     def _on_data_task_cancelled(self: SettingsDialog):
+        setattr(self, "_pending_parent_data_change", None)
         if self._is_closing or not self.isVisible():
             return
         QMessageBox.information(self, "작업 취소", "데이터 정리 작업이 취소되었습니다.")
 
     def _on_data_task_finished(self: SettingsDialog, *_args):
+        parent = self._typed_parent()
         maintenance_active = bool(getattr(self, "_maintenance_active_for_data_task", False))
         if maintenance_active:
-            parent = self._typed_parent()
             if parent is not None:
                 try:
                     parent.end_database_maintenance()
                 except Exception:
                     pass
         setattr(self, "_maintenance_active_for_data_task", False)
+        pending_change = getattr(self, "_pending_parent_data_change", None)
+        setattr(self, "_pending_parent_data_change", None)
+        if pending_change is not None and parent is not None:
+            operation, affected_count = pending_change
+            self._notify_parent_data_changed(operation, affected_count)
 
         if self._is_closing:
             self._data_task_worker = None

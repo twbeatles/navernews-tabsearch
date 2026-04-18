@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 from unittest import mock
 
 from ui._main_window_settings_io import _MainWindowSettingsIOMixin
@@ -167,8 +167,8 @@ class _DummyImportMain:
         self.toast_messages = []
         self.warning_toasts = []
         self.apply_refresh_calls = 0
-        self.fail_on_add_keyword = None
-        self.reconcile_auto_start_result = None
+        self.fail_on_add_keyword: Optional[str] = None
+        self.reconcile_auto_start_result: Optional[bool] = None
 
     def __del__(self):
         try:

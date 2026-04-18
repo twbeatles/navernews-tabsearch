@@ -39,6 +39,7 @@ class SettingsDialog(
         self._data_task_worker: Optional[QThread] = None
         self._is_closing = False
         self._maintenance_active_for_data_task = False
+        self._pending_parent_data_change: Optional[tuple[str, int]] = None
         self._startup_status: Optional[StartupStatus] = None
         self.is_dark = False
         if parent and hasattr(parent, "theme_idx"):
