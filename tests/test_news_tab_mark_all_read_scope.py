@@ -24,9 +24,13 @@ class _FakeWorker:
         self.cancelled = _FakeSignal()
         self.progress = _FakeSignal()
         self.started = False
+        self.deleted = False
 
     def start(self):
         self.started = True
+
+    def deleteLater(self):
+        self.deleted = True
 
 
 class _FakeMessageBoxInstance:
@@ -84,8 +88,15 @@ class _FakeCheck:
 
 class _DummyNewsTab:
     mark_all_read = NewsTab.mark_all_read
+    _begin_mark_all_read_maintenance = NewsTab._begin_mark_all_read_maintenance
+    _release_mark_all_read_worker = NewsTab._release_mark_all_read_worker
+    _end_mark_all_read_maintenance = NewsTab._end_mark_all_read_maintenance
+    _finalize_mark_all_read = NewsTab._finalize_mark_all_read
+    _on_mark_all_read_done = NewsTab._on_mark_all_read_done
+    _on_mark_all_read_error = NewsTab._on_mark_all_read_error
+    _on_mark_all_read_cancelled = NewsTab._on_mark_all_read_cancelled
 
-    def __init__(self):
+    def __init__(self, parent=None):
         self.lbl_status = _FakeLabel()
         self.btn_read_all = _FakeButton()
         self.chk_hide_dup = _FakeCheck(True)
@@ -96,6 +107,10 @@ class _DummyNewsTab:
         self.query_key = "ai launch|coin"
         self.db = SimpleNamespace(mark_query_as_read_chunked=mock.Mock(return_value=42))
         self.job_worker = None
+        self._mark_all_mode_label = "탭 전체"
+        self._mark_all_maintenance_active = False
+        self._parent = parent
+        self._is_closing = False
 
     def _current_date_range(self):
         return "2026-01-01", "2026-01-31"
@@ -104,7 +119,32 @@ class _DummyNewsTab:
         return "launch"
 
     def _main_window(self):
-        return None
+        return self._parent
+
+    def load_data_from_db(self):
+        self.loaded = True
+
+
+class _FakeMainWindow:
+    def __init__(self, start_result=(True, "")):
+        self.start_result = start_result
+        self.events = []
+
+    def begin_database_maintenance(self, operation):
+        self.events.append(("begin", operation))
+        return self.start_result
+
+    def end_database_maintenance(self):
+        self.events.append(("end",))
+
+    def on_database_maintenance_completed(self, operation, affected_count=0):
+        self.events.append(("complete", operation, affected_count))
+
+    def show_toast(self, message):
+        self.events.append(("toast", str(message)))
+
+    def show_warning_toast(self, message):
+        self.events.append(("warning", str(message)))
 
     def _on_mark_all_read_done(self, _count):
         pass
@@ -159,6 +199,46 @@ class TestNewsTabMarkAllReadScope(unittest.TestCase):
         self.assertTrue(callable(kwargs["progress_callback"]))
         self.assertTrue(callable(kwargs["cancel_check"]))
         self.assertTrue(dummy.job_worker.started)
+
+    def test_mark_all_read_enters_maintenance_and_releases_it_before_ui_sync(self):
+        parent = _FakeMainWindow()
+        dummy = _DummyNewsTab(parent=parent)
+        fake_message_box = _FakeMessageBoxInstance("탭 전체")
+
+        with mock.patch("ui.news_tab.QMessageBox") as message_box_cls:
+            message_box_cls.return_value = fake_message_box
+            message_box_cls.Icon = SimpleNamespace(Question=1)
+            message_box_cls.ButtonRole = SimpleNamespace(AcceptRole=1, ActionRole=2)
+            message_box_cls.StandardButton = SimpleNamespace(Cancel=0)
+            with mock.patch("ui.news_tab.IterativeJobWorker", _FakeWorker):
+                dummy.mark_all_read()
+
+        self.assertEqual(parent.events, [("begin", "mark_all_read")])
+        worker = dummy.job_worker
+        self.assertIsNotNone(worker)
+        assert isinstance(worker, _FakeWorker)
+        dummy._on_mark_all_read_done(5)
+
+        self.assertIsNone(dummy.job_worker)
+        self.assertTrue(worker.deleted)
+        self.assertEqual(parent.events[1:4], [("end",), ("complete", "mark_all_read", 5), ("toast", "✓ 탭 전체 5개의 기사를 읽음으로 표시했습니다.")])
+
+    def test_mark_all_read_does_not_start_when_parent_cannot_enter_maintenance(self):
+        parent = _FakeMainWindow(start_result=(False, "busy"))
+        dummy = _DummyNewsTab(parent=parent)
+        fake_message_box = _FakeMessageBoxInstance("탭 전체")
+
+        with mock.patch("ui.news_tab.QMessageBox") as message_box_cls:
+            message_box_cls.return_value = fake_message_box
+            message_box_cls.Icon = SimpleNamespace(Question=1)
+            message_box_cls.ButtonRole = SimpleNamespace(AcceptRole=1, ActionRole=2)
+            message_box_cls.StandardButton = SimpleNamespace(Cancel=0)
+            with mock.patch("ui.news_tab.IterativeJobWorker", _FakeWorker):
+                dummy.mark_all_read()
+
+        self.assertIsNone(dummy.job_worker)
+        self.assertEqual(parent.events, [("begin", "mark_all_read")])
+        message_box_cls.warning.assert_called_once()
 
 
 if __name__ == "__main__":

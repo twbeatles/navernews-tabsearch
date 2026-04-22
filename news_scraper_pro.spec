@@ -86,6 +86,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   stdlib / already-bundled modules only (`email.utils` is already kept
 #   explicit below for onefile runtime safety).
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-04-22 review:
+# - RuntimePaths consolidation, SQLite-safe legacy migration hardening, and the
+#   support-package splits under `core/runtime_support`, `ui/main_window_support`,
+#   and `ui/news_tab_support` rely on stdlib / already-bundled modules only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

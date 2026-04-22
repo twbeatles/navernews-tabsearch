@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from PyQt6.QtCore import QTimer
 
 from core.config_store import AppConfig, encode_client_secret_for_storage, normalize_import_settings, save_primary_config_file
-from core.constants import CONFIG_FILE, VERSION
+from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
 from core.keyword_groups import merge_keyword_groups
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker
@@ -452,7 +452,8 @@ class _MainWindowSettingsIOMixin:
         config_path = getattr(group_manager, "config_file", None)
         if isinstance(config_path, str) and config_path.strip():
             return config_path
-        return CONFIG_FILE
+        runtime_paths = getattr(self, "runtime_paths", None) or RUNTIME_PATHS
+        return getattr(runtime_paths, "config_file", CONFIG_FILE)
 
     def _build_runtime_config_payload(
         self: MainApp,

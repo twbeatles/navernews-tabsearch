@@ -1,6 +1,23 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **RuntimePaths / Support-Module Refactor + Docs/Spec/Gitignore Revalidation (2026-04-22)**:
+  - Runtime storage / migration hardening:
+    - Added `RuntimePaths` and routed runtime file ownership (`config`, `db`, `log`, `pending_restore`, `backups`, lock/crash artifacts) through one shared path object.
+    - Moved runtime-path calculation and legacy-file migration into `core/runtime_support.paths` / `core.runtime_support.migration`.
+    - Hardened legacy DB migration to prefer SQLite backup API, verify fallback copies, rebase legacy `pending_restore.json` backup paths, and merge legacy `backups/` folder entries conservatively.
+  - Internal structure split:
+    - Reduced `ui.main_window.MainApp` to a facade and moved UI shell/config/base responsibilities into `ui/main_window_support/{base,config,ui_shell}.py`.
+    - Reduced `ui.news_tab.NewsTab` to a facade and moved state/loading/rendering/UI-control/action responsibilities into `ui/news_tab_support/{state,loading,rendering,ui_controls,actions}.py`.
+    - Kept public import paths and compatibility re-exports stable.
+  - Docs / packaging / repo hygiene:
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, and restored `implementation_audit_2026-04-18.md`.
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required for this pass.
+    - Updated `.gitignore` for portable/legacy root runtime artifacts (`keyword_groups.json`, `news_scraper_pro.lock`).
+  - Validation:
+    - `python -m pytest -q` => `251 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Implementation Follow-through + Docs/Spec/Gitignore Revalidation (2026-04-18)**:
   - Maintenance / refresh / alert correctness:
     - Settings-dialog maintenance mutations now stage their completion result and flush `on_database_maintenance_completed(...)` only after `end_database_maintenance()`, so open-tab reload, badge refresh, and tray-tooltip sync no longer skip behind an active maintenance guard.

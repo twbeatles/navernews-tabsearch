@@ -36,8 +36,9 @@ class TestPaginationStatePersistence(unittest.TestCase):
         self.assertNotIn("self.db.get_counts(", block)
 
     def test_main_window_persists_pagination_state_field(self):
-        src = Path("ui/main_window.py").read_text(encoding="utf-8")
-        self.assertIn('"pagination_state": loaded_cfg.get("pagination_state", {})', src)
-        self.assertIn('"pagination_totals": loaded_cfg.get("pagination_totals", {})', src)
-        self.assertIn('"pagination_state": {', src)
-        self.assertIn('"pagination_totals": {', src)
+        load_src = inspect.getsource(MainApp.load_config)
+        save_src = inspect.getsource(MainApp.save_config)
+        self.assertIn('"pagination_state": loaded_cfg.get("pagination_state", {})', load_src)
+        self.assertIn('"pagination_totals": loaded_cfg.get("pagination_totals", {})', load_src)
+        self.assertIn('"pagination_state": {', save_src)
+        self.assertIn('"pagination_totals": {', save_src)

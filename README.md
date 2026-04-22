@@ -44,6 +44,9 @@
 - 설정 창의 API 키 검증도 `HttpClientConfig` 기반 공용 session과 현재 `api_timeout` 값을 사용하도록 통합
 - 설정 import는 `stage -> persist -> apply-runtime -> startup reconcile` 순서로 처리해 중간 실패 시 부분 적용된 UI/runtime 상태를 남기지 않도록 보강
 - `모두 읽음`, 오래된 기사 삭제, 전체 기사 삭제는 chunked `IterativeJobWorker` 경로로 옮겨 유지보수/종료 시 `stop()`이 실제 효력을 갖도록 조정
+- `RuntimePaths`를 도입해 `config/db/log/pending_restore/backups/lock/crash` 경로를 단일 객체로 통합하고, 실행 폴더 대신 `DATA_DIR` 기준으로 런타임 저장 위치를 고정
+- 레거시 런타임 파일 마이그레이션은 `core/runtime_support/migration.py`로 분리하고, DB는 SQLite backup API 우선 + fallback integrity 검증, `pending_restore.json`은 `backup_dir` rebasing, `backups/`는 폴더 단위 merge로 강화
+- `MainApp`과 `NewsTab`은 얇은 facade로 유지하고, 실제 책임은 `ui/main_window_support/`와 `ui/news_tab_support/` 아래 모듈로 분리해 SOLID 기준의 변경 지점을 더 명확히 했다
 - 저장소 주요 텍스트 자산의 mojibake 문자열을 정리하고, 인코딩 스모크 테스트를 다중 suspicious token/패턴 감시로 강화
 - 백업 메타는 legacy `include_db` 누락을 실제 payload 파일 기준으로 자동 판별하고, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 다시 기록
 - 설정 창의 오래된 기사 정리/전체 기사 삭제는 완료 결과를 유지보수 해제 직후에 flush해 열린 탭, 배지, 트레이 툴팁 동기화가 skip되지 않도록 보장
@@ -134,9 +137,9 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-18)
+## 최신 검증 메모 (2026-04-22)
 
-- `python -m pytest -q` => `236 passed, 5 subtests passed`
+- `python -m pytest -q` => `251 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
 - 산출물: `dist/NewsScraperPro_Safe.exe`
@@ -153,10 +156,13 @@ navernews-tabsearch/
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
-│   ├── constants.py             # 경로/버전/앱 상수
+│   ├── constants.py             # RuntimePaths facade + 경로/버전 상수 호환 export
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
+│   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
+│   │   ├── paths.py
+│   │   └── migration.py
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
@@ -177,12 +183,22 @@ navernews-tabsearch/
 ├── ui/                          # UI 로직 패키지
 │   ├── __init__.py
 │   ├── main_window.py           # MainApp facade / composition root
+│   ├── main_window_support/     # MainApp 세부 책임 분리
+│   │   ├── base.py
+│   │   ├── config.py
+│   │   └── ui_shell.py
 │   ├── _main_window_tabs.py     # 탭 추가/닫기/리네임/그룹 연결
 │   ├── _main_window_fetch.py    # fetch orchestration / worker 수명 주기
 │   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 언론사 분석 UI
-│   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
+│   ├── news_tab.py              # NewsTab facade / compatibility root
+│   ├── news_tab_support/        # NewsTab 상태/로딩/렌더링/액션 분리
+│   │   ├── state.py
+│   │   ├── loading.py
+│   │   ├── rendering.py
+│   │   ├── ui_controls.py
+│   │   └── actions.py
 │   ├── dialog_adapters.py       # QFileDialog/QMessageBox adapter
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol 정의
 │   ├── settings_dialog.py       # SettingsDialog facade
@@ -199,6 +215,7 @@ navernews-tabsearch/
 │   ├── test_entrypoint_bootstrap.py
 │   ├── test_import_settings_dedupe.py
 │   ├── test_import_settings_normalization.py
+│   ├── test_db_integrity_recovery.py
 │   ├── test_pagination_state_persistence.py
 │   ├── test_plan_regression.py
 │   ├── test_pending_restore_strict.py
@@ -229,6 +246,7 @@ navernews-tabsearch/
 │   ├── test_news_tab_performance.py
 │   ├── test_settings_validation_http_policy.py
 │   ├── test_settings_dialog_maintenance.py
+│   ├── test_runtime_storage_paths.py
 │   └── test_version_history_guard.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
@@ -237,7 +255,8 @@ navernews-tabsearch/
 ├── workers.py                   # 호환 래퍼 (→ core.workers)
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
-├── backups/                     # 백업 디렉터리
+├── implementation_audit_2026-04-18.md # 2026-04-18 감사 후속 기록
+├── backups/                     # 레거시 실행 폴더 백업(현재 런타임 백업은 DATA_DIR 하위 사용)
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
@@ -321,6 +340,9 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-18 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 유지보수 완료 sync 순서 고정, 순차 새로고침 즉시 알림, `new_count` 의미 통일, `Retry-After` 지원, 남은 pyright 정리 추가 이후에도 별도 packaging/ignore 수정은 필요하지 않음을 재확인했습니다.
 - 2026-04-18 기준 `git status --ignored --short`로 `build/`, `dist/`, `__pycache__/`, `.pytest_cache/`, 런타임 DB/설정/로그 산출물이 계속 무시되는 것도 확인했습니다.
 - 2026-04-18 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-22 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, `RuntimePaths` 통합, SQLite-safe legacy migration hardening, `core/runtime_support` / `ui/main_window_support` / `ui/news_tab_support` 구조 분할은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않음을 확인했습니다.
+- 2026-04-22 기준 `.gitignore`에는 portable/legacy 실행 폴더에서 다시 생길 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`을 추가로 명시했습니다.
+- 2026-04-22 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 
@@ -342,15 +364,28 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 ## 데이터/설정 파일
 
-앱은 실행 파일 기준 디렉터리(`APP_DIR`)에 아래 파일을 저장합니다.
+앱은 기본적으로 사용자 런타임 디렉터리(`DATA_DIR`)에 아래 파일을 저장합니다.
+
+- Windows 기본값: `%LOCALAPPDATA%\NaverNewsScraperPro`
+- macOS 기본값: `~/Library/Application Support/NaverNewsScraperPro`
+- Linux 기본값: `$XDG_DATA_HOME/NaverNewsScraperPro` 또는 `~/.local/share/NaverNewsScraperPro`
+- 예외: `NEWS_SCRAPER_DATA_DIR`로 강제 지정 가능, `NEWS_SCRAPER_PORTABLE=1`이면 `APP_DIR` 사용
 
 - `news_scraper_config.json`
 - `news_database.db`
 - `news_scraper.log`
 - `pending_restore.json`
+- `backups/`
+- `news_scraper_pro.lock`
+- `crash_log.txt`
 
 참고:
+- 시작 시 실행 폴더(`APP_DIR`)에 남아 있는 레거시 런타임 파일은 비파괴적으로 `DATA_DIR`로 1회 복사 마이그레이션됩니다.
+- 레거시 `pending_restore.json`는 가능하면 새 `DATA_DIR/backups` 기준으로 `backup_dir`를 재기록해 복사합니다.
+- 레거시 `backups/`는 폴더 단위 merge로 옮기며, 같은 이름의 백업이 이미 있으면 `DATA_DIR` 쪽 항목을 유지합니다.
+- 레거시 DB 마이그레이션은 SQLite backup API 우선, 실패 시 raw copy fallback + integrity 검증으로 수행됩니다.
 - `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
+- 단일 인스턴스 잠금 파일(`news_scraper_pro.lock`)과 crash log(`crash_log.txt`)도 같은 runtime 경로 기준으로 관리됩니다.
 - `pagination_state`는 `fetch_key -> 마지막 API start index` 매핑이며, 필드가 없으면 기본값 `{}`로 로드됩니다.
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
 - `pagination_totals`는 `fetch_key -> 마지막으로 확인한 API total` 매핑이며 `0`도 유효한 값으로 저장됩니다.

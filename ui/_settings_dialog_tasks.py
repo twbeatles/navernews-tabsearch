@@ -9,7 +9,7 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QMessageBox
 
-from core.constants import CONFIG_FILE, DB_FILE
+from core.constants import DATA_DIR, RUNTIME_PATHS, RuntimePaths
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
 from core.validation import ValidationUtils
@@ -20,6 +20,13 @@ if TYPE_CHECKING:
 
 
 class _SettingsDialogTasksMixin:
+    def _runtime_paths(self: SettingsDialog) -> RuntimePaths:
+        parent = self._typed_parent()
+        runtime_paths = getattr(parent, "runtime_paths", None) if parent is not None else None
+        if isinstance(runtime_paths, RuntimePaths):
+            return runtime_paths
+        return RUNTIME_PATHS
+
     def _current_api_timeout(self: SettingsDialog) -> int:
         timeout_value = 15
         if hasattr(self, "spn_api_timeout"):
@@ -267,7 +274,7 @@ class _SettingsDialogTasksMixin:
             return
 
         def job_func(context) -> int:
-            db = DatabaseManager(DB_FILE)
+            db = DatabaseManager(self._runtime_paths().db_file)
             try:
                 return int(
                     db.delete_old_news_chunked(
@@ -300,7 +307,7 @@ class _SettingsDialogTasksMixin:
             return
 
         def job_func(context) -> int:
-            db = DatabaseManager(DB_FILE)
+            db = DatabaseManager(self._runtime_paths().db_file)
             try:
                 return int(
                     db.delete_all_news_chunked(
@@ -442,7 +449,9 @@ class _SettingsDialogTasksMixin:
             parent.show_log_viewer()
 
     def open_data_folder(self: SettingsDialog):
-        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(os.path.abspath(CONFIG_FILE))))
+        runtime_paths = self._runtime_paths()
+        data_dir = getattr(runtime_paths, "data_dir", DATA_DIR)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(data_dir)))
 
     def show_groups_dialog(self: SettingsDialog):
         parent = self._typed_parent()

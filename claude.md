@@ -42,10 +42,13 @@ navernews-tabsearch/
 ├── core/                        # 코어 로직 패키지
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
-│   ├── constants.py             # 경로/버전/앱 상수 (VERSION = '32.7.3')
+│   ├── constants.py             # RuntimePaths facade + 경로/버전 상수 (VERSION = '32.7.3')
 │   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned session factory
+│   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
+│   │   ├── paths.py
+│   │   └── migration.py
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
@@ -66,12 +69,22 @@ navernews-tabsearch/
 ├── ui/                          # UI 로직 패키지
 │   ├── __init__.py
 │   ├── main_window.py           # MainApp facade / composition root
+│   ├── main_window_support/     # MainApp 세부 책임 분리
+│   │   ├── base.py
+│   │   ├── config.py
+│   │   └── ui_shell.py
 │   ├── _main_window_tabs.py     # 탭 추가/닫기/리네임/그룹 연결
 │   ├── _main_window_fetch.py    # fetch orchestration / worker 수명 주기
 │   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
-│   ├── news_tab.py              # NewsTab (개별 뉴스 탭, fragment cache + coalesced render)
+│   ├── news_tab.py              # NewsTab facade / compatibility root
+│   ├── news_tab_support/        # NewsTab 상태/로딩/렌더링/액션 분리
+│   │   ├── state.py
+│   │   ├── loading.py
+│   │   ├── rendering.py
+│   │   ├── ui_controls.py
+│   │   └── actions.py
 │   ├── dialog_adapters.py       # QFileDialog/QMessageBox adapter
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog facade
@@ -113,12 +126,9 @@ navernews-tabsearch/
 ├── workers.py                   # 호환 래퍼 (→ core.workers)
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
-├── news_scraper_config.json     # 사용자 설정
-├── news_database.db             # SQLite 데이터베이스
 ├── news_icon.ico                # 앱 아이콘
-├── news_scraper.log             # 로그 파일
 ├── README.md                    # 사용자 문서
-├── backups/                     # 백업 디렉터리
+├── implementation_audit_2026-04-18.md # 2026-04-18 감사 후속 기록
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
@@ -126,12 +136,29 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `236 passed, 5 subtests passed`
+- `python -m pytest -q` => `251 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ---
+
+## 🚀 2026-04-22 RuntimePaths / Support-Module Refactor + Docs/Spec/Gitignore Revalidation
+
+- Current verification line:
+  - `python -m pytest -q` => `251 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- Runtime storage / migration:
+  - `RuntimePaths`가 `config`, `db`, `log`, `pending_restore`, `backups`, lock/crash artifact 경로를 단일 객체로 묶고, `core.constants`는 호환 facade만 유지한다.
+  - 레거시 파일 마이그레이션은 `core/runtime_support/migration.py`로 분리되었고, DB는 SQLite backup API 우선 + fallback integrity 검증, `pending_restore.json`은 `backup_dir` rebasing, `backups/`는 폴더 단위 merge로 강화됐다.
+- Internal structure split:
+  - `MainApp` 구현은 `ui/main_window_support/{base,config,ui_shell}.py`로, `NewsTab` 구현은 `ui/news_tab_support/{state,loading,rendering,ui_controls,actions}.py`로 분리되었다.
+  - public import path (`ui.main_window.MainApp`, `ui.news_tab.NewsTab`)와 facade 진입점은 유지된다.
+- Docs / packaging / repo hygiene:
+  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`를 현재 구조 기준으로 다시 동기화했다.
+  - `.gitignore`는 portable/legacy 실행 폴더에 남을 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`을 추가로 무시한다.
+  - `implementation_audit_2026-04-18.md`를 복구해 감사 후속 기록이 저장소에서 빠지지 않도록 맞췄다.
 
 ## 🚀 2026-04-18 Implementation Follow-through + Docs/Spec/Gitignore Revalidation
 
@@ -332,6 +359,15 @@ navernews-tabsearch/
 ---
 
 ## ⚙️ 설정 구조
+
+### Runtime Storage (`DATA_DIR`)
+
+- Windows 기본값: `%LOCALAPPDATA%\\NaverNewsScraperPro`
+- macOS 기본값: `~/Library/Application Support/NaverNewsScraperPro`
+- Linux 기본값: `$XDG_DATA_HOME/NaverNewsScraperPro` 또는 `~/.local/share/NaverNewsScraperPro`
+- `NEWS_SCRAPER_DATA_DIR` 환경변수로 강제 지정 가능
+- `NEWS_SCRAPER_PORTABLE=1`이면 `APP_DIR` 사용
+- 시작 시 실행 폴더의 레거시 `news_scraper_config.json`, `news_database.db`, `pending_restore.json`, `backups/`는 비파괴적으로 `DATA_DIR`로 복사 마이그레이션됨
 
 ### news_scraper_config.json
 
@@ -754,7 +790,7 @@ if self.worker and self.worker.isRunning():
 
 ```python
 # 로그 파일 위치
-LOG_FILE = os.path.join(APP_DIR, "news_scraper.log")
+LOG_FILE = os.path.join(DATA_DIR, "news_scraper.log")
 
 # 로그 레벨별 색상 (LogViewerDialog)
 [ERROR], [CRITICAL] → 빨간색

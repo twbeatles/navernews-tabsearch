@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
+import inspect
 
 from PyQt6.QtCore import QUrl
 
@@ -173,16 +174,10 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         self.assertEqual(tab._window.toast_calls, [])
 
     def test_ext_paths_use_shared_helper(self):
-        src = Path("ui/news_tab.py").read_text(encoding="utf-8")
-
-        start = src.index("def on_link_clicked")
-        end = src.index("def mark_all_read")
-        link_block = src[start:end]
+        link_block = inspect.getsource(NewsTab.on_link_clicked)
         self.assertIn("elif action == \"ext\":", link_block)
         self.assertIn("self._open_external_link_and_mark_read(target)", link_block)
 
-        start = src.index("def on_browser_action")
-        end = src.index("def cleanup")
-        browser_block = src[start:end]
+        browser_block = inspect.getsource(NewsTab.on_browser_action)
         self.assertIn("if action == \"ext\":", browser_block)
         self.assertIn("self._open_external_link_and_mark_read(target)", browser_block)

@@ -869,12 +869,25 @@ def apply_pending_restore_if_any(
 
     backup_name = str(payload.get("backup_name", "") or "").strip()
     restore_db = bool(payload.get("restore_db", True))
-    backup_dir = payload.get("backup_dir") or os.path.join(
+    requested_backup_dir = str(payload.get("backup_dir", "") or "").strip()
+    runtime_backup_dir = os.path.join(
         os.path.dirname(os.path.abspath(config_file)), AutoBackup.BACKUP_DIR
     )
-    backup_path = os.path.join(str(backup_dir), backup_name)
 
-    if not backup_name or not os.path.isdir(backup_path):
+    backup_path = ""
+    candidate_dirs = []
+    if requested_backup_dir:
+        candidate_dirs.append(requested_backup_dir)
+    if runtime_backup_dir not in candidate_dirs:
+        candidate_dirs.append(runtime_backup_dir)
+
+    for backup_dir in candidate_dirs:
+        candidate_path = os.path.join(str(backup_dir), backup_name)
+        if os.path.isdir(candidate_path):
+            backup_path = candidate_path
+            break
+
+    if not backup_name or not backup_path:
         logger.error("pending restore validation failed: backup path is invalid (file is kept)")
         return False
 

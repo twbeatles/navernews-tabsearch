@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-16)
+작성일: 2026-03-16 (최근 갱신: 2026-04-22)
 
 ## 분석 범위
 
@@ -11,11 +11,23 @@
 - `gemini.md`
 - `update_history.md`
 - `news_scraper_pro.py`
-- `core/*.py`
-- `ui/*.py`
+- `core/**/*.py`
+- `ui/**/*.py`
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-04-22 구조 분할 / 문서·spec·gitignore 정합화
+
+이번 재검증에서는 RuntimePaths 통합, support-package 구조 분할, 문서/spec/ignore 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
+
+- `core.constants.py`는 이제 `RuntimePaths` facade 역할만 맡고, 실제 런타임 경로 계산과 레거시 마이그레이션은 `core/runtime_support/paths.py`, `core/runtime_support/migration.py`로 내려갔다.
+- `ui.main_window.py`는 약 266줄의 얇은 facade가 되었고, 실제 `MainApp` 조립 책임은 `ui/main_window_support/base.py`, `config.py`, `ui_shell.py`로 분리됐다.
+- `ui.news_tab.py`는 약 111줄의 facade로 축소됐고, 상태/로딩/렌더링/UI 제어/카드 액션은 `ui/news_tab_support/state.py`, `loading.py`, `rendering.py`, `ui_controls.py`, `actions.py`로 분리됐다.
+- `news_scraper_pro.spec`는 2026-04-22 기준 다시 재검토되었고, 이번 패스의 RuntimePaths 통합, SQLite-safe legacy migration hardening, support-package 분할은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않았다.
+- `.gitignore`는 portable/legacy 실행 폴더 기준으로 다시 생길 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`까지 명시적으로 무시하도록 보강했다.
+- 역사 문서 `implementation_audit_2026-04-18.md`를 저장소에 복구해, 2026-04-18 감사 후속 기록이 누락되지 않도록 맞췄다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `251 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
 
 ## 0. 2026-04-18 구현 수정 반영 / 문서·spec·gitignore 재검증
 
@@ -304,13 +316,21 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 | 모듈 | 실제 책임 |
 |---|---|
-| `ui/main_window.py` | `MainApp` facade, 공용 helper, 초기화/설정/기본 UI 조립 |
+| `ui/main_window.py` | `MainApp` facade / compatibility root |
+| `ui/main_window_support/base.py` | `MainApp`의 핵심 상태, 유지보수 경계, 워커/탭 orchestration |
+| `ui/main_window_support/config.py` | 설정 로드/저장/적용, runtime path 연동, startup sync |
+| `ui/main_window_support/ui_shell.py` | 메인 윈도우 UI 조립, 액션/단축키/상태바/트레이 shell |
 | `ui/_main_window_tabs.py` | 탭 추가/닫기/리네임/컨텍스트 메뉴/그룹 연결 |
 | `ui/_main_window_fetch.py` | fetch orchestration, pagination, worker 수명 주기 |
 | `ui/_main_window_settings_io.py` | 설정 import/export, 도움말/설정창, DB 유지보수 동기화 |
 | `ui/_main_window_tray.py` | 시스템 트레이, close/minimize, 실제 종료 처리 |
 | `ui/_main_window_analysis.py` | 통계/언론사 분석 UI |
-| `ui/news_tab.py` | 개별 탭의 목록 필터링, 링크 인덱스 캐시, HTML fragment cache, coalesced render |
+| `ui/news_tab.py` | `NewsTab` facade / compatibility root |
+| `ui/news_tab_support/state.py` | 탭 상태, scope signature, 캐시/selection 관리 |
+| `ui/news_tab_support/loading.py` | DB 로드, hydration, mark-all-read, maintenance 연동 |
+| `ui/news_tab_support/rendering.py` | HTML fragment cache, coalesced flush, 카드 렌더링 |
+| `ui/news_tab_support/ui_controls.py` | 필터/정렬/날짜/페이지네이션 UI control wiring |
+| `ui/news_tab_support/actions.py` | 카드 액션, 링크 핸들링, 북마크/메모/읽음 상태 동기화 |
 | `ui/dialog_adapters.py` | export/import/backup 경로의 QFileDialog/QMessageBox adapter |
 | `ui/settings_dialog.py` | `SettingsDialog` facade, orchestration, public contract |
 | `ui/_settings_dialog_content.py` | 설정/도움말/단축키 탭 조립 |
@@ -324,8 +344,8 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 ### 구조적으로 중요한 관찰
 
-- `ui.main_window.py`는 940줄 수준의 facade로 축소됐고, 도메인별 책임은 private helper module로 나뉘었다.
-- `ui.news_tab.py`는 여전히 `QTextBrowser`용 HTML 렌더링까지 담당하지만, 현재는 `_item_by_link` 인덱스와 fragment cache/coalesced render로 대용량 탭 비용을 낮춘 상태다.
+- `ui.main_window.py`는 266줄 수준의 facade이고, 실제 책임은 `ui/main_window_support/`로 내려가 있다. 새 메인 윈도우 기능은 facade보다 support module부터 검토하는 편이 맞다.
+- `ui.news_tab.py`는 111줄 수준의 facade이고, 실질적인 탭 동작은 `ui/news_tab_support/` 아래 `state/loading/rendering/ui_controls/actions` 모듈이 나눠 맡는다.
 - export/import/backup 경로는 `ui.dialog_adapters.py`를 통해 Qt static dialog 의존성을 분리해 테스트에서는 fake adapter를 주입한다.
 - `ui.settings_dialog.py`는 117줄 수준의 facade로 축소됐다. 설정 항목 확장은 `ui/_settings_dialog_content.py` 쪽이 주 수정 지점이다.
 - `ui/widgets.NewsBrowser`는 `app://...` 내부 URL 스키마를 이용한 액션 전달 구조를 갖고 있어, 카드 액션 확장이 상대적으로 쉽다.
@@ -348,6 +368,18 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 즉, 새 기능 추가 시 테스트를 처음부터 새로 짜는 것보다, **기존 계약을 안 깨뜨리는 테스트를 같이 확장**하는 방식이 맞다.
 
 ## 5. 상태 저장 구조
+
+### Runtime 저장소
+
+기본 저장 위치는 실행 폴더가 아니라 사용자 런타임 디렉터리(`DATA_DIR`)다.
+
+- Windows: `%LOCALAPPDATA%\NaverNewsScraperPro`
+- macOS: `~/Library/Application Support/NaverNewsScraperPro`
+- Linux: `$XDG_DATA_HOME/NaverNewsScraperPro` 또는 `~/.local/share/NaverNewsScraperPro`
+- `NEWS_SCRAPER_DATA_DIR`로 강제 지정 가능
+- `NEWS_SCRAPER_PORTABLE=1`이면 `APP_DIR` 사용
+
+시작 시 실행 폴더에 남아 있는 레거시 런타임 파일은 `RuntimePaths` 기준으로 `DATA_DIR`에 보수적으로 복사 마이그레이션된다. DB는 SQLite backup API 우선, 실패 시 raw copy fallback + integrity 검증을 사용하고, `pending_restore.json`은 가능하면 새 `backups/` 경로로 rebasing 된다.
 
 ### 설정 파일
 
@@ -389,7 +421,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 백업 폴더:
 
-- `backups/backup_YYYYMMDD_HHMMSS_microseconds/`
+- `DATA_DIR/backups/backup_YYYYMMDD_HHMMSS_microseconds/`
 
 중요 특징:
 
@@ -450,8 +482,9 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 | 파일 | 대략 라인 수 | 해석 |
 |---|---:|---|
 | `ui/_main_window_fetch.py` | 551 | fetch/worker/pagination 도메인의 주된 병목 |
-| `ui/main_window.py` | 940 | facade이지만 초기화/설정/배지 로직이 여전히 많음 |
-| `ui/news_tab.py` | 983 | 탭 UI + 액션 + 렌더링이 한 파일에 집중 |
+| `ui/main_window_support/base.py` | 590 | 메인 윈도우 상태/유지보수/worker orchestration이 집중 |
+| `ui/news_tab_support/actions.py` | 535 | 카드 액션과 상태 동기화 로직이 가장 넓음 |
+| `ui/news_tab_support/loading.py` | 418 | 탭 DB 로드, hydration, 유지보수 연동의 중심 |
 | `core/_db_mutations.py` | 392 | 쓰기/삭제/mark-read 책임이 가장 넓음 |
 | `ui/_main_window_tabs.py` | 359 | 탭 상태/키워드/그룹 연결이 집중됨 |
 | `ui/styles.py` | 746 | 스타일/QSS/HTML 템플릿이 매우 큼 |
@@ -477,7 +510,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 1. `core/config_store.py`
 2. `ui/settings_dialog.py`
-3. `ui/main_window.py`
+3. `ui/main_window_support/config.py`
 4. `README.md`, `claude.md`, `gemini.md`
 5. 관련 테스트
 
@@ -494,7 +527,9 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 추천 진입점:
 
-- `ui/news_tab.py`
+- `ui/news_tab_support/ui_controls.py`
+- `ui/news_tab_support/loading.py`
+- `ui/news_tab_support/state.py`
 - `core/_db_queries.py`
 - `core/_db_mutations.py`
 - 필요 시 `core/query_parser.py`
@@ -516,7 +551,8 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 추천 진입점:
 
-- `ui/news_tab.py`
+- `ui/news_tab_support/actions.py`
+- `ui/news_tab_support/rendering.py`
 - `ui/widgets.py`
 - `core/_db_mutations.py` 또는 새 서비스 모듈
 
@@ -584,7 +620,8 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 영향 파일 예상:
 
 - `core/database.py`
-- `ui/news_tab.py`
+- `ui/news_tab_support/actions.py`
+- `ui/news_tab_support/rendering.py`
 - `ui/dialogs.py` 또는 새 태그 다이얼로그
 - CSV export 경로
 
@@ -659,10 +696,20 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 데이터 관리
 - 비동기 워커 관리 헬퍼
 
+### 완료 4. `ui/news_tab.py` 분리
+
+현재 분리 상태:
+
+- 상태/캐시: `ui/news_tab_support/state.py`
+- DB 로드/hydration/유지보수: `ui/news_tab_support/loading.py`
+- HTML fragment cache/coalesced render: `ui/news_tab_support/rendering.py`
+- 필터/정렬/페이지네이션 UI: `ui/news_tab_support/ui_controls.py`
+- 카드 액션/상태 동기화: `ui/news_tab_support/actions.py`
+
 ### 다음 우선순위 후보
 
-- `ui/news_tab.py` 분리: 목록 렌더링 / 카드 액션 / 필터 UI / DB 로드 콜백
 - `core/config_store.py` 분리: 기본값 / 정규화 / 저장 / secret storage
+- `ui/_main_window_fetch.py` 분리: refresh policy / worker registry / cooldown / pagination orchestration
 - `ui/styles.py` 분리: QSS / HTML 템플릿 / 상수
 
 ## 12. 변경 시 반드시 같이 확인할 것

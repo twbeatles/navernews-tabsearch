@@ -8,6 +8,7 @@ from unittest import mock
 import config_store
 from query_parser import build_fetch_key
 from ui.main_window import MainApp
+from ui.news_tab import NewsTab
 
 
 class TestConfigStore(unittest.TestCase):
@@ -75,27 +76,18 @@ class TestPlanSourceGuards(unittest.TestCase):
             self.assertNotIn('thread.terminate()', src)
 
     def test_date_toggle_calls_reload_immediately(self):
-        src = self._read('ui/news_tab.py')
-        start = src.index('def _toggle_date_filter')
-        end = src.index('def _update_date_toggle_style')
-        block = src[start:end]
+        block = inspect.getsource(NewsTab._toggle_date_filter)
         self.assertIn('self.load_data_from_db()', block)
         self.assertNotIn('if not checked', block)
 
     def test_date_style_call_order_in_setup_ui(self):
-        src = self._read('ui/news_tab.py')
-        start = src.index('def setup_ui')
-        end = src.index('def _toggle_date_filter')
-        block = src[start:end]
+        block = inspect.getsource(NewsTab.setup_ui)
         date_start_idx = block.index('self.date_start = QDateEdit()')
         style_call_idx = block.index('self._update_date_toggle_style(False)')
         self.assertGreater(style_call_idx, date_start_idx)
 
     def test_update_date_toggle_style_has_init_guard(self):
-        src = self._read('ui/news_tab.py')
-        start = src.index('def _update_date_toggle_style')
-        end = src.index('def _on_filter_changed')
-        block = src[start:end]
+        block = inspect.getsource(NewsTab._update_date_toggle_style)
         self.assertIn('hasattr(self, "date_start")', block)
         self.assertIn('hasattr(self, "date_end")', block)
         self.assertIn('hasattr(self, "lbl_tilde")', block)

@@ -16,7 +16,18 @@ from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from core.backup import apply_pending_restore_if_any
-from core.constants import APP_DIR, APP_NAME, CONFIG_FILE, DB_FILE, PENDING_RESTORE_FILE, VERSION
+from core.constants import (
+    APP_NAME,
+    CRASH_LOG_FILE,
+    CONFIG_FILE,
+    DATA_DIR,
+    DB_FILE,
+    INSTANCE_LOCK_FILE,
+    PENDING_RESTORE_FILE,
+    RUNTIME_PATHS,
+    VERSION,
+    migrate_legacy_runtime_files,
+)
 from core.logging_setup import configure_logging
 from core.protocols import LockFileProtocol
 from ui.main_window import MainApp
@@ -25,9 +36,7 @@ configure_logging()
 import logging
 logger = logging.getLogger(__name__)
 
-CRASH_LOG_FILE = os.path.join(APP_DIR, "crash_log.txt")
-INSTANCE_LOCK_FILE = os.path.join(APP_DIR, "news_scraper_pro.lock")
-INSTANCE_SERVER_NAME = f"news_scraper_pro_single_instance_{hashlib.sha1(APP_DIR.encode('utf-8')).hexdigest()[:12]}"
+INSTANCE_SERVER_NAME = f"news_scraper_pro_single_instance_{hashlib.sha1(DATA_DIR.encode('utf-8')).hexdigest()[:12]}"
 INSTANCE_SHOW_COMMAND = "SHOW"
 
 
@@ -112,6 +121,16 @@ def main():
     window: Optional[MainApp] = None
     instance_lock: Optional[QLockFile] = None
     instance_server: Optional[QLocalServer] = None
+
+    try:
+        migrated_paths = migrate_legacy_runtime_files(runtime_paths=RUNTIME_PATHS)
+        if migrated_paths:
+            logger.info(
+                "레거시 런타임 데이터를 로컬 저장소로 복사했습니다: %s",
+                ", ".join(migrated_paths),
+            )
+    except Exception as e:
+        logger.warning("레거시 런타임 데이터 마이그레이션 실패: %s", e)
 
     def cleanup_instance_state() -> None:
         nonlocal instance_lock, instance_server
@@ -240,7 +259,7 @@ def main():
         font.setFamily("맑은 고딕")
         app.setFont(font)
         
-        window = MainApp()
+        window = MainApp(runtime_paths=RUNTIME_PATHS)
         instance_server = _setup_instance_server(
             app,
             lambda: window.show_window() if window else None,

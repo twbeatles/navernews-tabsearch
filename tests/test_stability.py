@@ -9,6 +9,7 @@ from pathlib import Path
 
 import news_scraper_pro as app
 from ui.main_window import MainApp
+from ui.news_tab import NewsTab
 
 
 class TestParseTabQuery(unittest.TestCase):
@@ -205,10 +206,6 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         self.assertNotIn('session=self.session', block)
 
     def test_newstab_has_required_helper_methods(self):
-        src = Path('ui/news_tab.py').read_text(encoding='utf-8')
-        module = ast.parse(src)
-        news_tab = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == 'NewsTab')
-        method_names = {node.name for node in news_tab.body if isinstance(node, ast.FunctionDef)}
         for required in {
             '_prepare_item',
             '_rebuild_item_indexes',
@@ -216,7 +213,8 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
             '_refresh_after_local_change',
             '_notify_badge_change',
         }:
-            self.assertIn(required, method_names)
+            self.assertTrue(hasattr(NewsTab, required), required)
+            self.assertIn(f"def {required}", inspect.getsource(getattr(NewsTab, required)))
 
     def test_close_tab_calls_cleanup_before_delete_later(self):
         block = inspect.getsource(MainApp.close_tab)
@@ -225,7 +223,7 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         self.assertLess(block.index('widget.cleanup()'), block.index('widget.deleteLater()'))
 
     def test_on_fetch_done_does_not_use_split_index_parsing(self):
-        src = Path('ui/main_window.py').read_text(encoding='utf-8')
+        src = inspect.getsource(MainApp.on_fetch_done)
         self.assertNotIn('search_keyword = keyword.split()[0] if keyword.split() else keyword', src)
 
     def test_dbworker_gates_total_count_lookup_for_append(self):
@@ -240,5 +238,5 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         self.assertIn('offset=self.offset', block)
 
     def test_render_html_skips_when_signature_unchanged(self):
-        src = Path('ui/news_tab.py').read_text(encoding='utf-8')
+        src = inspect.getsource(NewsTab._flush_render)
         self.assertIn('if render_signature == self._last_render_signature', src)

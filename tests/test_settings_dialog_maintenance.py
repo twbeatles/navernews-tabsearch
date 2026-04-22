@@ -1,7 +1,9 @@
 import unittest
 from typing import Any, Optional, cast
 from unittest import mock
+from pathlib import Path
 
+from core.constants import get_runtime_paths
 from ui.settings_dialog import SettingsDialog
 
 
@@ -13,6 +15,7 @@ class _DummyParent:
         self.maintenance_ended = 0
         self.maintenance_active = False
         self.start_result: tuple[bool, str] = (True, "")
+        self.runtime_paths = get_runtime_paths(data_dir=str(Path.cwd() / ".pytest_tmp" / "custom-runtime"))
 
     def begin_database_maintenance(self, operation):
         self.maintenance_started.append(operation)
@@ -44,9 +47,11 @@ class _DummyParent:
 
 
 class _DummySettingsDialog:
+    _runtime_paths = cast(Any, SettingsDialog._runtime_paths)
     _notify_parent_data_changed = SettingsDialog._notify_parent_data_changed
     _start_data_task = cast(Any, SettingsDialog._start_data_task)
     _on_data_task_finished = cast(Any, SettingsDialog._on_data_task_finished)
+    open_data_folder = cast(Any, SettingsDialog.open_data_folder)
 
     def __init__(self):
         self._is_closing = False
@@ -76,7 +81,7 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
         dialog._maintenance_active_for_data_task = True
         dialog._parent.maintenance_active = True
 
-        with mock.patch("ui.settings_dialog.QMessageBox.information"):
+        with mock.patch("ui._settings_dialog_tasks.QMessageBox.information"):
             SettingsDialog._on_clean_data_done(cast(Any, dialog), 3)
 
         self.assertEqual(dialog._parent.calls, [])
@@ -94,7 +99,7 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
         dialog._maintenance_active_for_data_task = True
         dialog._parent.maintenance_active = True
 
-        with mock.patch("ui.settings_dialog.QMessageBox.information"):
+        with mock.patch("ui._settings_dialog_tasks.QMessageBox.information"):
             SettingsDialog._on_clean_all_done(cast(Any, dialog), 7)
 
         self.assertEqual(dialog._parent.calls, [])
@@ -105,7 +110,7 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
         dialog = _DummySettingsDialog()
         dialog._parent.start_result = (False, "busy")
 
-        with mock.patch("ui.settings_dialog.QMessageBox.warning") as warning_mock:
+        with mock.patch("ui._settings_dialog_tasks.QMessageBox.warning") as warning_mock:
             dialog._start_data_task(lambda: 1, lambda _result: None, "delete_old_news")
 
         warning_mock.assert_called_once()
@@ -127,14 +132,21 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
         dialog = _DummySettingsDialog()
         dialog._pending_parent_data_change = ("delete_old_news", 5)
 
-        with mock.patch("ui.settings_dialog.QMessageBox.critical"):
+        with mock.patch("ui._settings_dialog_tasks.QMessageBox.critical"):
             SettingsDialog._on_data_task_error(cast(Any, dialog), "boom")
         self.assertIsNone(dialog._pending_parent_data_change)
 
         dialog._pending_parent_data_change = ("delete_all_news", 9)
-        with mock.patch("ui.settings_dialog.QMessageBox.information"):
+        with mock.patch("ui._settings_dialog_tasks.QMessageBox.information"):
             SettingsDialog._on_data_task_cancelled(cast(Any, dialog))
         self.assertIsNone(dialog._pending_parent_data_change)
+
+    def test_open_data_folder_prefers_parent_runtime_paths(self):
+        dialog = _DummySettingsDialog()
+        with mock.patch("ui._settings_dialog_tasks.QDesktopServices.openUrl") as open_url:
+            dialog.open_data_folder()
+        open_url.assert_called_once()
+        self.assertIn("custom-runtime", open_url.call_args.args[0].toLocalFile().replace("\\", "/"))
 
 
 if __name__ == "__main__":

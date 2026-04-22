@@ -78,9 +78,18 @@ class DatabaseManager(
         self._emergency_connection_rejections = 0
 
         if os.path.exists(self.db_file):
-            if not self._check_integrity():
-                logger.error("데이터베이스 손상 감지. 복구를 시도합니다.")
+            integrity_result = self._check_integrity()
+            if integrity_result.state == "corrupt":
+                logger.error(
+                    "데이터베이스 손상 확정. 복구를 시도합니다. detail=%s",
+                    integrity_result.detail,
+                )
                 self._recover_database()
+            elif integrity_result.state == "unreadable":
+                logger.error(
+                    "데이터베이스 무결성 검사를 수행하지 못했습니다. 자동 복구는 건너뜁니다. detail=%s",
+                    integrity_result.detail,
+                )
 
         self.init_db()
 

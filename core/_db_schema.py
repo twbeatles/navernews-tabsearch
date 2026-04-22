@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import sqlite3
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from core.query_parser import build_fetch_key
 from core.text_utils import parse_date_to_ts
@@ -15,6 +16,11 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+class IntegrityCheckResult(NamedTuple):
+    state: str
+    detail: str = ""
 
 
 class _DatabaseSchemaMixin:
@@ -34,35 +40,64 @@ class _DatabaseSchemaMixin:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _check_integrity(self: DatabaseManager) -> bool:
+    def _check_integrity(self: DatabaseManager) -> IntegrityCheckResult:
         """Run PRAGMA integrity_check before using an existing DB."""
+        conn = None
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = sqlite3.connect(self.db_file, timeout=5.0)
             cursor = conn.cursor()
             cursor.execute("PRAGMA integrity_check")
             result = cursor.fetchone()
-            conn.close()
-            return bool(result and result[0] == "ok")
-        except Exception as e:
-            logger.error("DB integrity check failed: %s", e)
-            return False
+            if result and str(result[0]).lower() == "ok":
+                return IntegrityCheckResult("ok", "")
+            detail = str(result[0]) if result and result[0] is not None else "unknown"
+            logger.error("DB integrity check confirmed corruption: %s", detail)
+            return IntegrityCheckResult("corrupt", detail)
+        except (sqlite3.Error, OSError) as e:
+            logger.error("DB integrity check could not read database: %s", e)
+            return IntegrityCheckResult("unreadable", str(e))
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def _move_db_artifact(self: DatabaseManager, src_path: str, dst_path: str) -> bool:
+        try:
+            os.replace(src_path, dst_path)
+            return True
+        except OSError:
+            try:
+                shutil.copy2(src_path, dst_path)
+                os.remove(src_path)
+                return True
+            except OSError as copy_error:
+                logger.warning("DB artifact preserve failed: %s -> %s (%s)", src_path, dst_path, copy_error)
+                return False
 
     def _recover_database(self: DatabaseManager):
         """Move a corrupt database aside before recreating it."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_name = f"{self.db_file}.corrupt_{timestamp}"
+            db_dir = os.path.dirname(os.path.abspath(self.db_file)) or "."
+            db_name = os.path.basename(self.db_file)
+            corrupt_dir = os.path.join(db_dir, f"{db_name}.corrupt_{timestamp}")
+            os.makedirs(corrupt_dir, exist_ok=True)
 
-            if os.path.exists(self.db_file):
-                try:
-                    os.rename(self.db_file, backup_name)
-                    logger.info("Corrupt DB moved aside: %s", backup_name)
-                except OSError:
-                    import shutil
+            preserved_paths = []
+            for suffix in ("", "-wal", "-shm"):
+                src_path = f"{self.db_file}{suffix}"
+                if not os.path.exists(src_path):
+                    continue
+                dst_path = os.path.join(corrupt_dir, os.path.basename(src_path))
+                if self._move_db_artifact(src_path, dst_path):
+                    preserved_paths.append(dst_path)
 
-                    shutil.copy2(self.db_file, backup_name)
-                    os.remove(self.db_file)
-                    logger.info("Corrupt DB copied aside and removed: %s", backup_name)
+            if preserved_paths:
+                logger.info("Corrupt DB set preserved in %s", corrupt_dir)
+            else:
+                logger.warning("DB recovery started but there was no DB file set to preserve: %s", self.db_file)
         except Exception as e:
             logger.critical("DB recovery failed: %s", e)
 

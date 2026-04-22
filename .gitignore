@@ -43,7 +43,9 @@ crash_log.txt
 *.sqlite3
 *.sqlite3-*
 news_scraper_config.json
+keyword_groups.json
 pending_restore.json
+news_scraper_pro.lock
 
 # Backups and temporary files
 backups/
