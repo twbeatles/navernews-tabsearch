@@ -216,6 +216,18 @@ class _DatabaseSchemaMixin:
         if self._news_keywords_needs_rebuild(conn):
             self._rebuild_news_keywords_table(conn)
 
+    def _ensure_news_tags_schema(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS news_tags (
+                link TEXT NOT NULL,
+                tag TEXT NOT NULL,
+                PRIMARY KEY (link, tag),
+                FOREIGN KEY (link) REFERENCES news(link) ON DELETE CASCADE
+            )
+            """
+        )
+
     def _ensure_app_meta_table(self: DatabaseManager, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
@@ -441,6 +453,7 @@ class _DatabaseSchemaMixin:
                 """
             )
             self._ensure_news_keywords_schema(conn)
+            self._ensure_news_tags_schema(conn)
             self._ensure_app_meta_table(conn)
             self._ensure_news_fts_schema(conn)
 
@@ -487,6 +500,8 @@ class _DatabaseSchemaMixin:
                 "CREATE INDEX IF NOT EXISTS idx_nk_keyword_dup ON news_keywords(keyword, is_duplicate)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_query_key_dup ON news_keywords(query_key, is_duplicate)",
                 "CREATE INDEX IF NOT EXISTS idx_nk_query_key_keyword_dup ON news_keywords(query_key, keyword, is_duplicate)",
+                "CREATE INDEX IF NOT EXISTS idx_news_tags_tag ON news_tags(tag)",
+                "CREATE INDEX IF NOT EXISTS idx_news_tags_link ON news_tags(link)",
             ]
             for idx in indexes:
                 try:

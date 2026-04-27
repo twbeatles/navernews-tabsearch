@@ -45,6 +45,7 @@ crash_log.txt
 news_scraper_config.json
 keyword_groups.json
 pending_restore.json
+pending_restore.json.applied
 news_scraper_pro.lock
 
 # Backups and temporary files

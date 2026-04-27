@@ -89,6 +89,10 @@ class NewsBrowser(QTextBrowser):
         act_bm = menu.addAction("⭐ 북마크 토글")
         act_read = menu.addAction("👁 읽음/안읽음 토글")
         act_note = menu.addAction("📝 메모 편집")
+        act_tag = menu.addAction("🏷 태그 편집")
+        menu.addSeparator()
+        act_block_publisher = menu.addAction("🚫 이 출처 차단")
+        act_prefer_publisher = menu.addAction("✓ 이 출처 선호 추가")
         menu.addSeparator()
         act_del = menu.addAction("🗑 목록에서 삭제")
         
@@ -105,6 +109,12 @@ class NewsBrowser(QTextBrowser):
             self.emit_action("toggle_read", link_hash)
         elif action == act_note:
             self.emit_action("note", link_hash)
+        elif action == act_tag:
+            self.emit_action("tag", link_hash)
+        elif action == act_block_publisher:
+            self.emit_action("block_publisher", link_hash)
+        elif action == act_prefer_publisher:
+            self.emit_action("prefer_publisher", link_hash)
         elif action == act_del:
             self.emit_action("delete", link_hash)
             

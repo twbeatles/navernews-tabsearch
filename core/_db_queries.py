@@ -58,6 +58,47 @@ class _DatabaseQueriesMixin:
         params.append(keyword)
         return clause
 
+    def _append_visibility_filter_clause(
+        self: DatabaseManager,
+        params: List[Any],
+        *,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        tag_filter: str = "",
+    ) -> str:
+        clauses: List[str] = []
+        blocked = [
+            str(item).strip().casefold()
+            for item in (blocked_publishers or [])
+            if str(item or "").strip()
+        ]
+        preferred = [
+            str(item).strip().casefold()
+            for item in (preferred_publishers or [])
+            if str(item or "").strip()
+        ]
+        if blocked:
+            placeholders = ",".join(["?"] * len(blocked))
+            clauses.append(f"LOWER(COALESCE(n.publisher, '')) NOT IN ({placeholders})")
+            params.extend(blocked)
+        if only_preferred_publishers:
+            if preferred:
+                placeholders = ",".join(["?"] * len(preferred))
+                clauses.append(f"LOWER(COALESCE(n.publisher, '')) IN ({placeholders})")
+                params.extend(preferred)
+            else:
+                clauses.append("1 = 0")
+        normalized_tag = str(tag_filter or "").strip()
+        if normalized_tag:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM news_tags nt WHERE nt.link = n.link AND LOWER(nt.tag) = LOWER(?))"
+            )
+            params.append(normalized_tag)
+        if not clauses:
+            return ""
+        return " AND " + " AND ".join(clauses)
+
     def fetch_news(
         self: DatabaseManager,
         keyword: str,
@@ -67,6 +108,10 @@ class _DatabaseQueriesMixin:
         only_unread: bool = False,
         hide_duplicates: bool = False,
         exclude_words: Optional[List[str]] = None,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        tag_filter: str = "",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         limit: Optional[int] = None,
@@ -103,6 +148,11 @@ class _DatabaseQueriesMixin:
                             n.pubDate_ts,
                             n.created_at,
                             n.notes,
+                            COALESCE((
+                                SELECT GROUP_CONCAT(nt.tag, ',')
+                                FROM news_tags nt
+                                WHERE nt.link = n.link
+                            ), '') AS tags,
                             n.title_hash,
                             CASE
                                 WHEN EXISTS (
@@ -129,6 +179,11 @@ class _DatabaseQueriesMixin:
                             n.pubDate_ts,
                             n.created_at,
                             n.notes,
+                            COALESCE((
+                                SELECT GROUP_CONCAT(nt.tag, ',')
+                                FROM news_tags nt
+                                WHERE nt.link = n.link
+                            ), '') AS tags,
                             n.title_hash,
                             nk.is_duplicate AS is_duplicate
                         FROM news n
@@ -157,6 +212,14 @@ class _DatabaseQueriesMixin:
                         )
                     else:
                         query += " AND nk.is_duplicate = 0"
+
+                query += self._append_visibility_filter_clause(
+                    params,
+                    blocked_publishers=blocked_publishers,
+                    preferred_publishers=preferred_publishers,
+                    only_preferred_publishers=only_preferred_publishers,
+                    tag_filter=tag_filter,
+                )
 
                 if filter_txt:
                     query += " AND (n.title LIKE ? OR n.description LIKE ?)"
@@ -220,6 +283,10 @@ class _DatabaseQueriesMixin:
         hide_duplicates: bool = False,
         filter_txt: str = "",
         exclude_words: Optional[List[str]] = None,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        tag_filter: str = "",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         query_key: Optional[str] = None,
@@ -266,6 +333,14 @@ class _DatabaseQueriesMixin:
                         )
                     else:
                         query += " AND nk.is_duplicate = 0"
+
+                query += self._append_visibility_filter_clause(
+                    params,
+                    blocked_publishers=blocked_publishers,
+                    preferred_publishers=preferred_publishers,
+                    only_preferred_publishers=only_preferred_publishers,
+                    tag_filter=tag_filter,
+                )
 
                 if filter_txt:
                     query += " AND (n.title LIKE ? OR n.description LIKE ?)"

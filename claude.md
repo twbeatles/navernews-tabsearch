@@ -43,7 +43,9 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # RuntimePaths facade + 경로/버전 상수 (VERSION = '32.7.3')
-│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
+│   ├── config_store.py          # 설정 import 호환 facade
+│   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
+│   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -128,7 +130,7 @@ navernews-tabsearch/
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
 ├── news_icon.ico                # 앱 아이콘
 ├── README.md                    # 사용자 문서
-├── implementation_audit_2026-04-18.md # 2026-04-18 감사 후속 기록
+├── implementation_risk_review_2026-04-27.md # 2026-04-27 구현 리스크 계획 반영 기록
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
@@ -136,12 +138,32 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `251 passed, 5 subtests passed`
+- `python -m pytest -q` => `258 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ---
+
+## 🚀 2026-04-27 Implementation Risk Batch + Feature Filters
+
+- Current verification line:
+  - `python -m pytest -q` => `258 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- DB / rendering / worker contracts:
+  - `update_status()` now returns `False` for missing rows and raises `DatabaseWriteError` on SQLite write failure; `get_note()` raises `DatabaseQueryError` on query failure; `delete_link()` separates no-target and DB-failure UI messages.
+  - Card rendering escapes publisher/date/tag/action dynamic strings, and article opening allows only `http` / `https` URLs.
+  - Pending restore success first renames `pending_restore.json` to `.applied`; CSV snapshot export always closes the iterator; large 429 `Retry-After` values move directly to cooldown metadata.
+- Feature additions:
+  - Publisher block/prefer lists are stored in config; blocked publishers stay in DB but are hidden from list/count/analysis/CSV, while preferred publishers only apply when `선호 출처만` is enabled.
+  - Article tags use `news_tags(link, tag)`, appear as card badges, participate in tag filtering, and export as a CSV column.
+  - Saved searches and tab-level auto-refresh policies are top-level config fields; tab policies default to global inheritance.
+  - Backup restore scheduling now shows a dry-run summary with config/DB scope, row counts, tag row counts, and verification state.
+- Structure / docs / packaging:
+  - `core.config_store` remains a compatibility facade and delegates implementation to `core.config_store_impl`; shared publisher/tag normalization lives in `core.content_filters`.
+  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and `implementation_risk_review_2026-04-27.md` were re-synced to the current codebase.
+  - `.gitignore` now ignores `pending_restore.json.applied`; the deleted `implementation_audit_2026-04-18.md` remains deleted as the user-owned workspace state.
 
 ## 🚀 2026-04-22 RuntimePaths / Support-Module Refactor + Docs/Spec/Gitignore Revalidation
 
@@ -158,7 +180,7 @@ navernews-tabsearch/
 - Docs / packaging / repo hygiene:
   - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`를 현재 구조 기준으로 다시 동기화했다.
   - `.gitignore`는 portable/legacy 실행 폴더에 남을 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`을 추가로 무시한다.
-  - `implementation_audit_2026-04-18.md`를 복구해 감사 후속 기록이 저장소에서 빠지지 않도록 맞췄다.
+  - 2026-04-27 기준으로는 삭제된 `implementation_audit_2026-04-18.md`를 사용자 변경으로 유지하고, 후속 구현 기록은 `implementation_risk_review_2026-04-27.md`에 남긴다.
 
 ## 🚀 2026-04-18 Implementation Follow-through + Docs/Spec/Gitignore Revalidation
 
@@ -174,7 +196,7 @@ navernews-tabsearch/
 - Docs / packaging / repo hygiene:
   - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`.
   - Re-reviewed `.gitignore` with `git status --ignored --short`; existing rules still cover build outputs, caches, and local runtime artifacts, so no new ignore entry was required.
-  - Recreated `implementation_audit_2026-04-18.md` as a checked-in follow-through summary for the resolved audit scope.
+  - As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remains a user-owned deletion and the superseding implementation record is `implementation_risk_review_2026-04-27.md`.
 
 ## 🚀 2026-04-16 Follow-up Risk Fixes + Docs/Spec Revalidation
 
@@ -345,7 +367,7 @@ navernews-tabsearch/
 | `NotificationSound` | 시스템 알림 소리 재생 | `core/notifications.py` |
 | `ValidationUtils` | API 키/키워드 입력 검증 | `core/validation.py` |
 | `TextUtils` | 텍스트 처리 (하이라이팅 등) | `core/text_utils.py` |
-| `AppConfig` | 설정 파일 TypedDict 스키마 | `core/config_store.py` |
+| `AppConfig` | 설정 파일 TypedDict 스키마 | `core/config_store_impl.py` (via `core.config_store` facade) |
 | `MainApp` | 메인 윈도우 | `ui/main_window.py` |
 | `MainWindowProtocol` | `NewsTab`이 의존하는 메인 윈도우 capability | `ui/protocols.py` |
 | `NewsTab` | 개별 뉴스 탭 위젯 (fragment cache + coalesced render) | `ui/news_tab.py` |

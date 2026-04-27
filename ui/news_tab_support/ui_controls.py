@@ -1,7 +1,7 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
-from PyQt6.QtCore import QDate, Qt, QTimer
+from PyQt6.QtCore import QDate, QSignalBlocker, Qt, QTimer
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDateEdit,
@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QInputDialog,
     QPushButton,
     QToolButton,
     QVBoxLayout,
@@ -73,8 +74,20 @@ class _NewsTabUIControlsMixin:
         self.chk_hide_dup = QCheckBox("중복 숨김")
         self.chk_hide_dup.stateChanged.connect(self._on_hide_duplicates_changed)
 
+        self.chk_preferred_publishers = QCheckBox("선호 출처만")
+        self.chk_preferred_publishers.stateChanged.connect(self._on_preferred_publishers_changed)
+
+        self.combo_tag_filter = NoScrollComboBox()
+        self.combo_tag_filter.setEditable(True)
+        self.combo_tag_filter.setMinimumWidth(130)
+        self.combo_tag_filter.currentTextChanged.connect(lambda _text: self._on_tag_filter_changed())
+        self._refresh_tag_filter_options()
+
         row2_layout.addWidget(self.chk_unread)
         row2_layout.addWidget(self.chk_hide_dup)
+        row2_layout.addWidget(self.chk_preferred_publishers)
+        row2_layout.addWidget(QLabel("태그:"))
+        row2_layout.addWidget(self.combo_tag_filter)
 
         self.btn_date_toggle = QToolButton()
         self.btn_date_toggle.setText("📅 기간")
@@ -120,6 +133,22 @@ class _NewsTabUIControlsMixin:
         row2_layout.addStretch()
         filter_layout.addLayout(row2_layout)
 
+        row3_layout = QHBoxLayout()
+        row3_layout.setSpacing(6)
+        self.combo_saved_search = NoScrollComboBox()
+        self.combo_saved_search.setMinimumWidth(180)
+        self.btn_apply_saved_search = QPushButton("적용")
+        self.btn_apply_saved_search.clicked.connect(self._apply_saved_search)
+        self.btn_save_search = QPushButton("검색 저장")
+        self.btn_save_search.clicked.connect(self._save_current_search)
+        row3_layout.addWidget(QLabel("저장 검색:"))
+        row3_layout.addWidget(self.combo_saved_search)
+        row3_layout.addWidget(self.btn_apply_saved_search)
+        row3_layout.addWidget(self.btn_save_search)
+        row3_layout.addStretch()
+        filter_layout.addLayout(row3_layout)
+        self._refresh_saved_search_combo()
+
         self.date_container.setVisible(False)
         self._update_date_toggle_style(False)
         self._refresh_date_filter_controls()
@@ -161,6 +190,129 @@ class _NewsTabUIControlsMixin:
 
     def _on_hide_duplicates_changed(self):
         self._request_db_reload("중복 숨김 변경")
+
+    def _on_preferred_publishers_changed(self):
+        self._request_db_reload("선호 출처 필터 변경")
+
+    def _on_tag_filter_changed(self):
+        if hasattr(self, "filter_timer"):
+            self.filter_timer.start(self.FILTER_DEBOUNCE_MS)
+
+    def _refresh_tag_filter_options(self):
+        combo = getattr(self, "combo_tag_filter", None)
+        if combo is None:
+            return
+        current = str(combo.currentText() or "").strip()
+        known_tags = []
+        try:
+            get_known_tags = getattr(self.db, "get_known_tags", None)
+            if callable(get_known_tags):
+                known_tags = list(get_known_tags())
+        except Exception:
+            known_tags = []
+        with QSignalBlocker(combo):
+            combo.clear()
+            combo.addItem("모든 태그")
+            for tag in known_tags:
+                combo.addItem(str(tag))
+            if current and current != "모든 태그":
+                idx = combo.findText(current)
+                if idx < 0:
+                    combo.addItem(current)
+                    idx = combo.findText(current)
+                combo.setCurrentIndex(idx)
+            else:
+                combo.setCurrentIndex(0)
+
+    def _refresh_saved_search_combo(self):
+        combo = getattr(self, "combo_saved_search", None)
+        if combo is None:
+            return
+        current = str(combo.currentText() or "").strip()
+        parent = self._main_window()
+        saved_searches = getattr(parent, "saved_searches", {}) if parent is not None else {}
+        with QSignalBlocker(combo):
+            combo.clear()
+            combo.addItem("저장된 검색 없음")
+            if isinstance(saved_searches, dict):
+                for name in sorted(saved_searches.keys(), key=str.casefold):
+                    combo.addItem(str(name))
+            idx = combo.findText(current)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def _current_saved_search_payload(self):
+        start_date, end_date = self._current_date_range()
+        return {
+            "keyword": self.keyword,
+            "filter_txt": self._current_filter_text(),
+            "sort_mode": self.combo_sort.currentText(),
+            "only_unread": self.chk_unread.isChecked(),
+            "hide_duplicates": self.chk_hide_dup.isChecked(),
+            "date_active": bool(self._date_filter_active),
+            "start_date": start_date or "",
+            "end_date": end_date or "",
+            "tag_filter": self._current_tag_filter(),
+            "only_preferred_publishers": self._only_preferred_publishers_enabled(),
+        }
+
+    def _save_current_search(self):
+        parent = self._main_window()
+        if parent is None:
+            return
+        default_name = self.keyword
+        text, ok = QInputDialog.getText(self, "검색 저장", "저장 이름:", text=default_name)
+        if not ok:
+            return
+        name = str(text or "").strip()
+        if not name:
+            return
+        save_saved_search = getattr(parent, "save_saved_search", None)
+        if callable(save_saved_search):
+            save_saved_search(name, self._current_saved_search_payload())
+            self._refresh_saved_search_combo()
+
+    def _apply_saved_search(self):
+        parent = self._main_window()
+        if parent is None:
+            return
+        name = str(self.combo_saved_search.currentText() or "").strip()
+        if not name or name == "저장된 검색 없음":
+            return
+        payload = getattr(parent, "saved_searches", {}).get(name, {})
+        if not isinstance(payload, dict):
+            return
+        with QSignalBlocker(self.inp_filter):
+            self.inp_filter.setText(str(payload.get("filter_txt", "") or ""))
+        sort_idx = self.combo_sort.findText(str(payload.get("sort_mode", "최신순") or "최신순"))
+        if sort_idx >= 0:
+            with QSignalBlocker(self.combo_sort):
+                self.combo_sort.setCurrentIndex(sort_idx)
+        with QSignalBlocker(self.chk_unread):
+            self.chk_unread.setChecked(bool(payload.get("only_unread", False)))
+        with QSignalBlocker(self.chk_hide_dup):
+            self.chk_hide_dup.setChecked(bool(payload.get("hide_duplicates", False)))
+        with QSignalBlocker(self.chk_preferred_publishers):
+            self.chk_preferred_publishers.setChecked(bool(payload.get("only_preferred_publishers", False)))
+        tag_filter = str(payload.get("tag_filter", "") or "").strip()
+        with QSignalBlocker(self.combo_tag_filter):
+            idx = self.combo_tag_filter.findText(tag_filter) if tag_filter else 0
+            if tag_filter and idx < 0:
+                self.combo_tag_filter.addItem(tag_filter)
+                idx = self.combo_tag_filter.findText(tag_filter)
+            self.combo_tag_filter.setCurrentIndex(idx if idx >= 0 else 0)
+            if tag_filter and self.combo_tag_filter.isEditable():
+                self.combo_tag_filter.setEditText(tag_filter)
+        date_active = bool(payload.get("date_active", False))
+        with QSignalBlocker(self.btn_date_toggle):
+            self.btn_date_toggle.setChecked(date_active)
+        self.date_container.setVisible(date_active)
+        if str(payload.get("start_date", "") or ""):
+            self.date_start.setDate(QDate.fromString(str(payload.get("start_date")), "yyyy-MM-dd"))
+        if str(payload.get("end_date", "") or ""):
+            self.date_end.setDate(QDate.fromString(str(payload.get("end_date")), "yyyy-MM-dd"))
+        self._date_filter_active = date_active
+        self._refresh_date_filter_controls()
+        self._request_db_reload("저장 검색 적용")
 
     def _toggle_date_filter(self, checked: bool):
         """날짜 필터 표시/숨김 토글"""

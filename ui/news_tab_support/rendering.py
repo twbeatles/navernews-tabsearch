@@ -78,6 +78,7 @@ class _NewsTabRenderingMixin:
             str(item.get("description", "") or ""),
             str(item.get("publisher", "") or ""),
             str(item.get("_date_fmt", "") or ""),
+            str(item.get("tags", "") or ""),
         )
 
     def _flush_render(self):
@@ -214,6 +215,17 @@ class _NewsTabRenderingMixin:
 
         date_str = item.get("_date_fmt") or parse_date_string(item.get("pubDate", ""))
         item["_date_fmt"] = date_str
+        publisher_html = html.escape(str(item.get("publisher", "출처없음") or "출처없음"))
+        date_html = html.escape(str(date_str or ""))
+        tags = [
+            tag.strip()
+            for tag in str(item.get("tags", "") or "").split(",")
+            if tag.strip()
+        ]
+        tags_html = "".join(
+            f"<span class='keyword-tag'>#{html.escape(tag)}</span>"
+            for tag in tags
+        )
 
         has_note = bool(item.get("notes") and str(item.get("notes", "")).strip())
         note_indicator = " 📝" if has_note else ""
@@ -222,6 +234,7 @@ class _NewsTabRenderingMixin:
             <a href='app://share/{link_hash}'>공유</a>
             <a href='app://ext/{link_hash}'>외부</a>
             <a href='app://note/{link_hash}'>메모{note_indicator}</a>
+            <a href='app://tag/{link_hash}'>태그</a>
         """
         if item.get("is_read", 0):
             actions += f"<a href='app://unread/{link_hash}'>안읽음</a>"
@@ -231,12 +244,13 @@ class _NewsTabRenderingMixin:
 
         if item.get("is_duplicate", 0):
             badges += "<span class='duplicate-badge'>유사</span>"
+        badges += tags_html
 
         rendered = f"""
         <div class="news-item{is_read_cls}{is_dup_cls}">
             <a href="app://open/{link_hash}" class="title-link">{title_pfx}{title}</a>
             <div class="meta-info">
-                <span class="meta-left">📰 {item.get('publisher', '출처없음')} · {date_str} {badges}</span>
+                <span class="meta-left">📰 {publisher_html} · {date_html} {badges}</span>
                 <span class="actions">{actions}</span>
             </div>
             <div class="description">{desc}</div>

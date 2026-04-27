@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 
 if TYPE_CHECKING:
     from core.database import DatabaseManager
@@ -32,6 +32,9 @@ class _DatabaseAnalyticsMixin:
             stats["with_notes"] = active_conn.execute(
                 "SELECT COUNT(*) FROM news WHERE notes IS NOT NULL AND notes != ''"
             ).fetchone()[0]
+            stats["with_tags"] = active_conn.execute(
+                "SELECT COUNT(DISTINCT link) FROM news_tags"
+            ).fetchone()[0]
             stats["duplicates"] = active_conn.execute(
                 "SELECT COUNT(DISTINCT link) FROM news_keywords WHERE is_duplicate = 1"
             ).fetchone()[0]
@@ -48,6 +51,10 @@ class _DatabaseAnalyticsMixin:
         keyword: Optional[str] = None,
         limit: int = 10,
         exclude_words: Optional[List[str]] = None,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        tag_filter: str = "",
         query_key: Optional[str] = None,
         conn: Optional[sqlite3.Connection] = None,
     ) -> List[Tuple[str, int]]:
@@ -91,6 +98,16 @@ class _DatabaseAnalyticsMixin:
                     query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
                     wildcard = f"%{exclude_word}%"
                     params.extend([wildcard, wildcard])
+
+            append_visibility = getattr(self, "_append_visibility_filter_clause", None)
+            if callable(append_visibility):
+                query += cast(str, append_visibility(
+                    params,
+                    blocked_publishers=blocked_publishers,
+                    preferred_publishers=preferred_publishers,
+                    only_preferred_publishers=only_preferred_publishers,
+                    tag_filter=tag_filter,
+                ))
 
             query += """
                 GROUP BY n.publisher

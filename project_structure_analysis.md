@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-22)
+작성일: 2026-03-16 (최근 갱신: 2026-04-27)
 
 ## 분석 범위
 
@@ -17,6 +17,22 @@
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
 
+## 0. 2026-04-27 구현 리스크 계획 반영 / 문서·spec·gitignore 재검증
+
+이번 재검증에서는 2026-04-27 구현 계획의 우선 수정, 중간 우선순위, 기능 후보를 하나의 변경 배치로 실제 코드에 반영하고 문서/패키징 기준을 다시 맞췄다.
+
+- `core._db_mutations.py`의 단건 액션 계약을 정리해 `update_status()`는 대상 row 없음에서 `False`, SQLite 쓰기 실패에서 `DatabaseWriteError`를 반환/발생시키고, `get_note()`는 조회 실패를 `DatabaseQueryError`로 올리며, `delete_link()`는 대상 없음과 DB 실패를 UI 메시지까지 분리한다.
+- `ui/news_tab_support/rendering.py`와 `actions.py`는 카드 동적 문자열 escape와 외부 링크 scheme 제한(`http`/`https`)을 적용한다.
+- `core._db_schema.py`는 `news_tags(link, tag)` 스키마와 index를 보장하고, `core._db_queries.py`/`_db_analytics.py`/CSV export는 출처 차단, 선호 출처, 태그 필터를 같은 scope로 처리한다.
+- `core.config_store.py`는 기존 import 호환 facade가 되었고, 실제 기본값/정규화/secret storage/파일 I/O 구현은 `core/config_store_impl.py`, 출처/태그 정규화는 `core/content_filters.py`로 분리됐다.
+- `ui/news_tab_support/ui_controls.py`, `ui/main_window_support/ui_shell.py`, `ui/_main_window_tabs.py`는 태그 필터, 저장된 검색, 선호 출처 필터, 탭별 자동 새로고침 정책을 UI에 연결한다.
+- `core.backup.py`는 pending restore 성공 후 `.applied` atomic rename 경로를 사용하고, `ui.dialogs.BackupDialog`는 복원 예약 전 dry-run 요약에 설정 변경, DB 포함 여부, 현재/백업 row count, tag row count, 검증 상태를 표시한다.
+- `core.workers.ApiWorker`는 429 `Retry-After`가 30초를 초과하면 worker 내부 sleep 없이 cooldown meta로 즉시 반환한다.
+- `news_scraper_pro.spec`는 새 기능이 기존 PyQt/stdlib 의존성만 사용함을 재검토했고, 추가 hidden import/exclude/data 수정은 필요하지 않았다.
+- `.gitignore`는 적용 성공 후 남을 수 있는 `pending_restore.json.applied`를 무시하도록 보강했다.
+- 기존 삭제 상태인 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지하고, 이번 구현 완료 기록은 `implementation_risk_review_2026-04-27.md`에 남긴다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `258 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
+
 ## 0. 2026-04-22 구조 분할 / 문서·spec·gitignore 정합화
 
 이번 재검증에서는 RuntimePaths 통합, support-package 구조 분할, 문서/spec/ignore 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
@@ -26,7 +42,7 @@
 - `ui.news_tab.py`는 약 111줄의 facade로 축소됐고, 상태/로딩/렌더링/UI 제어/카드 액션은 `ui/news_tab_support/state.py`, `loading.py`, `rendering.py`, `ui_controls.py`, `actions.py`로 분리됐다.
 - `news_scraper_pro.spec`는 2026-04-22 기준 다시 재검토되었고, 이번 패스의 RuntimePaths 통합, SQLite-safe legacy migration hardening, support-package 분할은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않았다.
 - `.gitignore`는 portable/legacy 실행 폴더 기준으로 다시 생길 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`까지 명시적으로 무시하도록 보강했다.
-- 역사 문서 `implementation_audit_2026-04-18.md`를 저장소에 복구해, 2026-04-18 감사 후속 기록이 누락되지 않도록 맞췄다.
+- 2026-04-27 기준 삭제된 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지하고, 후속 구현 기록은 `implementation_risk_review_2026-04-27.md`로 대체한다.
 - 문서 기준 현재 검증선은 `python -m pytest -q` => `251 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
 
 ## 0. 2026-04-18 구현 수정 반영 / 문서·spec·gitignore 재검증
@@ -281,7 +297,9 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 |---|---|
 | `core/bootstrap.py` | 앱 시작, 단일 인스턴스, 예외 처리, 복원 적용 |
 | `core/constants.py` | 앱 경로, 파일명, 버전 상수 |
-| `core/config_store.py` | 설정 TypedDict, 로드 정규화, 원자 저장/.backup 회전, import 보정, DPAPI |
+| `core/config_store.py` | 기존 import 경로를 유지하는 설정 facade |
+| `core/config_store_impl.py` | 설정 TypedDict, 로드 정규화, 원자 저장/.backup 회전, import 보정, DPAPI |
+| `core/content_filters.py` | 출처 목록과 자유 태그 정규화 |
 | `core/database.py` | `DatabaseManager` facade, 연결 풀 수명 주기 |
 | `core/_db_schema.py` | DB 초기화, 마이그레이션, 무결성 검사, 복구 |
 | `core/_db_duplicates.py` | 제목 해시, 중복 플래그 계산/복구 |
@@ -303,7 +321,8 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 ### 구조적으로 중요한 관찰
 
 - `core.database.py`는 133줄 수준의 facade로 축소됐고, 실제 책임은 `core/_db_*.py`로 분리됐다.
-- `core.config_store.py`는 단순 설정 저장 모듈이 아니라, **호환성/보안/정규화 레이어**다.
+- `core.config_store.py`는 이제 호환성 facade이고, 실제 설정 보안/정규화/파일 I/O는 `core.config_store_impl.py`에 있다.
+- 출처/태그처럼 UI, 설정, DB export가 함께 쓰는 normalization은 `core.content_filters.py`에 모아져 있다.
 - `core.query_parser.py`는 작지만 의미상 매우 중요하다. 탭 의미, API 질의, 페이지네이션 키가 여기 정책에 묶여 있다.
 - `core.backup.py`는 파일 복사 유틸이 아니라, **복원 무결성 보장 모듈**에 가깝다.
 - `core.workers.DBWorker`는 탭 raw keyword를 다시 파싱하지 않고, `NewsTab`이 계산한 `DBQueryScope`를 그대로 소비한다.
@@ -363,6 +382,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 단일 인스턴스/시작: `test_single_instance_guard.py`, `test_start_minimized_guard.py`, `test_startup_registry_command.py`
 - 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`, `test_stabilization_round1.py`
 - 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_news_tab_performance.py`, `test_settings_dialog_maintenance.py`, `test_stabilization_round1.py`
+- 2026-04-27 기능 배치: `test_implementation_batch_20260427.py`
 - 문서/버전/인코딩 가드: `test_version_history_guard.py`, `test_encoding_smoke.py`
 
 즉, 새 기능 추가 시 테스트를 처음부터 새로 짜는 것보다, **기존 계약을 안 깨뜨리는 테스트를 같이 확장**하는 방식이 맞다.
@@ -393,29 +413,36 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - `keyword_groups`
 - `pagination_state`
 - `pagination_totals`
+- `saved_searches`
+- `tab_refresh_policies`
 
 특징:
 
 - 로드 시 정규화된다.
 - 저장 시 원자적으로 교체된다.
 - `search_history`는 `canonical query` 기준으로 dedupe된다.
+- `app_settings.blocked_publishers` / `preferred_publishers`는 trim, 빈 값 제거, case-insensitive dedupe를 거친다.
+- `saved_searches`는 탭 필터/정렬/기간/태그/선호 출처 조건을 이름별 payload로 저장한다.
+- `tab_refresh_policies`는 탭별 자동 새로고침 override이며 기본값은 전역 설정 상속이다.
 - 손상 시 `.backup` fallback 복구가 있다.
 - Windows에서는 `client_secret_enc` + `client_secret_storage=dpapi` 경로를 지원한다.
 
 ### 데이터베이스
 
-핵심 테이블은 2개다.
+핵심 테이블은 3개다.
 
 - `news`
 - `news_keywords`
+- `news_tags`
 
 설계 의도는 다음과 같다.
 
 - `news`는 기사 자체의 단일 원본 저장소
 - `news_keywords`는 "어떤 탭 의미(키워드 그룹)에 이 기사가 속하는가"를 표현하는 매핑
 - 중복 여부는 기사 전체가 아니라 **키워드 맥락별**로 계산할 수 있게 `news_keywords.is_duplicate`에 반영
+- `news_tags`는 기사별 자유 태그 매핑이며, `link` 삭제 시 FK cascade와 명시 cleanup을 함께 적용한다.
 
-즉, 앞으로 "태그", "커스텀 분류", "보관함", "소스 차단 규칙" 같은 기능을 넣을 때도 이 매핑 구조를 확장하는 방향이 자연스럽다.
+즉, 앞으로 "커스텀 분류", "보관함", "소스 차단 규칙" 같은 기능을 넣을 때도 이 매핑 구조를 확장하는 방향이 자연스럽다. 다만 태그는 이미 `news_tags`로 분리되어 있으므로 새 태그성 기능은 이 테이블/API와 먼저 맞춰야 한다.
 
 ### 백업/복원
 
@@ -483,12 +510,13 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 |---|---:|---|
 | `ui/_main_window_fetch.py` | 551 | fetch/worker/pagination 도메인의 주된 병목 |
 | `ui/main_window_support/base.py` | 590 | 메인 윈도우 상태/유지보수/worker orchestration이 집중 |
-| `ui/news_tab_support/actions.py` | 535 | 카드 액션과 상태 동기화 로직이 가장 넓음 |
+| `ui/news_tab_support/actions.py` | 555 | 카드 액션, 링크 보안, 태그/출처 액션이 집중됨 |
 | `ui/news_tab_support/loading.py` | 418 | 탭 DB 로드, hydration, 유지보수 연동의 중심 |
-| `core/_db_mutations.py` | 392 | 쓰기/삭제/mark-read 책임이 가장 넓음 |
+| `core/_db_mutations.py` | 650 | 쓰기/삭제/mark-read/태그 CRUD 책임이 가장 넓음 |
+| `core/config_store_impl.py` | 678 | 설정 스키마, 보안, 정규화, import/export 보정이 집중됨 |
+| `ui/news_tab_support/ui_controls.py` | 388 | 태그 필터, 저장된 검색, 탭 UI control wiring이 집중됨 |
 | `ui/_main_window_tabs.py` | 359 | 탭 상태/키워드/그룹 연결이 집중됨 |
 | `ui/styles.py` | 746 | 스타일/QSS/HTML 템플릿이 매우 큼 |
-| `core/config_store.py` | 647 | 설정 스키마와 보안/정규화 로직이 집중 |
 
 ### 실무적으로 중요한 결론
 
@@ -508,7 +536,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 수정 지점이 거의 항상 같이 움직인다.
 
-1. `core/config_store.py`
+1. `core/config_store_impl.py`
 2. `ui/settings_dialog.py`
 3. `ui/main_window_support/config.py`
 4. `README.md`, `claude.md`, `gemini.md`
@@ -708,8 +736,9 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 ### 다음 우선순위 후보
 
-- `core/config_store.py` 분리: 기본값 / 정규화 / 저장 / secret storage
+- `core/config_store_impl.py` 추가 분리: 기본값 / 정규화 / 저장 / secret storage
 - `ui/_main_window_fetch.py` 분리: refresh policy / worker registry / cooldown / pagination orchestration
+- `core/_db_mutations.py` 분리: 태그 CRUD / 상태 변경 / 대량 mark-read 분리
 - `ui/styles.py` 분리: QSS / HTML 템플릿 / 상수
 
 ## 12. 변경 시 반드시 같이 확인할 것

@@ -36,6 +36,7 @@ class MainWindowProtocol(Protocol):
         is_read: Optional[bool] = None,
         is_bookmarked: Optional[bool] = None,
         notes: Optional[str] = None,
+        tags: Optional[str] = None,
         deleted: bool = False,
     ) -> None:
         ...

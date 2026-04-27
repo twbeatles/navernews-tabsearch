@@ -70,6 +70,42 @@ class _MainWindowFetchMixin:
                 logger.error("Failed to normalize refresh keyword '%s': %s", keyword, e)
         return prepared
 
+    def _global_refresh_interval_minutes(self: MainApp) -> Optional[int]:
+        minutes = [10, 30, 60, 120, 360]
+        idx = int(getattr(self, "interval_idx", 5) or 0)
+        if 0 <= idx < len(minutes):
+            return minutes[idx]
+        return None
+
+    def _tab_refresh_interval_minutes(self: MainApp, keyword: str) -> Optional[int]:
+        policy = str(getattr(self, "tab_refresh_policies", {}).get(keyword, "inherit") or "inherit").lower()
+        if policy == "off":
+            return None
+        if policy == "inherit":
+            return self._global_refresh_interval_minutes()
+        try:
+            minutes = int(policy)
+        except ValueError:
+            return self._global_refresh_interval_minutes()
+        if minutes in {10, 30, 60, 120, 360}:
+            return minutes
+        return self._global_refresh_interval_minutes()
+
+    def _auto_refresh_keywords_due(self: MainApp, keywords: List[str]) -> List[str]:
+        now_ts = time.time()
+        due_keywords: List[str] = []
+        last_by_keyword = getattr(self, "_last_auto_refresh_by_keyword", {})
+        for keyword in self._prepare_refresh_keywords(keywords):
+            interval_minutes = self._tab_refresh_interval_minutes(keyword)
+            if interval_minutes is None:
+                continue
+            last_ts = float(last_by_keyword.get(keyword, 0.0) or 0.0)
+            if last_ts <= 0 or now_ts - last_ts >= interval_minutes * 60:
+                due_keywords.append(keyword)
+                last_by_keyword[keyword] = now_ts
+        self._last_auto_refresh_by_keyword = last_by_keyword
+        return due_keywords
+
     def _refresh_block_reason(
         self: MainApp,
         action_label: str = "새로고침",
@@ -155,10 +191,12 @@ class _MainWindowFetchMixin:
 
         started = False
         try:
+            self._auto_refresh_tick = True
             started = self.refresh_all()
         except Exception as e:
             logger.error("Automatic refresh failed: %s", e)
         finally:
+            self._auto_refresh_tick = False
             if not started:
                 with QMutexLocker(self._refresh_mutex):
                     self._refresh_in_progress = False
@@ -203,6 +241,12 @@ class _MainWindowFetchMixin:
                         refresh_keywords.append(widget.keyword)
                 except Exception as e:
                     logger.error("Failed to inspect tab keyword: %s", e)
+
+            if bool(getattr(self, "_auto_refresh_tick", False)):
+                refresh_keywords = self._auto_refresh_keywords_due(refresh_keywords)
+                if not refresh_keywords:
+                    logger.info("Automatic refresh skipped because no tab is due")
+                    return False
 
             if self._begin_sequential_refresh(refresh_keywords):
                 return True
@@ -726,8 +770,12 @@ class _MainWindowFetchMixin:
             logger.warning("Sequential refresh failed for '%s': %s", keyword, error_msg)
             self._on_sequential_fetch_done(keyword)
 
-        network_error_keywords = ["네트워크", "timeout", "연결", "connection", "Timeout", "Network"]
-        is_network_error = any(token in error_msg for token in network_error_keywords)
+        error_kind = str(normalized_error_meta.get("kind", "") or "").strip()
+        if error_kind:
+            is_network_error = error_kind in {"network_error", "timeout"}
+        else:
+            network_error_keywords = ["네트워크", "timeout", "연결", "connection", "Timeout", "Network"]
+            is_network_error = any(token in error_msg for token in network_error_keywords)
         if is_network_error:
             self._network_error_count += 1
             logger.warning(

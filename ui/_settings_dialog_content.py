@@ -164,12 +164,26 @@ class _SettingsDialogContentMixin:
             timeout_value = 15
         self.spn_api_timeout.setValue(max(5, min(60, timeout_value)))
 
+        self.txt_blocked_publishers = QLineEdit(
+            ", ".join(str(item) for item in self.config.get("blocked_publishers", []))
+        )
+        self.txt_blocked_publishers.setPlaceholderText("예: example.com, badnews.co.kr")
+
+        self.txt_preferred_publishers = QLineEdit(
+            ", ".join(str(item) for item in self.config.get("preferred_publishers", []))
+        )
+        self.txt_preferred_publishers.setPlaceholderText("예: yna.co.kr, news.naver.com")
+
         form.addWidget(QLabel("자동 새로고침:"), 0, 0)
         form.addWidget(self.cb_time, 0, 1)
         form.addWidget(QLabel("테마:"), 1, 0)
         form.addWidget(self.cb_theme, 1, 1)
         form.addWidget(QLabel("API 타임아웃:"), 2, 0)
         form.addWidget(self.spn_api_timeout, 2, 1)
+        form.addWidget(QLabel("차단 출처:"), 3, 0)
+        form.addWidget(self.txt_blocked_publishers, 3, 1)
+        form.addWidget(QLabel("선호 출처:"), 4, 0)
+        form.addWidget(self.txt_preferred_publishers, 4, 1)
 
         group.setLayout(form)
         return group

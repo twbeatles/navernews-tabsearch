@@ -24,6 +24,7 @@ from core.query_parser import build_fetch_key
 logger = logging.getLogger(__name__)
 
 RE_BOLD_TAGS = re.compile(r"</?b>")
+MAX_INLINE_RETRY_AFTER_SECONDS = 30
 
 
 class ReadConnectionProtocol(Protocol):
@@ -280,6 +281,10 @@ class DBQueryScope:
     only_unread: bool = False
     hide_duplicates: bool = False
     exclude_words: Tuple[str, ...] = field(default_factory=tuple)
+    blocked_publishers: Tuple[str, ...] = field(default_factory=tuple)
+    preferred_publishers: Tuple[str, ...] = field(default_factory=tuple)
+    only_preferred_publishers: bool = False
+    tag_filter: str = ""
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     query_key: Optional[str] = None
@@ -292,6 +297,10 @@ class DBQueryScope:
             "hide_duplicates": self.hide_duplicates,
             "filter_txt": self.filter_txt,
             "exclude_words": list(self.exclude_words),
+            "blocked_publishers": list(self.blocked_publishers),
+            "preferred_publishers": list(self.preferred_publishers),
+            "only_preferred_publishers": self.only_preferred_publishers,
+            "tag_filter": self.tag_filter,
             "start_date": self.start_date,
             "end_date": self.end_date,
             "query_key": self.query_key,
@@ -458,6 +467,15 @@ class ApiWorker(QObject):
 
                         if resp.status_code == 429:
                             cooldown_seconds = self._rate_limit_wait_seconds(resp, attempt)
+                            if cooldown_seconds > MAX_INLINE_RETRY_AFTER_SECONDS:
+                                self._emit_error(
+                                    "API 요청 제한 초과. 잠시 후 다시 시도해주세요.",
+                                    kind="rate_limit",
+                                    status_code=429,
+                                    cooldown_seconds=cooldown_seconds,
+                                    retryable=True,
+                                )
+                                return
                             if attempt < self.max_retries - 1:
                                 self._safe_emit(self.progress, f"요청 제한 초과. {cooldown_seconds}초 후 재시도...")
                                 for _ in range(cooldown_seconds):

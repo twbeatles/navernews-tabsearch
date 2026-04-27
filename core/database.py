@@ -21,6 +21,52 @@ if TYPE_CHECKING:
     from core.workers import DBQueryScope
 
 
+class NewsSnapshotBatchIterator:
+    def __init__(
+        self,
+        db_manager: "DatabaseManager",
+        conn,
+        scope: "DBQueryScope",
+        total_count: int,
+        chunk_size: int,
+    ):
+        self._db_manager = db_manager
+        self._conn = conn
+        self._scope = scope
+        self._total_count = max(0, int(total_count or 0))
+        self._chunk_size = max(1, int(chunk_size or 1))
+        self._closed = False
+
+    def __iter__(self) -> Iterator[list[dict]]:
+        offset = 0
+        try:
+            while offset < self._total_count:
+                rows = self._db_manager.fetch_news(
+                    conn=self._conn,
+                    limit=self._chunk_size,
+                    offset=offset,
+                    **self._scope.fetch_kwargs(),
+                )
+                if not rows:
+                    break
+                offset += len(rows)
+                yield rows
+        finally:
+            self.close()
+
+    def __enter__(self) -> "NewsSnapshotBatchIterator":
+        return self
+
+    def __exit__(self, *_exc_info) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._db_manager.close_read_connection(self._conn)
+
+
 class DatabaseQueryError(RuntimeError):
     """Raised when a read/query-style DB operation fails."""
 
@@ -255,7 +301,7 @@ class DatabaseManager(
         scope: "DBQueryScope",
         chunk_size: int = 200,
         timeout: float = 5.0,
-    ) -> tuple[int, Iterator[list[dict]]]:
+    ) -> tuple[int, NewsSnapshotBatchIterator]:
         """Iterate a stable snapshot for export/count style workflows."""
         conn = self.open_read_connection(timeout=timeout)
         try:
@@ -267,21 +313,4 @@ class DatabaseManager(
 
         safe_chunk_size = max(1, int(chunk_size))
 
-        def _batch_iter() -> Iterator[list[dict]]:
-            offset = 0
-            try:
-                while offset < total_count:
-                    rows = self.fetch_news(
-                        conn=conn,
-                        limit=safe_chunk_size,
-                        offset=offset,
-                        **scope.fetch_kwargs(),
-                    )
-                    if not rows:
-                        break
-                    offset += len(rows)
-                    yield rows
-            finally:
-                self.close_read_connection(conn)
-
-        return total_count, _batch_iter()
+        return total_count, NewsSnapshotBatchIterator(self, conn, scope, total_count, safe_chunk_size)

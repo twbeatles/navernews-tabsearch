@@ -1,6 +1,32 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Risk Batch + Feature Filters (2026-04-27)**:
+  - DB / rendering / worker contracts:
+    - `update_status()` now returns `False` when no row is changed and raises `DatabaseWriteError` for SQLite write failure.
+    - `get_note()` now raises `DatabaseQueryError` on query failure so the UI does not open a stale note dialog.
+    - `delete_link()` now separates no-target and DB-failure paths, including distinct UI messages.
+    - Article card rendering escapes publisher/date/tag/action dynamic strings and article opening now allows only `http` / `https` URLs.
+    - Pending restore success first renames `pending_restore.json` to `.applied`; CSV snapshot export always closes its iterator; large 429 `Retry-After` values become cooldown metadata without worker sleep.
+  - Feature additions:
+    - Added publisher block/prefer settings. Blocked publishers remain stored in DB but are hidden from list/count/analysis/CSV; preferred publishers only apply when the preferred-only filter is enabled.
+    - Added free-form article tags through `news_tags(link, tag)`, card tag badges, tag filtering, tag cleanup on delete, and a CSV tag column.
+    - Added saved searches for current tab query/filter/sort/unread/duplicate/date/tag/preferred-only state.
+    - Added tab-level auto-refresh policies with global inheritance by default and per-tab off/interval overrides from the tab context menu.
+    - Added restore dry-run summaries before scheduling backup restore.
+  - Config / schema / structure:
+    - Added `app_settings.blocked_publishers`, `app_settings.preferred_publishers`, top-level `saved_searches`, and top-level `tab_refresh_policies`.
+    - Kept `core.config_store` as the compatibility facade and moved the implementation to `core.config_store_impl`.
+    - Added `core.content_filters` for publisher/tag normalization.
+  - Docs / packaging / repo hygiene:
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and `implementation_risk_review_2026-04-27.md`.
+    - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required for this pass.
+    - Updated `.gitignore` for `pending_restore.json.applied`.
+    - The deleted `implementation_audit_2026-04-18.md` remains deleted as a user-owned workspace change.
+  - Validation:
+    - `python -m pytest -q` => `258 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **RuntimePaths / Support-Module Refactor + Docs/Spec/Gitignore Revalidation (2026-04-22)**:
   - Runtime storage / migration hardening:
     - Added `RuntimePaths` and routed runtime file ownership (`config`, `db`, `log`, `pending_restore`, `backups`, lock/crash artifacts) through one shared path object.
@@ -11,7 +37,7 @@
     - Reduced `ui.news_tab.NewsTab` to a facade and moved state/loading/rendering/UI-control/action responsibilities into `ui/news_tab_support/{state,loading,rendering,ui_controls,actions}.py`.
     - Kept public import paths and compatibility re-exports stable.
   - Docs / packaging / repo hygiene:
-    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, and restored `implementation_audit_2026-04-18.md`.
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`. As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remains a user-owned deletion and the superseding implementation record is `implementation_risk_review_2026-04-27.md`.
     - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required for this pass.
     - Updated `.gitignore` for portable/legacy root runtime artifacts (`keyword_groups.json`, `news_scraper_pro.lock`).
   - Validation:
@@ -30,7 +56,7 @@
   - Docs / packaging / repo hygiene:
     - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the current maintenance/notification/rate-limit contract.
     - Re-reviewed `.gitignore` with `git status --ignored --short`; existing rules still cover build outputs, caches, and local runtime data, so no new ignore entry was required.
-    - Restored `implementation_audit_2026-04-18.md` as a checked-in follow-through summary for the resolved audit items.
+    - As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remains a user-owned deletion and the superseding implementation record is `implementation_risk_review_2026-04-27.md`.
   - Validation:
     - `python -m pytest -q` => `236 passed, 5 subtests passed`
     - `pyright` => `0 errors, 0 warnings, 0 informations`

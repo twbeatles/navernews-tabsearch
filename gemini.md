@@ -28,7 +28,9 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # RuntimePaths facade + 경로/버전/앱 상수
-│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
+│   ├── config_store.py          # 설정 import 호환 facade
+│   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
+│   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -89,16 +91,36 @@ navernews-tabsearch/
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
 ├── news_icon.ico                # 애플리케이션 아이콘
-├── implementation_audit_2026-04-18.md # 2026-04-18 감사 후속 기록
+├── implementation_risk_review_2026-04-27.md # 2026-04-27 구현 리스크 계획 반영 기록
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `251 passed, 5 subtests passed`
+- `python -m pytest -q` => `258 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+
+### 2026-04-27 Implementation Risk Batch + Feature Filters
+
+- Current verification line:
+  - `python -m pytest -q` => `258 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- DB/rendering/worker contracts:
+  - `update_status()` returns `False` for missing rows and raises `DatabaseWriteError` for SQLite write failure.
+  - `get_note()` raises `DatabaseQueryError` on query failure, and `delete_link()` separates no-target from DB-failure messaging.
+  - Card rendering escapes publisher/date/tag/action strings; article opening allows only `http` and `https`.
+  - Pending restore success renames pending restore metadata to `.applied`, CSV snapshot export closes iterators reliably, and large 429 `Retry-After` values become cooldown metadata without inline sleeping.
+- Feature additions:
+  - Publisher block/prefer lists, preferred-only filtering, article free tags, tag filtering, saved searches, tab-level auto-refresh policies, and restore dry-run summaries are implemented.
+  - `news_tags(link, tag)` stores article tags with normalized limits; CSV export includes a tag column.
+  - `saved_searches` and `tab_refresh_policies` are top-level config schema fields, while `blocked_publishers` and `preferred_publishers` live under `app_settings`.
+- Structure / docs / packaging:
+  - `core.config_store` is now a compatibility facade over `core.config_store_impl`; shared name/tag normalization lives in `core.content_filters`.
+  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and `implementation_risk_review_2026-04-27.md` were updated for the new codebase state.
+  - `.gitignore` now ignores `pending_restore.json.applied`; deleted `implementation_audit_2026-04-18.md` remains deleted as the user-owned workspace state.
 
 ### 2026-04-22 RuntimePaths / Support-Module Refactor + Docs/Spec/Gitignore Revalidation
 
@@ -109,7 +131,7 @@ navernews-tabsearch/
 - `RuntimePaths`가 런타임 저장 경로를 한 객체로 묶고, `core/runtime_support/paths.py` / `migration.py`가 실제 경로 계산과 레거시 마이그레이션을 담당한다.
 - `MainApp` 구현은 `ui/main_window_support/`로, `NewsTab` 구현은 `ui/news_tab_support/`로 분리되어 facade와 내부 책임이 구분되었다.
 - `news_scraper_pro.spec`는 이번 패스에서도 추가 hidden import/exclude/data 변경이 필요하지 않았고, `.gitignore`는 `keyword_groups.json`, `news_scraper_pro.lock`을 추가로 무시한다.
-- `implementation_audit_2026-04-18.md`를 복구해 2026-04-18 감사 후속 기록을 다시 저장소에 포함시켰다.
+- 2026-04-27 기준으로는 삭제된 `implementation_audit_2026-04-18.md`를 사용자 변경으로 유지하고, 후속 구현 기록은 `implementation_risk_review_2026-04-27.md`에 남긴다.
 
 ### 2026-04-18 Implementation Follow-through + Docs/Spec/Gitignore Revalidation
 

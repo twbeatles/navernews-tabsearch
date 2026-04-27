@@ -18,6 +18,7 @@ from core.config_store import (
     resolve_client_secret_for_runtime,
     save_primary_config_file,
 )
+from core.content_filters import normalize_name_list
 from core.constants import APP_DIR, APP_NAME, ICON_FILE, ICON_PNG, VERSION
 from core.startup import StartupManager
 
@@ -100,9 +101,13 @@ class _MainWindowConfigMixin:
             "window_geometry": settings.get("window_geometry"),
             "search_history": loaded_cfg.get("search_history", []),
             "api_timeout": settings.get("api_timeout", 15),
+            "blocked_publishers": settings.get("blocked_publishers", []),
+            "preferred_publishers": settings.get("preferred_publishers", []),
             "keyword_groups": loaded_cfg.get("keyword_groups", {}),
             "pagination_state": loaded_cfg.get("pagination_state", {}),
             "pagination_totals": loaded_cfg.get("pagination_totals", {}),
+            "saved_searches": loaded_cfg.get("saved_searches", {}),
+            "tab_refresh_policies": loaded_cfg.get("tab_refresh_policies", {}),
         }
 
         self.client_id = self.config["client_id"]
@@ -122,6 +127,10 @@ class _MainWindowConfigMixin:
         self.notify_on_refresh = self.config.get("notify_on_refresh", False)
         self.search_history = self.config.get("search_history", [])
         self.api_timeout = self.config.get("api_timeout", 15)
+        self.blocked_publishers = normalize_name_list(self.config.get("blocked_publishers", []))
+        self.preferred_publishers = normalize_name_list(self.config.get("preferred_publishers", []))
+        self.saved_searches = dict(self.config.get("saved_searches", {}))
+        self.tab_refresh_policies = dict(self.config.get("tab_refresh_policies", {}))
         self.keyword_group_manager.groups = self.keyword_group_manager._normalize_groups(
             self.config.get("keyword_groups", {})
         )
@@ -163,6 +172,8 @@ class _MainWindowConfigMixin:
                 "auto_start_enabled": self.auto_start_enabled,
                 "notify_on_refresh": self.notify_on_refresh,
                 "api_timeout": self.api_timeout,
+                "blocked_publishers": normalize_name_list(getattr(self, "blocked_publishers", [])),
+                "preferred_publishers": normalize_name_list(getattr(self, "preferred_publishers", [])),
                 "window_geometry": {
                     "x": self.x(),
                     "y": self.y(),
@@ -183,6 +194,8 @@ class _MainWindowConfigMixin:
                 for fetch_key, total in self._fetch_total_by_key.items()
                 if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
             },
+            "saved_searches": dict(getattr(self, "saved_searches", {})),
+            "tab_refresh_policies": dict(getattr(self, "tab_refresh_policies", {})),
         }
 
         try:

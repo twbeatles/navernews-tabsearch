@@ -223,11 +223,19 @@ class _MainWindowAnalysisMixin:
                 return self._require_db().get_top_publishers(
                     db_keyword,
                     exclude_words=exclude_words,
+                    blocked_publishers=getattr(self, "blocked_publishers", []),
+                    preferred_publishers=getattr(self, "preferred_publishers", []),
                     limit=20,
                     query_key=query_key,
                     conn=conn,
                 )
-            return self._require_db().get_top_publishers(None, limit=20, conn=conn)
+            return self._require_db().get_top_publishers(
+                None,
+                blocked_publishers=getattr(self, "blocked_publishers", []),
+                preferred_publishers=getattr(self, "preferred_publishers", []),
+                limit=20,
+                conn=conn,
+            )
 
         def update_analysis() -> None:
             state["publisher_request_id"] += 1

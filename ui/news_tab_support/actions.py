@@ -5,8 +5,9 @@ from typing import Any, Dict, Optional, cast
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
+from core.content_filters import normalize_tags, tags_to_csv
 from core.workers import IterativeJobWorker
 from ui.dialogs import NoteDialog
 from ui.protocols import MainWindowProtocol
@@ -42,7 +43,7 @@ class _NewsTabActionsMixin:
             return False
 
         url = QUrl.fromUserInput(normalized_link)
-        if not url.isValid():
+        if not url.isValid() or url.scheme().lower() not in {"http", "https"}:
             self._emit_local_action_failure(failure_message)
             return False
 
@@ -95,7 +96,11 @@ class _NewsTabActionsMixin:
         if was_read == now_read:
             return True
 
-        if not self.db.update_status(link, "is_read", 1 if now_read else 0):
+        try:
+            updated = self.db.update_status(link, "is_read", 1 if now_read else 0)
+        except Exception:
+            updated = False
+        if not updated:
             self._emit_local_action_failure(failure_message)
             return False
 
@@ -131,7 +136,11 @@ class _NewsTabActionsMixin:
         if int(target.get("is_bookmarked", 0) or 0) == new_value:
             return True
 
-        if not self.db.update_status(link, "is_bookmarked", new_value):
+        try:
+            updated = self.db.update_status(link, "is_bookmarked", new_value)
+        except Exception:
+            updated = False
+        if not updated:
             self._emit_local_action_failure(failure_message)
             return False
 
@@ -174,7 +183,11 @@ class _NewsTabActionsMixin:
             return False
 
         new_note = str(note or "")
-        if not self.db.save_note(link, new_note):
+        try:
+            updated = self.db.save_note(link, new_note)
+        except Exception:
+            updated = False
+        if not updated:
             self._emit_local_action_failure(failure_message)
             return False
 
@@ -195,11 +208,72 @@ class _NewsTabActionsMixin:
             return False
         if _NewsTabActionsMixin._should_block_local_db_action(self, "note edit"):
             return False
-        current_note = self.db.get_note(link)
+        try:
+            current_note = self.db.get_note(link)
+        except Exception:
+            self._emit_local_action_failure("메모를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+            return False
         dialog = NoteDialog(current_note, self)
         if not dialog.exec():
             return False
         return self._save_note_state(target, dialog.get_note())
+
+    def _edit_tags_for_target(self, target: Dict[str, Any]) -> bool:
+        link = str(target.get("link", "") or "").strip()
+        if not link:
+            return False
+        if _NewsTabActionsMixin._should_block_local_db_action(self, "tag edit"):
+            return False
+        current_tags = target.get("tags", "")
+        if not current_tags:
+            try:
+                current_tags = tags_to_csv(self.db.get_tags(link))
+            except Exception:
+                current_tags = ""
+        text, ok = QInputDialog.getText(
+            self,
+            "태그 편집",
+            "쉼표로 태그를 구분하세요.",
+            text=str(current_tags or ""),
+        )
+        if not ok:
+            return False
+        tags = normalize_tags(text)
+        try:
+            if not self.db.set_tags(link, tags):
+                self._emit_local_action_failure("태그를 저장하지 못했습니다. 기사가 이미 삭제되었을 수 있습니다.")
+                return False
+        except Exception:
+            self._emit_local_action_failure("태그를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.")
+            return False
+        target["tags"] = ",".join(tags)
+        _NewsTabActionsMixin._invalidate_local_render_cache(self, target)
+        self._refresh_after_local_change()
+        parent = self._main_window()
+        if parent is not None:
+            if hasattr(parent, "sync_link_state_across_tabs"):
+                parent.sync_link_state_across_tabs(self, link, tags=",".join(tags))
+            if hasattr(parent, "show_toast"):
+                parent.show_toast("🏷 태그가 저장되었습니다.")
+        refresh_known_tags = getattr(self, "_refresh_tag_filter_options", None)
+        if callable(refresh_known_tags):
+            refresh_known_tags()
+        return True
+
+    def _add_publisher_filter_for_target(self, target: Dict[str, Any], *, preferred: bool) -> bool:
+        publisher = str(target.get("publisher", "") or "").strip()
+        if not publisher:
+            self._emit_local_action_failure("출처 정보가 없어 필터에 추가할 수 없습니다.")
+            return False
+        parent = self._main_window()
+        if parent is None:
+            return False
+        method_name = "add_preferred_publisher" if preferred else "add_blocked_publisher"
+        method = getattr(parent, method_name, None)
+        if not callable(method):
+            return False
+        method(publisher)
+        return True
 
     def _delete_target(self, target: Dict[str, Any]) -> bool:
         link = str(target.get("link", "") or "").strip()
@@ -294,6 +368,10 @@ class _NewsTabActionsMixin:
             self._edit_note_for_target(target)
             return
 
+        elif action == "tag":
+            self._edit_tags_for_target(target)
+            return
+
         elif action == "ext":
             self._open_external_link_and_mark_read(target)
             return
@@ -327,6 +405,10 @@ class _NewsTabActionsMixin:
         self.btn_read_all.setEnabled(False)
         start_date, end_date = self._current_date_range()
         job_kwargs: Dict[str, Any]
+        publisher_filter_settings = getattr(self, "_publisher_filter_settings", lambda: ((), ()))
+        blocked_publishers, preferred_publishers = publisher_filter_settings()
+        only_preferred_enabled = getattr(self, "_only_preferred_publishers_enabled", lambda: False)
+        current_tag_filter = getattr(self, "_current_tag_filter", lambda: "")
 
         if clicked == btn_visible_only:
             if self._total_filtered_count <= 0:
@@ -344,6 +426,10 @@ class _NewsTabActionsMixin:
                 "only_bookmark": self.is_bookmark_tab,
                 "filter_txt": self._current_filter_text(),
                 "hide_duplicates": self.chk_hide_dup.isChecked(),
+                "blocked_publishers": list(blocked_publishers),
+                "preferred_publishers": list(preferred_publishers),
+                "only_preferred_publishers": bool(only_preferred_enabled()),
+                "tag_filter": str(current_tag_filter()),
                 "start_date": start_date,
                 "end_date": end_date,
                 "query_key": self.query_key,
@@ -356,6 +442,10 @@ class _NewsTabActionsMixin:
                 "only_bookmark": self.is_bookmark_tab,
                 "filter_txt": "",
                 "hide_duplicates": False,
+                "blocked_publishers": list(blocked_publishers),
+                "preferred_publishers": list(preferred_publishers),
+                "only_preferred_publishers": False,
+                "tag_filter": "",
                 "start_date": None,
                 "end_date": None,
                 "query_key": self.query_key,
@@ -530,6 +620,15 @@ class _NewsTabActionsMixin:
 
         elif action == "note":
             self._edit_note_for_target(target)
+
+        elif action == "tag":
+            self._edit_tags_for_target(target)
+
+        elif action == "block_publisher":
+            self._add_publisher_filter_for_target(target, preferred=False)
+
+        elif action == "prefer_publisher":
+            self._add_publisher_filter_for_target(target, preferred=True)
 
         elif action == "delete":
             self._delete_target(target)

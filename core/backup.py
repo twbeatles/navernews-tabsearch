@@ -901,9 +901,16 @@ def apply_pending_restore_if_any(
     if not restored:
         return False
 
+    applied_file = f"{pending_file}.applied"
     try:
-        os.remove(pending_file)
+        os.replace(pending_file, applied_file)
+    except OSError as rename_err:
+        logger.warning("restore applied but pending file archive failed: %s", rename_err)
+        return False
+
+    try:
+        os.remove(applied_file)
     except OSError as remove_err:
-        logger.warning("restore applied but pending file delete failed: %s", remove_err)
+        logger.warning("restore applied but archived pending file delete failed: %s", remove_err)
 
     return True

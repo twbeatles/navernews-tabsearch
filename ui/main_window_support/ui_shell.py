@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.constants import APP_NAME, VERSION
+from core.content_filters import normalize_name_list
 from core.notifications import NotificationSound
 from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
 from core.text_utils import perf_timer
@@ -351,6 +352,52 @@ class _MainWindowUIShellMixin:
         dialog = KeywordGroupDialog(self.keyword_group_manager, current_tabs, self)
         dialog.exec()
 
+    def save_saved_search(self, name: str, payload: dict):
+        normalized_name = str(name or "").strip()[:60]
+        if not normalized_name:
+            return
+        searches = dict(getattr(self, "saved_searches", {}))
+        searches[normalized_name] = dict(payload)
+        self.saved_searches = searches
+        self.save_config()
+        self.show_success_toast("검색 조건을 저장했습니다.")
+
+    def _reload_tabs_for_visibility_filters(self):
+        for _index, tab in self._iter_news_tabs():
+            try:
+                refresh_tags = getattr(tab, "_refresh_tag_filter_options", None)
+                if callable(refresh_tags):
+                    refresh_tags()
+                tab.load_data_from_db()
+            except Exception as exc:
+                logger.warning("Visibility filter reload failed (%s): %s", tab.keyword, exc)
+        self._schedule_badge_refresh(delay_ms=0)
+
+    def add_blocked_publisher(self, publisher: str):
+        publishers = normalize_name_list(list(getattr(self, "blocked_publishers", [])) + [publisher])
+        if publishers == getattr(self, "blocked_publishers", []):
+            self.show_warning_toast("이미 차단된 출처입니다.")
+            return
+        self.blocked_publishers = publishers
+        self.preferred_publishers = [
+            item
+            for item in normalize_name_list(getattr(self, "preferred_publishers", []))
+            if item.casefold() != str(publisher or "").strip().casefold()
+        ]
+        self.save_config()
+        self._reload_tabs_for_visibility_filters()
+        self.show_success_toast(f"'{publisher}' 출처를 차단했습니다.")
+
+    def add_preferred_publisher(self, publisher: str):
+        publishers = normalize_name_list(list(getattr(self, "preferred_publishers", [])) + [publisher])
+        if publishers == getattr(self, "preferred_publishers", []):
+            self.show_warning_toast("이미 선호 출처입니다.")
+            return
+        self.preferred_publishers = publishers
+        self.save_config()
+        self._reload_tabs_for_visibility_filters()
+        self.show_success_toast(f"'{publisher}' 출처를 선호 목록에 추가했습니다.")
+
     def show_backup_dialog(self):
         """백업 관리 다이얼로그 표시"""
         dialog = BackupDialog(self.auto_backup, self)
@@ -400,19 +447,31 @@ class _MainWindowUIShellMixin:
             self._countdown_timer.stop()
             idx = self.interval_idx
             minutes = [10, 30, 60, 120, 360]
+            policy_minutes = []
+            for policy in getattr(self, "tab_refresh_policies", {}).values():
+                try:
+                    policy_value = int(str(policy))
+                except ValueError:
+                    continue
+                if policy_value in minutes:
+                    policy_minutes.append(policy_value)
 
-            if 0 <= idx < len(minutes):
-                ms = minutes[idx] * 60 * 1000
+            global_minutes = minutes[idx] if 0 <= idx < len(minutes) else None
+            active_minutes = [value for value in ([global_minutes] if global_minutes else []) + policy_minutes if value]
+
+            if active_minutes:
+                tick_minutes = min(active_minutes)
+                ms = tick_minutes * 60 * 1000
                 self.timer.setInterval(ms)
                 self.timer.start()
 
-                self._next_refresh_seconds = minutes[idx] * 60
+                self._next_refresh_seconds = tick_minutes * 60
                 self._countdown_timer.setInterval(1000)
                 self._countdown_timer.start()
-                self._set_countdown_status_text(f"⏰ 다음 새로고침: {minutes[idx]}분 0초 후")
+                self._set_countdown_status_text(f"⏰ 다음 새로고침 확인: {tick_minutes}분 0초 후")
 
-                self._status_bar().showMessage(f"⏰ 자동 새로고침: {minutes[idx]}분 간격")
-                logger.info("자동 새로고침 설정: %s분 (%sms)", minutes[idx], ms)
+                self._status_bar().showMessage(f"⏰ 자동 새로고침 확인: {tick_minutes}분 간격")
+                logger.info("자동 새로고침 설정: %s분 (%sms)", tick_minutes, ms)
             else:
                 self.timer.stop()
                 self._countdown_timer.stop()

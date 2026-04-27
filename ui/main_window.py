@@ -157,6 +157,7 @@ class MainApp(
             self._tab_fetch_state: Dict[str, TabFetchState] = {}
             self._fetch_cursor_by_key: Dict[str, int] = {}
             self._fetch_total_by_key: Dict[str, int] = {}
+            self._last_auto_refresh_by_keyword: Dict[str, float] = {}
             self._request_start_index: Dict[int, int] = {}
             self._query_key_migration_hints_shown: set[str] = set()
             self._export_worker: Optional[IterativeJobWorker] = None

@@ -13,6 +13,7 @@ from PyQt6.QtCore import QTimer
 
 from core.config_store import AppConfig, encode_client_secret_for_storage, normalize_import_settings, save_primary_config_file
 from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
+from core.content_filters import normalize_name_list
 from core.keyword_groups import merge_keyword_groups
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker
@@ -44,6 +45,7 @@ def _export_row(item: Dict[str, Any]) -> List[str]:
         "북마크" if item.get("is_bookmarked") else "",
         str(item.get("notes", "") or ""),
         "중복" if item.get("is_duplicate", 0) else "",
+        str(item.get("tags", "") or ""),
     ]
 
 
@@ -60,7 +62,7 @@ def export_items_to_csv(
     try:
         with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복"])
+            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복", "태그"])
             for item in items:
                 writer.writerow(_export_row(item))
                 written += 1
@@ -93,11 +95,17 @@ def export_scope_to_csv(
     else:
         total_count = int(db_manager.count_news(**scope.count_kwargs()))
         batch_iter = None
-    context.report(current=0, total=total_count, message="내보내기 준비 중...", payload={"stage": "count"})
-    context.check_cancelled()
+    try:
+        context.report(current=0, total=total_count, message="내보내기 준비 중...", payload={"stage": "count"})
+        context.check_cancelled()
 
-    if total_count <= 0:
-        raise ValueError("내보낼 뉴스가 없습니다.")
+        if total_count <= 0:
+            raise ValueError("내보낼 뉴스가 없습니다.")
+    except Exception:
+        close_batch_iter = getattr(batch_iter, "close", None)
+        if callable(close_batch_iter):
+            close_batch_iter()
+        raise
 
     directory = os.path.dirname(os.path.abspath(output_path)) or "."
     os.makedirs(directory, exist_ok=True)
@@ -107,7 +115,7 @@ def export_scope_to_csv(
     try:
         with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복"])
+            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복", "태그"])
 
             if batch_iter is None:
                 def _fallback_iter():
@@ -147,6 +155,9 @@ def export_scope_to_csv(
         os.replace(tmp_path, output_path)
         return {"count": written, "path": output_path, "keyword": keyword}
     except Exception:
+        close_batch_iter = getattr(batch_iter, "close", None)
+        if callable(close_batch_iter):
+            close_batch_iter()
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -171,6 +182,8 @@ class _MainWindowSettingsIOMixin:
             "auto_start_enabled": self.auto_start_enabled,
             "notify_on_refresh": self.notify_on_refresh,
             "api_timeout": self.api_timeout,
+            "blocked_publishers": getattr(self, "blocked_publishers", []),
+            "preferred_publishers": getattr(self, "preferred_publishers", []),
         }
 
     def refresh_bookmark_tab(self: MainApp):
@@ -464,6 +477,8 @@ class _MainWindowSettingsIOMixin:
         keyword_groups: Optional[Dict[str, List[str]]] = None,
         pagination_state: Optional[Dict[str, int]] = None,
         pagination_totals: Optional[Dict[str, int]] = None,
+        saved_searches: Optional[Dict[str, Dict[str, Any]]] = None,
+        tab_refresh_policies: Optional[Dict[str, str]] = None,
         window_geometry: Optional[Dict[str, int]] = None,
     ) -> AppConfig:
         app_settings_overrides = dict(app_settings_overrides or {})
@@ -568,6 +583,12 @@ class _MainWindowSettingsIOMixin:
                     app_settings_overrides.get("notify_on_refresh", self.notify_on_refresh)
                 ),
                 "api_timeout": int(app_settings_overrides.get("api_timeout", self.api_timeout)),
+                "blocked_publishers": normalize_name_list(
+                    app_settings_overrides.get("blocked_publishers", getattr(self, "blocked_publishers", []))
+                ),
+                "preferred_publishers": normalize_name_list(
+                    app_settings_overrides.get("preferred_publishers", getattr(self, "preferred_publishers", []))
+                ),
                 "window_geometry": {
                     "x": int(geometry["x"]),
                     "y": int(geometry["y"]),
@@ -580,6 +601,14 @@ class _MainWindowSettingsIOMixin:
             "keyword_groups": groups_payload,
             "pagination_state": pagination_state_payload,
             "pagination_totals": pagination_totals_payload,
+            "saved_searches": dict(
+                saved_searches if saved_searches is not None else getattr(self, "saved_searches", {})
+            ),
+            "tab_refresh_policies": dict(
+                tab_refresh_policies
+                if tab_refresh_policies is not None
+                else getattr(self, "tab_refresh_policies", {})
+            ),
         }
 
     def _compute_imported_new_tabs(
@@ -636,6 +665,10 @@ class _MainWindowSettingsIOMixin:
             "auto_start_enabled": self.auto_start_enabled,
             "notify_on_refresh": self.notify_on_refresh,
             "api_timeout": self.api_timeout,
+            "blocked_publishers": list(getattr(self, "blocked_publishers", [])),
+            "preferred_publishers": list(getattr(self, "preferred_publishers", [])),
+            "saved_searches": dict(getattr(self, "saved_searches", {})),
+            "tab_refresh_policies": dict(getattr(self, "tab_refresh_policies", {})),
             "search_history": list(self.search_history),
             "fetch_cursor_by_key": dict(self._fetch_cursor_by_key),
             "fetch_total_by_key": dict(self._fetch_total_by_key),
@@ -702,6 +735,10 @@ class _MainWindowSettingsIOMixin:
         self.auto_start_enabled = bool(runtime_snapshot["auto_start_enabled"])
         self.notify_on_refresh = bool(runtime_snapshot["notify_on_refresh"])
         self.api_timeout = int(runtime_snapshot["api_timeout"])
+        self.blocked_publishers = list(runtime_snapshot["blocked_publishers"])
+        self.preferred_publishers = list(runtime_snapshot["preferred_publishers"])
+        self.saved_searches = dict(runtime_snapshot["saved_searches"])
+        self.tab_refresh_policies = dict(runtime_snapshot["tab_refresh_policies"])
         self.search_history = list(runtime_snapshot["search_history"])
         self._fetch_cursor_by_key = dict(runtime_snapshot["fetch_cursor_by_key"])
         self._fetch_total_by_key = dict(runtime_snapshot["fetch_total_by_key"])
@@ -738,6 +775,10 @@ class _MainWindowSettingsIOMixin:
         self.auto_start_enabled = normalized_settings["auto_start_enabled"]
         self.notify_on_refresh = normalized_settings["notify_on_refresh"]
         self.api_timeout = normalized_settings["api_timeout"]
+        self.blocked_publishers = normalize_name_list(normalized_settings["blocked_publishers"])
+        self.preferred_publishers = normalize_name_list(normalized_settings["preferred_publishers"])
+        self.saved_searches = dict(stage["staged_config"].get("saved_searches", {}))
+        self.tab_refresh_policies = dict(stage["staged_config"].get("tab_refresh_policies", {}))
         self.search_history = list(stage["merged_search_history"])
         self._fetch_cursor_by_key = dict(stage["merged_pagination_state"])
         self._fetch_total_by_key = dict(stage["merged_pagination_totals"])
@@ -780,6 +821,8 @@ class _MainWindowSettingsIOMixin:
             "auto_start_enabled": self.auto_start_enabled,
             "notify_on_refresh": self.notify_on_refresh,
             "api_timeout": self.api_timeout,
+            "blocked_publishers": getattr(self, "blocked_publishers", []),
+            "preferred_publishers": getattr(self, "preferred_publishers", []),
         }
         normalized_settings, import_warnings = normalize_import_settings(
             settings,
@@ -826,6 +869,8 @@ class _MainWindowSettingsIOMixin:
                 "auto_start_enabled": normalized_settings["auto_start_enabled"],
                 "notify_on_refresh": normalized_settings["notify_on_refresh"],
                 "api_timeout": normalized_settings["api_timeout"],
+                "blocked_publishers": normalized_settings["blocked_publishers"],
+                "preferred_publishers": normalized_settings["preferred_publishers"],
             },
             tab_keywords=[
                 tab.keyword
@@ -835,6 +880,11 @@ class _MainWindowSettingsIOMixin:
             keyword_groups=merged_keyword_groups,
             pagination_state=merged_pagination_state,
             pagination_totals=merged_pagination_totals,
+            saved_searches=import_data.get("saved_searches", getattr(self, "saved_searches", {})),
+            tab_refresh_policies=import_data.get(
+                "tab_refresh_policies",
+                getattr(self, "tab_refresh_policies", {}),
+            ),
             window_geometry=imported_geometry,
         )
         return {
@@ -877,12 +927,16 @@ class _MainWindowSettingsIOMixin:
                 "auto_start_enabled": self.auto_start_enabled,
                 "notify_on_refresh": self.notify_on_refresh,
                 "api_timeout": self.api_timeout,
+                "blocked_publishers": getattr(self, "blocked_publishers", []),
+                "preferred_publishers": getattr(self, "preferred_publishers", []),
             },
             "tabs": [tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)],
             "keyword_groups": self.keyword_group_manager.groups,
             "search_history": self.search_history,
             "pagination_state": self._fetch_cursor_by_key,
             "pagination_totals": self._fetch_total_by_key,
+            "saved_searches": getattr(self, "saved_searches", {}),
+            "tab_refresh_policies": getattr(self, "tab_refresh_policies", {}),
             "window_geometry": {
                 "x": self.x(),
                 "y": self.y(),
@@ -1061,6 +1115,8 @@ class _MainWindowSettingsIOMixin:
         self.alert_keywords = data.get("alert_keywords", [])
         self.sound_enabled = data.get("sound_enabled", True)
         self.api_timeout = data.get("api_timeout", 15)
+        self.blocked_publishers = normalize_name_list(data.get("blocked_publishers", []))
+        self.preferred_publishers = normalize_name_list(data.get("preferred_publishers", []))
 
         self.minimize_to_tray = data.get("minimize_to_tray", True)
         self.close_to_tray = data.get("close_to_tray", True)
@@ -1128,4 +1184,6 @@ class _MainWindowSettingsIOMixin:
 
         self.apply_refresh_interval()
         self.save_config()
+        for _index, widget in self._iter_news_tabs():
+            widget.load_data_from_db()
         self.show_success_toast("설정을 저장했습니다.")

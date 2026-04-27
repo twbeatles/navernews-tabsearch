@@ -375,6 +375,7 @@ class _MainWindowBaseMixin:
         is_read: Optional[bool] = None,
         is_bookmarked: Optional[bool] = None,
         notes: Optional[str] = None,
+        tags: Optional[str] = None,
         deleted: bool = False,
     ) -> None:
         normalized_link = str(link or "").strip()
@@ -390,6 +391,7 @@ class _MainWindowBaseMixin:
                 is_read=is_read,
                 is_bookmarked=is_bookmarked,
                 notes=notes,
+                tags=tags,
                 deleted=deleted,
             )
             if changed or deleted:

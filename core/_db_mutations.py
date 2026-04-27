@@ -4,8 +4,9 @@ from __future__ import annotations
 import logging
 import sqlite3
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple, cast
 
+from core.content_filters import normalize_tags
 from core.query_parser import build_fetch_key
 from core.text_utils import parse_date_to_ts, perf_timer
 
@@ -221,15 +222,17 @@ class _DatabaseMutationsMixin:
         if field not in self.ALLOWED_UPDATE_FIELDS:
             logger.error("Rejected update for unsupported field: %s", field)
             return False
+        if not isinstance(link, str) or not link.strip():
+            return False
 
         conn = self.get_connection()
         try:
             with conn:
-                conn.execute(f"UPDATE news SET {field} = ? WHERE link = ?", (value, link))
-            return True
+                cursor = conn.execute(f"UPDATE news SET {field} = ? WHERE link = ?", (value, link))
+            return int(cursor.rowcount or 0) > 0
         except sqlite3.Error as e:
             logger.error("DB update failed: %s", e)
-            return False
+            raise self._new_write_error("update_status", e) from e
         finally:
             self.return_connection(conn)
 
@@ -245,15 +248,19 @@ class _DatabaseMutationsMixin:
         try:
             with conn:
                 affected = self._collect_affected_query_key_hashes(conn, "n.link = ?", [link])
+                conn.execute("DELETE FROM news_tags WHERE link = ?", (link,))
                 cursor = conn.execute("DELETE FROM news WHERE link = ?", (link,))
                 deleted = int(cursor.rowcount or 0)
                 if deleted <= 0:
                     return False
                 self._recalculate_duplicates_for_affected(conn, affected)
             return True
+        except sqlite3.Error as e:
+            logger.error("delete_link failed: %s", e)
+            raise self._new_write_error("delete_link", e) from e
         except Exception as e:
             logger.error("delete_link failed: %s", e)
-            return False
+            raise self._new_write_error("delete_link", e) from e
         finally:
             self.return_connection(conn)
 
@@ -262,9 +269,64 @@ class _DatabaseMutationsMixin:
         try:
             result = conn.execute("SELECT notes FROM news WHERE link = ?", (link,)).fetchone()
             return str(result[0]) if result and result[0] else ""
+        except sqlite3.Error as e:
+            logger.error("get_note failed: %s", e)
+            raise self._new_query_error("get_note", e) from e
         except Exception as e:
             logger.error("get_note failed: %s", e)
-            return ""
+            raise self._new_query_error("get_note", e) from e
+        finally:
+            self.return_connection(conn)
+
+    def get_tags(self: DatabaseManager, link: str) -> List[str]:
+        if not isinstance(link, str) or not link.strip():
+            return []
+        conn = self.get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT tag FROM news_tags WHERE link = ? ORDER BY lower(tag), tag",
+                (link,),
+            ).fetchall()
+            return [str(row[0]) for row in rows if row and row[0]]
+        except sqlite3.Error as e:
+            logger.error("get_tags failed: %s", e)
+            raise self._new_query_error("get_tags", e) from e
+        finally:
+            self.return_connection(conn)
+
+    def set_tags(self: DatabaseManager, link: str, tags: Any) -> bool:
+        normalized_tags = normalize_tags(tags)
+        if not isinstance(link, str) or not link.strip():
+            return False
+        conn = self.get_connection()
+        try:
+            with conn:
+                exists = conn.execute("SELECT 1 FROM news WHERE link = ?", (link,)).fetchone()
+                if not exists:
+                    return False
+                conn.execute("DELETE FROM news_tags WHERE link = ?", (link,))
+                if normalized_tags:
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO news_tags(link, tag) VALUES (?, ?)",
+                        [(link, tag) for tag in normalized_tags],
+                    )
+            return True
+        except sqlite3.Error as e:
+            logger.error("set_tags failed: %s", e)
+            raise self._new_write_error("set_tags", e) from e
+        finally:
+            self.return_connection(conn)
+
+    def get_known_tags(self: DatabaseManager) -> List[str]:
+        conn = self.get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT tag FROM news_tags GROUP BY tag ORDER BY lower(tag), tag"
+            ).fetchall()
+            return [str(row[0]) for row in rows if row and row[0]]
+        except sqlite3.Error as e:
+            logger.error("get_known_tags failed: %s", e)
+            raise self._new_query_error("get_known_tags", e) from e
         finally:
             self.return_connection(conn)
 
@@ -376,6 +438,10 @@ class _DatabaseMutationsMixin:
         only_bookmark: bool = False,
         filter_txt: str = "",
         hide_duplicates: bool = False,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        tag_filter: str = "",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         query_key: Optional[str] = None,
@@ -400,6 +466,16 @@ class _DatabaseMutationsMixin:
                 )
             else:
                 scope_query += " AND nk.is_duplicate = 0"
+
+        append_visibility = getattr(self, "_append_visibility_filter_clause", None)
+        if callable(append_visibility):
+            scope_query += cast(str, append_visibility(
+                params,
+                blocked_publishers=blocked_publishers,
+                preferred_publishers=preferred_publishers,
+                only_preferred_publishers=only_preferred_publishers,
+                tag_filter=tag_filter,
+            ))
 
         if filter_txt:
             scope_query += " AND (n.title LIKE ? OR n.description LIKE ?)"
@@ -490,6 +566,10 @@ class _DatabaseMutationsMixin:
         only_bookmark: bool = False,
         filter_txt: str = "",
         hide_duplicates: bool = False,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        tag_filter: str = "",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         query_key: Optional[str] = None,
@@ -503,6 +583,10 @@ class _DatabaseMutationsMixin:
                 only_bookmark=only_bookmark,
                 filter_txt=filter_txt,
                 hide_duplicates=hide_duplicates,
+                blocked_publishers=blocked_publishers,
+                preferred_publishers=preferred_publishers,
+                only_preferred_publishers=only_preferred_publishers,
+                tag_filter=tag_filter,
                 start_date=start_date,
                 end_date=end_date,
                 query_key=query_key,
@@ -528,6 +612,10 @@ class _DatabaseMutationsMixin:
         only_bookmark: bool = False,
         filter_txt: str = "",
         hide_duplicates: bool = False,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        tag_filter: str = "",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         query_key: Optional[str] = None,
@@ -547,6 +635,10 @@ class _DatabaseMutationsMixin:
                 only_bookmark=only_bookmark,
                 filter_txt=filter_txt,
                 hide_duplicates=hide_duplicates,
+                blocked_publishers=blocked_publishers,
+                preferred_publishers=preferred_publishers,
+                only_preferred_publishers=only_preferred_publishers,
+                tag_filter=tag_filter,
                 start_date=start_date,
                 end_date=end_date,
                 query_key=query_key,

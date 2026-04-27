@@ -45,11 +45,33 @@ class _NewsTabStateMixin:
             self._current_filter_text()
             or self.chk_unread.isChecked()
             or self.chk_hide_dup.isChecked()
+            or self._current_tag_filter()
+            or self._only_preferred_publishers_enabled()
             or self._date_filter_active
         )
 
+    def _publisher_filter_settings(self) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+        parent = self.window()
+        blocked = getattr(parent, "blocked_publishers", []) if parent is not None else []
+        preferred = getattr(parent, "preferred_publishers", []) if parent is not None else []
+        return tuple(str(item) for item in blocked), tuple(str(item) for item in preferred)
+
+    def _current_tag_filter(self) -> str:
+        combo = getattr(self, "combo_tag_filter", None)
+        if combo is None:
+            return ""
+        text = str(combo.currentText() or "").strip()
+        if not text or text == "모든 태그":
+            return ""
+        return text.lstrip("#").strip()
+
+    def _only_preferred_publishers_enabled(self) -> bool:
+        checkbox = getattr(self, "chk_preferred_publishers", None)
+        return bool(checkbox is not None and checkbox.isChecked())
+
     def _build_query_scope(self) -> DBQueryScope:
         start_date, end_date = self._current_date_range()
+        blocked_publishers, preferred_publishers = self._publisher_filter_settings()
         return DBQueryScope(
             keyword=self.db_keyword,
             filter_txt=self._current_filter_text(),
@@ -58,6 +80,10 @@ class _NewsTabStateMixin:
             only_unread=self.chk_unread.isChecked(),
             hide_duplicates=self.chk_hide_dup.isChecked(),
             exclude_words=tuple(self.exclude_words),
+            blocked_publishers=blocked_publishers,
+            preferred_publishers=preferred_publishers,
+            only_preferred_publishers=self._only_preferred_publishers_enabled(),
+            tag_filter=self._current_tag_filter(),
             start_date=start_date,
             end_date=end_date,
             query_key=None if self.is_bookmark_tab else self.query_key,
@@ -72,6 +98,10 @@ class _NewsTabStateMixin:
             scope.only_unread,
             scope.hide_duplicates,
             scope.exclude_words,
+            scope.blocked_publishers,
+            scope.preferred_publishers,
+            scope.only_preferred_publishers,
+            scope.tag_filter,
             scope.start_date,
             scope.end_date,
             scope.query_key,
@@ -163,6 +193,7 @@ class _NewsTabStateMixin:
         is_read: Optional[bool] = None,
         is_bookmarked: Optional[bool] = None,
         notes: Optional[str] = None,
+        tags: Optional[str] = None,
         deleted: bool = False,
     ) -> bool:
         target = self._target_by_link(link)
@@ -207,6 +238,12 @@ class _NewsTabStateMixin:
             new_note = str(notes)
             if str(target.get("notes", "") or "") != new_note:
                 target["notes"] = new_note
+                changed = True
+
+        if tags is not None:
+            new_tags = str(tags)
+            if str(target.get("tags", "") or "") != new_tags:
+                target["tags"] = new_tags
                 changed = True
 
         if changed:

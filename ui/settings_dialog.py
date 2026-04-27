@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QTabWidget, 
 
 from core.startup import StartupManager
 from core.startup import StartupStatus
+from core.content_filters import normalize_name_list
 from core.validation import ValidationUtils
 from PyQt6.QtCore import QThread
 from ui._settings_dialog_content import _SettingsDialogContentMixin
@@ -213,4 +214,6 @@ class SettingsDialog(
             "start_minimized": self.chk_start_minimized.isChecked(),
             "notify_on_refresh": self.chk_notify_on_refresh.isChecked(),
             "api_timeout": int(self.spn_api_timeout.value()),
+            "blocked_publishers": normalize_name_list(self.txt_blocked_publishers.text()),
+            "preferred_publishers": normalize_name_list(self.txt_preferred_publishers.text()),
         }

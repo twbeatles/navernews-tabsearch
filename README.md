@@ -23,13 +23,24 @@
 - 열린 탭/북마크 탭 사이의 기사 상태 즉시 동기화
 - 알림 키워드와 새 기사 알림은 이번 fetch에서 새로 감지된 링크(`new_items` / `new_count`)에만 적용
 - 현재 탭 필터 전체 결과 CSV 내보내기
+- 출처 차단/선호 필터: 차단 출처는 DB에 저장하되 목록/count/분석/CSV에서 숨기고, 선호 출처는 사용자가 `선호 출처만` 필터를 켠 경우에만 적용
+- 기사별 자유 태그 편집, 태그 배지 표시, 태그 필터, CSV 태그 컬럼
+- 현재 탭의 검색어/필터/정렬/기간/태그/선호 출처 조건을 이름으로 저장하고 다시 적용하는 저장된 검색
+- 탭별 자동 새로고침 정책: 기본은 전역 설정 상속, 탭 컨텍스트 메뉴에서 상속/끔/개별 간격 override
 - 키워드 그룹 관리
 - 시스템 트레이 동작(최소화/닫기 동작 커스터마이징)
 - 단일 인스턴스 실행 보장(중복 실행 방지)
-- 설정 자동 백업 + 수동 DB 포함 백업 및 재시작 적용형 복원(pending restore)
+- 설정 자동 백업 + 수동 DB 포함 백업 및 재시작 적용형 복원(pending restore), 복원 예약 전 dry-run 요약
 
 ## 안정화 포인트 (v32.7.3+ 작업 브랜치 반영)
 
+- 단건 DB 액션 계약을 정리해 `update_status()`는 실제 변경 없음이면 `False`, `get_note()` 조회 실패는 `DatabaseQueryError`, `delete_link()`는 대상 없음과 DB 실패를 분리해 UI가 각각 다른 메시지를 표시
+- 기사 카드 렌더링 직전에 publisher/date/tag/action 동적 문자열을 escape하고, 외부 링크 열기는 `http`/`https` scheme만 허용
+- `pending_restore.json` 적용 성공 후 먼저 `.applied`로 atomic rename한 뒤 best-effort 삭제해 삭제 실패 상황에서도 다음 시작 때 반복 적용하지 않음
+- CSV snapshot export는 iterator 생성 직후부터 `finally close()` 경로를 보장하고, 태그 컬럼도 같은 snapshot scope에서 작성
+- HTTP 429 `Retry-After`는 30초 이하만 worker 내부 sleep 재시도하며, 더 긴 값은 즉시 rate-limit cooldown meta로 넘겨 UI/자동 새로고침 제어에 맡김
+- 자동 새로고침 네트워크 오류 누적은 `error_meta.kind` 기반으로 판정하고, legacy 경로만 문자열 fallback을 사용
+- `core.config_store`는 기존 import 호환 facade로 남기고, 실제 기본값/정규화/secret storage/파일 I/O 구현은 `core.config_store_impl`로 분리
 - 중앙 HTTP 구성 계층(`core.http_client.HttpClientConfig`)을 도입하고 `ApiWorker`가 worker-owned session으로 API를 호출하도록 정리
 - fetch 성공 기준을 "API 응답 수신"이 아니라 "DB upsert 완료"로 강화하고, `DatabaseWriteError`를 통해 저장 실패를 명시적으로 error 경로로 승격
 - `ApiWorker.last_error_meta`와 전역 fetch cooldown을 추가해 429/quota 성격 오류 후 수동/자동/순차 refresh와 `더 불러오기`를 일관되게 차단/재개
@@ -137,9 +148,9 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-22)
+## 최신 검증 메모 (2026-04-27)
 
-- `python -m pytest -q` => `251 passed, 5 subtests passed`
+- `python -m pytest -q` => `258 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
 - 산출물: `dist/NewsScraperPro_Safe.exe`
@@ -157,7 +168,9 @@ navernews-tabsearch/
 │   ├── __init__.py
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # RuntimePaths facade + 경로/버전 상수 호환 export
-│   ├── config_store.py          # 설정 스키마 정규화 + 원자 저장/.backup 회전
+│   ├── config_store.py          # 설정 import 호환 facade
+│   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
+│   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -247,7 +260,8 @@ navernews-tabsearch/
 │   ├── test_settings_validation_http_policy.py
 │   ├── test_settings_dialog_maintenance.py
 │   ├── test_runtime_storage_paths.py
-│   └── test_version_history_guard.py
+│   ├── test_version_history_guard.py
+│   └── test_implementation_batch_20260427.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -255,7 +269,7 @@ navernews-tabsearch/
 ├── workers.py                   # 호환 래퍼 (→ core.workers)
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
-├── implementation_audit_2026-04-18.md # 2026-04-18 감사 후속 기록
+├── implementation_risk_review_2026-04-27.md # 2026-04-27 구현 리스크 계획 반영 기록
 ├── backups/                     # 레거시 실행 폴더 백업(현재 런타임 백업은 DATA_DIR 하위 사용)
 └── dist/                        # PyInstaller 빌드 결과물
 ```
@@ -343,6 +357,9 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-22 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, `RuntimePaths` 통합, SQLite-safe legacy migration hardening, `core/runtime_support` / `ui/main_window_support` / `ui/news_tab_support` 구조 분할은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않음을 확인했습니다.
 - 2026-04-22 기준 `.gitignore`에는 portable/legacy 실행 폴더에서 다시 생길 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`을 추가로 명시했습니다.
 - 2026-04-22 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-27 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 출처 필터/자유 태그/저장된 검색/탭별 자동 새로고침/복원 dry-run/설정 facade 분리는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않음을 확인했습니다.
+- 2026-04-27 기준 `.gitignore`에는 복원 적용 성공 후 남을 수 있는 `pending_restore.json.applied`를 추가로 무시하도록 보강했습니다.
+- 2026-04-27 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 
 ## 네이버 API 키 설정
 
@@ -385,6 +402,9 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 레거시 `backups/`는 폴더 단위 merge로 옮기며, 같은 이름의 백업이 이미 있으면 `DATA_DIR` 쪽 항목을 유지합니다.
 - 레거시 DB 마이그레이션은 SQLite backup API 우선, 실패 시 raw copy fallback + integrity 검증으로 수행됩니다.
 - `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
+- `app_settings.blocked_publishers`와 `app_settings.preferred_publishers`는 쉼표 입력값을 trim/빈 값 제거/case-insensitive dedupe로 정규화해 저장합니다.
+- `saved_searches`는 검색어, 텍스트 필터, 정렬, 안 읽음, 중복 숨김, 기간, 태그, 선호 출처 필터를 이름별 payload로 저장합니다.
+- `tab_refresh_policies`는 탭 키워드별 자동 새로고침 override이며 값은 `inherit`, `off`, 또는 분 단위 문자열(`10`, `30`, `60`, `120`, `360`)입니다.
 - 단일 인스턴스 잠금 파일(`news_scraper_pro.lock`)과 crash log(`crash_log.txt`)도 같은 runtime 경로 기준으로 관리됩니다.
 - `pagination_state`는 `fetch_key -> 마지막 API start index` 매핑이며, 필드가 없으면 기본값 `{}`로 로드됩니다.
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
@@ -400,6 +420,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 알림 키워드 매칭은 fetch 결과 전체가 아니라 이번 요청에서 새로 추가된 기사 집합에만 적용됩니다.
 - `app_settings`는 `client_secret_enc`, `client_secret_storage` 필드를 지원하며 Windows에서는 평문 `client_secret`를 비우고 암호문을 저장합니다.
 - pending restore 실패(검증/적용 실패) 시 pending 파일은 유지되며, 적용 중 오류가 나면 변경 파일을 롤백합니다.
+- pending restore 성공 시 `pending_restore.json`을 먼저 `pending_restore.json.applied`로 atomic rename한 뒤 삭제를 시도하므로, 삭제가 실패해도 다음 시작 때 같은 복원이 반복 적용되지 않습니다.
+- 기사 태그는 SQLite `news_tags(link, tag)`에 저장되며, 태그 정규화는 trim, 빈 값 제거, case-insensitive dedupe, 기사당 최대 20개, 태그당 최대 30자 제한을 적용합니다.
 
 예시:
 
@@ -423,6 +445,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `core.workers.DBWorker`는 `DBQueryScope + include_total + known_total_count` 계약을 사용해 append 시 total count round-trip을 생략하고, full reload에서만 `count_news(...)`를 실행합니다.
 - `core.workers.ApiWorker`는 `last_error_meta(kind/status_code/cooldown_seconds/retryable)`를 남기며, `MainApp.on_fetch_error(...)`는 이를 읽어 전역 fetch cooldown을 갱신합니다.
 - `DatabaseManager.iter_news_snapshot_batches(...)`는 현재 탭 필터 전체 결과를 단일 read snapshot 위에서 순회해 CSV export 일관성을 보장합니다.
+- `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유합니다.
+- `DatabaseManager.get_tags(link)`, `set_tags(link, tags)`, `get_known_tags()`가 기사 태그 CRUD와 태그 필터 목록을 담당합니다.
 - `DatabaseManager.open_read_connection(...)`, `close_read_connection(...)`, `interrupt_connection(...)`은 `DBWorker` 취소/종료 경로에서 사용하는 dedicated read connection helper입니다.
 - `DatabaseManager.is_news_fts_backfill_complete()`와 `backfill_news_fts_chunk(...)`는 `news_fts` 증분 백필 상태를 `app_meta`에 저장하며, FTS acceleration은 backfill 완료 후 positive token filter에만 사용됩니다.
 - `ui.news_tab.NewsTab`은 scope signature별 append/replace를 구분하고, HTML 렌더는 fragment cache를 재사용하면서 event-loop tick당 한 번만 flush합니다.
@@ -430,6 +454,9 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
 - `core.database.DatabaseQueryError`는 조회/집계 계열 DB 실패를 빈 결과로 삼키지 않는 표준 예외 계약이며, UI는 기존 캐시를 보존한 채 실패를 노출합니다.
 - `core.database.DatabaseWriteError`는 쓰기/변경 계열 DB 실패를 성공처럼 삼키지 않는 표준 예외 계약이며, `ApiWorker`와 fetch UI는 저장 실패를 성공 완료와 명확히 분리합니다.
+- `DatabaseManager.update_status(link, field, value)`는 대상 row가 없으면 `False`를 반환하고 SQLite 쓰기 실패는 `DatabaseWriteError`로 올립니다.
+- `DatabaseManager.get_note(link)`는 조회 실패를 `DatabaseQueryError`로 올리며, UI는 이 경우 메모 다이얼로그를 열지 않습니다.
+- `DatabaseManager.delete_link(link)`는 대상 없음(`False`)과 DB 실패(`DatabaseWriteError`)를 구분하고, UI 메시지도 `삭제 대상 없음`과 `삭제 실패`로 나눕니다.
 
 ## 키워드 입력 규칙
 
@@ -443,10 +470,11 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 ## 설정 Export/Import
 
-- export 포맷 버전은 `1.2`이며 `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`를 포함합니다.
+- export 포맷 버전은 `1.2`이며 `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`, `saved_searches`, `tab_refresh_policies`를 포함합니다.
 - API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외되고, `settings.auto_start_enabled`는 export/import 대상에 포함됩니다.
 - import 시 `tabs`는 `canonical query` 기준 dedupe, `keyword_groups`는 merge, `search_history`는 `canonical query` 기준 imported-first dedupe 후 최대 10개로 정리합니다.
 - `pagination_state`와 `pagination_totals`는 fetch key별로 병합하며 충돌 시 더 큰 값을 유지합니다.
+- `saved_searches`와 `tab_refresh_policies`는 로드/import 시 payload와 정책값을 정규화하며, 알 수 없는 탭별 자동 새로고침 값은 `inherit`으로 보정합니다.
 - import는 `1.1`과 `1.2`를 모두 허용하며, 자동 시작/시작 최소화는 환경 가용성에 따라 안전한 값으로 보정됩니다.
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
 - 시작프로그램 기능을 사용할 수 없는 환경에서 import된 `auto_start_enabled=true`는 `False`로 강제되고, 가능한 환경에서는 실제 레지스트리 상태까지 동기화합니다.

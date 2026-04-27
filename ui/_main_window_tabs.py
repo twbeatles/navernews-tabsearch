@@ -282,6 +282,8 @@ class _MainWindowTabsMixin:
         if removed_keyword:
             self._remove_tab_hydration(removed_keyword)
             self._tab_fetch_state.pop(removed_keyword, None)
+            self._last_auto_refresh_by_keyword.pop(removed_keyword, None)
+            self.tab_refresh_policies.pop(removed_keyword, None)
             removed_search_query, removed_exclude_words = parse_search_query(removed_keyword)
             removed_fetch_key = build_fetch_key(removed_search_query, removed_exclude_words)
             self._prune_fetch_key_state(removed_fetch_key)
@@ -384,6 +386,11 @@ class _MainWindowTabsMixin:
                         "키워드 그룹 저장에 실패해 탭 이름 변경 내용을 그룹 설정에 반영하지 못했습니다."
                     )
 
+            if old_keyword in getattr(self, "tab_refresh_policies", {}):
+                self.tab_refresh_policies[new_keyword] = self.tab_refresh_policies.pop(old_keyword)
+            if old_keyword in getattr(self, "_last_auto_refresh_by_keyword", {}):
+                self._last_auto_refresh_by_keyword[new_keyword] = self._last_auto_refresh_by_keyword.pop(old_keyword)
+
             try:
                 w.load_data_from_db()
             except Exception as e:
@@ -417,6 +424,28 @@ class _MainWindowTabsMixin:
         act_rename = self._add_menu_action(menu, "✏️ 이름 변경")
         menu.addSeparator()
 
+        refresh_policy_menu = menu.addMenu("⏰ 자동 새로고침")
+        if refresh_policy_menu is None:
+            raise RuntimeError("Failed to create refresh policy menu")
+        policy_options = [
+            ("inherit", "전역 설정 상속"),
+            ("off", "이 탭 자동 새로고침 끔"),
+            ("10", "10분"),
+            ("30", "30분"),
+            ("60", "1시간"),
+            ("120", "2시간"),
+            ("360", "6시간"),
+        ]
+        current_policy = str(getattr(self, "tab_refresh_policies", {}).get(keyword, "inherit") or "inherit")
+        for policy_value, label in policy_options:
+            prefix = "✓ " if policy_value == current_policy else ""
+            act = self._add_menu_action(refresh_policy_menu, f"{prefix}{label}")
+            act.triggered.connect(
+                lambda checked=False, value=policy_value, k=keyword: self.set_tab_refresh_policy(k, value)
+            )
+
+        menu.addSeparator()
+
         group_menu = menu.addMenu("📁 그룹에 추가")
         if group_menu is None:
             raise RuntimeError("Failed to create group menu")
@@ -439,6 +468,24 @@ class _MainWindowTabsMixin:
             self.rename_tab(idx)
         elif action == act_close:
             self.close_tab(idx)
+
+    def set_tab_refresh_policy(self: MainApp, keyword: str, policy: str) -> None:
+        allowed = {"inherit", "off", "10", "30", "60", "120", "360"}
+        normalized_keyword = str(keyword or "").strip()
+        normalized_policy = str(policy or "inherit").strip().lower()
+        if not normalized_keyword:
+            return
+        if normalized_policy not in allowed:
+            normalized_policy = "inherit"
+        policies = dict(getattr(self, "tab_refresh_policies", {}))
+        if normalized_policy == "inherit":
+            policies.pop(normalized_keyword, None)
+        else:
+            policies[normalized_keyword] = normalized_policy
+        self.tab_refresh_policies = policies
+        self.apply_refresh_interval()
+        self.save_config()
+        self.show_success_toast("탭 자동 새로고침 설정을 저장했습니다.")
 
     def _add_to_group_callback(self: MainApp, group: str, keyword: str):
         """컨텍스트 메뉴에서 그룹 추가 콜백"""

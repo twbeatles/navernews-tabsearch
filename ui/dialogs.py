@@ -1,6 +1,8 @@
 import html
+import json
 import logging
 import os
+import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -837,6 +839,88 @@ class BackupDialog(QDialog):
             else:
                 dialogs.warning(self, "오류", f"삭제 실패: {error}")
 
+    def _sqlite_table_count(self, db_path: str, table_name: str) -> Optional[int]:
+        if not db_path or not os.path.exists(db_path):
+            return None
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path)
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            ).fetchone()
+            if not exists:
+                return 0
+            row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+            return int(row[0]) if row else 0
+        except Exception as exc:
+            logger.warning("dry-run table count failed (%s.%s): %s", db_path, table_name, exc)
+            return None
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def _build_restore_dry_run_report(
+        self,
+        backup_name: str,
+        *,
+        restore_db: bool,
+        verified_item: Dict[str, Any],
+    ) -> str:
+        backup_path = os.path.join(self.auto_backup.backup_dir, backup_name)
+        cfg_name = os.path.basename(getattr(self.auto_backup, "config_file", "news_scraper_config.json"))
+        live_cfg_path = getattr(self.auto_backup, "config_file", "")
+        backup_cfg_path = os.path.join(backup_path, cfg_name)
+
+        config_summary = "설정 파일: 확인 불가"
+        try:
+            live_cfg = {}
+            backup_cfg = {}
+            if os.path.exists(live_cfg_path):
+                with open(live_cfg_path, "r", encoding="utf-8") as f:
+                    live_cfg = json.load(f)
+            if os.path.exists(backup_cfg_path):
+                with open(backup_cfg_path, "r", encoding="utf-8") as f:
+                    backup_cfg = json.load(f)
+            live_settings = live_cfg.get("app_settings", {}) if isinstance(live_cfg, dict) else {}
+            backup_settings = backup_cfg.get("app_settings", {}) if isinstance(backup_cfg, dict) else {}
+            changed_keys = sorted(
+                key
+                for key in set(live_settings.keys()) | set(backup_settings.keys())
+                if live_settings.get(key) != backup_settings.get(key)
+            )
+            if changed_keys:
+                preview = ", ".join(changed_keys[:6])
+                suffix = "..." if len(changed_keys) > 6 else ""
+                config_summary = f"설정 변경: {len(changed_keys)}개 항목 ({preview}{suffix})"
+            else:
+                config_summary = "설정 변경: 없음"
+        except Exception as exc:
+            config_summary = f"설정 파일: 비교 실패 ({exc})"
+
+        db_summary = "데이터베이스: 변경 없음"
+        if restore_db:
+            db_name = os.path.basename(getattr(self.auto_backup, "db_file", "news_database.db"))
+            live_db_path = getattr(self.auto_backup, "db_file", "")
+            backup_db_path = os.path.join(backup_path, db_name)
+            live_news = self._sqlite_table_count(live_db_path, "news")
+            backup_news = self._sqlite_table_count(backup_db_path, "news")
+            live_tags = self._sqlite_table_count(live_db_path, "news_tags")
+            backup_tags = self._sqlite_table_count(backup_db_path, "news_tags")
+            db_summary = (
+                "데이터베이스: 복원 예정\n"
+                f"현재 기사/태그: {live_news if live_news is not None else '?'} / {live_tags if live_tags is not None else '?'}\n"
+                f"백업 기사/태그: {backup_news if backup_news is not None else '?'} / {backup_tags if backup_tags is not None else '?'}"
+            )
+
+        verification_state = str(verified_item.get("verification_state", "pending") or "pending")
+        verification_error = str(verified_item.get("verification_error", "") or "")
+        verification_summary = f"검증 상태: {verification_state}"
+        if verification_error:
+            verification_summary += f" ({verification_error})"
+
+        return f"{config_summary}\n{db_summary}\n{verification_summary}"
+
     def restore_backup(self):
         """백업 복원 예약 (재시작 시 적용)"""
         dialogs = get_dialog_adapter(self)
@@ -907,12 +991,20 @@ class BackupDialog(QDialog):
             if restore_db
             else "주의: 현재 설정만 덮어써집니다. 데이터베이스는 변경되지 않습니다."
         )
+        dry_run_builder = getattr(self, "_build_restore_dry_run_report", None)
+        dry_run_report = (
+            dry_run_builder(backup_name, restore_db=restore_db, verified_item=verified_item)
+            if callable(dry_run_builder)
+            else ""
+        )
+        dry_run_block = f"{dry_run_report}\n\n" if dry_run_report else ""
 
         if dialogs.ask_yes_no(
             self,
             "백업 복원",
             f"'{backup_name}' 백업을 복원하시겠습니까?\n\n"
             f"복원 범위: {restore_scope}\n"
+            f"{dry_run_block}"
             f"{restore_notice}\n"
             "복원은 프로그램을 재시작해야 적용됩니다.",
         ):
