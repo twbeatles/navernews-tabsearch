@@ -37,6 +37,7 @@ INSTANCE_LOCK_FILE = RUNTIME_PATHS.instance_lock_file
 ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
+APP_USER_MODEL_ID = "Twbeatles.NaverNewsScraperPro"
 VERSION = "32.7.3"
 PENDING_RESTORE_FILE = RUNTIME_PATHS.pending_restore_file
 
@@ -45,6 +46,7 @@ __all__ = [
     "APP_DATA_NAME",
     "APP_DIR",
     "APP_NAME",
+    "APP_USER_MODEL_ID",
     "BACKUP_DIR",
     "BACKUP_DIRNAME",
     "CONFIG_BACKUP_FILE",

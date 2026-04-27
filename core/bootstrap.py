@@ -30,6 +30,7 @@ from core.constants import (
 )
 from core.logging_setup import configure_logging
 from core.protocols import LockFileProtocol
+from core.windows_identity import configure_windows_app_identity
 from ui.main_window import MainApp
 
 configure_logging()
@@ -219,7 +220,8 @@ def main():
     
     try:
         logger.info(f"{APP_NAME} v{VERSION} 시작 중...")
-        
+        configure_windows_app_identity()
+
         app = QApplication(sys.argv)
         instance_lock = QLockFile(INSTANCE_LOCK_FILE)
         instance_lock.setStaleLockTime(10000)
