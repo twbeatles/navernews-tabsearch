@@ -193,6 +193,7 @@ class MainApp(
             self._network_error_count = 0
             self._max_network_errors = 3
             self._network_available = True
+            self._sequential_refresh_is_auto = False
 
             self._countdown_timer = QTimer(self)
             self._countdown_timer.timeout.connect(self._update_countdown)

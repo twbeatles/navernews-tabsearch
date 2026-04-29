@@ -23,9 +23,9 @@
 - 열린 탭/북마크 탭 사이의 기사 상태 즉시 동기화
 - 알림 키워드와 새 기사 알림은 이번 fetch에서 새로 감지된 링크(`new_items` / `new_count`)에만 적용
 - 현재 탭 필터 전체 결과 CSV 내보내기
-- 출처 차단/선호 필터: 차단 출처는 DB에 저장하되 목록/count/분석/CSV에서 숨기고, 선호 출처는 사용자가 `선호 출처만` 필터를 켠 경우에만 적용
+- 출처 차단/선호 필터: 차단 출처는 DB에 저장하되 목록/count/배지/트레이/분석/CSV에서 숨기고, 도메인 출처는 suffix match로 처리하며 선호 출처는 사용자가 `선호 출처만` 필터를 켠 경우에만 적용
 - 기사별 자유 태그 편집, 태그 배지 표시, 태그 필터, CSV 태그 컬럼
-- 현재 탭의 검색어/필터/정렬/기간/태그/선호 출처 조건을 이름으로 저장하고 다시 적용하는 저장된 검색
+- 현재 탭의 검색어/필터/정렬/기간/태그/선호 출처 조건을 이름으로 저장하고 대상 검색어 탭으로 이동/생성해 다시 적용하는 저장된 검색
 - 탭별 자동 새로고침 정책: 기본은 전역 설정 상속, 탭 컨텍스트 메뉴에서 상속/끔/개별 간격 override
 - 키워드 그룹 관리
 - 시스템 트레이 동작(최소화/닫기 동작 커스터마이징)
@@ -40,6 +40,7 @@
 - CSV snapshot export는 iterator 생성 직후부터 `finally close()` 경로를 보장하고, 태그 컬럼도 같은 snapshot scope에서 작성
 - HTTP 429 `Retry-After`는 30초 이하만 worker 내부 sleep 재시도하며, 더 긴 값은 즉시 rate-limit cooldown meta로 넘겨 UI/자동 새로고침 제어에 맡김
 - 자동 새로고침 네트워크 오류 누적은 `error_meta.kind` 기반으로 판정하고, legacy 경로만 문자열 fallback을 사용
+- 자동 새로고침 due timestamp는 실제 fetch 성공 후에만 갱신해 실패 탭이 한 주기 전체를 건너뛰지 않도록 조정
 - `core.config_store`는 기존 import 호환 facade로 남기고, 실제 기본값/정규화/secret storage/파일 I/O 구현은 `core.config_store_impl`로 분리
 - 중앙 HTTP 구성 계층(`core.http_client.HttpClientConfig`)을 도입하고 `ApiWorker`가 worker-owned session으로 API를 호출하도록 정리
 - fetch 성공 기준을 "API 응답 수신"이 아니라 "DB upsert 완료"로 강화하고, `DatabaseWriteError`를 통해 저장 실패를 명시적으로 error 경로로 승격
@@ -64,7 +65,7 @@
 - 순차 새로고침도 수동 새로고침과 같은 성공 후처리를 사용해 탭별 즉시 새 기사 알림, 트레이 알림, 알림 키워드 체크를 동일하게 수행
 - fetch 성공 메시지와 최종 순차 요약은 `added_count`가 아니라 `new_items` / `new_count`를 기본 의미로 사용해 "중복 제목이지만 새 링크"도 새 기사로 취급
 - `ApiWorker`는 HTTP 429에서 `Retry-After`의 delta-seconds / HTTP-date를 모두 해석하고, 재시도 대기와 최종 cooldown 메타 계산을 같은 값으로 맞춤
-- 시작 시 단일 인스턴스 가드 적용
+- 시작 시 단일 인스턴스 가드를 pending restore보다 먼저 적용해 중복 실행 프로세스가 복원 파일을 건드리지 않도록 조정
 - 설정 반영 누락 보완(`sound_enabled`, `api_timeout`)
 - 설정 창의 API 키 검증/정리 작업 비동기 처리
 - 설정 가져오기 시 탭 중복 병합(dedupe) 강화
@@ -101,7 +102,7 @@
 - 백업 복원 예약 시 백업 메타(`include_db`) 기반으로 `설정만`/`설정+DB` 범위를 자동 판별
 - 기사 `열기`/`안읽음` 처리에서 DB 반영 실패 시 UI 캐시를 갱신하지 않도록 동기화 보강
 - 설정 창 워커 종료 경로 강화(종료 대기 초과 시 수명 분리 정리)
-- 탭 배지 미읽음 집계를 제외어 조건까지 반영하도록 보정
+- 탭 배지 미읽음 집계를 각 탭의 현재 DB scope(제외어/필터/태그/출처 visibility 포함) 기준으로 보정
 - 시작 시 생성되는 자동 백업을 `auto` 메타로 구분하고 수동 백업과 보존 정책을 분리
 - 백업 목록에서 마이크로초 타임스탬프를 정상 표시하고 `자동`/`수동` 출처를 함께 표기
 - 설정 창의 데이터 정리/전체 삭제 완료 후 열린 탭/북마크/배지/트레이 툴팁을 즉시 동기화
@@ -116,7 +117,7 @@
 - 설정의 `client_secret` 저장은 Windows에서 DPAPI 암호화(`client_secret_enc`) 우선 사용
 - 설정 로드 실패 시 `news_scraper_config.json.backup` 자동 복구 fallback 지원
 - 자동 정리(`delete_old_news`)는 `pubDate_ts <= 0` 레코드를 삭제 대상에서 제외
-- 트레이 미읽음 수는 탭 캐시 합산 대신 DB 총계(`get_total_unread_count`) 기준으로 계산
+- 트레이 미읽음 수는 탭 캐시 합산 대신 차단 출처를 제외한 DB 총계(`get_total_unread_count(blocked_publishers=...)`) 기준으로 계산
 - 트레이 미지원 환경에서도 `show_desktop_notification()`이 토스트 fallback + 알림음으로 동작
 - `pyrightconfig.json`을 추가하고 `core.protocols`/`ui.protocols` 기반 타입 계약과 검사 범위를 명시해 정적 분석 대상면을 고정
 - UTF-8 인코딩 스모크 테스트를 리포지토리 주요 텍스트 자산 전체로 확장
@@ -148,12 +149,12 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-27)
+## 최신 검증 메모 (2026-04-29)
 
-- `python -m pytest -q` => `258 passed, 5 subtests passed`
+- `python -m pytest -q` => `272 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공 (`dist/NewsScraperPro_Safe.exe`)
-- 산출물: `dist/NewsScraperPro_Safe.exe`
+- `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+- 이번 변경에서는 PyInstaller 빌드는 실행하지 않았으며, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`입니다.
 
 ## 프로젝트 구조
 
@@ -261,7 +262,8 @@ navernews-tabsearch/
 │   ├── test_settings_dialog_maintenance.py
 │   ├── test_runtime_storage_paths.py
 │   ├── test_version_history_guard.py
-│   └── test_implementation_batch_20260427.py
+│   ├── test_implementation_batch_20260427.py
+│   └── test_implementation_plan_20260429.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -269,7 +271,7 @@ navernews-tabsearch/
 ├── workers.py                   # 호환 래퍼 (→ core.workers)
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
-├── implementation_risk_review_2026-04-27.md # 2026-04-27 구현 리스크 계획 반영 기록
+├── implementation_gap_review_2026-04-29.md # 2026-04-29 구현 갭 점검 및 완료 기록
 ├── backups/                     # 레거시 실행 폴더 백업(현재 런타임 백업은 DATA_DIR 하위 사용)
 └── dist/                        # PyInstaller 빌드 결과물
 ```
@@ -360,6 +362,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-27 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 출처 필터/자유 태그/저장된 검색/탭별 자동 새로고침/복원 dry-run/설정 facade 분리는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않음을 확인했습니다.
 - 2026-04-27 기준 `.gitignore`에는 복원 적용 성공 후 남을 수 있는 `pending_restore.json.applied`를 추가로 무시하도록 보강했습니다.
 - 2026-04-27 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
+- 2026-04-29 기준 `.gitignore`를 `git status --ignored --short`와 runtime/test/build 산출물 기준으로 다시 확인했고, `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, 로그, `__pycache__/`, runtime DB/config/backup/pending restore 잔여물이 기존 규칙으로 모두 무시되어 추가 수정은 필요하지 않았습니다.
+- 2026-04-29 문서 정합화에서는 삭제 상태인 `implementation_risk_review_2026-04-27.md`를 되돌리지 않고 현재 작업트리 상태로 유지합니다.
 
 ## 네이버 API 키 설정
 
@@ -402,8 +406,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 레거시 `backups/`는 폴더 단위 merge로 옮기며, 같은 이름의 백업이 이미 있으면 `DATA_DIR` 쪽 항목을 유지합니다.
 - 레거시 DB 마이그레이션은 SQLite backup API 우선, 실패 시 raw copy fallback + integrity 검증으로 수행됩니다.
 - `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
-- `app_settings.blocked_publishers`와 `app_settings.preferred_publishers`는 쉼표 입력값을 trim/빈 값 제거/case-insensitive dedupe로 정규화해 저장합니다.
-- `saved_searches`는 검색어, 텍스트 필터, 정렬, 안 읽음, 중복 숨김, 기간, 태그, 선호 출처 필터를 이름별 payload로 저장합니다.
+- `app_settings.blocked_publishers`와 `app_settings.preferred_publishers`는 쉼표 입력값을 trim/빈 값 제거/case-insensitive dedupe한 뒤 양쪽 충돌을 제거해 저장합니다.
+- `saved_searches`는 검색어, 텍스트 필터, 정렬, 안 읽음, 중복 숨김, 기간, 태그, 선호 출처 필터를 이름별 payload로 저장하며, 적용 시 저장된 검색어 탭으로 이동/생성하고 UI에서 삭제할 수 있습니다.
 - `tab_refresh_policies`는 탭 키워드별 자동 새로고침 override이며 값은 `inherit`, `off`, 또는 분 단위 문자열(`10`, `30`, `60`, `120`, `360`)입니다.
 - 단일 인스턴스 잠금 파일(`news_scraper_pro.lock`)과 crash log(`crash_log.txt`)도 같은 runtime 경로 기준으로 관리됩니다.
 - `pagination_state`는 `fetch_key -> 마지막 API start index` 매핑이며, 필드가 없으면 기본값 `{}`로 로드됩니다.
@@ -438,19 +442,19 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 공개 API 참고:
 - `DatabaseManager.connection(timeout: float = 10.0)` 컨텍스트 매니저를 제공하며, 권장 DB 접근 패턴입니다.
-- `DatabaseManager.get_total_unread_count() -> int`를 통해 전체 미읽음 수를 직접 조회할 수 있습니다.
+- `DatabaseManager.get_total_unread_count(blocked_publishers=None) -> int`를 통해 visibility-aware 전체 미읽음 수를 직접 조회할 수 있습니다.
 - `DatabaseManager.delete_link(link: str) -> bool`가 추가되어 UI 삭제 경로에서 중복 플래그 재계산을 일원화합니다.
 - `DatabaseManager.count_news(..., exclude_words: Optional[List[str]] = None)`가 확장되어 미읽음 배지 집계 시 제외어 조건을 반영할 수 있습니다.
-- `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, `get_top_publishers(...)`는 `query_key`를 받아 대표 키워드가 같은 탭도 독립 범위로 조회할 수 있습니다.
+- `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, `get_top_publishers(...)`는 `query_key`가 있으면 대표 keyword 문자열과 무관하게 해당 query scope만 조회합니다.
 - `core.workers.DBWorker`는 `DBQueryScope + include_total + known_total_count` 계약을 사용해 append 시 total count round-trip을 생략하고, full reload에서만 `count_news(...)`를 실행합니다.
 - `core.workers.ApiWorker`는 `last_error_meta(kind/status_code/cooldown_seconds/retryable)`를 남기며, `MainApp.on_fetch_error(...)`는 이를 읽어 전역 fetch cooldown을 갱신합니다.
 - `DatabaseManager.iter_news_snapshot_batches(...)`는 현재 탭 필터 전체 결과를 단일 read snapshot 위에서 순회해 CSV export 일관성을 보장합니다.
-- `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유합니다.
+- `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유하며, 도메인 값은 `example.com`이 `example.com`/`news.example.com`에 매칭되고 `badexample.com`에는 매칭되지 않습니다.
 - `DatabaseManager.get_tags(link)`, `set_tags(link, tags)`, `get_known_tags()`가 기사 태그 CRUD와 태그 필터 목록을 담당합니다.
 - `DatabaseManager.open_read_connection(...)`, `close_read_connection(...)`, `interrupt_connection(...)`은 `DBWorker` 취소/종료 경로에서 사용하는 dedicated read connection helper입니다.
 - `DatabaseManager.is_news_fts_backfill_complete()`와 `backfill_news_fts_chunk(...)`는 `news_fts` 증분 백필 상태를 `app_meta`에 저장하며, FTS acceleration은 backfill 완료 후 positive token filter에만 사용됩니다.
 - `ui.news_tab.NewsTab`은 scope signature별 append/replace를 구분하고, HTML 렌더는 fragment cache를 재사용하면서 event-loop tick당 한 번만 flush합니다.
-- `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`가 추가되어 탭 배지를 `query_key` 기준으로 일괄 집계합니다.
+- `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`는 호환 batch API로 유지되며, 실제 탭 배지는 `DBQueryScope` 기반 `count_news(..., only_unread=True)`로 표시 scope와 일치시킵니다.
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
 - `core.database.DatabaseQueryError`는 조회/집계 계열 DB 실패를 빈 결과로 삼키지 않는 표준 예외 계약이며, UI는 기존 캐시를 보존한 채 실패를 노출합니다.
 - `core.database.DatabaseWriteError`는 쓰기/변경 계열 DB 실패를 성공처럼 삼키지 않는 표준 예외 계약이며, `ApiWorker`와 fetch UI는 저장 실패를 성공 완료와 명확히 분리합니다.
@@ -479,6 +483,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
 - 시작프로그램 기능을 사용할 수 없는 환경에서 import된 `auto_start_enabled=true`는 `False`로 강제되고, 가능한 환경에서는 실제 레지스트리 상태까지 동기화합니다.
 - import로 새 탭이 추가되면 해당 탭들을 지금 새로고침할지 한 번 묻고, 동의하면 새 탭만 순차 새로고침합니다.
+- import로 출처 visibility 설정이 바뀌면 기존 열린 탭도 즉시 DB reload해 목록/count/배지 기준을 새 설정과 맞춥니다.
 - 이 prompt는 실제 refresh가 가능한 경우에만 표시되며, 유지보수 중이거나 이미 순차 새로고침이 실행 중이거나 API 자격증명이 유효하지 않으면 이유를 먼저 안내하고 prompt는 생략합니다.
 
 ## 트레이/시작 최소화 규칙

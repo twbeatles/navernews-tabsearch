@@ -18,7 +18,7 @@ from core.config_store import (
     resolve_client_secret_for_runtime,
     save_primary_config_file,
 )
-from core.content_filters import normalize_name_list
+from core.content_filters import normalize_publisher_filter_lists
 from core.constants import APP_DIR, APP_NAME, ICON_FILE, ICON_PNG, VERSION
 from core.startup import StartupManager
 
@@ -127,8 +127,10 @@ class _MainWindowConfigMixin:
         self.notify_on_refresh = self.config.get("notify_on_refresh", False)
         self.search_history = self.config.get("search_history", [])
         self.api_timeout = self.config.get("api_timeout", 15)
-        self.blocked_publishers = normalize_name_list(self.config.get("blocked_publishers", []))
-        self.preferred_publishers = normalize_name_list(self.config.get("preferred_publishers", []))
+        self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
+            self.config.get("blocked_publishers", []),
+            self.config.get("preferred_publishers", []),
+        )
         self.saved_searches = dict(self.config.get("saved_searches", {}))
         self.tab_refresh_policies = dict(self.config.get("tab_refresh_policies", {}))
         self.keyword_group_manager.groups = self.keyword_group_manager._normalize_groups(
@@ -155,6 +157,10 @@ class _MainWindowConfigMixin:
         tab_names = [tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)]
 
         secret_payload = encode_client_secret_for_storage(self.client_secret)
+        blocked_publishers, preferred_publishers = normalize_publisher_filter_lists(
+            getattr(self, "blocked_publishers", []),
+            getattr(self, "preferred_publishers", []),
+        )
         data: AppConfig = {
             "app_settings": {
                 "client_id": self.client_id,
@@ -172,8 +178,8 @@ class _MainWindowConfigMixin:
                 "auto_start_enabled": self.auto_start_enabled,
                 "notify_on_refresh": self.notify_on_refresh,
                 "api_timeout": self.api_timeout,
-                "blocked_publishers": normalize_name_list(getattr(self, "blocked_publishers", [])),
-                "preferred_publishers": normalize_name_list(getattr(self, "preferred_publishers", [])),
+                "blocked_publishers": blocked_publishers,
+                "preferred_publishers": preferred_publishers,
                 "window_geometry": {
                     "x": self.x(),
                     "y": self.y(),

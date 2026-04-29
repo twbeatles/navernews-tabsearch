@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.constants import APP_NAME, VERSION
-from core.content_filters import normalize_name_list
+from core.content_filters import normalize_publisher_filter_lists
 from core.notifications import NotificationSound
 from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
 from core.text_utils import perf_timer
@@ -206,31 +206,22 @@ class _MainWindowUIShellMixin:
 
         self._badge_refresh_running = True
         try:
-            tab_infos: List[Tuple[int, str, str, str]] = []
-            query_keys: List[str] = []
+            tab_infos: List[Tuple[int, NewsTab]] = []
             for i, widget in self._iter_news_tabs(start_index=1):
-                keyword = widget.keyword
-                db_keyword, exclude_words = parse_tab_query(keyword)
-                search_keyword, _ = parse_search_query(keyword)
-                query_key = build_fetch_key(search_keyword, exclude_words)
-                if not db_keyword or not query_key:
+                if not getattr(widget, "db_keyword", "") or not getattr(widget, "query_key", ""):
                     continue
-                tab_infos.append((i, keyword, db_keyword, query_key))
-                query_keys.append(query_key)
+                tab_infos.append((i, widget))
 
             if not tab_infos:
                 return
 
             with perf_timer("ui.update_all_tab_badges", f"tabs={len(tab_infos)}"):
-                deduped_query_keys = list(dict.fromkeys(query_keys))
-                unread_by_query_key = (
-                    self._require_db().get_unread_counts_by_query_keys(deduped_query_keys)
-                    if deduped_query_keys
-                    else {}
-                )
-
-                for tab_index, keyword, _db_keyword, query_key in tab_infos:
-                    unread_count = int(unread_by_query_key.get(query_key, 0))
+                db = self._require_db()
+                for tab_index, widget in tab_infos:
+                    keyword = widget.keyword
+                    scope_kwargs = widget._build_query_scope().count_kwargs()
+                    scope_kwargs["only_unread"] = True
+                    unread_count = int(db.count_news(**scope_kwargs))
                     self._badge_unread_cache[keyword] = unread_count
                     self._set_tab_badge_text(tab_index, keyword, unread_count)
         except Exception as exc:
@@ -360,7 +351,43 @@ class _MainWindowUIShellMixin:
         searches[normalized_name] = dict(payload)
         self.saved_searches = searches
         self.save_config()
+        self._refresh_saved_search_combos()
         self.show_success_toast("검색 조건을 저장했습니다.")
+
+    def delete_saved_search(self, name: str):
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            return
+        searches = dict(getattr(self, "saved_searches", {}))
+        if normalized_name not in searches:
+            self.show_warning_toast("삭제할 저장 검색을 찾지 못했습니다.")
+            return
+        searches.pop(normalized_name, None)
+        self.saved_searches = searches
+        self.save_config()
+        self._refresh_saved_search_combos()
+        self.show_success_toast("저장 검색을 삭제했습니다.")
+
+    def _refresh_saved_search_combos(self):
+        for _index, tab in self._iter_news_tabs():
+            refresh_combo = getattr(tab, "_refresh_saved_search_combo", None)
+            if callable(refresh_combo):
+                refresh_combo()
+
+    def open_saved_search_target_tab(self, keyword: str):
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword:
+            return self._current_news_tab()
+        fetch_key = self._canonical_fetch_key_for_keyword(normalized_keyword)
+        located_tab = self._find_news_tab_by_fetch_key(fetch_key)
+        if located_tab is None:
+            self.add_news_tab(normalized_keyword, defer_initial_load=True)
+            located_tab = self._find_news_tab_by_fetch_key(fetch_key)
+        if located_tab is None:
+            return self._current_news_tab()
+        tab_index, tab = located_tab
+        self.tabs.setCurrentIndex(tab_index)
+        return tab
 
     def _reload_tabs_for_visibility_filters(self):
         for _index, tab in self._iter_news_tabs():
@@ -374,25 +401,37 @@ class _MainWindowUIShellMixin:
         self._schedule_badge_refresh(delay_ms=0)
 
     def add_blocked_publisher(self, publisher: str):
-        publishers = normalize_name_list(list(getattr(self, "blocked_publishers", [])) + [publisher])
-        if publishers == getattr(self, "blocked_publishers", []):
+        publishers, preferred_publishers = normalize_publisher_filter_lists(
+            list(getattr(self, "blocked_publishers", [])) + [publisher],
+            getattr(self, "preferred_publishers", []),
+        )
+        if publishers == getattr(self, "blocked_publishers", []) and preferred_publishers == getattr(
+            self,
+            "preferred_publishers",
+            [],
+        ):
             self.show_warning_toast("이미 차단된 출처입니다.")
             return
         self.blocked_publishers = publishers
-        self.preferred_publishers = [
-            item
-            for item in normalize_name_list(getattr(self, "preferred_publishers", []))
-            if item.casefold() != str(publisher or "").strip().casefold()
-        ]
+        self.preferred_publishers = preferred_publishers
         self.save_config()
         self._reload_tabs_for_visibility_filters()
         self.show_success_toast(f"'{publisher}' 출처를 차단했습니다.")
 
     def add_preferred_publisher(self, publisher: str):
-        publishers = normalize_name_list(list(getattr(self, "preferred_publishers", [])) + [publisher])
-        if publishers == getattr(self, "preferred_publishers", []):
+        blocked_publishers, publishers = normalize_publisher_filter_lists(
+            getattr(self, "blocked_publishers", []),
+            list(getattr(self, "preferred_publishers", [])) + [publisher],
+            preferred_wins=True,
+        )
+        if publishers == getattr(self, "preferred_publishers", []) and blocked_publishers == getattr(
+            self,
+            "blocked_publishers",
+            [],
+        ):
             self.show_warning_toast("이미 선호 출처입니다.")
             return
+        self.blocked_publishers = blocked_publishers
         self.preferred_publishers = publishers
         self.save_config()
         self._reload_tabs_for_visibility_filters()

@@ -207,17 +207,6 @@ def main():
     except (ValueError, OSError) as e:
         logger.warning(f"시그널 핸들러 등록 실패: {e}")
 
-    # 재시작 적용형 백업 복원 처리 (DB 초기화 전)
-    try:
-        if apply_pending_restore_if_any(
-            pending_file=PENDING_RESTORE_FILE,
-            config_file=CONFIG_FILE,
-            db_file=DB_FILE,
-        ):
-            logger.info("예약된 백업 복원이 시작 시 적용되었습니다.")
-    except Exception as e:
-        logger.error(f"예약 복원 적용 중 오류: {e}")
-    
     try:
         logger.info(f"{APP_NAME} v{VERSION} 시작 중...")
         configure_windows_app_identity()
@@ -252,6 +241,17 @@ def main():
                 if reply != QMessageBox.StandardButton.Retry:
                     logger.info("single_instance|status=blocked")
                     sys.exit(0)
+
+        # 재시작 적용형 백업 복원 처리 (단일 인스턴스 확인 후, DB 초기화 전)
+        try:
+            if apply_pending_restore_if_any(
+                pending_file=PENDING_RESTORE_FILE,
+                config_file=CONFIG_FILE,
+                db_file=DB_FILE,
+            ):
+                logger.info("예약된 백업 복원이 시작 시 적용되었습니다.")
+        except Exception as e:
+            logger.error(f"예약 복원 적용 중 오류: {e}")
 
         # app.setStyle("Fusion")
         app.setApplicationName(APP_NAME)

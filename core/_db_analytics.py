@@ -15,28 +15,51 @@ logger = logging.getLogger(__name__)
 class _DatabaseAnalyticsMixin:
     def get_statistics(
         self: DatabaseManager,
+        blocked_publishers: Optional[List[str]] = None,
         conn: Optional[sqlite3.Connection] = None,
     ) -> Dict[str, int]:
-        """Return top-level database statistics."""
+        """Return top-level database statistics using the visible-news scope."""
         owns_connection = conn is None
         active_conn = conn
         try:
             if active_conn is None:
                 active_conn = self.get_connection()
+            visibility_params: List[Any] = []
+            append_visibility = getattr(self, "_append_visibility_filter_clause", None)
+            visibility_clause = ""
+            if callable(append_visibility):
+                visibility_clause = cast(str, append_visibility(
+                    visibility_params,
+                    blocked_publishers=blocked_publishers,
+                ))
             stats = {}
-            stats["total"] = active_conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
-            stats["unread"] = active_conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()[0]
+            stats["total"] = active_conn.execute(
+                "SELECT COUNT(*) FROM news n WHERE 1 = 1" + visibility_clause,
+                visibility_params,
+            ).fetchone()[0]
+            stats["unread"] = active_conn.execute(
+                "SELECT COUNT(*) FROM news n WHERE n.is_read = 0" + visibility_clause,
+                visibility_params,
+            ).fetchone()[0]
             stats["bookmarked"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news WHERE is_bookmarked = 1"
+                "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1" + visibility_clause,
+                visibility_params,
             ).fetchone()[0]
             stats["with_notes"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news WHERE notes IS NOT NULL AND notes != ''"
+                "SELECT COUNT(*) FROM news n WHERE n.notes IS NOT NULL AND n.notes != ''" + visibility_clause,
+                visibility_params,
             ).fetchone()[0]
             stats["with_tags"] = active_conn.execute(
-                "SELECT COUNT(DISTINCT link) FROM news_tags"
+                "SELECT COUNT(DISTINCT n.link) FROM news n "
+                "JOIN news_tags nt ON nt.link = n.link "
+                "WHERE 1 = 1" + visibility_clause,
+                visibility_params,
             ).fetchone()[0]
             stats["duplicates"] = active_conn.execute(
-                "SELECT COUNT(DISTINCT link) FROM news_keywords WHERE is_duplicate = 1"
+                "SELECT COUNT(DISTINCT nk.link) FROM news_keywords nk "
+                "JOIN news n ON n.link = nk.link "
+                "WHERE nk.is_duplicate = 1" + visibility_clause,
+                visibility_params,
             ).fetchone()[0]
             return stats
         except Exception as e:
@@ -73,9 +96,6 @@ class _DatabaseAnalyticsMixin:
                     WHERE nk.query_key = ?
                 """
                 params.append(query_key)
-                if keyword:
-                    query += " AND nk.keyword = ?"
-                    params.append(keyword)
             elif keyword:
                 query = """
                     SELECT n.publisher, COUNT(*) as count

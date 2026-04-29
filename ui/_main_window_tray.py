@@ -90,7 +90,11 @@ class _MainWindowTrayMixin:
                 self.tray.setToolTip(f"{APP_NAME}\nDB 유지보수 중...")
                 return
 
-            unread_count = int(self.db.get_total_unread_count()) if self.db else 0
+            unread_count = (
+                int(self.db.get_total_unread_count(blocked_publishers=getattr(self, "blocked_publishers", [])))
+                if self.db
+                else 0
+            )
 
             if unread_count > 0:
                 tooltip = f"{APP_NAME}\n📬 읽지 않은 기사: {unread_count:,}개"

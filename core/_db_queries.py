@@ -46,17 +46,41 @@ class _DatabaseQueriesMixin:
     ) -> str:
         normalized_query_key = str(query_key or "").strip()
         if normalized_query_key:
-            clause = f"{alias}.query_key = ?"
             params.append(normalized_query_key)
-            normalized_keyword = str(keyword or "").strip()
-            if normalized_keyword:
-                clause += f" AND {alias}.keyword = ?"
-                params.append(normalized_keyword)
-            return clause
+            return f"{alias}.query_key = ?"
 
         clause = f"{alias}.keyword = ?"
         params.append(keyword)
         return clause
+
+    def _normalize_publisher_match_values(self: DatabaseManager, values: Optional[List[str]]) -> List[str]:
+        normalized: List[str] = []
+        seen = set()
+        for item in values or []:
+            text = " ".join(str(item or "").strip().split()).casefold()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+        return normalized
+
+    def _append_publisher_match_clause(
+        self: DatabaseManager,
+        params: List[Any],
+        publisher_expr: str,
+        values: List[str],
+    ) -> str:
+        match_clauses: List[str] = []
+        for value in values:
+            if "." in value:
+                match_clauses.append(f"({publisher_expr} = ? OR {publisher_expr} LIKE ?)")
+                params.extend([value, f"%.{value}"])
+            else:
+                match_clauses.append(f"{publisher_expr} = ?")
+                params.append(value)
+        if not match_clauses:
+            return ""
+        return "(" + " OR ".join(match_clauses) + ")"
 
     def _append_visibility_filter_clause(
         self: DatabaseManager,
@@ -68,25 +92,17 @@ class _DatabaseQueriesMixin:
         tag_filter: str = "",
     ) -> str:
         clauses: List[str] = []
-        blocked = [
-            str(item).strip().casefold()
-            for item in (blocked_publishers or [])
-            if str(item or "").strip()
-        ]
-        preferred = [
-            str(item).strip().casefold()
-            for item in (preferred_publishers or [])
-            if str(item or "").strip()
-        ]
+        publisher_expr = "LOWER(COALESCE(n.publisher, ''))"
+        blocked = self._normalize_publisher_match_values(blocked_publishers)
+        preferred = self._normalize_publisher_match_values(preferred_publishers)
         if blocked:
-            placeholders = ",".join(["?"] * len(blocked))
-            clauses.append(f"LOWER(COALESCE(n.publisher, '')) NOT IN ({placeholders})")
-            params.extend(blocked)
+            match_clause = self._append_publisher_match_clause(params, publisher_expr, blocked)
+            if match_clause:
+                clauses.append(f"NOT {match_clause}")
         if only_preferred_publishers:
             if preferred:
-                placeholders = ",".join(["?"] * len(preferred))
-                clauses.append(f"LOWER(COALESCE(n.publisher, '')) IN ({placeholders})")
-                params.extend(preferred)
+                match_clause = self._append_publisher_match_clause(params, publisher_expr, preferred)
+                clauses.append(match_clause if match_clause else "1 = 0")
             else:
                 clauses.append("1 = 0")
         normalized_tag = str(tag_filter or "").strip()
@@ -436,13 +452,22 @@ class _DatabaseQueriesMixin:
             if conn is not None:
                 self.return_connection(conn)
 
-    def get_total_unread_count(self: DatabaseManager) -> int:
+    def get_total_unread_count(
+        self: DatabaseManager,
+        blocked_publishers: Optional[List[str]] = None,
+    ) -> int:
         """Get unread count across all rows in news."""
         conn = None
         try:
             conn = self.get_connection()
             with perf_timer("db.get_total_unread_count", "scope=all"):
-                row = conn.execute("SELECT COUNT(*) FROM news WHERE is_read = 0").fetchone()
+                params: List[Any] = []
+                query = "SELECT COUNT(*) FROM news n WHERE n.is_read = 0"
+                query += self._append_visibility_filter_clause(
+                    params,
+                    blocked_publishers=blocked_publishers,
+                )
+                row = conn.execute(query, params).fetchone()
                 return int(row[0]) if row else 0
         except Exception as e:
             logger.error("get_total_unread_count failed: %s", e)

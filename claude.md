@@ -120,7 +120,8 @@ navernews-tabsearch/
 │   ├── test_shutdown_cleanup.py
 │   ├── test_news_tab_performance.py
 │   ├── test_settings_dialog_maintenance.py
-│   └── test_risk_fixes.py
+│   ├── test_risk_fixes.py
+│   └── test_implementation_plan_20260429.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -130,7 +131,7 @@ navernews-tabsearch/
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
 ├── news_icon.ico                # 앱 아이콘
 ├── README.md                    # 사용자 문서
-├── implementation_risk_review_2026-04-27.md # 2026-04-27 구현 리스크 계획 반영 기록
+├── implementation_gap_review_2026-04-29.md # 2026-04-29 구현 갭 점검 및 완료 기록
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
@@ -138,10 +139,29 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `258 passed, 5 subtests passed`
+- `python -m pytest -q` => `272 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
+- `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- PyInstaller 빌드는 이번 2026-04-29 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+
+---
+
+## 🚀 2026-04-29 Implementation Gap Closure
+
+- Implemented all 1-11 items from `implementation_gap_review_2026-04-29.md`.
+- Startup now applies pending restore only after the single-instance lock/notify path is resolved and before `MainApp`/DB construction.
+- DB query/mutation paths use `query_key` alone when present; representative keyword is only a legacy fallback.
+- Publisher visibility now normalizes blocked/preferred conflicts, supports domain suffix matching, and drives list/count/badge/tray/stat/analysis visibility consistently.
+- Saved search apply moves to or creates the stored keyword tab before applying payload, and saved searches can be deleted from the tab UI.
+- Import staging normalizes `saved_searches`/`tab_refresh_policies` immediately and reloads existing tabs when publisher visibility changes.
+- Auto-refresh due timestamps update only after successful sequential auto fetch callbacks.
+- `.gitignore` was rechecked against ignored runtime/test/build outputs; no additional ignore rule is needed for the 2026-04-29 changes.
+- The deleted `implementation_risk_review_2026-04-27.md` remains deleted and should be included as-is when committing the current workspace.
+- Verification:
+  - `python -m pytest -q` => `272 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 
 ---
 
@@ -162,7 +182,7 @@ navernews-tabsearch/
   - Backup restore scheduling now shows a dry-run summary with config/DB scope, row counts, tag row counts, and verification state.
 - Structure / docs / packaging:
   - `core.config_store` remains a compatibility facade and delegates implementation to `core.config_store_impl`; shared publisher/tag normalization lives in `core.content_filters`.
-  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and `implementation_risk_review_2026-04-27.md` were re-synced to the current codebase.
+  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and the then-present `implementation_risk_review_2026-04-27.md` were re-synced to the codebase state. As of the 2026-04-29 workspace, that implementation note is intentionally deleted.
   - `.gitignore` now ignores `pending_restore.json.applied`; the deleted `implementation_audit_2026-04-18.md` remains deleted as the user-owned workspace state.
 
 ## 🚀 2026-04-22 RuntimePaths / Support-Module Refactor + Docs/Spec/Gitignore Revalidation
@@ -180,7 +200,7 @@ navernews-tabsearch/
 - Docs / packaging / repo hygiene:
   - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`를 현재 구조 기준으로 다시 동기화했다.
   - `.gitignore`는 portable/legacy 실행 폴더에 남을 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`을 추가로 무시한다.
-  - 2026-04-27 기준으로는 삭제된 `implementation_audit_2026-04-18.md`를 사용자 변경으로 유지하고, 후속 구현 기록은 `implementation_risk_review_2026-04-27.md`에 남긴다.
+  - 2026-04-27 기준으로는 삭제된 `implementation_audit_2026-04-18.md`를 사용자 변경으로 유지했다. 2026-04-29 작업트리에서는 `implementation_risk_review_2026-04-27.md`도 삭제 상태로 유지한다.
 
 ## 🚀 2026-04-18 Implementation Follow-through + Docs/Spec/Gitignore Revalidation
 
@@ -196,7 +216,7 @@ navernews-tabsearch/
 - Docs / packaging / repo hygiene:
   - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`.
   - Re-reviewed `.gitignore` with `git status --ignored --short`; existing rules still cover build outputs, caches, and local runtime artifacts, so no new ignore entry was required.
-  - As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remains a user-owned deletion and the superseding implementation record is `implementation_risk_review_2026-04-27.md`.
+  - As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remained a user-owned deletion. As of the 2026-04-29 workspace, `implementation_risk_review_2026-04-27.md` is also intentionally deleted.
 
 ## 🚀 2026-04-16 Follow-up Risk Fixes + Docs/Spec Revalidation
 

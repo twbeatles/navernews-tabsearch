@@ -1,6 +1,29 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Gap Closure + Docs/Gitignore Revalidation (2026-04-29)**:
+  - Startup / restore ordering:
+    - `core.bootstrap.main()` now resolves the single-instance lock / existing-instance notify path before applying pending restore.
+    - Pending restore still runs before `MainApp` and `DatabaseManager` construction.
+  - Query scope / visibility correctness:
+    - DB query, read-state mutation, and publisher-analysis paths now use `query_key` alone when a query key is present; representative keyword is legacy fallback only.
+    - Publisher block/prefer lists now normalize cross-list conflicts, and preferred-add removes the same publisher from the blocked list.
+    - Publisher filtering now supports domain suffix matching (`example.com` matches `news.example.com` but not `badexample.com`).
+    - Tab badges, tray unread totals, and top-level statistics now follow the visible scope that excludes blocked publishers.
+  - Saved search / import / auto-refresh behavior:
+    - Saved search apply now moves to or creates the stored keyword tab before applying the saved payload.
+    - Saved searches can be deleted from the tab UI.
+    - Settings import immediately normalizes `saved_searches` and `tab_refresh_policies`, refreshes saved-search combos, and reloads existing tabs when publisher visibility changes.
+    - Auto-refresh due timestamps now update only after successful sequential auto-fetch callbacks.
+  - Tests / docs / repo hygiene:
+    - Added `tests/test_implementation_plan_20260429.py` and expanded fetch/import/risk regression coverage.
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `implementation_gap_review_2026-04-29.md`.
+    - Re-reviewed `.gitignore` with ignored runtime/test/build outputs; no additional ignore rule was required.
+    - The deleted `implementation_risk_review_2026-04-27.md` remains deleted as part of the current workspace state.
+  - Validation:
+    - `python -m pytest -q` => `272 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - **Implementation Risk Batch + Feature Filters (2026-04-27)**:
   - DB / rendering / worker contracts:
     - `update_status()` now returns `False` when no row is changed and raises `DatabaseWriteError` for SQLite write failure.
@@ -19,7 +42,7 @@
     - Kept `core.config_store` as the compatibility facade and moved the implementation to `core.config_store_impl`.
     - Added `core.content_filters` for publisher/tag normalization.
   - Docs / packaging / repo hygiene:
-    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and `implementation_risk_review_2026-04-27.md`.
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and the then-present `implementation_risk_review_2026-04-27.md`. As of the 2026-04-29 workspace, that implementation note is intentionally deleted.
     - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required for this pass.
     - Updated `.gitignore` for `pending_restore.json.applied`.
     - The deleted `implementation_audit_2026-04-18.md` remains deleted as a user-owned workspace change.
@@ -37,7 +60,7 @@
     - Reduced `ui.news_tab.NewsTab` to a facade and moved state/loading/rendering/UI-control/action responsibilities into `ui/news_tab_support/{state,loading,rendering,ui_controls,actions}.py`.
     - Kept public import paths and compatibility re-exports stable.
   - Docs / packaging / repo hygiene:
-    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`. As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remains a user-owned deletion and the superseding implementation record is `implementation_risk_review_2026-04-27.md`.
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`. As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remained a user-owned deletion; as of 2026-04-29, `implementation_risk_review_2026-04-27.md` is also intentionally deleted.
     - Re-reviewed `news_scraper_pro.spec`; no additional hidden import/exclude/data change was required for this pass.
     - Updated `.gitignore` for portable/legacy root runtime artifacts (`keyword_groups.json`, `news_scraper_pro.lock`).
   - Validation:
@@ -56,7 +79,7 @@
   - Docs / packaging / repo hygiene:
     - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the current maintenance/notification/rate-limit contract.
     - Re-reviewed `.gitignore` with `git status --ignored --short`; existing rules still cover build outputs, caches, and local runtime data, so no new ignore entry was required.
-    - As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remains a user-owned deletion and the superseding implementation record is `implementation_risk_review_2026-04-27.md`.
+    - As of the 2026-04-27 follow-up, the deleted `implementation_audit_2026-04-18.md` remained a user-owned deletion; as of 2026-04-29, `implementation_risk_review_2026-04-27.md` is also intentionally deleted.
   - Validation:
     - `python -m pytest -q` => `236 passed, 5 subtests passed`
     - `pyright` => `0 errors, 0 warnings, 0 informations`
@@ -611,7 +634,7 @@
   - **No Force Terminate**: Removed forceful thread termination path from app shutdown and standardized graceful stop/quit/wait cleanup.
   - **Fetch Dedupe Key**: Dedupe now uses `(search_keyword + exclude_words)` composite key.
   - **Restore Flow Hardening**: Backup restore UI now schedules pending restore for next startup instead of in-process file overwrite.
-  - **Startup Pending Restore**: `main()` applies pending restore before app initialization.
+  - **Startup Pending Restore**: `main()` applies pending restore during startup before `MainApp`/DB initialization; as of 2026-04-29 this happens only after the single-instance guard has been resolved.
   - **Config Consistency**: Unified config load/save schema handling and switched writes to atomic save helper.
   - **Filter UX Fix**: Date filter toggle now triggers immediate reload for both ON and OFF.
   - **Module Split Added**: `query_parser.py`, `config_store.py`, `backup_manager.py`, `worker_registry.py`, `workers.py`.

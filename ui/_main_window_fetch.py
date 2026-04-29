@@ -102,7 +102,6 @@ class _MainWindowFetchMixin:
             last_ts = float(last_by_keyword.get(keyword, 0.0) or 0.0)
             if last_ts <= 0 or now_ts - last_ts >= interval_minutes * 60:
                 due_keywords.append(keyword)
-                last_by_keyword[keyword] = now_ts
         self._last_auto_refresh_by_keyword = last_by_keyword
         return due_keywords
 
@@ -134,6 +133,8 @@ class _MainWindowFetchMixin:
     def _begin_sequential_refresh(
         self: MainApp,
         keywords: List[str],
+        *,
+        auto_refresh: bool = False,
     ) -> bool:
         prepared_keywords = self._prepare_refresh_keywords(keywords)
         if not prepared_keywords:
@@ -147,6 +148,7 @@ class _MainWindowFetchMixin:
         self._sequential_new_count = 0
         self._sequential_added_count = 0
         self._sequential_dup_count = 0
+        self._sequential_refresh_is_auto = bool(auto_refresh)
         pause_fts_backfill = getattr(self, "_pause_fts_backfill", None)
         if callable(pause_fts_backfill):
             pause_fts_backfill(retry_delay_ms=1000)
@@ -248,7 +250,10 @@ class _MainWindowFetchMixin:
                     logger.info("Automatic refresh skipped because no tab is due")
                     return False
 
-            if self._begin_sequential_refresh(refresh_keywords):
+            if self._begin_sequential_refresh(
+                refresh_keywords,
+                auto_refresh=bool(getattr(self, "_auto_refresh_tick", False)),
+            ):
                 return True
             return False
         except Exception as e:
@@ -285,7 +290,7 @@ class _MainWindowFetchMixin:
         self._network_error_count = 0
         self._network_available = True
 
-        if self._begin_sequential_refresh(keywords):
+        if self._begin_sequential_refresh(keywords, auto_refresh=False):
             return True
         return False
 
@@ -384,6 +389,7 @@ class _MainWindowFetchMixin:
         """Reset sequential refresh state and surface the result."""
         self._sequential_refresh_active = False
         self._pending_refresh_keywords = []
+        self._sequential_refresh_is_auto = False
         self._last_refresh_time = datetime.now()
 
         with QMutexLocker(self._refresh_mutex):
@@ -692,6 +698,10 @@ class _MainWindowFetchMixin:
                     new_count=new_count,
                     new_items=new_items,
                 )
+                if bool(getattr(self, "_sequential_refresh_is_auto", False)):
+                    last_by_keyword = dict(getattr(self, "_last_auto_refresh_by_keyword", {}) or {})
+                    last_by_keyword[keyword] = time.time()
+                    self._last_auto_refresh_by_keyword = last_by_keyword
                 self._sequential_new_count += new_count
                 self._sequential_added_count += added_count
                 self._sequential_dup_count += dup_count

@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QTabWidget, 
 
 from core.startup import StartupManager
 from core.startup import StartupStatus
-from core.content_filters import normalize_name_list
+from core.content_filters import normalize_publisher_filter_lists
 from core.validation import ValidationUtils
 from PyQt6.QtCore import QThread
 from ui._settings_dialog_content import _SettingsDialogContentMixin
@@ -200,6 +200,11 @@ class SettingsDialog(
         if keywords_text:
             alert_keywords = [kw.strip() for kw in keywords_text.split(",") if kw.strip()][:10]
 
+        blocked_publishers, preferred_publishers = normalize_publisher_filter_lists(
+            self.txt_blocked_publishers.text(),
+            self.txt_preferred_publishers.text(),
+        )
+
         return {
             "id": self.txt_id.text().strip(),
             "secret": self.txt_sec.text().strip(),
@@ -214,6 +219,6 @@ class SettingsDialog(
             "start_minimized": self.chk_start_minimized.isChecked(),
             "notify_on_refresh": self.chk_notify_on_refresh.isChecked(),
             "api_timeout": int(self.spn_api_timeout.value()),
-            "blocked_publishers": normalize_name_list(self.txt_blocked_publishers.text()),
-            "preferred_publishers": normalize_name_list(self.txt_preferred_publishers.text()),
+            "blocked_publishers": blocked_publishers,
+            "preferred_publishers": preferred_publishers,
         }

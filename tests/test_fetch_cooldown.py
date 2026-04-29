@@ -34,6 +34,18 @@ class _DummyFetchMain:
     def _set_fetch_cooldown(self, seconds: int, *, reason: str) -> None:
         cast(Any, _MainWindowFetchMixin)._set_fetch_cooldown(cast(Any, self), seconds, reason=reason)
 
+    def _auto_refresh_keywords_due(self, keywords):
+        return cast(Any, _MainWindowFetchMixin)._auto_refresh_keywords_due(cast(Any, self), keywords)
+
+    def _prepare_refresh_keywords(self, keywords):
+        return cast(Any, _MainWindowFetchMixin)._prepare_refresh_keywords(cast(Any, self), keywords)
+
+    def _global_refresh_interval_minutes(self):
+        return cast(Any, _MainWindowFetchMixin)._global_refresh_interval_minutes(cast(Any, self))
+
+    def _tab_refresh_interval_minutes(self, keyword):
+        return cast(Any, _MainWindowFetchMixin)._tab_refresh_interval_minutes(cast(Any, self), keyword)
+
     def on_fetch_error(self, error_msg: str, keyword: str, is_sequential: bool = False, request_id=None, error_meta=None):
         return cast(Any, _MainWindowFetchMixin).on_fetch_error(
             cast(Any, self),
@@ -57,6 +69,9 @@ class _DummyFetchMain:
         self.btn_refresh = _DummyButton()
         self.toasts = []
         self.desktop_notifications = []
+        self.interval_idx = 0
+        self.tab_refresh_policies = {}
+        self._last_auto_refresh_by_keyword = {}
 
     def is_maintenance_mode_active(self):
         return False
@@ -188,6 +203,7 @@ class _DummyFetchDoneMain(_DummyFetchMain):
         self._sequential_added_count = 0
         self._sequential_dup_count = 0
         self._sequential_refresh_active = True
+        self._sequential_refresh_is_auto = False
         self._pending_refresh_keywords = ["AI launch"]
         self._total_refresh_count = 1
         self._refresh_in_progress = True
@@ -327,6 +343,35 @@ class TestFetchCooldown(unittest.TestCase):
         self.assertEqual(dummy.desktop_notifications[0], ("📰 AI launch", "1건의 새 뉴스가 있습니다."))
         self.assertEqual(dummy.tray_notifications[0], ("📰 AI launch", "1건의 새 뉴스가 도착했습니다."))
         self.assertEqual(dummy.alert_inputs, [[result["new_items"][0]]])
+
+    def test_auto_refresh_due_timestamp_updates_only_after_success(self):
+        dummy = _DummyFetchDoneMain()
+        old_ts = 1000.0
+        dummy._last_auto_refresh_by_keyword = {"AI launch": old_ts}
+
+        with mock.patch("ui._main_window_fetch.time.time", return_value=old_ts + 601):
+            due = dummy._auto_refresh_keywords_due(["AI launch"])
+
+        self.assertEqual(due, ["AI launch"])
+        self.assertEqual(dummy._last_auto_refresh_by_keyword["AI launch"], old_ts)
+
+        dummy._sequential_refresh_is_auto = True
+        with mock.patch("ui._main_window_fetch.time.time", return_value=old_ts + 602):
+            dummy.on_fetch_done(
+                {
+                    "new_items": [],
+                    "new_count": 0,
+                    "added_count": 0,
+                    "dup_count": 0,
+                    "total": 1,
+                    "filtered": 0,
+                },
+                "AI launch",
+                is_more=False,
+                is_sequential=True,
+            )
+
+        self.assertEqual(dummy._last_auto_refresh_by_keyword["AI launch"], old_ts + 602)
 
     def test_finish_sequential_refresh_summarizes_new_link_count(self):
         dummy = _DummyFetchDoneMain()

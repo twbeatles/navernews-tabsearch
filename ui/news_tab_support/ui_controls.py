@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QInputDialog,
+    QMessageBox,
     QPushButton,
     QToolButton,
     QVBoxLayout,
@@ -141,10 +142,13 @@ class _NewsTabUIControlsMixin:
         self.btn_apply_saved_search.clicked.connect(self._apply_saved_search)
         self.btn_save_search = QPushButton("검색 저장")
         self.btn_save_search.clicked.connect(self._save_current_search)
+        self.btn_delete_search = QPushButton("삭제")
+        self.btn_delete_search.clicked.connect(self._delete_saved_search)
         row3_layout.addWidget(QLabel("저장 검색:"))
         row3_layout.addWidget(self.combo_saved_search)
         row3_layout.addWidget(self.btn_apply_saved_search)
         row3_layout.addWidget(self.btn_save_search)
+        row3_layout.addWidget(self.btn_delete_search)
         row3_layout.addStretch()
         filter_layout.addLayout(row3_layout)
         self._refresh_saved_search_combo()
@@ -281,6 +285,19 @@ class _NewsTabUIControlsMixin:
         payload = getattr(parent, "saved_searches", {}).get(name, {})
         if not isinstance(payload, dict):
             return
+        target_tab = self
+        target_keyword = str(payload.get("keyword", "") or "").strip()
+        if target_keyword:
+            open_target = getattr(parent, "open_saved_search_target_tab", None)
+            if callable(open_target):
+                opened_tab = open_target(target_keyword)
+                if opened_tab is not None:
+                    target_tab = opened_tab
+        apply_payload = getattr(target_tab, "_apply_saved_search_payload", None)
+        if callable(apply_payload):
+            apply_payload(payload)
+
+    def _apply_saved_search_payload(self, payload: dict):
         with QSignalBlocker(self.inp_filter):
             self.inp_filter.setText(str(payload.get("filter_txt", "") or ""))
         sort_idx = self.combo_sort.findText(str(payload.get("sort_mode", "최신순") or "최신순"))
@@ -313,6 +330,26 @@ class _NewsTabUIControlsMixin:
         self._date_filter_active = date_active
         self._refresh_date_filter_controls()
         self._request_db_reload("저장 검색 적용")
+
+    def _delete_saved_search(self):
+        parent = self._main_window()
+        if parent is None:
+            return
+        name = str(self.combo_saved_search.currentText() or "").strip()
+        if not name or name == "저장된 검색 없음":
+            return
+        reply = QMessageBox.question(
+            self,
+            "저장 검색 삭제",
+            f"'{name}' 저장 검색을 삭제할까요?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        delete_saved_search = getattr(parent, "delete_saved_search", None)
+        if callable(delete_saved_search):
+            delete_saved_search(name)
 
     def _toggle_date_filter(self, checked: bool):
         """날짜 필터 표시/숨김 토글"""

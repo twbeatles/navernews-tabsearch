@@ -60,6 +60,7 @@ class _NewsTabLoadingMixin:
             "combo_saved_search",
             "btn_apply_saved_search",
             "btn_save_search",
+            "btn_delete_search",
             "btn_date_toggle",
             "btn_load",
             "btn_read_all",
@@ -337,12 +338,12 @@ class _NewsTabLoadingMixin:
                 self.inp_filter.setObjectName("")
             self.inp_filter.setStyle(self.inp_filter.style())
 
-            filter_txt_lc = filter_txt.lower()
-            if filter_txt_lc == self._last_filter_text and self._loaded_offset <= self.PAGE_SIZE:
+            current_scope_signature = self._scope_signature(self._build_query_scope())
+            if current_scope_signature == self._last_loaded_scope_signature and self._loaded_offset <= self.PAGE_SIZE:
                 self.update_status_label()
                 return
 
-            self._last_filter_text = filter_txt_lc
+            self._last_filter_text = filter_txt.lower()
             self._request_db_reload("필터 변경", append=False)
 
     def append_items(self):

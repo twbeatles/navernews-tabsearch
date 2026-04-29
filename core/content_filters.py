@@ -34,6 +34,27 @@ def normalize_name_list(value: Any, *, max_items: int = 200) -> List[str]:
     return normalized
 
 
+def normalize_publisher_filter_lists(
+    blocked_publishers: Any,
+    preferred_publishers: Any,
+    *,
+    preferred_wins: bool = False,
+    max_items: int = 200,
+) -> tuple[List[str], List[str]]:
+    """Normalize blocked/preferred publisher lists and remove cross-list duplicates."""
+    blocked = normalize_name_list(blocked_publishers, max_items=max_items)
+    preferred = normalize_name_list(preferred_publishers, max_items=max_items)
+
+    if preferred_wins:
+        preferred_keys = {item.casefold() for item in preferred}
+        blocked = [item for item in blocked if item.casefold() not in preferred_keys]
+        return blocked, preferred
+
+    blocked_keys = {item.casefold() for item in blocked}
+    preferred = [item for item in preferred if item.casefold() not in blocked_keys]
+    return blocked, preferred
+
+
 def normalize_tags(value: Any) -> List[str]:
     """Normalize free-form article tags."""
     if isinstance(value, str):

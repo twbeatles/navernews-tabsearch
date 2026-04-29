@@ -11,9 +11,15 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QTimer
 
-from core.config_store import AppConfig, encode_client_secret_for_storage, normalize_import_settings, save_primary_config_file
+from core.config_store import (
+    AppConfig,
+    encode_client_secret_for_storage,
+    normalize_import_settings,
+    normalize_loaded_config,
+    save_primary_config_file,
+)
 from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
-from core.content_filters import normalize_name_list
+from core.content_filters import normalize_publisher_filter_lists
 from core.keyword_groups import merge_keyword_groups
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker
@@ -545,6 +551,10 @@ class _MainWindowSettingsIOMixin:
                 if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
             }
         )
+        blocked_publishers, preferred_publishers = normalize_publisher_filter_lists(
+            app_settings_overrides.get("blocked_publishers", getattr(self, "blocked_publishers", [])),
+            app_settings_overrides.get("preferred_publishers", getattr(self, "preferred_publishers", [])),
+        )
         return {
             "app_settings": {
                 "client_id": str(app_settings_overrides.get("client_id", client_id)),
@@ -583,12 +593,8 @@ class _MainWindowSettingsIOMixin:
                     app_settings_overrides.get("notify_on_refresh", self.notify_on_refresh)
                 ),
                 "api_timeout": int(app_settings_overrides.get("api_timeout", self.api_timeout)),
-                "blocked_publishers": normalize_name_list(
-                    app_settings_overrides.get("blocked_publishers", getattr(self, "blocked_publishers", []))
-                ),
-                "preferred_publishers": normalize_name_list(
-                    app_settings_overrides.get("preferred_publishers", getattr(self, "preferred_publishers", []))
-                ),
+                "blocked_publishers": blocked_publishers,
+                "preferred_publishers": preferred_publishers,
                 "window_geometry": {
                     "x": int(geometry["x"]),
                     "y": int(geometry["y"]),
@@ -764,6 +770,10 @@ class _MainWindowSettingsIOMixin:
     ) -> List[str]:
         normalized_settings = dict(stage["normalized_settings"])
         imported_geometry = stage.get("imported_geometry")
+        previous_visibility = (
+            tuple(getattr(self, "blocked_publishers", [])),
+            tuple(getattr(self, "preferred_publishers", [])),
+        )
         self.theme_idx = normalized_settings["theme_index"]
         self.interval_idx = normalized_settings["refresh_interval_index"]
         self.notification_enabled = normalized_settings["notification_enabled"]
@@ -775,8 +785,10 @@ class _MainWindowSettingsIOMixin:
         self.auto_start_enabled = normalized_settings["auto_start_enabled"]
         self.notify_on_refresh = normalized_settings["notify_on_refresh"]
         self.api_timeout = normalized_settings["api_timeout"]
-        self.blocked_publishers = normalize_name_list(normalized_settings["blocked_publishers"])
-        self.preferred_publishers = normalize_name_list(normalized_settings["preferred_publishers"])
+        self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
+            normalized_settings["blocked_publishers"],
+            normalized_settings["preferred_publishers"],
+        )
         self.saved_searches = dict(stage["staged_config"].get("saved_searches", {}))
         self.tab_refresh_policies = dict(stage["staged_config"].get("tab_refresh_policies", {}))
         self.search_history = list(stage["merged_search_history"])
@@ -802,6 +814,22 @@ class _MainWindowSettingsIOMixin:
         self.keyword_group_manager.groups = dict(stage["merged_keyword_groups"])
         self.keyword_group_manager.last_error = ""
         self.apply_refresh_interval()
+        refresh_saved_searches = getattr(self, "_refresh_saved_search_combos", None)
+        if callable(refresh_saved_searches):
+            refresh_saved_searches()
+        current_visibility = (
+            tuple(getattr(self, "blocked_publishers", [])),
+            tuple(getattr(self, "preferred_publishers", [])),
+        )
+        if current_visibility != previous_visibility:
+            reload_visibility = getattr(self, "_reload_tabs_for_visibility_filters", None)
+            if callable(reload_visibility):
+                reload_visibility()
+            else:
+                for _index, widget in self._iter_news_tabs():
+                    load_data = getattr(widget, "load_data_from_db", None)
+                    if callable(load_data):
+                        load_data()
         return added_keywords
 
     def _stage_settings_import(
@@ -887,6 +915,7 @@ class _MainWindowSettingsIOMixin:
             ),
             window_geometry=imported_geometry,
         )
+        staged_config = normalize_loaded_config(staged_config)
         return {
             "normalized_settings": normalized_settings,
             "import_warnings": import_warnings,
@@ -1115,8 +1144,10 @@ class _MainWindowSettingsIOMixin:
         self.alert_keywords = data.get("alert_keywords", [])
         self.sound_enabled = data.get("sound_enabled", True)
         self.api_timeout = data.get("api_timeout", 15)
-        self.blocked_publishers = normalize_name_list(data.get("blocked_publishers", []))
-        self.preferred_publishers = normalize_name_list(data.get("preferred_publishers", []))
+        self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
+            data.get("blocked_publishers", []),
+            data.get("preferred_publishers", []),
+        )
 
         self.minimize_to_tray = data.get("minimize_to_tray", True)
         self.close_to_tray = data.get("close_to_tray", True)

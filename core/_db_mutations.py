@@ -33,14 +33,18 @@ class _DatabaseMutationsMixin:
         query_key: Optional[str],
         alias: str = "nk",
     ) -> str:
-        resolved_query_key = self._resolve_query_key(keyword, query_key)
-        clause = f"{alias}.query_key = ?"
-        params.append(resolved_query_key)
+        normalized_query_key = str(query_key or "").strip()
+        if normalized_query_key:
+            params.append(normalized_query_key)
+            return f"{alias}.query_key = ?"
+
         normalized_keyword = str(keyword or "").strip()
         if normalized_keyword:
-            clause += f" AND {alias}.keyword = ?"
             params.append(normalized_keyword)
-        return clause
+            return f"{alias}.keyword = ?"
+
+        params.append(self._resolve_query_key(keyword, None))
+        return f"{alias}.query_key = ?"
 
     def upsert_news(
         self: DatabaseManager,

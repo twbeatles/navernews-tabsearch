@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-27)
+작성일: 2026-03-16 (최근 갱신: 2026-04-29)
 
 ## 분석 범위
 
@@ -17,6 +17,23 @@
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
 
+## 0. 2026-04-29 구현 갭 클로저 / 문서·gitignore 재검증
+
+이번 재검증에서는 `implementation_gap_review_2026-04-29.md`의 1-11번 계획을 실제 코드에 반영한 뒤, 문서와 `.gitignore` 기준을 다시 맞췄다.
+
+- `core.bootstrap.py`는 단일 인스턴스 lock/기존 인스턴스 notify를 먼저 처리하고, 현재 프로세스가 주 인스턴스임이 확인된 뒤 `MainApp`/DB 생성 전에만 pending restore를 적용한다.
+- `core._db_queries.py`, `core._db_mutations.py`, `core._db_analytics.py`는 `query_key`가 제공된 경로에서 대표 keyword 조건을 붙이지 않고 query scope만 기준으로 조회/읽음/분석을 수행한다.
+- `core.content_filters.py`는 차단/선호 출처 목록의 중복과 충돌을 함께 정규화하고, DB visibility SQL은 `example.com`이 `example.com`과 `news.example.com`에 매칭되되 `badexample.com`에는 매칭되지 않는 suffix 정책을 사용한다.
+- `ui/main_window_support/ui_shell.py`, `ui/_main_window_tray.py`, `ui/_main_window_analysis.py`는 탭 배지, 트레이 총 미읽음, 전체 통계를 차단 출처 제외 기준으로 계산한다. 탭 배지는 각 탭의 `DBQueryScope` 기반 `count_news(..., only_unread=True)`로 표시 scope와 일치시킨다.
+- `ui/news_tab_support/loading.py`는 텍스트 필터만이 아니라 전체 scope signature를 기준으로 조기 return 여부를 판단해 태그 필터 변경이 DB reload 없이 무시되지 않는다.
+- `ui/news_tab_support/ui_controls.py`와 `ui/main_window_support/ui_shell.py`는 저장된 검색 삭제 UI를 추가하고, 저장된 검색 적용 시 저장된 keyword 탭으로 이동/생성한 뒤 payload를 적용한다.
+- `ui/_main_window_settings_io.py`와 `core.config_store_impl.py`는 import stage에서 `saved_searches`/`tab_refresh_policies`를 즉시 정규화하고, 출처 visibility 변경 시 기존 열린 탭을 reload한다.
+- `ui/_main_window_fetch.py`는 자동 새로고침 due timestamp를 due 판정 시점이 아니라 fetch 성공 callback에서만 갱신한다.
+- 새 회귀 테스트는 `tests/test_implementation_plan_20260429.py`에 추가했고, 기존 `test_fetch_cooldown.py`, `test_import_refresh_prompt.py`, `test_risk_fixes.py`를 확장했다.
+- `.gitignore`는 `git status --ignored --short`와 runtime/test/build 산출물 기준으로 다시 확인했다. `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, 로그, `__pycache__/`, runtime DB/config/backup/pending restore 잔여물은 기존 규칙으로 모두 무시되므로 추가 수정은 필요하지 않았다.
+- 삭제 상태인 `implementation_risk_review_2026-04-27.md`는 현재 작업트리 상태로 유지한다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `272 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`이다. 2026-04-29 변경에서는 PyInstaller 빌드를 재실행하지 않았다.
+
 ## 0. 2026-04-27 구현 리스크 계획 반영 / 문서·spec·gitignore 재검증
 
 이번 재검증에서는 2026-04-27 구현 계획의 우선 수정, 중간 우선순위, 기능 후보를 하나의 변경 배치로 실제 코드에 반영하고 문서/패키징 기준을 다시 맞췄다.
@@ -30,7 +47,7 @@
 - `core.workers.ApiWorker`는 429 `Retry-After`가 30초를 초과하면 worker 내부 sleep 없이 cooldown meta로 즉시 반환한다.
 - `news_scraper_pro.spec`는 새 기능이 기존 PyQt/stdlib 의존성만 사용함을 재검토했고, 추가 hidden import/exclude/data 수정은 필요하지 않았다.
 - `.gitignore`는 적용 성공 후 남을 수 있는 `pending_restore.json.applied`를 무시하도록 보강했다.
-- 기존 삭제 상태인 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지하고, 이번 구현 완료 기록은 `implementation_risk_review_2026-04-27.md`에 남긴다.
+- 기존 삭제 상태인 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지했다. 이후 2026-04-29 작업트리에서는 `implementation_risk_review_2026-04-27.md`도 삭제 상태로 유지한다.
 - 문서 기준 현재 검증선은 `python -m pytest -q` => `258 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
 
 ## 0. 2026-04-22 구조 분할 / 문서·spec·gitignore 정합화
@@ -42,7 +59,7 @@
 - `ui.news_tab.py`는 약 111줄의 facade로 축소됐고, 상태/로딩/렌더링/UI 제어/카드 액션은 `ui/news_tab_support/state.py`, `loading.py`, `rendering.py`, `ui_controls.py`, `actions.py`로 분리됐다.
 - `news_scraper_pro.spec`는 2026-04-22 기준 다시 재검토되었고, 이번 패스의 RuntimePaths 통합, SQLite-safe legacy migration hardening, support-package 분할은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않았다.
 - `.gitignore`는 portable/legacy 실행 폴더 기준으로 다시 생길 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`까지 명시적으로 무시하도록 보강했다.
-- 2026-04-27 기준 삭제된 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지하고, 후속 구현 기록은 `implementation_risk_review_2026-04-27.md`로 대체한다.
+- 2026-04-27 기준 삭제된 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지했다. 이후 2026-04-29 작업트리에서는 `implementation_risk_review_2026-04-27.md`도 삭제 상태로 유지한다.
 - 문서 기준 현재 검증선은 `python -m pytest -q` => `251 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
 
 ## 0. 2026-04-18 구현 수정 반영 / 문서·spec·gitignore 재검증
@@ -228,6 +245,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `README.md` | 사용자/개발자 관점의 공식 구조 요약 |
 | `claude.md`, `gemini.md` | AI 작업 지침이지만, 실제로는 아키텍처 메모와 수정 규칙 문서 역할도 겸함 |
 | `update_history.md` | 버전별 변경 이력의 단일 기준 문서 |
+| `implementation_gap_review_2026-04-29.md` | 2026-04-29 구현 갭 점검 및 완료 기록 |
 | `pytest.ini` | 테스트 진입점 고정 |
 | `pyrightconfig.json` | 타입 검사 범위 및 Windows/Python 3.14 기준 고정 |
 
@@ -253,9 +271,9 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 2. `core.bootstrap.main()`이 다음을 수행한다.
    - 로깅 초기화
    - 전역 예외 훅 등록
-   - `pending_restore.json` 기반 복원 적용
    - `QLockFile` + `QLocalServer`로 단일 인스턴스 보장
    - `QApplication` 생성
+   - 단일 인스턴스 lock 획득 후 `pending_restore.json` 기반 복원 적용
    - `ui.main_window.MainApp` 생성 및 표시
 3. `MainApp.__init__()`이 다음을 초기화한다.
    - `DatabaseManager`
@@ -299,7 +317,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `core/constants.py` | 앱 경로, 파일명, 버전 상수 |
 | `core/config_store.py` | 기존 import 경로를 유지하는 설정 facade |
 | `core/config_store_impl.py` | 설정 TypedDict, 로드 정규화, 원자 저장/.backup 회전, import 보정, DPAPI |
-| `core/content_filters.py` | 출처 목록과 자유 태그 정규화 |
+| `core/content_filters.py` | 차단/선호 출처 충돌 정규화와 자유 태그 정규화 |
 | `core/database.py` | `DatabaseManager` facade, 연결 풀 수명 주기 |
 | `core/_db_schema.py` | DB 초기화, 마이그레이션, 무결성 검사, 복구 |
 | `core/_db_duplicates.py` | 제목 해시, 중복 플래그 계산/복구 |
@@ -322,7 +340,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 
 - `core.database.py`는 133줄 수준의 facade로 축소됐고, 실제 책임은 `core/_db_*.py`로 분리됐다.
 - `core.config_store.py`는 이제 호환성 facade이고, 실제 설정 보안/정규화/파일 I/O는 `core.config_store_impl.py`에 있다.
-- 출처/태그처럼 UI, 설정, DB export가 함께 쓰는 normalization은 `core.content_filters.py`에 모아져 있다.
+- 출처/태그처럼 UI, 설정, DB export가 함께 쓰는 normalization은 `core.content_filters.py`에 모아져 있다. 차단/선호 출처는 cross-list 충돌까지 이 helper에서 정리한다.
 - `core.query_parser.py`는 작지만 의미상 매우 중요하다. 탭 의미, API 질의, 페이지네이션 키가 여기 정책에 묶여 있다.
 - `core.backup.py`는 파일 복사 유틸이 아니라, **복원 무결성 보장 모듈**에 가깝다.
 - `core.workers.DBWorker`는 탭 raw keyword를 다시 파싱하지 않고, `NewsTab`이 계산한 `DBQueryScope`를 그대로 소비한다.
@@ -383,6 +401,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`, `test_stabilization_round1.py`
 - 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_news_tab_performance.py`, `test_settings_dialog_maintenance.py`, `test_stabilization_round1.py`
 - 2026-04-27 기능 배치: `test_implementation_batch_20260427.py`
+- 2026-04-29 구현 갭 클로저: `test_implementation_plan_20260429.py`
 - 문서/버전/인코딩 가드: `test_version_history_guard.py`, `test_encoding_smoke.py`
 
 즉, 새 기능 추가 시 테스트를 처음부터 새로 짜는 것보다, **기존 계약을 안 깨뜨리는 테스트를 같이 확장**하는 방식이 맞다.
@@ -421,8 +440,8 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 로드 시 정규화된다.
 - 저장 시 원자적으로 교체된다.
 - `search_history`는 `canonical query` 기준으로 dedupe된다.
-- `app_settings.blocked_publishers` / `preferred_publishers`는 trim, 빈 값 제거, case-insensitive dedupe를 거친다.
-- `saved_searches`는 탭 필터/정렬/기간/태그/선호 출처 조건을 이름별 payload로 저장한다.
+- `app_settings.blocked_publishers` / `preferred_publishers`는 trim, 빈 값 제거, case-insensitive dedupe와 양쪽 충돌 제거를 거친다.
+- `saved_searches`는 검색어, 탭 필터/정렬/기간/태그/선호 출처 조건을 이름별 payload로 저장하고, 적용 시 저장된 검색어 탭으로 이동/생성한다.
 - `tab_refresh_policies`는 탭별 자동 새로고침 override이며 기본값은 전역 설정 상속이다.
 - 손상 시 `.backup` fallback 복구가 있다.
 - Windows에서는 `client_secret_enc` + `client_secret_storage=dpapi` 경로를 지원한다.
@@ -508,14 +527,14 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 | 파일 | 대략 라인 수 | 해석 |
 |---|---:|---|
-| `ui/_main_window_fetch.py` | 551 | fetch/worker/pagination 도메인의 주된 병목 |
-| `ui/main_window_support/base.py` | 590 | 메인 윈도우 상태/유지보수/worker orchestration이 집중 |
-| `ui/news_tab_support/actions.py` | 555 | 카드 액션, 링크 보안, 태그/출처 액션이 집중됨 |
-| `ui/news_tab_support/loading.py` | 418 | 탭 DB 로드, hydration, 유지보수 연동의 중심 |
-| `core/_db_mutations.py` | 650 | 쓰기/삭제/mark-read/태그 CRUD 책임이 가장 넓음 |
-| `core/config_store_impl.py` | 678 | 설정 스키마, 보안, 정규화, import/export 보정이 집중됨 |
-| `ui/news_tab_support/ui_controls.py` | 388 | 태그 필터, 저장된 검색, 탭 UI control wiring이 집중됨 |
-| `ui/_main_window_tabs.py` | 359 | 탭 상태/키워드/그룹 연결이 집중됨 |
+| `ui/_main_window_fetch.py` | 866 | fetch/worker/pagination/자동 새로고침 도메인의 주된 병목 |
+| `core/config_store_impl.py` | 794 | 설정 스키마, 보안, 정규화, import/export 보정이 집중됨 |
+| `core/_db_mutations.py` | 710 | 쓰기/삭제/mark-read/태그 CRUD 책임이 가장 넓음 |
+| `ui/news_tab_support/actions.py` | 634 | 카드 액션, 링크 보안, 태그/출처 액션이 집중됨 |
+| `ui/main_window_support/base.py` | 592 | 메인 윈도우 상태/유지보수/worker orchestration이 집중 |
+| `ui/_main_window_tabs.py` | 499 | 탭 상태/키워드/그룹 연결이 집중됨 |
+| `ui/news_tab_support/ui_controls.py` | 485 | 태그 필터, 저장된 검색, 탭 UI control wiring이 집중됨 |
+| `ui/news_tab_support/loading.py` | 424 | 탭 DB 로드, hydration, 유지보수 연동의 중심 |
 | `ui/styles.py` | 746 | 스타일/QSS/HTML 템플릿이 매우 큼 |
 
 ### 실무적으로 중요한 결론
@@ -639,11 +658,13 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 ### 1. 기사 태그/라벨 기능
 
-이유:
+상태:
 
-- 기사 단위 액션 구조가 이미 있음
-- DB 중심 구조라 태그 테이블 추가가 자연스러움
-- `NewsTab`의 badge 렌더링과 잘 맞음
+- 기본 자유 태그, 카드 배지, 태그 필터, CSV 태그 컬럼은 구현 완료.
+
+확장 여지:
+
+- 태그 색상/고정 태그/태그별 대시보드처럼 `news_tags` 위에 얹는 기능은 현재 구조와 잘 맞음
 
 영향 파일 예상:
 
@@ -655,30 +676,34 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 ### 2. 출처 차단 / 선호 언론사 필터
 
-이유:
+상태:
 
-- 이미 `publisher`가 정규화되어 저장됨
-- 분석 기능과 연결 가능
-- `count_news()`, `fetch_news()` 확장으로 자연스럽게 구현 가능
+- 차단/선호 출처 목록, 선호 출처만 필터, 도메인 suffix match, 목록/count/배지/트레이/분석/CSV visibility 반영은 구현 완료.
+
+확장 여지:
+
+- 언론사 alias 관리, wildcard UI, 충돌 표시 UI는 아직 별도 후보로 남아 있다.
 
 ### 3. 탭별 개별 자동 새로고침 정책
 
-이유:
+상태:
 
-- 현재는 앱 전체 interval 중심
-- `pagination_state`와 fetch state 구조가 이미 있어 탭별 상태 보존과 잘 맞음
+- `tab_refresh_policies` 기반 상속/끔/개별 간격 override는 구현 완료.
 
-필요:
+확장 여지:
 
-- 설정 스키마 확장
-- `MainApp` 타이머 정책 분리
+- 실패 backoff를 탭별로 세분화하거나, 최근 활동 기준으로 interval을 동적으로 바꾸는 정책은 추가 후보다.
 
 ### 4. 사용자 정의 저장 검색
 
-이유:
+상태:
 
-- 검색 히스토리와 탭 구조가 이미 존재
-- `keyword_groups`와 함께 쓰면 조직화 가치가 큼
+- 검색어/필터/정렬/기간/태그/선호 출처 조건 저장, 적용, 삭제 UI는 구현 완료.
+- 적용 시 저장된 keyword 탭으로 이동하거나 새 탭을 만든 뒤 payload를 적용한다.
+
+확장 여지:
+
+- 이름 변경 UI, 폴더/그룹화, 저장 검색 export preview는 추가 후보다.
 
 ### 5. 분석 대시보드 확장
 

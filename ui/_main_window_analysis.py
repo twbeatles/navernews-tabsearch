@@ -65,7 +65,10 @@ class _MainWindowAnalysisMixin:
         layout.addWidget(btn_close)
 
         def load_stats(conn) -> Dict[str, int]:
-            return self._require_db().get_statistics(conn=conn)
+            return self._require_db().get_statistics(
+                blocked_publishers=getattr(self, "blocked_publishers", []),
+                conn=conn,
+            )
 
         worker = InterruptibleReadWorker(self._require_db(), load_stats, parent=dialog)
 
@@ -79,7 +82,7 @@ class _MainWindowAnalysisMixin:
             else:
                 read_percent = 0
 
-            group = QGroupBox("전체 데이터베이스 통계")
+            group = QGroupBox("표시 기준 전체 통계")
             grid = QGridLayout()
             items = [
                 ("총 기사 수:", f"{stats['total']:,}개"),
@@ -172,7 +175,10 @@ class _MainWindowAnalysisMixin:
         }
 
         def load_stats(conn) -> Dict[str, int]:
-            return self._require_db().get_statistics(conn=conn)
+            return self._require_db().get_statistics(
+                blocked_publishers=getattr(self, "blocked_publishers", []),
+                conn=conn,
+            )
 
         def render_stats(stats: Dict[str, int]) -> None:
             if not dialog.isVisible():
@@ -183,7 +189,7 @@ class _MainWindowAnalysisMixin:
             else:
                 read_percent = 0
 
-            group = QGroupBox("전체 데이터베이스 통계")
+            group = QGroupBox("표시 기준 전체 통계")
             grid = QGridLayout()
             items = [
                 ("총 기사 수:", f"{stats['total']:,}개"),

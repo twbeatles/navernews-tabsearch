@@ -91,16 +91,33 @@ navernews-tabsearch/
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
 ├── news_icon.ico                # 애플리케이션 아이콘
-├── implementation_risk_review_2026-04-27.md # 2026-04-27 구현 리스크 계획 반영 기록
+├── implementation_gap_review_2026-04-29.md # 2026-04-29 구현 갭 점검 및 완료 기록
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `258 passed, 5 subtests passed`
+- `python -m pytest -q` => `272 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+- PyInstaller 빌드는 2026-04-29 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+
+### 2026-04-29 Implementation Gap Closure
+
+- `implementation_gap_review_2026-04-29.md`의 1-11번 계획을 코드에 반영했다.
+- `core.bootstrap.main()`은 단일 인스턴스 lock/기존 인스턴스 notify가 끝난 뒤, `MainApp`/DB 생성 전에만 pending restore를 적용한다.
+- `query_key`가 있는 DB 조회/읽음/분석 경로는 대표 keyword 조건을 붙이지 않고 `query_key` scope를 기준으로 동작한다.
+- 출처 visibility는 차단/선호 충돌 정규화, 도메인 suffix match, 목록/count/배지/트레이/통계/분석 반영으로 통일됐다.
+- 저장된 검색은 저장된 keyword 탭으로 이동하거나 새로 만든 뒤 payload를 적용하고, 탭 UI에서 삭제할 수 있다.
+- 설정 import는 `saved_searches`와 `tab_refresh_policies`를 즉시 정규화하고, 출처 visibility가 바뀌면 기존 열린 탭도 reload한다.
+- 자동 새로고침 due timestamp는 due 판정이 아니라 성공 callback에서만 갱신된다.
+- `.gitignore`는 ignored runtime/test/build 산출물 기준으로 재검토했으며 추가 수정은 필요하지 않았다.
+- 삭제 상태인 `implementation_risk_review_2026-04-27.md`는 현재 작업트리 상태로 유지한다.
+- 검증:
+  - `python -m pytest -q` => `272 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 
 ### 2026-04-27 Implementation Risk Batch + Feature Filters
 
@@ -119,7 +136,7 @@ navernews-tabsearch/
   - `saved_searches` and `tab_refresh_policies` are top-level config schema fields, while `blocked_publishers` and `preferred_publishers` live under `app_settings`.
 - Structure / docs / packaging:
   - `core.config_store` is now a compatibility facade over `core.config_store_impl`; shared name/tag normalization lives in `core.content_filters`.
-  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and `implementation_risk_review_2026-04-27.md` were updated for the new codebase state.
+  - `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, `news_scraper_pro.spec`, `.gitignore`, and the then-present `implementation_risk_review_2026-04-27.md` were updated for that codebase state. As of the 2026-04-29 workspace, that implementation note is intentionally deleted.
   - `.gitignore` now ignores `pending_restore.json.applied`; deleted `implementation_audit_2026-04-18.md` remains deleted as the user-owned workspace state.
 
 ### 2026-04-22 RuntimePaths / Support-Module Refactor + Docs/Spec/Gitignore Revalidation
@@ -131,7 +148,7 @@ navernews-tabsearch/
 - `RuntimePaths`가 런타임 저장 경로를 한 객체로 묶고, `core/runtime_support/paths.py` / `migration.py`가 실제 경로 계산과 레거시 마이그레이션을 담당한다.
 - `MainApp` 구현은 `ui/main_window_support/`로, `NewsTab` 구현은 `ui/news_tab_support/`로 분리되어 facade와 내부 책임이 구분되었다.
 - `news_scraper_pro.spec`는 이번 패스에서도 추가 hidden import/exclude/data 변경이 필요하지 않았고, `.gitignore`는 `keyword_groups.json`, `news_scraper_pro.lock`을 추가로 무시한다.
-- 2026-04-27 기준으로는 삭제된 `implementation_audit_2026-04-18.md`를 사용자 변경으로 유지하고, 후속 구현 기록은 `implementation_risk_review_2026-04-27.md`에 남긴다.
+- 2026-04-27 기준으로는 삭제된 `implementation_audit_2026-04-18.md`를 사용자 변경으로 유지했다. 2026-04-29 작업트리에서는 `implementation_risk_review_2026-04-27.md`도 삭제 상태로 유지한다.
 
 ### 2026-04-18 Implementation Follow-through + Docs/Spec/Gitignore Revalidation
 

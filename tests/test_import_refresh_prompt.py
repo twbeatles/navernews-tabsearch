@@ -53,9 +53,13 @@ class _FakeTab:
         self.keyword = keyword
         self.theme = 0
         self.render_calls = 0
+        self.load_calls = 0
 
     def render_html(self):
         self.render_calls += 1
+
+    def load_data_from_db(self):
+        self.load_calls += 1
 
 
 class _DummyImportMain:
@@ -153,6 +157,10 @@ class _DummyImportMain:
         self.auto_start_enabled = False
         self.notify_on_refresh = False
         self.api_timeout = 15
+        self.blocked_publishers = []
+        self.preferred_publishers = []
+        self.saved_searches = {}
+        self.tab_refresh_policies = {}
         self.search_history = []
         self._fetch_cursor_by_key = {}
         self._fetch_total_by_key = {}
@@ -167,6 +175,8 @@ class _DummyImportMain:
         self.toast_messages = []
         self.warning_toasts = []
         self.apply_refresh_calls = 0
+        self.saved_search_combo_refreshes = 0
+        self.visibility_reload_calls = 0
         self.fail_on_add_keyword: Optional[str] = None
         self.reconcile_auto_start_result: Optional[bool] = None
 
@@ -207,6 +217,14 @@ class _DummyImportMain:
 
     def apply_refresh_interval(self):
         self.apply_refresh_calls += 1
+
+    def _refresh_saved_search_combos(self):
+        self.saved_search_combo_refreshes += 1
+
+    def _reload_tabs_for_visibility_filters(self):
+        self.visibility_reload_calls += 1
+        for _index, tab in self._iter_news_tabs():
+            tab.load_data_from_db()
 
     def show_toast(self, message):
         self.toast_messages.append(str(message))
@@ -357,6 +375,45 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertFalse(dummy.auto_start_enabled)
         config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
         self.assertFalse(config_payload["app_settings"]["auto_start_enabled"])
+
+    def test_import_normalizes_saved_search_policies_and_reloads_visibility(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            import_file = self._write_import_file(
+                root,
+                {
+                    "settings": {
+                        "blocked_publishers": ["Blocked.com", "blocked.com"],
+                        "preferred_publishers": ["blocked.com", "Good.com"],
+                    },
+                    "tabs": ["AI"],
+                    "keyword_groups": {},
+                    "saved_searches": {
+                        "  Main  ": {
+                            "keyword": "AI",
+                            "filter_txt": "market",
+                            "only_unread": "yes",
+                            "only_preferred_publishers": 1,
+                        }
+                    },
+                    "tab_refresh_policies": {"AI": "bad", "경제": "30", "": "off"},
+                },
+            )
+            dialogs = _FakeDialogAdapter(open_result=(str(import_file), "JSON"))
+            dummy = _DummyImportMain(dialogs)
+            dummy._tabs.append(_FakeTab("AI"))
+
+            dummy.import_settings()
+
+        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
+        self.assertEqual(config_payload["app_settings"]["blocked_publishers"], ["Blocked.com"])
+        self.assertEqual(config_payload["app_settings"]["preferred_publishers"], ["Good.com"])
+        self.assertEqual(config_payload["saved_searches"]["Main"]["filter_txt"], "market")
+        self.assertTrue(config_payload["saved_searches"]["Main"]["only_unread"])
+        self.assertEqual(config_payload["tab_refresh_policies"], {"AI": "inherit", "경제": "30"})
+        self.assertEqual(dummy.saved_search_combo_refreshes, 1)
+        self.assertEqual(dummy.visibility_reload_calls, 1)
+        self.assertEqual(dummy._tabs[1].load_calls, 1)
 
 
 if __name__ == "__main__":

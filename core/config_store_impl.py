@@ -8,7 +8,7 @@ import sys
 import tempfile
 from typing import Any, Dict, List, Mapping, Tuple, TypedDict
 
-from core.content_filters import normalize_name_list
+from core.content_filters import normalize_publisher_filter_lists
 
 logger = logging.getLogger(__name__)
 
@@ -511,11 +511,9 @@ def normalize_import_settings(
         baseline["api_timeout"] = _to_int(
             fallback_settings.get("api_timeout"), baseline["api_timeout"]
         )
-        baseline["blocked_publishers"] = normalize_name_list(
-            fallback_settings.get("blocked_publishers", baseline["blocked_publishers"])
-        )
-        baseline["preferred_publishers"] = normalize_name_list(
-            fallback_settings.get("preferred_publishers", baseline["preferred_publishers"])
+        baseline["blocked_publishers"], baseline["preferred_publishers"] = normalize_publisher_filter_lists(
+            fallback_settings.get("blocked_publishers", baseline["blocked_publishers"]),
+            fallback_settings.get("preferred_publishers", baseline["preferred_publishers"]),
         )
 
     normalized = {
@@ -580,11 +578,18 @@ def normalize_import_settings(
             f"alert_keywords 값을 정규화했습니다. (최대 10개, 중복 제거)"
         )
 
-    for field in ("blocked_publishers", "preferred_publishers"):
-        normalized_publishers = normalize_name_list(raw_settings.get(field, normalized[field]))
-        normalized[field] = normalized_publishers
-        if field in raw_settings and normalized_publishers != raw_settings.get(field):
-            warnings.append(f"{field} 값을 정규화했습니다. (중복 제거)")
+    raw_blocked_publishers = raw_settings.get("blocked_publishers", normalized["blocked_publishers"])
+    raw_preferred_publishers = raw_settings.get("preferred_publishers", normalized["preferred_publishers"])
+    normalized_blocked, normalized_preferred = normalize_publisher_filter_lists(
+        raw_blocked_publishers,
+        raw_preferred_publishers,
+    )
+    normalized["blocked_publishers"] = normalized_blocked
+    normalized["preferred_publishers"] = normalized_preferred
+    if "blocked_publishers" in raw_settings and normalized_blocked != raw_blocked_publishers:
+        warnings.append("blocked_publishers 값을 정규화했습니다. (중복/충돌 제거)")
+    if "preferred_publishers" in raw_settings and normalized_preferred != raw_preferred_publishers:
+        warnings.append("preferred_publishers 값을 정규화했습니다. (중복/충돌 제거)")
 
     return normalized, warnings
 
@@ -630,11 +635,9 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         )
         app_cfg["notify_on_refresh"] = _to_bool(app_raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
         app_cfg["api_timeout"] = max(5, min(60, _to_int(app_raw.get("api_timeout"), app_cfg["api_timeout"])))
-        app_cfg["blocked_publishers"] = normalize_name_list(
-            app_raw.get("blocked_publishers", app_cfg["blocked_publishers"])
-        )
-        app_cfg["preferred_publishers"] = normalize_name_list(
-            app_raw.get("preferred_publishers", app_cfg["preferred_publishers"])
+        app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = normalize_publisher_filter_lists(
+            app_raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
+            app_raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
         )
 
         geom_raw = app_raw.get("window_geometry")
@@ -678,9 +681,9 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     app_cfg["auto_start_enabled"] = _to_bool(raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"])
     app_cfg["notify_on_refresh"] = _to_bool(raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
     app_cfg["api_timeout"] = max(5, min(60, _to_int(raw.get("api_timeout"), app_cfg["api_timeout"])))
-    app_cfg["blocked_publishers"] = normalize_name_list(raw.get("blocked_publishers", app_cfg["blocked_publishers"]))
-    app_cfg["preferred_publishers"] = normalize_name_list(
-        raw.get("preferred_publishers", app_cfg["preferred_publishers"])
+    app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = normalize_publisher_filter_lists(
+        raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
+        raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
     )
     cfg["tabs"] = _to_str_list(raw.get("tabs"))
     cfg["search_history"] = _to_str_list(raw.get("search_history"))

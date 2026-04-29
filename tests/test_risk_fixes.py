@@ -90,8 +90,9 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
     def test_badge_update_uses_tab_keyword_cache_and_exclude_aware_count(self):
         block = inspect.getsource(MainApp.update_all_tab_badges)
-        self.assertIn("build_fetch_key(search_keyword, exclude_words)", block)
-        self.assertIn("self._require_db().get_unread_counts_by_query_keys(", block)
+        self.assertIn("widget._build_query_scope().count_kwargs()", block)
+        self.assertIn('scope_kwargs["only_unread"] = True', block)
+        self.assertIn("db.count_news(**scope_kwargs)", block)
         self.assertIn("self._badge_unread_cache[keyword]", block)
 
         block = inspect.getsource(MainApp.update_tab_badge)
@@ -99,7 +100,7 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
     def test_update_tray_tooltip_uses_db_total_unread_count(self):
         block = inspect.getsource(MainApp.update_tray_tooltip)
-        self.assertIn("self.db.get_total_unread_count()", block)
+        self.assertIn("self.db.get_total_unread_count(blocked_publishers=getattr(self, \"blocked_publishers\", []))", block)
 
     def test_desktop_notification_uses_toast_fallback_without_tray(self):
         block = inspect.getsource(MainApp.show_desktop_notification)
