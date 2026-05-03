@@ -132,6 +132,13 @@ class _DummyImportMain:
     def _stage_settings_import(self, import_data):
         return cast(Any, _MainWindowSettingsIOMixin)._stage_settings_import(cast(Any, self), import_data)
 
+    def _canonicalize_tab_refresh_policies(self, policies, known_keywords=None):
+        return cast(Any, _MainWindowSettingsIOMixin)._canonicalize_tab_refresh_policies(
+            cast(Any, self),
+            policies,
+            known_keywords=known_keywords,
+        )
+
     def _normalize_tab_keyword(self, raw_keyword):
         return cast(Any, _MainWindowTabsMixin)._normalize_tab_keyword(cast(Any, self), raw_keyword)
 
@@ -410,10 +417,78 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertEqual(config_payload["app_settings"]["preferred_publishers"], ["Good.com"])
         self.assertEqual(config_payload["saved_searches"]["Main"]["filter_txt"], "market")
         self.assertTrue(config_payload["saved_searches"]["Main"]["only_unread"])
-        self.assertEqual(config_payload["tab_refresh_policies"], {"AI": "inherit", "경제": "30"})
+        self.assertEqual(config_payload["tab_refresh_policies"], {"ai|": "inherit", "경제|": "30"})
         self.assertEqual(dummy.saved_search_combo_refreshes, 1)
         self.assertEqual(dummy.visibility_reload_calls, 1)
         self.assertEqual(dummy._tabs[1].load_calls, 1)
+
+    def test_import_merges_saved_searches_with_import_wins_and_canonical_policies(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            import_file = self._write_import_file(
+                root,
+                {
+                    "settings": {},
+                    "tabs": ["AI 삼성"],
+                    "keyword_groups": {},
+                    "saved_searches": {
+                        "Local": {"keyword": "AI 삼성", "filter_txt": "imported"},
+                        "Incoming": {"keyword": "-광고", "filter_txt": "new"},
+                    },
+                    "tab_refresh_policies": {" AI   삼성 ": "30"},
+                },
+            )
+            dialogs = _FakeDialogAdapter(open_result=(str(import_file), "JSON"))
+            dummy = _DummyImportMain(dialogs)
+            dummy.saved_searches = {
+                "Local": {"keyword": "AI", "filter_txt": "local"},
+                "Keep": {"keyword": "경제", "filter_txt": "kept"},
+            }
+            dummy.tab_refresh_policies = {"AI": "10"}
+
+            dummy.import_settings()
+
+        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
+        self.assertEqual(config_payload["saved_searches"]["Local"]["filter_txt"], "imported")
+        self.assertEqual(config_payload["saved_searches"]["Keep"]["filter_txt"], "kept")
+        self.assertEqual(config_payload["saved_searches"]["Incoming"]["keyword"], "")
+        self.assertEqual(config_payload["tab_refresh_policies"]["ai|"], "10")
+        self.assertEqual(config_payload["tab_refresh_policies"]["ai 삼성|"], "30")
+
+    def test_saved_search_dates_are_normalized_during_import(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            import_file = self._write_import_file(
+                root,
+                {
+                    "settings": {},
+                    "tabs": [],
+                    "keyword_groups": {},
+                    "saved_searches": {
+                        "Dates": {
+                            "keyword": "AI",
+                            "date_active": True,
+                            "start_date": "2026-05-10",
+                            "end_date": "2026-05-01",
+                        },
+                        "InvalidDate": {
+                            "keyword": "AI",
+                            "date_active": True,
+                            "start_date": "not-a-date",
+                            "end_date": "",
+                        },
+                    },
+                },
+            )
+            dialogs = _FakeDialogAdapter(open_result=(str(import_file), "JSON"))
+            dummy = _DummyImportMain(dialogs)
+
+            dummy.import_settings()
+
+        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
+        self.assertEqual(config_payload["saved_searches"]["Dates"]["start_date"], "2026-05-01")
+        self.assertEqual(config_payload["saved_searches"]["Dates"]["end_date"], "2026-05-10")
+        self.assertFalse(config_payload["saved_searches"]["InvalidDate"]["date_active"])
 
 
 if __name__ == "__main__":

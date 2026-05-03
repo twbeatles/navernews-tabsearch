@@ -8,7 +8,7 @@ from unittest import mock
 import core.backup as backup_module
 from core.backup import apply_pending_restore_if_any
 from core.config_store import default_config, load_config_file, save_config_file_atomic
-from core.database import DatabaseManager
+from core.database import DatabaseManager, DatabaseWriteError
 from core.workers import ApiWorker, DBQueryScope, JobCancelledError
 from ui._main_window_settings_io import export_scope_to_csv
 from ui.news_tab import NewsTab
@@ -68,13 +68,14 @@ class TestImplementationBatchDbFeatures(unittest.TestCase):
         self.assertEqual(loaded["app_settings"]["blocked_publishers"], ["Alpha.com"])
         self.assertEqual(loaded["app_settings"]["preferred_publishers"], ["Beta.com"])
         self.assertEqual(loaded["saved_searches"]["AI"]["tag_filter"], "Important")
-        self.assertEqual(loaded["tab_refresh_policies"], {"AI": "30", "경제": "off"})
+        self.assertEqual(loaded["tab_refresh_policies"], {"ai|": "30", "경제|": "off"})
 
 
 class _DummyActionTab:
     _open_article_url = NewsTab._open_article_url
     _render_single_item = NewsTab._render_single_item
     _item_render_cache_key = NewsTab._item_render_cache_key
+    _set_read_state = NewsTab._set_read_state
 
     def __init__(self):
         self.failures = []
@@ -82,9 +83,39 @@ class _DummyActionTab:
         self.keyword = "AI"
         self.is_bookmark_tab = False
         self._item_html_cache = {}
+        self.db: Any = None
+        self.chk_unread = _FakeCheckBox(False)
 
     def _emit_local_action_failure(self, message):
         self.failures.append(message)
+
+    def _adjust_unread_cache(self, *_args):
+        raise AssertionError("cache should not change when DB write fails")
+
+    def _refresh_after_local_change(self, *args, **kwargs):
+        raise AssertionError("render should not refresh when DB write fails")
+
+    def _notify_badge_change(self):
+        raise AssertionError("badge should not change when DB write fails")
+
+    def _main_window(self):
+        return None
+
+    def _should_block_db_action(self, *_args, **_kwargs):
+        return False
+
+
+class _FakeCheckBox:
+    def __init__(self, checked=False):
+        self._checked = bool(checked)
+
+    def isChecked(self):
+        return self._checked
+
+
+class _WriteFailDb:
+    def update_status(self, *_args, **_kwargs):
+        raise DatabaseWriteError("update_status", "disk full")
 
 
 class TestImplementationBatchUiSafety(unittest.TestCase):
@@ -132,13 +163,27 @@ class TestImplementationBatchUiSafety(unittest.TestCase):
         self.assertIn("&lt;b&gt;bad&lt;/b&gt;", html)
         self.assertIn("#ok", html)
 
+    def test_read_state_write_error_does_not_mutate_ui_cache(self):
+        tab = _DummyActionTab()
+        tab.db = _WriteFailDb()
+        target = {"link": "https://example.com/1", "is_read": 0}
+
+        ok = NewsTab._set_read_state(cast(Any, tab), target, True, failure_message="failed")
+
+        self.assertFalse(ok)
+        self.assertEqual(target["is_read"], 0)
+        self.assertEqual(tab.failures, ["failed"])
+
 
 class _FakeResponse:
-    def __init__(self, status_code: int, headers=None):
+    def __init__(self, status_code: int, headers=None, payload=None):
         self.status_code = status_code
         self.headers = headers or {}
+        self.payload = payload
 
     def json(self):
+        if self.payload is not None:
+            return self.payload
         return {"errorMessage": "limited", "errorCode": "E429"}
 
 
@@ -151,8 +196,20 @@ class _FakeSession:
 
 
 class _FakeDb:
+    def get_existing_links_for_query(self, *_args, **_kwargs):
+        return set()
+
     def upsert_news(self, *_args, **_kwargs):
         return 0, 0
+
+
+class _CaptureDb(_FakeDb):
+    def __init__(self):
+        self.items = []
+
+    def upsert_news(self, items, *_args, **_kwargs):
+        self.items = list(items)
+        return len(self.items), 0
 
 
 class TestImplementationBatchStability(unittest.TestCase):
@@ -177,6 +234,58 @@ class TestImplementationBatchStability(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertEqual(worker.last_error_meta["kind"], "rate_limit")
         self.assertEqual(worker.last_error_meta["cooldown_seconds"], 45)
+
+    def test_api_worker_skips_non_http_links_and_normalizes_publisher(self):
+        payload = {
+            "total": 3,
+            "items": [
+                {
+                    "title": "<b>Good</b>",
+                    "description": "desc",
+                    "link": "https://news.naver.com/article/1",
+                    "originallink": "https://www.Publisher.com/news?id=1",
+                    "pubDate": "2026-05-03",
+                },
+                {
+                    "title": "Original",
+                    "description": "desc",
+                    "link": "https://example.com/naver-copy",
+                    "originallink": "https://www.Origin.example.com/item",
+                    "pubDate": "2026-05-03",
+                },
+                {
+                    "title": "Bad",
+                    "description": "desc",
+                    "link": "javascript:alert(1)",
+                    "originallink": "file:///C:/secret.txt",
+                    "pubDate": "2026-05-03",
+                },
+            ],
+        }
+        db = _CaptureDb()
+        worker = ApiWorker(
+            "id",
+            "secret",
+            "AI",
+            "AI",
+            [],
+            db,
+            session=_FakeSession(_FakeResponse(200, payload=payload)),
+        )
+        results = []
+        worker.finished.connect(lambda result: results.append(result))
+
+        worker.run()
+
+        self.assertEqual([item["link"] for item in db.items], [
+            "https://news.naver.com/article/1",
+            "https://example.com/naver-copy",
+        ])
+        self.assertEqual([item["publisher"] for item in db.items], [
+            "publisher.com",
+            "origin.example.com",
+        ])
+        self.assertEqual(results[0]["filtered"], 1)
 
     def test_pending_restore_rename_prevents_repeat_when_delete_fails(self):
         with tempfile.TemporaryDirectory() as td:

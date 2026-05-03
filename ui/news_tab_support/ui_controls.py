@@ -324,9 +324,17 @@ class _NewsTabUIControlsMixin:
             self.btn_date_toggle.setChecked(date_active)
         self.date_container.setVisible(date_active)
         if str(payload.get("start_date", "") or ""):
-            self.date_start.setDate(QDate.fromString(str(payload.get("start_date")), "yyyy-MM-dd"))
+            parsed_start = QDate.fromString(str(payload.get("start_date")), "yyyy-MM-dd")
+            if parsed_start.isValid():
+                self.date_start.setDate(parsed_start)
         if str(payload.get("end_date", "") or ""):
-            self.date_end.setDate(QDate.fromString(str(payload.get("end_date")), "yyyy-MM-dd"))
+            parsed_end = QDate.fromString(str(payload.get("end_date")), "yyyy-MM-dd")
+            if parsed_end.isValid():
+                self.date_end.setDate(parsed_end)
+        if self.date_start.date() > self.date_end.date():
+            start_date = self.date_start.date()
+            self.date_start.setDate(self.date_end.date())
+            self.date_end.setDate(start_date)
         self._date_filter_active = date_active
         self._refresh_date_filter_controls()
         self._request_db_reload("저장 검색 적용")

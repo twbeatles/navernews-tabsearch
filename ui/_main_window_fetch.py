@@ -78,7 +78,16 @@ class _MainWindowFetchMixin:
         return None
 
     def _tab_refresh_interval_minutes(self: MainApp, keyword: str) -> Optional[int]:
-        policy = str(getattr(self, "tab_refresh_policies", {}).get(keyword, "inherit") or "inherit").lower()
+        policies = getattr(self, "tab_refresh_policies", {})
+        canonical_key = ""
+        canonical_for_keyword = getattr(self, "_canonical_fetch_key_for_keyword", None)
+        if callable(canonical_for_keyword):
+            canonical_key = str(canonical_for_keyword(keyword) or "")
+        policy = str(
+            policies.get(canonical_key, policies.get(keyword, "inherit"))
+            if isinstance(policies, dict)
+            else "inherit"
+        ).lower()
         if policy == "off":
             return None
         if policy == "inherit":
@@ -848,11 +857,27 @@ class _MainWindowFetchMixin:
 
             if not finished:
                 logger.warning("Worker cleanup timed out: %s (rid=%s)", handle.tab_keyword, request_id)
+                try:
+                    worker.deleteLater()
+                except (AttributeError, RuntimeError):
+                    pass
+                try:
+                    thread.deleteLater()
+                except (AttributeError, RuntimeError):
+                    pass
                 return False
 
             self._worker_registry.pop_by_request_id(request_id)
             self.workers.pop(handle.tab_keyword, None)
             self._request_start_index.pop(request_id, None)
+            try:
+                worker.deleteLater()
+            except (AttributeError, RuntimeError):
+                pass
+            try:
+                thread.deleteLater()
+            except (AttributeError, RuntimeError):
+                pass
             logger.info("Worker cleaned up: %s (rid=%s)", handle.tab_keyword, request_id)
             self._schedule_tab_hydration(25)
             return finished

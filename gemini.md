@@ -91,17 +91,32 @@ navernews-tabsearch/
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
 ├── news_icon.ico                # 애플리케이션 아이콘
-├── implementation_gap_review_2026-04-29.md # 2026-04-29 구현 갭 점검 및 완료 기록
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `272 passed, 5 subtests passed`
+- `python -m pytest -q` => `280 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
-- PyInstaller 빌드는 2026-04-29 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+- PyInstaller 빌드는 2026-05-03 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+
+### 2026-05-03 Implementation Risk Stabilization
+
+- 설정 import는 `saved_searches`를 이름 기준으로 병합하고 충돌 시 import payload를 우선한다.
+- `tab_refresh_policies`는 canonical fetch key 기준으로 저장/조회/병합하며, legacy raw 탭 key는 로드/import/save 과정에서 canonical key로 보정한다.
+- saved search import는 invalid/exclude-only target keyword를 빈 target으로 보정하고, 유효한 `yyyy-MM-dd` 날짜만 유지하며, 역전된 날짜 범위는 swap한다.
+- 제목/본문 텍스트 필터는 FTS 백필 완료 여부와 무관하게 다중 단어를 토큰 AND 의미로 처리하고, 단일 토큰 substring 검색은 유지한다.
+- read/bookmark/note/tag DB 쓰기 실패는 `DatabaseWriteError`로 별도 warning 로그를 남기며 UI 캐시를 성공처럼 바꾸지 않는다.
+- fetch worker cleanup은 registry, `workers`, request index를 정리하고 worker/thread `deleteLater()`를 명시 호출한다.
+- `ApiWorker`는 API item의 `http`/`https` 링크만 저장하고 유효 링크가 없으면 item을 skip하며, publisher는 URL host에서 `www.`를 제거해 산출한다.
+- `news_scraper_pro.spec`와 `.gitignore`를 다시 재검토했다. 이번 변경은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 변경이나 ignore rule 추가가 필요하지 않다.
+- 삭제 상태의 `implementation_gap_review_2026-04-29.md`는 문서 삭제 반영 대상으로 유지한다.
+- 검증:
+  - `python -m pytest -q` => `280 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 
 ### 2026-04-29 Implementation Gap Closure
 

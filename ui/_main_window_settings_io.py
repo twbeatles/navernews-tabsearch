@@ -525,6 +525,15 @@ class _MainWindowSettingsIOMixin:
             if keyword_groups is not None
             else dict(getattr(self.keyword_group_manager, "groups", {}))
         )
+        raw_tab_refresh_policies = dict(
+            tab_refresh_policies
+            if tab_refresh_policies is not None
+            else getattr(self, "tab_refresh_policies", {})
+        )
+        tab_refresh_policies_payload = self._canonicalize_tab_refresh_policies(
+            raw_tab_refresh_policies,
+            known_keywords=tabs_payload,
+        )
         pagination_state_payload = (
             {
                 str(fetch_key): max(1, min(1000, int(start_idx)))
@@ -610,12 +619,43 @@ class _MainWindowSettingsIOMixin:
             "saved_searches": dict(
                 saved_searches if saved_searches is not None else getattr(self, "saved_searches", {})
             ),
-            "tab_refresh_policies": dict(
-                tab_refresh_policies
-                if tab_refresh_policies is not None
-                else getattr(self, "tab_refresh_policies", {})
-            ),
+            "tab_refresh_policies": tab_refresh_policies_payload,
         }
+
+    def _canonicalize_tab_refresh_policies(
+        self: MainApp,
+        policies: Any,
+        *,
+        known_keywords: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        if not isinstance(policies, dict):
+            return {}
+
+        allowed = {"inherit", "off", "10", "30", "60", "120", "360"}
+        known_keys = {
+            self._canonical_fetch_key_for_keyword(keyword): keyword
+            for keyword in (known_keywords or [])
+            if isinstance(keyword, str) and self._canonical_fetch_key_for_keyword(keyword)
+        }
+        normalized: Dict[str, str] = {}
+        for raw_key, raw_policy in policies.items():
+            if not isinstance(raw_key, str):
+                continue
+            key_text = raw_key.strip()
+            if not key_text:
+                continue
+            canonical_key = key_text.lower() if "|" in key_text else self._canonical_fetch_key_for_keyword(key_text)
+            if not canonical_key:
+                continue
+            if known_keys and canonical_key not in known_keys and "|" not in key_text:
+                # Keep canonical/imported keys even when their tab is not open yet, but drop
+                # invalid raw labels that cannot be matched to a query identity.
+                pass
+            policy = str(raw_policy or "inherit").strip().lower()
+            if policy not in allowed:
+                policy = "inherit"
+            normalized[canonical_key] = policy
+        return normalized
 
     def _compute_imported_new_tabs(
         self: MainApp,
@@ -884,6 +924,26 @@ class _MainWindowSettingsIOMixin:
 
         imported_new_keywords, skipped_invalid_tabs = self._compute_imported_new_tabs(import_data.get("tabs", []))
         merged_keyword_groups = self._merge_imported_keyword_groups(import_data.get("keyword_groups", {}))
+        incoming_saved_searches = import_data.get("saved_searches", {})
+        merged_saved_searches = dict(getattr(self, "saved_searches", {}))
+        if isinstance(incoming_saved_searches, dict):
+            merged_saved_searches.update(incoming_saved_searches)
+
+        incoming_tab_refresh_policies = import_data.get("tab_refresh_policies", {})
+        merged_tab_refresh_policies = self._canonicalize_tab_refresh_policies(
+            getattr(self, "tab_refresh_policies", {}),
+            known_keywords=[tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)],
+        )
+        if isinstance(incoming_tab_refresh_policies, dict):
+            merged_tab_refresh_policies.update(
+                self._canonicalize_tab_refresh_policies(
+                    incoming_tab_refresh_policies,
+                    known_keywords=[
+                        tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)
+                    ] + imported_new_keywords,
+                )
+            )
+
         staged_config = self._build_runtime_config_payload(
             app_settings_overrides={
                 "theme_index": normalized_settings["theme_index"],
@@ -908,11 +968,8 @@ class _MainWindowSettingsIOMixin:
             keyword_groups=merged_keyword_groups,
             pagination_state=merged_pagination_state,
             pagination_totals=merged_pagination_totals,
-            saved_searches=import_data.get("saved_searches", getattr(self, "saved_searches", {})),
-            tab_refresh_policies=import_data.get(
-                "tab_refresh_policies",
-                getattr(self, "tab_refresh_policies", {}),
-            ),
+            saved_searches=merged_saved_searches,
+            tab_refresh_policies=merged_tab_refresh_policies,
             window_geometry=imported_geometry,
         )
         staged_config = normalize_loaded_config(staged_config)
@@ -927,6 +984,8 @@ class _MainWindowSettingsIOMixin:
             "skipped_invalid_tabs": skipped_invalid_tabs,
             "merged_keyword_groups": merged_keyword_groups,
             "staged_config": staged_config,
+            "saved_search_import_count": len(incoming_saved_searches) if isinstance(incoming_saved_searches, dict) else 0,
+            "tab_policy_import_count": len(incoming_tab_refresh_policies) if isinstance(incoming_tab_refresh_policies, dict) else 0,
         }
 
     def export_settings(self: MainApp):
@@ -1104,6 +1163,12 @@ class _MainWindowSettingsIOMixin:
             msg = "설정을 가져왔습니다."
             if imported_new_keywords:
                 msg += f" ({len(imported_new_keywords)}개 탭 추가)"
+            saved_search_import_count = int(stage.get("saved_search_import_count", 0) or 0)
+            tab_policy_import_count = int(stage.get("tab_policy_import_count", 0) or 0)
+            if saved_search_import_count > 0:
+                msg += f" / saved search {saved_search_import_count}개 병합"
+            if tab_policy_import_count > 0:
+                msg += f" / tab policy {tab_policy_import_count}개 병합"
             if skipped_invalid_tabs > 0:
                 msg += f" / 유효하지 않은 탭 {skipped_invalid_tabs}개 건너뜀"
             if import_warnings:

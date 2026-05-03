@@ -132,7 +132,15 @@ class _MainWindowConfigMixin:
             self.config.get("preferred_publishers", []),
         )
         self.saved_searches = dict(self.config.get("saved_searches", {}))
-        self.tab_refresh_policies = dict(self.config.get("tab_refresh_policies", {}))
+        canonicalize_policies = getattr(self, "_canonicalize_tab_refresh_policies", None)
+        raw_tab_refresh_policies = dict(self.config.get("tab_refresh_policies", {}))
+        if callable(canonicalize_policies):
+            self.tab_refresh_policies = canonicalize_policies(
+                raw_tab_refresh_policies,
+                known_keywords=list(self.tabs_data),
+            )
+        else:
+            self.tab_refresh_policies = raw_tab_refresh_policies
         self.keyword_group_manager.groups = self.keyword_group_manager._normalize_groups(
             self.config.get("keyword_groups", {})
         )
@@ -201,7 +209,14 @@ class _MainWindowConfigMixin:
                 if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
             },
             "saved_searches": dict(getattr(self, "saved_searches", {})),
-            "tab_refresh_policies": dict(getattr(self, "tab_refresh_policies", {})),
+            "tab_refresh_policies": (
+                self._canonicalize_tab_refresh_policies(
+                    getattr(self, "tab_refresh_policies", {}),
+                    known_keywords=tab_names,
+                )
+                if hasattr(self, "_canonicalize_tab_refresh_policies")
+                else dict(getattr(self, "tab_refresh_policies", {}))
+            ),
         }
 
         try:

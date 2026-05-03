@@ -286,6 +286,7 @@ class _MainWindowTabsMixin:
             self.tab_refresh_policies.pop(removed_keyword, None)
             removed_search_query, removed_exclude_words = parse_search_query(removed_keyword)
             removed_fetch_key = build_fetch_key(removed_search_query, removed_exclude_words)
+            self.tab_refresh_policies.pop(removed_fetch_key, None)
             self._prune_fetch_key_state(removed_fetch_key)
         self.save_config()
 
@@ -386,8 +387,12 @@ class _MainWindowTabsMixin:
                         "키워드 그룹 저장에 실패해 탭 이름 변경 내용을 그룹 설정에 반영하지 못했습니다."
                     )
 
-            if old_keyword in getattr(self, "tab_refresh_policies", {}):
-                self.tab_refresh_policies[new_keyword] = self.tab_refresh_policies.pop(old_keyword)
+            old_policy_key = self._canonical_fetch_key_for_keyword(old_keyword)
+            new_policy_key = self._canonical_fetch_key_for_keyword(new_keyword)
+            if old_policy_key in getattr(self, "tab_refresh_policies", {}):
+                self.tab_refresh_policies[new_policy_key] = self.tab_refresh_policies.pop(old_policy_key)
+            elif old_keyword in getattr(self, "tab_refresh_policies", {}):
+                self.tab_refresh_policies[new_policy_key] = self.tab_refresh_policies.pop(old_keyword)
             if old_keyword in getattr(self, "_last_auto_refresh_by_keyword", {}):
                 self._last_auto_refresh_by_keyword[new_keyword] = self._last_auto_refresh_by_keyword.pop(old_keyword)
 
@@ -436,7 +441,14 @@ class _MainWindowTabsMixin:
             ("120", "2시간"),
             ("360", "6시간"),
         ]
-        current_policy = str(getattr(self, "tab_refresh_policies", {}).get(keyword, "inherit") or "inherit")
+        policy_key = self._canonical_fetch_key_for_keyword(keyword)
+        current_policy = str(
+            getattr(self, "tab_refresh_policies", {}).get(
+                policy_key,
+                getattr(self, "tab_refresh_policies", {}).get(keyword, "inherit"),
+            )
+            or "inherit"
+        )
         for policy_value, label in policy_options:
             prefix = "✓ " if policy_value == current_policy else ""
             act = self._add_menu_action(refresh_policy_menu, f"{prefix}{label}")
@@ -475,13 +487,17 @@ class _MainWindowTabsMixin:
         normalized_policy = str(policy or "inherit").strip().lower()
         if not normalized_keyword:
             return
+        policy_key = self._canonical_fetch_key_for_keyword(normalized_keyword)
+        if not policy_key:
+            return
         if normalized_policy not in allowed:
             normalized_policy = "inherit"
         policies = dict(getattr(self, "tab_refresh_policies", {}))
+        policies.pop(normalized_keyword, None)
         if normalized_policy == "inherit":
-            policies.pop(normalized_keyword, None)
+            policies.pop(policy_key, None)
         else:
-            policies[normalized_keyword] = normalized_policy
+            policies[policy_key] = normalized_policy
         self.tab_refresh_policies = policies
         self.apply_refresh_interval()
         self.save_config()

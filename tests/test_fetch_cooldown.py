@@ -5,6 +5,8 @@ from typing import Any, cast
 
 from PyQt6.QtCore import QMutex
 
+from core.query_parser import build_fetch_key, parse_search_query
+from core.worker_registry import WorkerHandle, WorkerRegistry
 from ui._main_window_fetch import _MainWindowFetchMixin
 
 
@@ -46,6 +48,15 @@ class _DummyFetchMain:
     def _tab_refresh_interval_minutes(self, keyword):
         return cast(Any, _MainWindowFetchMixin)._tab_refresh_interval_minutes(cast(Any, self), keyword)
 
+    def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False, wait_ms=1000):
+        return cast(Any, _MainWindowFetchMixin).cleanup_worker(
+            cast(Any, self),
+            keyword=keyword,
+            request_id=request_id,
+            only_if_active=only_if_active,
+            wait_ms=wait_ms,
+        )
+
     def on_fetch_error(self, error_msg: str, keyword: str, is_sequential: bool = False, request_id=None, error_meta=None):
         return cast(Any, _MainWindowFetchMixin).on_fetch_error(
             cast(Any, self),
@@ -72,6 +83,8 @@ class _DummyFetchMain:
         self.interval_idx = 0
         self.tab_refresh_policies = {}
         self._last_auto_refresh_by_keyword = {}
+        self._worker_registry = WorkerRegistry()
+        self.workers = {}
 
     def is_maintenance_mode_active(self):
         return False
@@ -103,6 +116,12 @@ class _DummyFetchMain:
     def _schedule_tab_hydration(self, _delay_ms=0):
         return None
 
+    def _canonical_fetch_key_for_keyword(self, raw_keyword):
+        search_query, exclude_words = parse_search_query(raw_keyword)
+        if not search_query:
+            return ""
+        return build_fetch_key(search_query, exclude_words)
+
 
 class _DummyButton:
     def __init__(self):
@@ -126,6 +145,47 @@ class _DummyProgress:
 
     def setValue(self, value):
         self.value = int(value)
+
+
+class _FakeSignal:
+    def __init__(self):
+        self.disconnect_calls = 0
+
+    def disconnect(self):
+        self.disconnect_calls += 1
+
+
+class _FakeWorker:
+    def __init__(self):
+        self.finished = _FakeSignal()
+        self.error = _FakeSignal()
+        self.progress = _FakeSignal()
+        self.stop_calls = 0
+        self.delete_later_calls = 0
+
+    def stop(self):
+        self.stop_calls += 1
+
+    def deleteLater(self):
+        self.delete_later_calls += 1
+
+
+class _FakeThread:
+    def __init__(self, wait_result=True):
+        self.wait_result = wait_result
+        self.quit_calls = 0
+        self.wait_calls = []
+        self.delete_later_calls = 0
+
+    def quit(self):
+        self.quit_calls += 1
+
+    def wait(self, timeout):
+        self.wait_calls.append(timeout)
+        return self.wait_result
+
+    def deleteLater(self):
+        self.delete_later_calls += 1
 
 
 class _DummyLabel:
@@ -288,7 +348,45 @@ class TestFetchCooldown(unittest.TestCase):
         critical_mock.assert_called_once()
         self.assertEqual(dummy.toasts, [])
         self.assertEqual(dummy.desktop_notifications, [])
-        self.assertTrue(dummy.status_bar.messages)
+
+    def test_tab_refresh_policy_uses_canonical_key_before_raw_fallback(self):
+        dummy = _DummyFetchMain()
+        dummy.interval_idx = 1
+        dummy.tab_refresh_policies = {
+            "AI launch": "10",
+            "ai launch|": "30",
+            "경제|": "off",
+        }
+
+        self.assertEqual(dummy._tab_refresh_interval_minutes(" AI   launch "), 30)
+        self.assertIsNone(dummy._tab_refresh_interval_minutes("경제"))
+
+    def test_cleanup_worker_clears_registry_and_schedules_qobject_deletion(self):
+        dummy = _DummyFetchMain()
+        worker = _FakeWorker()
+        thread = _FakeThread()
+        handle = WorkerHandle(
+            request_id=7,
+            tab_keyword="AI",
+            search_keyword="AI",
+            db_keyword="AI",
+            exclude_words=[],
+            worker=cast(Any, worker),
+            thread=cast(Any, thread),
+        )
+        dummy._worker_registry.register(handle)
+        dummy.workers["AI"] = (worker, thread)
+        dummy._request_start_index[7] = 1
+
+        self.assertTrue(dummy.cleanup_worker(keyword="AI", request_id=7))
+
+        self.assertIsNone(dummy._worker_registry.get_by_request_id(7))
+        self.assertNotIn("AI", dummy.workers)
+        self.assertNotIn(7, dummy._request_start_index)
+        self.assertEqual(worker.stop_calls, 1)
+        self.assertEqual(worker.delete_later_calls, 1)
+        self.assertEqual(thread.quit_calls, 1)
+        self.assertEqual(thread.delete_later_calls, 1)
 
     def test_on_fetch_done_uses_new_count_for_notifications_and_alerts(self):
         dummy = _DummyFetchDoneMain()

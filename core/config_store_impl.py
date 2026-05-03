@@ -6,9 +6,11 @@ import logging
 import os
 import sys
 import tempfile
+from datetime import datetime
 from typing import Any, Dict, List, Mapping, Tuple, TypedDict
 
 from core.content_filters import normalize_publisher_filter_lists
+from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query
 
 logger = logging.getLogger(__name__)
 
@@ -346,6 +348,37 @@ def _to_pagination_totals(value: Any) -> Dict[str, int]:
     return normalized
 
 
+def _canonical_query_key(raw_keyword_or_key: Any) -> str:
+    text = str(raw_keyword_or_key or "").strip()
+    if not text:
+        return ""
+    if "|" in text:
+        return text.lower()
+    search_query, exclude_words = parse_search_query(text)
+    if not search_query:
+        return ""
+    return build_fetch_key(search_query, exclude_words)
+
+
+def _valid_date_string(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return parsed.strftime("%Y-%m-%d")
+
+
+def _normalize_saved_search_dates(start_value: Any, end_value: Any) -> Tuple[str, str]:
+    start_date = _valid_date_string(start_value)
+    end_date = _valid_date_string(end_value)
+    if start_date and end_date and start_date > end_date:
+        return end_date, start_date
+    return start_date, end_date
+
+
 def _to_saved_searches(value: Any) -> Dict[str, Dict[str, Any]]:
     if not isinstance(value, dict):
         return {}
@@ -358,15 +391,22 @@ def _to_saved_searches(value: Any) -> Dict[str, Dict[str, Any]]:
         if not name:
             continue
         payload = dict(raw_payload)
+        keyword = str(payload.get("keyword", "") or "").strip()[:100]
+        if keyword and not has_positive_keyword(keyword):
+            keyword = ""
+        start_date, end_date = _normalize_saved_search_dates(
+            payload.get("start_date", ""),
+            payload.get("end_date", ""),
+        )
         normalized[name] = {
-            "keyword": str(payload.get("keyword", "") or "").strip()[:100],
+            "keyword": keyword,
             "filter_txt": str(payload.get("filter_txt", "") or "").strip()[:200],
             "sort_mode": str(payload.get("sort_mode", "최신순") or "최신순"),
             "only_unread": _to_bool(payload.get("only_unread"), False),
             "hide_duplicates": _to_bool(payload.get("hide_duplicates"), False),
-            "date_active": _to_bool(payload.get("date_active"), False),
-            "start_date": str(payload.get("start_date", "") or "").strip(),
-            "end_date": str(payload.get("end_date", "") or "").strip(),
+            "date_active": _to_bool(payload.get("date_active"), False) and bool(start_date or end_date),
+            "start_date": start_date,
+            "end_date": end_date,
             "tag_filter": str(payload.get("tag_filter", "") or "").strip()[:30],
             "only_preferred_publishers": _to_bool(
                 payload.get("only_preferred_publishers"),
@@ -387,13 +427,13 @@ def _to_tab_refresh_policies(value: Any) -> Dict[str, str]:
     for raw_keyword, raw_policy in value.items():
         if not isinstance(raw_keyword, str):
             continue
-        keyword = raw_keyword.strip()
-        if not keyword:
+        query_key = _canonical_query_key(raw_keyword)
+        if not query_key:
             continue
         policy = str(raw_policy or "inherit").strip().lower()
         if policy not in allowed:
             policy = "inherit"
-        normalized[keyword] = policy
+        normalized[query_key] = policy
     return normalized
 
 

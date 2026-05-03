@@ -167,6 +167,30 @@ class TestFtsSearchAcceleration(unittest.TestCase):
             {"https://example.com/1", "https://example.com/2"},
         )
 
+    def test_multi_token_filter_uses_token_and_semantics_without_fts(self):
+        mgr = self._make_manager()
+        query_key = self._seed_rows(mgr)
+
+        rows = mgr.fetch_news(keyword="AI", query_key=query_key, filter_txt="launch AI")
+
+        self.assertEqual(
+            {row["link"] for row in rows},
+            {"https://example.com/1", "https://example.com/2"},
+        )
+
+    def test_multi_token_filter_uses_token_and_semantics_with_fts(self):
+        mgr = self._make_manager()
+        query_key = self._seed_rows(mgr)
+
+        while True:
+            result = mgr.backfill_news_fts_chunk(limit=10)
+            if result["done"]:
+                break
+
+        rows = mgr.fetch_news(keyword="AI", query_key=query_key, filter_txt="launch AI")
+
+        self.assertEqual([row["link"] for row in rows], ["https://example.com/1"])
+
     def test_start_backfill_defers_when_paused_and_resume_nudges_retry_timer(self):
         dummy = _DummyFtsMain()
         dummy._maintenance_mode = True

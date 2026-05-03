@@ -50,6 +50,7 @@
 - `DBWorker`가 interrupt 가능한 dedicated read connection을 사용하도록 바꿔 유지보수/종료/탭 정리 시 실제 취소 성공률을 높임
 - 통계/언론사 분석 다이얼로그는 즉시 열고 `InterruptibleReadWorker`로 비동기 로드해 닫힘 시 SQLite read interruption까지 함께 요청
 - SQLite FTS5(`news_fts`) + trigger + `app_meta` 기반 증분 backfill을 추가하고, backfill 완료 전에는 기존 `LIKE/NOT LIKE` 경로를 진실 원본으로 유지
+- 텍스트 필터의 다중 단어 입력은 FTS 백필 완료 여부와 무관하게 토큰 AND 검색으로 동작하며, 단일 토큰 substring 검색은 유지
 - SQLite FTS5(`news_fts`) 증분 backfill은 유지보수/전체 fetch/순차 refresh/종료 경계에서 pause/retry/resume 되며 `5초 -> 15초 -> 30초 cap` backoff로 재개
 - 레거시 DB의 `title_hash IS NULL` / `pubDate_ts IS NULL` backfill을 반복 배치 루프로 바꿔 대용량 DB에서도 startup migration 누락이 남지 않도록 보강
 - 시작 시 북마크와 현재 탭만 즉시 로드하고, 나머지 뉴스 탭은 hydration queue로 순차 로드하며 초기 hydration 취소는 request-id 기반 late cleanup으로 정리
@@ -149,12 +150,13 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-04-29)
+## 최신 검증 메모 (2026-05-03)
 
-- `python -m pytest -q` => `272 passed, 5 subtests passed`
+- `python -m pytest -q` => `280 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - 이번 변경에서는 PyInstaller 빌드는 실행하지 않았으며, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`입니다.
+- 삭제 상태의 `implementation_gap_review_2026-04-29.md`는 이번 문서 정리/푸쉬 범위에 포함했습니다.
 
 ## 프로젝트 구조
 
@@ -271,7 +273,6 @@ navernews-tabsearch/
 ├── workers.py                   # 호환 래퍼 (→ core.workers)
 ├── database_manager.py          # 호환 래퍼 (→ core.database)
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
-├── implementation_gap_review_2026-04-29.md # 2026-04-29 구현 갭 점검 및 완료 기록
 ├── backups/                     # 레거시 실행 폴더 백업(현재 런타임 백업은 DATA_DIR 하위 사용)
 └── dist/                        # PyInstaller 빌드 결과물
 ```
@@ -363,6 +364,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-27 기준 `.gitignore`에는 복원 적용 성공 후 남을 수 있는 `pending_restore.json.applied`를 추가로 무시하도록 보강했습니다.
 - 2026-04-27 기준 `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 다시 성공했으며, 산출물 `dist/NewsScraperPro_Safe.exe`가 정상 생성됩니다.
 - 2026-04-29 기준 `.gitignore`를 `git status --ignored --short`와 runtime/test/build 산출물 기준으로 다시 확인했고, `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, 로그, `__pycache__/`, runtime DB/config/backup/pending restore 잔여물이 기존 규칙으로 모두 무시되어 추가 수정은 필요하지 않았습니다.
+- 2026-05-03 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, import 병합/정규화, canonical tab refresh policy key, saved search 날짜 검증, 토큰 AND 검색, worker cleanup, API URL 정규화는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않음을 확인했습니다.
+- 2026-05-03 기준 `git status --ignored --short`로 `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, `__pycache__/`, runtime DB/config/log/backup/pending restore 잔여물이 계속 무시되는 것을 확인했고, `.gitignore` 추가 수정은 필요하지 않았습니다.
 - 2026-04-29 문서 정합화에서는 삭제 상태인 `implementation_risk_review_2026-04-27.md`를 되돌리지 않고 현재 작업트리 상태로 유지합니다.
 
 ## 네이버 API 키 설정
@@ -408,7 +411,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
 - `app_settings.blocked_publishers`와 `app_settings.preferred_publishers`는 쉼표 입력값을 trim/빈 값 제거/case-insensitive dedupe한 뒤 양쪽 충돌을 제거해 저장합니다.
 - `saved_searches`는 검색어, 텍스트 필터, 정렬, 안 읽음, 중복 숨김, 기간, 태그, 선호 출처 필터를 이름별 payload로 저장하며, 적용 시 저장된 검색어 탭으로 이동/생성하고 UI에서 삭제할 수 있습니다.
-- `tab_refresh_policies`는 탭 키워드별 자동 새로고침 override이며 값은 `inherit`, `off`, 또는 분 단위 문자열(`10`, `30`, `60`, `120`, `360`)입니다.
+- `tab_refresh_policies`는 canonical fetch key별 자동 새로고침 override이며 값은 `inherit`, `off`, 또는 분 단위 문자열(`10`, `30`, `60`, `120`, `360`)입니다. 레거시 raw 탭 키워드 key는 로드/import 시 가능한 범위에서 canonical key로 자동 보정됩니다.
 - 단일 인스턴스 잠금 파일(`news_scraper_pro.lock`)과 crash log(`crash_log.txt`)도 같은 runtime 경로 기준으로 관리됩니다.
 - `pagination_state`는 `fetch_key -> 마지막 API start index` 매핑이며, 필드가 없으면 기본값 `{}`로 로드됩니다.
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
@@ -448,6 +451,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, `get_top_publishers(...)`는 `query_key`가 있으면 대표 keyword 문자열과 무관하게 해당 query scope만 조회합니다.
 - `core.workers.DBWorker`는 `DBQueryScope + include_total + known_total_count` 계약을 사용해 append 시 total count round-trip을 생략하고, full reload에서만 `count_news(...)`를 실행합니다.
 - `core.workers.ApiWorker`는 `last_error_meta(kind/status_code/cooldown_seconds/retryable)`를 남기며, `MainApp.on_fetch_error(...)`는 이를 읽어 전역 fetch cooldown을 갱신합니다.
+- `core.workers.ApiWorker`는 API 응답의 `originallink`/`link` 중 `http`/`https` URL만 저장 후보로 삼고, 둘 다 유효하지 않으면 해당 item을 건너뜁니다. publisher는 유효한 URL host에서 `www.`를 제거해 산출합니다.
 - `DatabaseManager.iter_news_snapshot_batches(...)`는 현재 탭 필터 전체 결과를 단일 read snapshot 위에서 순회해 CSV export 일관성을 보장합니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유하며, 도메인 값은 `example.com`이 `example.com`/`news.example.com`에 매칭되고 `badexample.com`에는 매칭되지 않습니다.
 - `DatabaseManager.get_tags(link)`, `set_tags(link, tags)`, `get_known_tags()`가 기사 태그 CRUD와 태그 필터 목록을 담당합니다.
@@ -471,6 +475,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 대표 키워드(`db_keyword`)는 첫 번째 양(+) 키워드를 사용합니다. 예: `인공지능 AI -광고` → 대표 키워드: `인공지능`
 - 실제 탭 범위/배지/분석/중복 판정/페이지 상태는 `query_key = build_fetch_key(parse_search_query(raw_tab_query))` 기준으로 동작합니다.
 - 기존 DB에서 마이그레이션된 멀티 키워드 탭은 각 탭을 한 번 새로고침한 뒤부터 정확히 분리됩니다.
+- 제목/본문 텍스트 필터에서 공백으로 분리된 여러 단어는 모두 포함되어야 하는 토큰 AND 의미입니다. 예: `AI 삼성`은 순서와 간격이 달라도 두 토큰이 모두 있는 기사를 찾고, `AI` 같은 단일 토큰은 기존 substring 검색처럼 동작합니다.
 
 ## 설정 Export/Import
 
@@ -478,7 +483,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외되고, `settings.auto_start_enabled`는 export/import 대상에 포함됩니다.
 - import 시 `tabs`는 `canonical query` 기준 dedupe, `keyword_groups`는 merge, `search_history`는 `canonical query` 기준 imported-first dedupe 후 최대 10개로 정리합니다.
 - `pagination_state`와 `pagination_totals`는 fetch key별로 병합하며 충돌 시 더 큰 값을 유지합니다.
-- `saved_searches`와 `tab_refresh_policies`는 로드/import 시 payload와 정책값을 정규화하며, 알 수 없는 탭별 자동 새로고침 값은 `inherit`으로 보정합니다.
+- `saved_searches`는 이름 기준으로 기존값과 import값을 병합하고, 같은 이름은 import payload를 우선합니다. 저장된 검색의 target keyword가 비어 있거나 exclude-only이면 빈 target으로 보정하고, 날짜는 유효한 `yyyy-MM-dd`만 유지하며 시작일/종료일 역전은 자동 swap합니다.
+- `tab_refresh_policies`는 canonical fetch key 기준으로 저장/조회/병합합니다. import 충돌은 import payload를 우선하며, raw 탭 키워드 key는 현재 탭/검색 의미와 맞춰 canonical key로 rebasing합니다.
 - import는 `1.1`과 `1.2`를 모두 허용하며, 자동 시작/시작 최소화는 환경 가용성에 따라 안전한 값으로 보정됩니다.
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
 - 시작프로그램 기능을 사용할 수 없는 환경에서 import된 `auto_start_enabled=true`는 `False`로 강제되고, 가능한 환경에서는 실제 레지스트리 상태까지 동기화합니다.

@@ -1,5 +1,7 @@
 # Claude AI Assistant Guidelines - 뉴스 스크래퍼 Pro
 
+> Encoding note: this repository's text files are UTF-8. If Korean text looks broken in PowerShell, run `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()` and set `$OutputEncoding` to UTF-8 before inspecting files.
+
 > 이 문서는 Claude AI를 위한 프로젝트 컨텍스트 및 지침입니다.
 
 ---
@@ -131,7 +133,6 @@ navernews-tabsearch/
 ├── styles.py                    # 호환 래퍼 (→ ui.styles)
 ├── news_icon.ico                # 앱 아이콘
 ├── README.md                    # 사용자 문서
-├── implementation_gap_review_2026-04-29.md # 2026-04-29 구현 갭 점검 및 완료 기록
 └── dist/                        # PyInstaller 빌드 결과물
 ```
 
@@ -139,11 +140,30 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `272 passed, 5 subtests passed`
+- `python -m pytest -q` => `280 passed, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
-- PyInstaller 빌드는 이번 2026-04-29 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+- PyInstaller 빌드는 이번 2026-05-03 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+
+---
+
+## 🚀 2026-05-03 Implementation Risk Stabilization + Docs/Spec/Gitignore Revalidation
+
+- Settings import now merges `saved_searches` by name with import payloads winning conflicts.
+- `tab_refresh_policies` now use canonical fetch keys across load/import/save/rename/close/lookup; legacy raw keys are rebased where possible.
+- Saved search import normalizes invalid/exclude-only targets to an empty target, accepts only valid `yyyy-MM-dd` dates, and swaps reversed date ranges.
+- Text filters use token-AND semantics for multi-word title/body filtering regardless of FTS backfill state, while single-token substring behavior remains unchanged.
+- Read/bookmark/note/tag DB write failures log `DatabaseWriteError` separately and keep UI caches unchanged.
+- Fetch worker cleanup now clears registry/request state and explicitly schedules worker/thread `deleteLater()`.
+- `ApiWorker` stores only `http`/`https` API item links, skips items with no valid final link, and derives publisher from normalized URL host without leading `www.`.
+- `news_scraper_pro.spec` was re-reviewed; no additional hidden import/exclude/data change is required.
+- `.gitignore` was rechecked with `git status --ignored --short`; existing runtime/build/test ignore rules still cover current outputs.
+- Deleted `implementation_gap_review_2026-04-29.md` is intentionally carried forward as a document deletion.
+- Validation:
+  - `python -m pytest -q` => `280 passed, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 
 ---
 
@@ -155,6 +175,10 @@ navernews-tabsearch/
 - Publisher visibility now normalizes blocked/preferred conflicts, supports domain suffix matching, and drives list/count/badge/tray/stat/analysis visibility consistently.
 - Saved search apply moves to or creates the stored keyword tab before applying payload, and saved searches can be deleted from the tab UI.
 - Import staging normalizes `saved_searches`/`tab_refresh_policies` immediately and reloads existing tabs when publisher visibility changes.
+- Settings import merges `saved_searches` by name with import payloads winning conflicts; `tab_refresh_policies` are stored and looked up by canonical fetch key, with legacy raw keys rebased on load/import.
+- Saved search import drops invalid/exclude-only target keywords to an empty target, accepts only valid `yyyy-MM-dd` dates, and swaps reversed ranges.
+- Text filters use token-AND semantics for multi-word title/body filtering regardless of FTS backfill state; single-token substring behavior is preserved.
+- `ApiWorker` stores only `http`/`https` API item links and derives publisher from the normalized URL host without a leading `www.`.
 - Auto-refresh due timestamps update only after successful sequential auto fetch callbacks.
 - `.gitignore` was rechecked against ignored runtime/test/build outputs; no additional ignore rule is needed for the 2026-04-29 changes.
 - The deleted `implementation_risk_review_2026-04-27.md` remains deleted and should be included as-is when committing the current workspace.

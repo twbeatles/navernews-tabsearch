@@ -1,6 +1,26 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Implementation Risk Stabilization + Docs/Spec/Gitignore Revalidation (2026-05-03)**:
+  - Settings import/export:
+    - `saved_searches` now merge by name and import payloads win conflicts.
+    - `tab_refresh_policies` now store, load, import, rename, close, and look up policies by canonical fetch key, with legacy raw tab keys rebased during load/import/save.
+    - Import summaries now include saved-search and tab-policy merge counts.
+  - Saved search / filtering / worker behavior:
+    - Saved search import normalizes invalid or exclude-only target keywords to an empty target, accepts only valid `yyyy-MM-dd` dates, and swaps reversed date ranges.
+    - UI saved-search application avoids setting invalid `QDate` values.
+    - Title/body text filters now use token-AND semantics for multi-word input regardless of FTS backfill state, while single-token substring search remains unchanged.
+    - Read/bookmark/note/tag write failures log `DatabaseWriteError` separately and keep UI caches unchanged.
+    - Fetch worker cleanup now explicitly schedules worker/thread `deleteLater()` and clears registry/request state across cleanup paths.
+  - API / docs / repo hygiene:
+    - `ApiWorker` now stores only `http`/`https` links from API items and skips items with no valid final link; publisher is derived from a normalized URL host without leading `www.`.
+    - Re-synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec`.
+    - Re-reviewed `.gitignore` with `git status --ignored --short`; existing runtime/build/test ignore rules cover current outputs, so no new ignore entry was required.
+    - The deleted `implementation_gap_review_2026-04-29.md` is intentionally included in this push as a workspace deletion.
+  - Validation:
+    - `python -m pytest -q` => `280 passed, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - **Implementation Gap Closure + Docs/Gitignore Revalidation (2026-04-29)**:
   - Startup / restore ordering:
     - `core.bootstrap.main()` now resolves the single-instance lock / existing-instance notify path before applying pending restore.

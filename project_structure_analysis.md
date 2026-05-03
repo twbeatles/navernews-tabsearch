@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-04-29)
+작성일: 2026-03-16 (최근 갱신: 2026-05-03)
 
 ## 분석 범위
 
@@ -16,6 +16,21 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-05-03 구현 리스크 안정화 / 문서·spec·gitignore 재검증
+
+이번 재검증에서는 설정 import 데이터 손실 방지, canonical 정책 key 일관화, saved search 검증, 다중 단어 필터 의미, worker/API edge case를 코드와 문서 기준으로 맞췄다.
+
+- `core.config_store_impl.py`는 `saved_searches`를 이름 기준으로 병합하고 import payload를 우선하며, saved search 날짜/target keyword를 import 단계에서 정규화한다.
+- `ui/_main_window_settings_io.py`, `ui/main_window_support/config.py`, `ui/_main_window_tabs.py`, `ui/_main_window_fetch.py`는 `tab_refresh_policies`를 canonical fetch key 기준으로 저장/조회/병합하고 legacy raw key를 가능한 범위에서 rebasing한다.
+- `core._db_queries.py`는 제목/본문 텍스트 필터의 다중 단어를 토큰 AND 의미로 처리하며, FTS 백필 완료 여부와 무관하게 LIKE fallback과 같은 결과 의미를 유지한다.
+- `ui/news_tab_support/actions.py`는 read/bookmark/note/tag 쓰기 실패에서 `DatabaseWriteError`를 별도 warning 로그로 남기고 UI 캐시를 변경하지 않는다.
+- `ui/_main_window_fetch.py`는 cleanup 성공/실패 경로에서 worker/thread `deleteLater()`를 명시 호출하고 registry/request state를 정리한다.
+- `core.workers.ApiWorker`는 API item의 `http`/`https` 링크만 저장하며 유효 링크가 없으면 skip하고, publisher는 정규화된 URL host 기준으로 산출한다.
+- `news_scraper_pro.spec`는 이번 변경도 표준 라이브러리/기존 번들 의존성만 사용함을 재확인했으며, 추가 hidden import/exclude/data 변경은 필요하지 않다.
+- `.gitignore`는 `git status --ignored --short` 기준으로 `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, `__pycache__/`, runtime DB/config/log/backup/pending restore 잔여물을 모두 무시하고 있어 추가 규칙이 필요하지 않다.
+- 삭제 상태의 `implementation_gap_review_2026-04-29.md`는 이번 푸쉬에 포함할 문서 삭제로 유지한다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `280 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`이다. 2026-05-03 변경에서는 PyInstaller 빌드를 재실행하지 않았다.
 
 ## 0. 2026-04-29 구현 갭 클로저 / 문서·gitignore 재검증
 
@@ -245,7 +260,6 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `README.md` | 사용자/개발자 관점의 공식 구조 요약 |
 | `claude.md`, `gemini.md` | AI 작업 지침이지만, 실제로는 아키텍처 메모와 수정 규칙 문서 역할도 겸함 |
 | `update_history.md` | 버전별 변경 이력의 단일 기준 문서 |
-| `implementation_gap_review_2026-04-29.md` | 2026-04-29 구현 갭 점검 및 완료 기록 |
 | `pytest.ini` | 테스트 진입점 고정 |
 | `pyrightconfig.json` | 타입 검사 범위 및 Windows/Python 3.14 기준 고정 |
 

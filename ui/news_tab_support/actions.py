@@ -1,16 +1,20 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional, cast
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
+from core.database import DatabaseWriteError
 from core.content_filters import normalize_tags, tags_to_csv
 from core.workers import IterativeJobWorker
 from ui.dialogs import NoteDialog
 from ui.protocols import MainWindowProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class _NewsTabActionsMixin:
@@ -98,7 +102,11 @@ class _NewsTabActionsMixin:
 
         try:
             updated = self.db.update_status(link, "is_read", 1 if now_read else 0)
+        except DatabaseWriteError as exc:
+            logger.warning("Read-state update failed for %s: %s", link, exc)
+            updated = False
         except Exception:
+            logger.exception("Unexpected read-state update failure for %s", link)
             updated = False
         if not updated:
             self._emit_local_action_failure(failure_message)
@@ -138,7 +146,11 @@ class _NewsTabActionsMixin:
 
         try:
             updated = self.db.update_status(link, "is_bookmarked", new_value)
+        except DatabaseWriteError as exc:
+            logger.warning("Bookmark update failed for %s: %s", link, exc)
+            updated = False
         except Exception:
+            logger.exception("Unexpected bookmark update failure for %s", link)
             updated = False
         if not updated:
             self._emit_local_action_failure(failure_message)
@@ -185,7 +197,11 @@ class _NewsTabActionsMixin:
         new_note = str(note or "")
         try:
             updated = self.db.save_note(link, new_note)
+        except DatabaseWriteError as exc:
+            logger.warning("Note save failed for %s: %s", link, exc)
+            updated = False
         except Exception:
+            logger.exception("Unexpected note save failure for %s", link)
             updated = False
         if not updated:
             self._emit_local_action_failure(failure_message)
@@ -243,7 +259,12 @@ class _NewsTabActionsMixin:
             if not self.db.set_tags(link, tags):
                 self._emit_local_action_failure("태그를 저장하지 못했습니다. 기사가 이미 삭제되었을 수 있습니다.")
                 return False
+        except DatabaseWriteError as exc:
+            logger.warning("Tag save failed for %s: %s", link, exc)
+            self._emit_local_action_failure("태그를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.")
+            return False
         except Exception:
+            logger.exception("Unexpected tag save failure for %s", link)
             self._emit_local_action_failure("태그를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.")
             return False
         target["tags"] = ",".join(tags)

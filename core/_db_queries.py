@@ -18,13 +18,19 @@ RE_FTS_ACCEL_TOKEN = re.compile(r"[0-9A-Za-z\u3131-\u318E\uAC00-\uD7A3]{2,}")
 
 
 class _DatabaseQueriesMixin:
+    def _filter_tokens(self: DatabaseManager, filter_txt: str) -> List[str]:
+        raw = str(filter_txt or "").strip()
+        if not raw:
+            return []
+        return [token.strip() for token in RE_FTS_ACCEL_TOKEN.findall(raw) if token.strip()]
+
     def _fts_match_expression(self: DatabaseManager, filter_txt: str) -> str:
         raw = str(filter_txt or "").strip()
         if not raw:
             return ""
         if not self.is_news_fts_backfill_complete():
             return ""
-        tokens = RE_FTS_ACCEL_TOKEN.findall(raw)
+        tokens = self._filter_tokens(raw)
         if len(tokens) < 2:
             return ""
         lowered = []
@@ -36,6 +42,26 @@ class _DatabaseQueriesMixin:
         if len(lowered) < 2:
             return ""
         return " AND ".join(lowered)
+
+    def _append_text_filter_clause(
+        self: DatabaseManager,
+        params: List[Any],
+        filter_txt: str,
+    ) -> str:
+        raw = str(filter_txt or "").strip()
+        if not raw:
+            return ""
+        tokens = self._filter_tokens(raw)
+        if len(tokens) >= 2:
+            clauses: List[str] = []
+            for token in tokens:
+                clauses.append("(n.title LIKE ? OR n.description LIKE ?)")
+                wildcard = f"%{token}%"
+                params.extend([wildcard, wildcard])
+            return " AND " + " AND ".join(clauses)
+        wildcard = f"%{raw}%"
+        params.extend([wildcard, wildcard])
+        return " AND (n.title LIKE ? OR n.description LIKE ?)"
 
     def _append_news_scope_clause(
         self: DatabaseManager,
@@ -237,10 +263,7 @@ class _DatabaseQueriesMixin:
                     tag_filter=tag_filter,
                 )
 
-                if filter_txt:
-                    query += " AND (n.title LIKE ? OR n.description LIKE ?)"
-                    wildcard = f"%{filter_txt}%"
-                    params.extend([wildcard, wildcard])
+                query += self._append_text_filter_clause(params, filter_txt)
 
                 if exclude_words:
                     for exclude_word in exclude_words:
@@ -358,10 +381,7 @@ class _DatabaseQueriesMixin:
                     tag_filter=tag_filter,
                 )
 
-                if filter_txt:
-                    query += " AND (n.title LIKE ? OR n.description LIKE ?)"
-                    wildcard = f"%{filter_txt}%"
-                    params.extend([wildcard, wildcard])
+                query += self._append_text_filter_clause(params, filter_txt)
 
                 if exclude_words:
                     for exclude_word in exclude_words:

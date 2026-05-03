@@ -75,6 +75,24 @@ def _retry_after_seconds_from_response(response: Any) -> int:
     return _parse_retry_after_seconds(header_value)
 
 
+def _normalized_http_url(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return urllib.parse.urlunparse(parsed)
+
+
+def _publisher_from_url(value: str) -> str:
+    parsed = urllib.parse.urlparse(str(value or ""))
+    host = parsed.netloc.strip().lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host or "정보 없음"
+
+
 @contextmanager
 def perf_timer(scope: str, meta: str = ""):
     started = time.perf_counter()
@@ -539,23 +557,20 @@ class ApiWorker(QObject):
                                     if should_exclude:
                                         continue
 
-                                naver_link = item.get("link", "")
-                                org_link = item.get("originallink", "")
+                                naver_link = _normalized_http_url(item.get("link", ""))
+                                org_link = _normalized_http_url(item.get("originallink", ""))
                                 if "news.naver.com" in naver_link:
                                     final_link = naver_link
                                 elif "news.naver.com" in org_link:
                                     final_link = org_link
                                 else:
-                                    final_link = naver_link if naver_link else org_link
+                                    final_link = naver_link or org_link
+                                if not final_link:
+                                    filtered_count += 1
+                                    continue
 
-                                publisher = "정보 없음"
-                                if org_link:
-                                    publisher = urllib.parse.urlparse(org_link).netloc.replace("www.", "")
-                                elif final_link:
-                                    if "news.naver.com" in final_link:
-                                        publisher = "네이버뉴스"
-                                    else:
-                                        publisher = urllib.parse.urlparse(final_link).netloc.replace("www.", "")
+                                publisher_source = org_link or final_link
+                                publisher = _publisher_from_url(publisher_source)
 
                                 items.append(
                                     {
