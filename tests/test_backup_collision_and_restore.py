@@ -1,6 +1,8 @@
 import datetime
 import json
+import os
 import sqlite3
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -54,6 +56,26 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
             self.assertNotEqual(path1.name, path2.name)
             self.assertTrue(path1.exists())
             self.assertTrue(path2.exists())
+
+    def test_delete_backup_removes_readonly_windows_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "db.sqlite"
+            cfg.write_text("{}", encoding="utf-8")
+            db.write_text("db", encoding="utf-8")
+            backup = AutoBackup(config_file=str(cfg), db_file=str(db))
+            backup_dir = Path(backup.backup_dir) / "backup_readonly"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            payload = backup_dir / "backup_info.json"
+            payload.write_text("{}", encoding="utf-8")
+            os.chmod(payload, stat.S_IREAD)
+            os.chmod(backup_dir, stat.S_IREAD)
+
+            deleted, error = backup.delete_backup("backup_readonly")
+
+            self.assertTrue(deleted, error)
+            self.assertFalse(backup_dir.exists())
 
     def test_restore_backup_fails_when_db_backup_missing(self):
         with tempfile.TemporaryDirectory() as td:

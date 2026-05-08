@@ -557,7 +557,24 @@ class _MainWindowFetchMixin:
 
         old_handle = self._worker_registry.get_active_handle(keyword)
         if old_handle:
-            self.cleanup_worker(keyword=keyword, request_id=old_handle.request_id, only_if_active=True)
+            if not self.cleanup_worker(keyword=keyword, request_id=old_handle.request_id, only_if_active=True):
+                logger.warning("Fetch skipped because previous worker is still stopping: %s", keyword)
+                if located_tab := self._find_news_tab(keyword):
+                    _tab_index, tab_widget = located_tab
+                    btn_load = getattr(tab_widget, "btn_load", None)
+                    if btn_load is not None:
+                        btn_load.setEnabled(True)
+                    self.sync_tab_load_more_state(keyword)
+                if is_sequential:
+                    self._on_sequential_fetch_done(keyword)
+                else:
+                    self.progress.setVisible(False)
+                    self.btn_refresh.setEnabled(True)
+                    self._status_bar().showMessage(
+                        f"'{keyword}' 이전 새로고침이 아직 종료 중이라 이번 요청을 건너뛰었습니다.",
+                        4000,
+                    )
+                return
 
         located_tab = self._find_news_tab(keyword)
         if located_tab is not None:
@@ -860,8 +877,12 @@ class _MainWindowFetchMixin:
 
             finished = True
             try:
-                thread.quit()
-                finished = thread.wait(max(0, int(wait_ms)))
+                if thread.isRunning():
+                    thread.quit()
+                    if QThread.currentThread() is thread:
+                        finished = False
+                    else:
+                        finished = thread.wait(max(0, int(wait_ms)))
             except (AttributeError, RuntimeError):
                 pass
 

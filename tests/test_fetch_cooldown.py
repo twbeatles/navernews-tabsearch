@@ -73,6 +73,8 @@ class _DummyFetchMain:
         self.warning_messages = []
         self.status_bar = _DummyStatusBar()
         self._last_fetch_request_ts = {}
+        self._fetch_dedupe_notified_keys = set()
+        self._fetch_dedupe_window_sec = 10.0
         self._request_start_index = {}
         self._network_error_count = 0
         self._max_network_errors = 3
@@ -176,6 +178,9 @@ class _FakeThread:
         self.quit_calls = 0
         self.wait_calls = []
         self.delete_later_calls = 0
+
+    def isRunning(self):
+        return True
 
     def quit(self):
         self.quit_calls += 1
@@ -412,6 +417,29 @@ class TestFetchCooldown(unittest.TestCase):
         self.assertIn(8, dummy._request_start_index)
         self.assertEqual(worker.delete_later_calls, 0)
         self.assertEqual(thread.delete_later_calls, 0)
+
+    def test_fetch_news_skips_new_worker_when_previous_worker_is_still_stopping(self):
+        dummy = _DummyFetchDoneMain()
+        worker = _FakeWorker()
+        thread = _FakeThread(wait_result=False)
+        handle = WorkerHandle(
+            request_id=9,
+            tab_keyword="AI launch",
+            search_keyword="AI launch",
+            db_keyword="AI launch",
+            exclude_words=[],
+            worker=cast(Any, worker),
+            thread=cast(Any, thread),
+        )
+        dummy._worker_registry.register(handle)
+        dummy.workers["AI launch"] = (worker, thread)
+
+        with mock.patch("ui._main_window_fetch.ApiWorker", side_effect=AssertionError("new worker should not start")):
+            dummy.fetch_news("AI launch")
+
+        self.assertIn("AI launch", dummy.workers)
+        self.assertIn("아직 종료 중", dummy.status_bar.messages[-1])
+        self.assertTrue(dummy.btn_refresh.enabled)
 
     def test_on_fetch_done_uses_new_count_for_notifications_and_alerts(self):
         dummy = _DummyFetchDoneMain()

@@ -175,6 +175,43 @@ class _FakeDb:
         return []
 
 
+class _FakeButton:
+    def __init__(self):
+        self.enabled_values: list[bool] = []
+
+    def setEnabled(self, value):
+        self.enabled_values.append(bool(value))
+
+
+class _FakeStatusLabel:
+    def __init__(self):
+        self.text = ""
+
+    def setText(self, value):
+        self.text = str(value)
+
+
+class _CallbackFailureTab:
+    keyword = "AI"
+
+    def __init__(self):
+        self._load_request_id = 5
+        self._request_scope_signatures = {5: ("scope",)}
+        self._pending_append_request_ids = {5}
+        self._pending_scroll_restore = 10
+        self._is_loading_more = True
+        self._initial_request_id = 5
+        self._initial_load_inflight = True
+        self.btn_load = _FakeButton()
+        self.lbl_status = _FakeStatusLabel()
+
+    def on_data_loaded(self, *_args, **_kwargs):
+        raise RuntimeError("render failed")
+
+    def _handle_db_worker_callback_failure(self, phase, exc, request_id):
+        return NewsTab._handle_db_worker_callback_failure(cast(Any, self), phase, exc, request_id)
+
+
 class TestShutdownCleanup(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -243,6 +280,19 @@ class TestShutdownCleanup(unittest.TestCase):
         self.assertNotIn(7, tab._cancelled_initial_request_ids)
         self.assertEqual(tab.news_data_cache, [])
         self.assertFalse(tab._initial_load_completed)
+
+    def test_db_worker_loaded_callback_failure_does_not_escape_qt_slot(self):
+        tab = _CallbackFailureTab()
+
+        NewsTab._handle_db_worker_loaded(cast(Any, tab), [], 0, request_id=5)
+
+        self.assertNotIn(5, tab._request_scope_signatures)
+        self.assertNotIn(5, tab._pending_append_request_ids)
+        self.assertFalse(tab._is_loading_more)
+        self.assertFalse(tab._initial_load_inflight)
+        self.assertIsNone(tab._initial_request_id)
+        self.assertEqual(tab.btn_load.enabled_values, [True])
+        self.assertIn("데이터 표시 중 오류", tab.lbl_status.text)
 
 
 if __name__ == "__main__":

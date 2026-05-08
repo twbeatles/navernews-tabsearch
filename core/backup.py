@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import stat
 import tempfile
 import traceback
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,21 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 PENDING_RESTORE_FILENAME = "pending_restore.json"
+
+
+def _retry_remove_readonly(func, path: str, _exc_info) -> None:
+    try:
+        os.chmod(path, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
+    except OSError:
+        pass
+    func(path)
+
+
+def _rmtree_force(path: str) -> None:
+    try:
+        shutil.rmtree(path, onexc=_retry_remove_readonly)
+    except TypeError:
+        shutil.rmtree(path, onerror=_retry_remove_readonly)
 
 
 def _write_json_atomic(path: str, payload: Dict[str, Any]) -> None:
@@ -93,7 +109,7 @@ def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
 
 def _cleanup_restore_stage_dir(staging_dir: str) -> None:
     try:
-        shutil.rmtree(staging_dir)
+        _rmtree_force(staging_dir)
     except FileNotFoundError:
         return
     except Exception as cleanup_error:
@@ -177,7 +193,7 @@ def _validate_sqlite_backup(db_backup: str) -> str:
                 pass
         if temp_dir is not None:
             try:
-                shutil.rmtree(temp_dir)
+                _rmtree_force(temp_dir)
             except Exception:
                 pass
 
@@ -562,7 +578,7 @@ class AutoBackup:
             traceback.print_exc()
             if "backup_path" in locals() and backup_path:
                 try:
-                    shutil.rmtree(backup_path)
+                    _rmtree_force(backup_path)
                 except Exception as cleanup_error:
                     logger.warning("실패한 백업 폴더 정리 실패: %s", cleanup_error)
             return None
@@ -856,7 +872,7 @@ class AutoBackup:
             return False, "삭제할 백업 경로가 존재하지 않습니다."
 
         try:
-            shutil.rmtree(backup_path)
+            _rmtree_force(backup_path)
         except Exception as e:
             return False, str(e)
 

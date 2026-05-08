@@ -980,8 +980,11 @@ class DBWorker(QThread):
 
                 self.finished.emit(data, total_count)
         except Exception as e:
+            if self._is_cancelled or "interrupted" in str(e).lower():
+                logger.info("DBWorker cancelled during query: %s", self.scope.keyword)
+                return
+            logger.exception("DBWorker failed: %s", self.scope.keyword)
             self.error.emit(str(e))
-            traceback.print_exc()
         finally:
             if self._conn is not None:
                 try:

@@ -209,15 +209,68 @@ class _NewsTabLoadingMixin:
                 known_total_count=self._total_filtered_count if append else None,
             )
             self.worker.finished.connect(
-                lambda data, total_count, rid=current_request_id, worker_ref=self.worker: self.on_data_loaded(
+                lambda data, total_count, rid=current_request_id, worker_ref=self.worker: self._handle_db_worker_loaded(
                     data,
                     total_count,
                     request_id=rid,
                     unread_count=getattr(worker_ref, "last_unread_count", None),
                 )
             )
-            self.worker.error.connect(lambda err_msg, rid=current_request_id: self.on_data_error(err_msg, rid))
+            self.worker.error.connect(lambda err_msg, rid=current_request_id: self._handle_db_worker_error(err_msg, rid))
             self.worker.start()
+
+    def _handle_db_worker_callback_failure(
+        self,
+        phase: str,
+        exc: BaseException,
+        request_id: Optional[int],
+    ) -> None:
+        logger.exception(
+            "NewsTab DB worker %s callback failed (%s, rid=%s): %s",
+            phase,
+            self.keyword,
+            request_id,
+            exc,
+        )
+        if request_id is not None:
+            self._request_scope_signatures.pop(request_id, None)
+            self._pending_append_request_ids.discard(request_id)
+        if request_id is None or request_id == self._load_request_id:
+            self._is_loading_more = False
+            self._pending_scroll_restore = 0
+            self._initial_request_id = None
+            self._initial_load_inflight = False
+            try:
+                self.btn_load.setEnabled(True)
+            except Exception:
+                pass
+            try:
+                self.lbl_status.setText(f"⚠️ 데이터 표시 중 오류: {exc}")
+            except Exception:
+                pass
+
+    def _handle_db_worker_loaded(
+        self,
+        data,
+        total_count,
+        request_id: Optional[int] = None,
+        unread_count: Optional[int] = None,
+    ) -> None:
+        try:
+            self.on_data_loaded(
+                data,
+                total_count,
+                request_id=request_id,
+                unread_count=unread_count,
+            )
+        except Exception as exc:
+            self._handle_db_worker_callback_failure("loaded", exc, request_id)
+
+    def _handle_db_worker_error(self, err_msg, request_id: Optional[int] = None) -> None:
+        try:
+            self.on_data_error(err_msg, request_id)
+        except Exception as exc:
+            self._handle_db_worker_callback_failure("error", exc, request_id)
 
     def on_data_loaded(
         self,

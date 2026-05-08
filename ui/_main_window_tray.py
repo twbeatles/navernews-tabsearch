@@ -117,15 +117,27 @@ class _MainWindowTrayMixin:
             self._tray_unread_worker = worker
 
             def apply_unread(count):
-                self._tray_unread_cache = max(0, int(count or 0))
-                self._tray_unread_worker = None
-                if self._tray_unread_cache > 0:
-                    self.tray.setToolTip(f"{APP_NAME}\n📬 읽지 않은 기사: {self._tray_unread_cache:,}개")
-                else:
-                    self.tray.setToolTip(f"{APP_NAME}\n✅ 모든 기사를 읽었습니다")
+                try:
+                    self._tray_unread_cache = max(0, int(count or 0))
+                    if bool(getattr(self, "_shutdown_in_progress", False)):
+                        return
+                    tray = getattr(self, "tray", None)
+                    if not tray:
+                        return
+                    if self._tray_unread_cache > 0:
+                        tray.setToolTip(f"{APP_NAME}\n📬 읽지 않은 기사: {self._tray_unread_cache:,}개")
+                    else:
+                        tray.setToolTip(f"{APP_NAME}\n✅ 모든 기사를 읽었습니다")
+                except Exception as exc:
+                    logger.warning("트레이 unread 콜백 처리 오류: %s", exc)
+                finally:
+                    self._tray_unread_worker = None
 
             def clear_worker(*_args):
-                self._tray_unread_worker = None
+                try:
+                    self._tray_unread_worker = None
+                except Exception:
+                    pass
 
             worker.finished.connect(apply_unread)
             worker.error.connect(clear_worker)
