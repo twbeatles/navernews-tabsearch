@@ -12,7 +12,7 @@ from PyQt6.QtGui import QCloseEvent, QIcon
 from PyQt6.QtWidgets import QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from core.constants import APP_NAME
-from core.workers import InterruptibleReadWorker
+from core.workers import InterruptibleReadWorker, retain_worker_until_finished
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
@@ -277,6 +277,7 @@ class _MainWindowTrayMixin:
 
         try:
             self._shutdown_in_progress = True
+            defer_db_close = False
             if hasattr(self, "timer") and self.timer:
                 self.timer.stop()
             if hasattr(self, "_countdown_timer") and self._countdown_timer:
@@ -291,11 +292,12 @@ class _MainWindowTrayMixin:
             if hasattr(self, "_worker_registry"):
                 for handle in list(self._worker_registry.all_handles()):
                     try:
-                        self.cleanup_worker(
+                        if not self.cleanup_worker(
                             keyword=handle.tab_keyword,
                             request_id=handle.request_id,
                             only_if_active=False,
-                        )
+                        ):
+                            defer_db_close = True
                     except Exception as e:
                         logger.error(f"워커 종료 오류 ({handle.tab_keyword}, rid={handle.request_id}): {e}")
 
@@ -306,15 +308,44 @@ class _MainWindowTrayMixin:
             if export_worker is not None and export_worker.isRunning():
                 try:
                     export_worker.requestInterruption()
-                    export_worker.wait(1000)
+                    if not export_worker.wait(1000):
+                        retain_worker_until_finished(export_worker)
+                        defer_db_close = True
                 except Exception as e:
                     logger.error(f"CSV export worker 종료 오류: {e}")
+
+            csv_import_worker = getattr(self, "_csv_import_worker", None)
+            if csv_import_worker is not None and csv_import_worker.isRunning():
+                try:
+                    csv_import_worker.requestInterruption()
+                    if not csv_import_worker.wait(1000):
+                        retain_worker_until_finished(csv_import_worker)
+                        defer_db_close = True
+                except Exception as e:
+                    logger.error(f"CSV import worker 종료 오류: {e}")
+
+            tray_unread_worker = getattr(self, "_tray_unread_worker", None)
+            if tray_unread_worker is not None and tray_unread_worker.isRunning():
+                try:
+                    tray_unread_worker.stop()
+                    if not tray_unread_worker.wait(1000):
+                        try:
+                            tray_unread_worker.setParent(None)
+                        except Exception:
+                            pass
+                        retain_worker_until_finished(tray_unread_worker)
+                except Exception as e:
+                    logger.error(f"Tray unread worker 종료 오류: {e}")
+                finally:
+                    self._tray_unread_worker = None
 
             fts_backfill_worker = getattr(self, "_fts_backfill_worker", None)
             if fts_backfill_worker is not None and fts_backfill_worker.isRunning():
                 try:
                     fts_backfill_worker.requestInterruption()
-                    fts_backfill_worker.wait(1000)
+                    if not fts_backfill_worker.wait(1000):
+                        retain_worker_until_finished(fts_backfill_worker)
+                        defer_db_close = True
                 except Exception as e:
                     logger.error(f"FTS backfill worker 종료 오류: {e}")
 
@@ -324,7 +355,9 @@ class _MainWindowTrayMixin:
             except Exception as e:
                 logger.error(f"설정 저장 오류: {e}")
 
-            if self.db is not None:
+            if self.db is not None and defer_db_close:
+                logger.warning("DB close deferred because background workers are still settling")
+            elif self.db is not None:
                 try:
                     self.db.close()
                     logger.info("DB 연결 종료")

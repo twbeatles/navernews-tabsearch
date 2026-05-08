@@ -10,7 +10,7 @@ from PyQt6.QtGui import QClipboard
 from PyQt6.QtWidgets import QApplication, QScrollBar
 
 from core.text_utils import perf_timer
-from core.workers import DBWorker
+from core.workers import DBWorker, retain_worker_until_finished
 
 logger = logging.getLogger(__name__)
 
@@ -159,11 +159,13 @@ class _NewsTabLoadingMixin:
             return
         with perf_timer("ui.load_data_from_db", f"kw={self.keyword}|append={int(append)}"):
             if self.worker and self.worker.isRunning():
+                old_worker = self.worker
                 previous_request_id = self._load_request_id
-                self._detach_worker_signals(self.worker, ("finished", "error"))
-                self.worker.stop()
-                if not self.worker.wait(150):
+                self._detach_worker_signals(old_worker, ("finished", "error"))
+                old_worker.stop()
+                if not old_worker.wait(150):
                     logger.warning("DBWorker wait timeout: %s", self.keyword)
+                    retain_worker_until_finished(old_worker)
                 else:
                     self._initial_load_inflight = False
                 self._cancelled_initial_request_ids.discard(previous_request_id)
@@ -381,40 +383,40 @@ class _NewsTabLoadingMixin:
         self._initial_request_id = None
 
         if hasattr(self, "worker") and self.worker:
+            worker = self.worker
             self._detach_worker_signals(self.worker, ("finished", "error"))
             try:
-                if self.worker.isRunning():
-                    self.worker.stop()
-                    if not self.worker.wait(1000):
+                if worker.isRunning():
+                    worker.stop()
+                    if not worker.wait(1000):
                         logger.warning("DBWorker cleanup wait timeout: %s", self.keyword)
+                        retain_worker_until_finished(worker)
             except Exception as exc:
                 logger.warning("DBWorker cleanup failed (%s): %s", self.keyword, exc)
             finally:
                 self.worker = None
 
         if hasattr(self, "job_worker") and self.job_worker:
-            self._detach_worker_signals(self.job_worker, ("finished", "error", "cancelled", "progress"))
+            job_worker = self.job_worker
+            self._detach_worker_signals(job_worker, ("finished", "error", "cancelled", "progress"))
             try:
-                if self.job_worker.isRunning():
+                if job_worker.isRunning():
                     try:
-                        self.job_worker.stop()
+                        job_worker.stop()
                     except Exception:
-                        self.job_worker.requestInterruption()
-                        self.job_worker.quit()
-                        self.job_worker.wait(100)
-                    if not self.job_worker.wait(300):
+                        job_worker.requestInterruption()
+                        job_worker.quit()
+                        job_worker.wait(100)
+                    if not job_worker.wait(300):
                         try:
-                            self.job_worker.setParent(None)
+                            job_worker.setParent(None)
                         except Exception:
                             pass
-                        try:
-                            self.job_worker.finished.connect(self.job_worker.deleteLater)
-                        except Exception:
-                            pass
+                        retain_worker_until_finished(job_worker)
                         logger.warning("Job worker cleanup wait timeout: %s", self.keyword)
                 else:
                     try:
-                        self.job_worker.deleteLater()
+                        job_worker.deleteLater()
                     except Exception:
                         pass
             except Exception as exc:

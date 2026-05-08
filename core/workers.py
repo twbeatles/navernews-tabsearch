@@ -27,6 +27,78 @@ logger = logging.getLogger(__name__)
 RE_BOLD_TAGS = re.compile(r"</?b>")
 MAX_INLINE_RETRY_AFTER_SECONDS = 30
 MAX_FETCH_COOLDOWN_SECONDS = 6 * 60 * 60
+_DETACHED_WORKERS: Dict[int, Any] = {}
+
+
+def _safe_delete_later(obj: Any) -> None:
+    try:
+        obj.deleteLater()
+    except Exception:
+        pass
+
+
+def retain_worker_until_finished(worker: Any) -> None:
+    """Keep a detached QThread subclass alive until its run method settles."""
+    if worker is None:
+        return
+    key = id(worker)
+    _DETACHED_WORKERS[key] = worker
+
+    def release(*_args: Any) -> None:
+        retained = _DETACHED_WORKERS.pop(key, None)
+        if retained is not None:
+            _safe_delete_later(retained)
+
+    connected = False
+    settled = getattr(worker, "settled", None)
+    if settled is not None:
+        try:
+            settled.connect(release)
+            connected = True
+        except Exception:
+            connected = False
+
+    if not connected:
+        for signal_name in ("finished", "error", "cancelled"):
+            signal = getattr(worker, signal_name, None)
+            if signal is None:
+                continue
+            try:
+                signal.connect(release)
+                connected = True
+            except Exception:
+                pass
+
+    try:
+        if not worker.isRunning():
+            release()
+    except Exception:
+        if not connected:
+            release()
+
+
+def retain_qthread_until_finished(thread: Any, *objects: Any) -> None:
+    """Keep a QThread and moved worker alive after a cancellation timeout."""
+    if thread is None:
+        return
+    retained_objects = tuple(obj for obj in (thread, *objects) if obj is not None)
+    key = id(thread)
+    _DETACHED_WORKERS[key] = retained_objects
+
+    def release(*_args: Any) -> None:
+        retained = _DETACHED_WORKERS.pop(key, ())
+        for obj in retained:
+            _safe_delete_later(obj)
+
+    try:
+        thread.finished.connect(release)
+    except Exception:
+        pass
+    try:
+        if not thread.isRunning():
+            release()
+    except Exception:
+        pass
 
 
 class ReadConnectionProtocol(Protocol):
@@ -166,6 +238,7 @@ class AsyncJobWorker(QThread):
 
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
+    settled = pyqtSignal()
 
     def __init__(self, job_func, *args, parent=None, **kwargs):
         super().__init__(parent)
@@ -186,6 +259,8 @@ class AsyncJobWorker(QThread):
                 return
             self.error.emit(str(e))
             traceback.print_exc()
+        finally:
+            self.settled.emit()
 
     def stop(self):
         self.requestInterruption()
@@ -242,6 +317,7 @@ class IterativeJobWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(object)
     cancelled = pyqtSignal()
+    settled = pyqtSignal()
 
     def __init__(self, job_func, *args, parent=None, **kwargs):
         super().__init__(parent)
@@ -264,6 +340,8 @@ class IterativeJobWorker(QThread):
                 return
             self.error.emit(str(e))
             traceback.print_exc()
+        finally:
+            self.settled.emit()
 
     def stop(self):
         self.requestInterruption()
@@ -277,6 +355,7 @@ class InterruptibleReadWorker(QThread):
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
+    settled = pyqtSignal()
 
     def __init__(self, db_manager, job_func, *args, parent=None, **kwargs):
         super().__init__(parent)
@@ -334,6 +413,7 @@ class InterruptibleReadWorker(QThread):
                         conn.close()
                 except Exception:
                     pass
+            self.settled.emit()
 
     def stop(self):
         self.requestInterruption()
@@ -815,6 +895,7 @@ class DBWorker(QThread):
 
     finished = pyqtSignal(list, int)
     error = pyqtSignal(str)
+    settled = pyqtSignal()
 
     def __init__(
         self,
@@ -910,3 +991,4 @@ class DBWorker(QThread):
                 except Exception:
                     pass
                 self._conn = None
+            self.settled.emit()

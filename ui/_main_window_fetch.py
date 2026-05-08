@@ -15,7 +15,7 @@ from core.query_parser import build_fetch_key, has_positive_keyword, parse_searc
 from core.text_utils import RE_HTML_TAGS
 from core.validation import ValidationUtils
 from core.worker_registry import WorkerHandle
-from core.workers import ApiWorker
+from core.workers import ApiWorker, retain_qthread_until_finished
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
@@ -867,14 +867,7 @@ class _MainWindowFetchMixin:
 
             if not finished:
                 logger.warning("Worker cleanup timed out: %s (rid=%s)", handle.tab_keyword, request_id)
-                try:
-                    worker.deleteLater()
-                except (AttributeError, RuntimeError):
-                    pass
-                try:
-                    thread.deleteLater()
-                except (AttributeError, RuntimeError):
-                    pass
+                retain_qthread_until_finished(thread, worker)
                 return False
 
             self._worker_registry.pop_by_request_id(request_id)

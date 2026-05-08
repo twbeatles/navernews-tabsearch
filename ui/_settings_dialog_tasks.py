@@ -13,7 +13,7 @@ from core.constants import DATA_DIR, RUNTIME_PATHS, RuntimePaths
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
 from core.validation import ValidationUtils
-from core.workers import AsyncJobWorker, IterativeJobWorker
+from core.workers import AsyncJobWorker, IterativeJobWorker, retain_worker_until_finished
 
 if TYPE_CHECKING:
     from ui.settings_dialog import SettingsDialog
@@ -158,10 +158,7 @@ class _SettingsDialogTasksMixin:
             worker.setParent(None)
         except Exception:
             pass
-        try:
-            worker.finished.connect(worker.deleteLater)
-        except Exception:
-            pass
+        retain_worker_until_finished(worker)
         return False
 
     def _create_worker(

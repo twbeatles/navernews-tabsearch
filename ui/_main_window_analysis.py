@@ -23,16 +23,16 @@ from PyQt6.QtWidgets import (
 
 from core.content_filters import normalize_publisher_filter_lists
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
-from core.workers import InterruptibleReadWorker
+from core.workers import InterruptibleReadWorker, retain_worker_until_finished
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
 
 
 class _MainWindowAnalysisMixin:
-    def _cleanup_analysis_worker(self: MainApp, worker: Optional[Any]) -> None:
+    def _cleanup_analysis_worker(self: MainApp, worker: Optional[Any], wait_ms: int = 600) -> bool:
         if worker is None:
-            return
+            return True
         try:
             worker.finished.disconnect()
         except Exception:
@@ -50,6 +50,22 @@ class _MainWindowAnalysisMixin:
                 worker.stop()
         except Exception:
             pass
+        try:
+            finished = not worker.isRunning() or worker.wait(max(0, int(wait_ms)))
+        except Exception:
+            finished = False
+        if finished:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+            return True
+        try:
+            worker.setParent(None)
+        except Exception:
+            pass
+        retain_worker_until_finished(worker)
+        return False
 
     def show_statistics(self: MainApp):
         """통계 정보 표시"""
@@ -222,6 +238,10 @@ class _MainWindowAnalysisMixin:
             "sim_request_id": 0,
         }
 
+        def clear_worker_state(key: str, worker_ref: Any) -> None:
+            if state.get(key) is worker_ref:
+                state[key] = None
+
         def load_stats(conn) -> Dict[str, int]:
             return self._require_db().get_statistics(
                 blocked_publishers=getattr(self, "blocked_publishers", []),
@@ -361,9 +381,9 @@ class _MainWindowAnalysisMixin:
                     )
                 )
             )
-            worker.finished.connect(lambda *_args: state.__setitem__("publisher_worker", None))
-            worker.error.connect(lambda *_args: state.__setitem__("publisher_worker", None))
-            worker.cancelled.connect(lambda *_args: state.__setitem__("publisher_worker", None))
+            worker.finished.connect(lambda *_args, worker_ref=worker: clear_worker_state("publisher_worker", worker_ref))
+            worker.error.connect(lambda *_args, worker_ref=worker: clear_worker_state("publisher_worker", worker_ref))
+            worker.cancelled.connect(lambda *_args, worker_ref=worker: clear_worker_state("publisher_worker", worker_ref))
             worker.start()
 
         def update_tags() -> None:
@@ -390,9 +410,9 @@ class _MainWindowAnalysisMixin:
                     )
                 )
             )
-            worker.finished.connect(lambda *_args: state.__setitem__("tag_worker", None))
-            worker.error.connect(lambda *_args: state.__setitem__("tag_worker", None))
-            worker.cancelled.connect(lambda *_args: state.__setitem__("tag_worker", None))
+            worker.finished.connect(lambda *_args, worker_ref=worker: clear_worker_state("tag_worker", worker_ref))
+            worker.error.connect(lambda *_args, worker_ref=worker: clear_worker_state("tag_worker", worker_ref))
+            worker.cancelled.connect(lambda *_args, worker_ref=worker: clear_worker_state("tag_worker", worker_ref))
             worker.start()
 
         def update_simulation() -> None:
@@ -431,9 +451,9 @@ class _MainWindowAnalysisMixin:
                     )
                 )
             )
-            worker.finished.connect(lambda *_args: state.__setitem__("sim_worker", None))
-            worker.error.connect(lambda *_args: state.__setitem__("sim_worker", None))
-            worker.cancelled.connect(lambda *_args: state.__setitem__("sim_worker", None))
+            worker.finished.connect(lambda *_args, worker_ref=worker: clear_worker_state("sim_worker", worker_ref))
+            worker.error.connect(lambda *_args, worker_ref=worker: clear_worker_state("sim_worker", worker_ref))
+            worker.cancelled.connect(lambda *_args, worker_ref=worker: clear_worker_state("sim_worker", worker_ref))
             worker.start()
 
         stats_worker = InterruptibleReadWorker(self._require_db(), load_stats, parent=dialog)
@@ -447,9 +467,9 @@ class _MainWindowAnalysisMixin:
                 f"통계 및 분석 정보를 불러오지 못했습니다.\n\n{error_msg}",
             )
         )
-        stats_worker.finished.connect(lambda *_args: state.__setitem__("stats_worker", None))
-        stats_worker.error.connect(lambda *_args: state.__setitem__("stats_worker", None))
-        stats_worker.cancelled.connect(lambda *_args: state.__setitem__("stats_worker", None))
+        stats_worker.finished.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
+        stats_worker.error.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
+        stats_worker.cancelled.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
 
         def cleanup_workers(_result: int) -> None:
             self._cleanup_analysis_worker(state.get("stats_worker"))

@@ -388,6 +388,31 @@ class TestFetchCooldown(unittest.TestCase):
         self.assertEqual(thread.quit_calls, 1)
         self.assertEqual(thread.delete_later_calls, 1)
 
+    def test_cleanup_worker_timeout_keeps_running_thread_registered(self):
+        dummy = _DummyFetchMain()
+        worker = _FakeWorker()
+        thread = _FakeThread(wait_result=False)
+        handle = WorkerHandle(
+            request_id=8,
+            tab_keyword="AI",
+            search_keyword="AI",
+            db_keyword="AI",
+            exclude_words=[],
+            worker=cast(Any, worker),
+            thread=cast(Any, thread),
+        )
+        dummy._worker_registry.register(handle)
+        dummy.workers["AI"] = (worker, thread)
+        dummy._request_start_index[8] = 1
+
+        self.assertFalse(dummy.cleanup_worker(keyword="AI", request_id=8, wait_ms=10))
+
+        self.assertIsNotNone(dummy._worker_registry.get_by_request_id(8))
+        self.assertIn("AI", dummy.workers)
+        self.assertIn(8, dummy._request_start_index)
+        self.assertEqual(worker.delete_later_calls, 0)
+        self.assertEqual(thread.delete_later_calls, 0)
+
     def test_on_fetch_done_uses_new_count_for_notifications_and_alerts(self):
         dummy = _DummyFetchDoneMain()
         result = {

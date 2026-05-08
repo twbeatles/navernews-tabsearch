@@ -180,10 +180,20 @@ class SettingsDialog(
     def closeEvent(self, a0: Optional[QCloseEvent]):
         self._is_closing = True
         self._shutdown_worker(self._api_validate_worker, wait_ms=400)
-        self._shutdown_worker(self._data_task_worker, wait_ms=800)
+        data_worker = self._data_task_worker
+        parent = self._typed_parent() if self._maintenance_active_for_data_task else None
+        maintenance_release_connected = False
+        if parent is not None and data_worker is not None:
+            try:
+                settled = getattr(data_worker, "settled", None)
+                if settled is not None:
+                    settled.connect(lambda *_args, parent_ref=parent: parent_ref.end_database_maintenance())
+                    maintenance_release_connected = True
+            except Exception:
+                pass
+        data_worker_stopped = self._shutdown_worker(data_worker, wait_ms=2000)
         if self._maintenance_active_for_data_task:
-            parent = self._typed_parent()
-            if parent is not None:
+            if parent is not None and (data_worker_stopped or not maintenance_release_connected):
                 try:
                     parent.end_database_maintenance()
                 except Exception:

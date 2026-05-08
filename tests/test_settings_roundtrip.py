@@ -50,7 +50,7 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         block = inspect.getsource(SettingsDialog._shutdown_worker)
         self.assertIn("worker.wait(wait_ms)", block)
         self.assertIn("worker.setParent(None)", block)
-        self.assertIn("worker.finished.connect(worker.deleteLater)", block)
+        self.assertIn("retain_worker_until_finished(worker)", block)
 
     def test_settings_dialog_supports_help_mode(self):
         src = inspect.getsource(SettingsDialog.__init__)

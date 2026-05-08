@@ -31,7 +31,7 @@ from core.backup import AutoBackup
 from core.keyword_groups import KeywordGroupManager
 from core.logging_setup import configure_logging
 from core.constants import LOG_FILE
-from core.workers import IterativeJobWorker
+from core.workers import IterativeJobWorker, retain_worker_until_finished
 from ui.dialog_adapters import get_dialog_adapter
 
 configure_logging()
@@ -585,7 +585,8 @@ class BackupDialog(QDialog):
         if worker.isRunning():
             try:
                 worker.requestInterruption()
-                worker.wait(max(0, int(wait_ms)))
+                if not worker.wait(max(0, int(wait_ms))):
+                    retain_worker_until_finished(worker)
             except Exception:
                 pass
         self._verify_worker = None
