@@ -35,7 +35,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
 
         normalized, warnings = normalize_import_settings(raw, fallback)
 
-        self.assertEqual(normalized["theme_index"], 1)
+        self.assertEqual(normalized["theme_index"], 2)
         self.assertEqual(normalized["refresh_interval_index"], 2)
         self.assertEqual(normalized["notification_enabled"], False)
         self.assertEqual(normalized["alert_keywords"], ["AI", "경제", "100", "증시"])
@@ -129,7 +129,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
             loaded = load_config_file(str(cfg_path))
             app = loaded["app_settings"]
 
-            self.assertEqual(app["theme_index"], 1)
+            self.assertEqual(app["theme_index"], 2)
             self.assertEqual(app["refresh_interval_index"], 5)
             self.assertEqual(app["api_timeout"], 5)
             self.assertTrue(app["notification_enabled"])

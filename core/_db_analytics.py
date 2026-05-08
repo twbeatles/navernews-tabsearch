@@ -143,3 +143,43 @@ class _DatabaseAnalyticsMixin:
         finally:
             if owns_connection and active_conn is not None:
                 self.return_connection(active_conn)
+
+    def get_top_tags(
+        self: DatabaseManager,
+        limit: int = 20,
+        blocked_publishers: Optional[List[str]] = None,
+        preferred_publishers: Optional[List[str]] = None,
+        only_preferred_publishers: bool = False,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> List[Tuple[str, int]]:
+        """Return top tag counts for the visible-news scope."""
+        owns_connection = conn is None
+        active_conn = conn
+        try:
+            if active_conn is None:
+                active_conn = self.get_connection()
+            params: List[Any] = []
+            query = (
+                "SELECT nt.tag, COUNT(DISTINCT nt.link) AS count "
+                "FROM news_tags nt "
+                "JOIN news n ON n.link = nt.link "
+                "WHERE 1 = 1"
+            )
+            append_visibility = getattr(self, "_append_visibility_filter_clause", None)
+            if callable(append_visibility):
+                query += cast(str, append_visibility(
+                    params,
+                    blocked_publishers=blocked_publishers,
+                    preferred_publishers=preferred_publishers,
+                    only_preferred_publishers=only_preferred_publishers,
+                ))
+            query += " GROUP BY nt.tag ORDER BY count DESC, nt.tag ASC LIMIT ?"
+            params.append(max(1, int(limit or 20)))
+            cursor = active_conn.execute(query, params)
+            return [(str(row[0]), int(row[1])) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error("get_top_tags failed: %s", e)
+            raise self._new_query_error("get_top_tags", e) from e
+        finally:
+            if owns_connection and active_conn is not None:
+                self.return_connection(active_conn)

@@ -4,6 +4,7 @@ import sys
 import threading
 import traceback
 import hashlib
+import getpass
 import time
 from datetime import datetime
 from typing import Callable, Optional
@@ -15,7 +16,7 @@ from PyQt6.QtCore import QLockFile, QTimer
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
-from core.backup import apply_pending_restore_if_any
+from core.backup import apply_pending_restore_if_any, cleanup_applied_pending_restore_files
 from core.constants import (
     APP_NAME,
     CRASH_LOG_FILE,
@@ -37,7 +38,25 @@ configure_logging()
 import logging
 logger = logging.getLogger(__name__)
 
-INSTANCE_SERVER_NAME = f"news_scraper_pro_single_instance_{hashlib.sha1(DATA_DIR.encode('utf-8')).hexdigest()[:12]}"
+def _single_instance_identity() -> str:
+    parts = [DATA_DIR]
+    try:
+        parts.append(getpass.getuser())
+    except Exception:
+        parts.append(os.environ.get("USERNAME") or os.environ.get("USER") or "")
+    getuid = getattr(os, "getuid", None)
+    if callable(getuid):
+        try:
+            parts.append(str(getuid()))
+        except Exception:
+            pass
+    return "|".join(part for part in parts if part)
+
+
+INSTANCE_SERVER_NAME = (
+    "news_scraper_pro_single_instance_"
+    f"{hashlib.sha1(_single_instance_identity().encode('utf-8')).hexdigest()[:12]}"
+)
 INSTANCE_SHOW_COMMAND = "SHOW"
 
 
@@ -122,6 +141,7 @@ def main():
     window: Optional[MainApp] = None
     instance_lock: Optional[QLockFile] = None
     instance_server: Optional[QLocalServer] = None
+    legacy_migration_error = ""
 
     try:
         migrated_paths = migrate_legacy_runtime_files(runtime_paths=RUNTIME_PATHS)
@@ -132,6 +152,7 @@ def main():
             )
     except Exception as e:
         logger.warning("레거시 런타임 데이터 마이그레이션 실패: %s", e)
+        legacy_migration_error = str(e)
 
     def cleanup_instance_state() -> None:
         nonlocal instance_lock, instance_server
@@ -199,6 +220,8 @@ def main():
             window._system_shutdown = True
             window._force_close = True
             window.close()
+        elif app is not None:
+            app.quit()
     
     # Windows에서는 SIGTERM이 지원될 수 있음
     try:
@@ -244,6 +267,7 @@ def main():
 
         # 재시작 적용형 백업 복원 처리 (단일 인스턴스 확인 후, DB 초기화 전)
         try:
+            cleanup_applied_pending_restore_files(PENDING_RESTORE_FILE)
             if apply_pending_restore_if_any(
                 pending_file=PENDING_RESTORE_FILE,
                 config_file=CONFIG_FILE,
@@ -267,6 +291,12 @@ def main():
             lambda: window.show_window() if window else None,
         )
         window.show()
+        if legacy_migration_error:
+            window._status_bar().showMessage(
+                "⚠ 레거시 데이터 마이그레이션에 실패했습니다. 로그를 확인해주세요.",
+                8000,
+            )
+            window.show_warning_toast("레거시 데이터 마이그레이션 실패: news_scraper.log를 확인해주세요.")
         
         logger.info(f"{APP_NAME} v{VERSION} 시작됨")
         

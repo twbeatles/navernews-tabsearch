@@ -89,6 +89,7 @@ class _MainWindowConfigMixin:
             "client_secret_storage": settings.get("client_secret_storage", "plain"),
             "theme": settings.get("theme_index", 0),
             "interval": settings.get("refresh_interval_index", 2),
+            "auto_backup_minutes": settings.get("auto_backup_minutes", 60),
             "tabs": loaded_cfg.get("tabs", []),
             "notification_enabled": settings.get("notification_enabled", True),
             "alert_keywords": settings.get("alert_keywords", []),
@@ -114,6 +115,7 @@ class _MainWindowConfigMixin:
         self.client_secret = self.config["client_secret"]
         self.theme_idx = self.config["theme"]
         self.interval_idx = self.config["interval"]
+        self.auto_backup_minutes = int(self.config.get("auto_backup_minutes", 60) or 0)
         self.tabs_data = self.config["tabs"]
         self.notification_enabled = self.config.get("notification_enabled", True)
         self.alert_keywords = self.config.get("alert_keywords", [])
@@ -177,6 +179,7 @@ class _MainWindowConfigMixin:
                 "client_secret_storage": secret_payload.get("client_secret_storage", "plain"),
                 "theme_index": self.theme_idx,
                 "refresh_interval_index": self.interval_idx,
+                "auto_backup_minutes": self.auto_backup_minutes,
                 "notification_enabled": self.notification_enabled,
                 "alert_keywords": self.alert_keywords,
                 "sound_enabled": self.sound_enabled,
@@ -224,6 +227,29 @@ class _MainWindowConfigMixin:
         except Exception as exc:
             logger.error("설정 저장 오류 (Config Save Error): %s", exc)
             QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(exc)}")
+
+    def _run_auto_backup_once(self) -> None:
+        try:
+            if os.path.exists(self.runtime_paths.config_file):
+                self.auto_backup.create_backup(include_db=False, trigger="auto")
+        except Exception as exc:
+            logger.warning("자동 백업 실행 실패: %s", exc)
+
+    def apply_auto_backup_interval(self) -> None:
+        timer = getattr(self, "_auto_backup_timer", None)
+        if timer is None:
+            return
+        try:
+            timer.stop()
+            minutes = int(getattr(self, "auto_backup_minutes", 60) or 0)
+            if minutes <= 0:
+                logger.info("주기 자동 백업 비활성화")
+                return
+            timer.setInterval(minutes * 60 * 1000)
+            timer.start()
+            logger.info("주기 자동 백업 설정: %s분", minutes)
+        except Exception as exc:
+            logger.warning("주기 자동 백업 타이머 설정 실패: %s", exc)
 
     def _get_available_screen_geometry(self) -> QRect:
         screen = self.screen() or QApplication.primaryScreen()

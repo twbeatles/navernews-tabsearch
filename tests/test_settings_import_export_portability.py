@@ -24,9 +24,10 @@ class _DummyImportMain:
 
 
 class TestSettingsImportExportPortability(unittest.TestCase):
-    def test_export_settings_includes_auto_start_and_schema_1_2(self):
+    def test_export_settings_includes_auto_start_and_schema_1_3(self):
         src = Path("ui/_main_window_settings_io.py").read_text(encoding="utf-8")
-        self.assertIn('"export_version": "1.2"', src)
+        self.assertIn('"export_version": "1.3"', src)
+        self.assertIn('"export_machine_id": get_machine_identity()', src)
         self.assertIn('"auto_start_enabled": self.auto_start_enabled', src)
 
     def test_import_settings_uses_startup_reconcile_helper(self):

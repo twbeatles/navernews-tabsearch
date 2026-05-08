@@ -140,7 +140,7 @@ class _MainWindowTabsMixin:
         tab = NewsTab(
             keyword,
             self._require_db(),
-            self.theme_idx,
+            self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx,
             self,
             defer_initial_load=defer_initial_load,
         )

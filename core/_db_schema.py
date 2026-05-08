@@ -40,6 +40,22 @@ class _DatabaseSchemaMixin:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _news_column_names(self: DatabaseManager, conn: sqlite3.Connection) -> set[str]:
+        return {str(row[1]) for row in conn.execute("PRAGMA table_info(news)").fetchall()}
+
+    def _ensure_news_column(
+        self: DatabaseManager,
+        conn: sqlite3.Connection,
+        existing_columns: set[str],
+        column_name: str,
+        column_type: str,
+    ) -> None:
+        if column_name in existing_columns:
+            return
+        conn.execute(f"ALTER TABLE news ADD COLUMN {column_name} {column_type}")
+        existing_columns.add(column_name)
+        logger.info("Added news.%s column", column_name)
+
     def _check_integrity(self: DatabaseManager) -> IntegrityCheckResult:
         """Run PRAGMA integrity_check before using an existing DB."""
         conn = None
@@ -457,13 +473,9 @@ class _DatabaseSchemaMixin:
             self._ensure_app_meta_table(conn)
             self._ensure_news_fts_schema(conn)
 
-            try:
-                conn.execute("ALTER TABLE news ADD COLUMN pubDate_ts REAL")
-                logger.info("Added pubDate_ts column")
-            except sqlite3.OperationalError:
-                pass
-
+            existing_columns = self._news_column_names(conn)
             for col, dtype in [
+                ("pubDate_ts", "REAL"),
                 ("publisher", "TEXT"),
                 ("is_read", "INTEGER DEFAULT 0"),
                 ("is_bookmarked", "INTEGER DEFAULT 0"),
@@ -472,11 +484,7 @@ class _DatabaseSchemaMixin:
                 ("title_hash", "TEXT"),
                 ("is_duplicate", "INTEGER DEFAULT 0"),
             ]:
-                try:
-                    conn.execute(f"ALTER TABLE news ADD COLUMN {col} {dtype}")
-                    logger.info("Added news.%s column", col)
-                except sqlite3.OperationalError:
-                    pass
+                self._ensure_news_column(conn, existing_columns, col, dtype)
 
             indexes = [
                 "CREATE INDEX IF NOT EXISTS idx_keyword ON news(keyword)",

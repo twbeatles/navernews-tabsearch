@@ -62,12 +62,17 @@ class _SettingsDialogTasksMixin:
                 headers=headers,
                 params={"query": "테스트", "display": 1},
                 timeout=max(5, int(timeout)),
+                allow_redirects=False,
             )
             payload: Dict[str, Any] = {
                 "status_code": int(response.status_code),
                 "error_kind": "",
                 "error_message": "",
             }
+            if 300 <= int(response.status_code) < 400:
+                payload["error_kind"] = "redirect_error"
+                payload["error_message"] = "API 검증 응답이 리다이렉트를 반환해 중단했습니다."
+                return payload
             if response.status_code != 200:
                 payload["error_kind"] = "http_error"
                 try:
@@ -325,6 +330,37 @@ class _SettingsDialogTasksMixin:
 
         self._start_data_task(job_func, self._on_clean_all_done, "delete_all_news")
 
+    def optimize_database(self: SettingsDialog):
+        reply = QMessageBox.question(
+            self,
+            "DB 최적화",
+            "SQLite 최적화와 VACUUM을 실행하시겠습니까?\n\n작업 중에는 뉴스 조회와 새로고침이 잠시 중지됩니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        def job_func(context) -> int:
+            db = DatabaseManager(self._runtime_paths().db_file)
+            try:
+                context.report(current=0, total=1, message="DB 최적화 중...")
+                db.optimize_database(vacuum=True)
+                context.report(current=1, total=1, message="DB 최적화 완료")
+                return 1
+            finally:
+                db.close()
+
+        self._start_data_task(job_func, self._on_optimize_database_done, "optimize_database")
+
+    def import_csv_dialog(self: SettingsDialog):
+        parent = self.parent()
+        import_csv = getattr(parent, "import_csv_bookmarks_notes", None)
+        if callable(import_csv):
+            import_csv()
+            return
+        QMessageBox.warning(self, "CSV 가져오기", "현재 창에서는 CSV 가져오기를 사용할 수 없습니다.")
+
     def _start_data_task(
         self: SettingsDialog,
         job_func: Callable[[Any], int],
@@ -358,8 +394,12 @@ class _SettingsDialogTasksMixin:
 
         self.btn_clean.setEnabled(False)
         self.btn_all.setEnabled(False)
+        if hasattr(self, "btn_optimize_db"):
+            self.btn_optimize_db.setEnabled(False)
         self.btn_clean.setText("⏳ 작업 중...")
         self.btn_all.setText("⏳ 작업 중...")
+        if hasattr(self, "btn_optimize_db"):
+            self.btn_optimize_db.setText("작업 중...")
 
         self._data_task_worker = self._create_iterative_worker(job_func)
         self._data_task_worker.finished.connect(done_handler)
@@ -383,6 +423,12 @@ class _SettingsDialogTasksMixin:
         if self._is_closing or not self.isVisible():
             return
         QMessageBox.information(self, "완료", f"✓ {count:,}개의 기사를 삭제했습니다.")
+
+    def _on_optimize_database_done(self: SettingsDialog, _result: Any):
+        setattr(self, "_pending_parent_data_change", ("optimize_database", 0))
+        if self._is_closing or not self.isVisible():
+            return
+        QMessageBox.information(self, "완료", "DB 최적화를 완료했습니다.")
 
     def _on_data_task_error(self: SettingsDialog, error_msg: str):
         setattr(self, "_pending_parent_data_change", None)
@@ -417,8 +463,12 @@ class _SettingsDialogTasksMixin:
             return
         self.btn_clean.setEnabled(True)
         self.btn_all.setEnabled(True)
+        if hasattr(self, "btn_optimize_db"):
+            self.btn_optimize_db.setEnabled(True)
         self.btn_clean.setText("🧹 오래된 데이터 정리 (30일 이전)")
         self.btn_all.setText("🗑 모든 기사 삭제 (북마크 제외)")
+        if hasattr(self, "btn_optimize_db"):
+            self.btn_optimize_db.setText("DB 최적화")
         self._data_task_worker = None
 
     def _notify_parent_data_changed(

@@ -12,6 +12,7 @@ from PyQt6.QtGui import QCloseEvent, QIcon
 from PyQt6.QtWidgets import QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from core.constants import APP_NAME
+from core.workers import InterruptibleReadWorker
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
@@ -90,18 +91,49 @@ class _MainWindowTrayMixin:
                 self.tray.setToolTip(f"{APP_NAME}\nDB 유지보수 중...")
                 return
 
-            unread_count = (
-                int(self.db.get_total_unread_count(blocked_publishers=getattr(self, "blocked_publishers", [])))
-                if self.db
-                else 0
-            )
-
+            unread_count = int(getattr(self, "_tray_unread_cache", 0) or 0)
             if unread_count > 0:
                 tooltip = f"{APP_NAME}\n📬 읽지 않은 기사: {unread_count:,}개"
             else:
                 tooltip = f"{APP_NAME}\n✅ 모든 기사를 읽었습니다"
 
             self.tray.setToolTip(tooltip)
+            worker = getattr(self, "_tray_unread_worker", None)
+            if worker is not None and worker.isRunning():
+                return
+            db = self.db
+            if not db:
+                return
+
+            def load_unread(conn):
+                return int(
+                    db.get_total_unread_count(
+                        blocked_publishers=getattr(self, "blocked_publishers", []),
+                        conn=conn,
+                    )
+                )
+
+            worker = InterruptibleReadWorker(db, load_unread, parent=self)
+            self._tray_unread_worker = worker
+
+            def apply_unread(count):
+                self._tray_unread_cache = max(0, int(count or 0))
+                self._tray_unread_worker = None
+                if self._tray_unread_cache > 0:
+                    self.tray.setToolTip(f"{APP_NAME}\n📬 읽지 않은 기사: {self._tray_unread_cache:,}개")
+                else:
+                    self.tray.setToolTip(f"{APP_NAME}\n✅ 모든 기사를 읽었습니다")
+
+            def clear_worker(*_args):
+                self._tray_unread_worker = None
+
+            worker.finished.connect(apply_unread)
+            worker.error.connect(clear_worker)
+            worker.cancelled.connect(clear_worker)
+            worker.finished.connect(worker.deleteLater)
+            worker.error.connect(worker.deleteLater)
+            worker.cancelled.connect(worker.deleteLater)
+            worker.start()
         except Exception as e:
             logger.warning(f"트레이 툴팁 업데이트 오류: {e}")
             self.tray.setToolTip(APP_NAME)

@@ -210,6 +210,7 @@ class SettingsDialog(
             "secret": self.txt_sec.text().strip(),
             "interval": self.cb_time.currentIndex(),
             "theme": self.cb_theme.currentIndex(),
+            "auto_backup_minutes": int(self.cb_auto_backup.currentData() or 0),
             "notification_enabled": self.chk_notification.isChecked(),
             "alert_keywords": alert_keywords,
             "sound_enabled": self.chk_sound.isChecked(),

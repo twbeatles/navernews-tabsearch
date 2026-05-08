@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 class _DatabaseMutationsMixin:
-    ALLOWED_UPDATE_FIELDS = {"is_read", "is_bookmarked", "notes", "is_duplicate"}
+    # news.is_duplicate is a legacy schema column; duplicate truth lives in news_keywords.
+    ALLOWED_UPDATE_FIELDS = {"is_read", "is_bookmarked", "notes"}
 
     def _resolve_query_key(self: DatabaseManager, keyword: str, query_key: Optional[str]) -> str:
         normalized_query_key = str(query_key or "").strip()
@@ -435,6 +436,20 @@ class _DatabaseMutationsMixin:
         finally:
             self.return_connection(conn)
 
+    def optimize_database(self: DatabaseManager, vacuum: bool = False) -> bool:
+        """Run lightweight SQLite optimization and optional VACUUM maintenance."""
+        conn = self.get_connection()
+        try:
+            conn.execute("PRAGMA optimize")
+            if bool(vacuum):
+                conn.execute("VACUUM")
+            return True
+        except sqlite3.Error as e:
+            logger.error("optimize_database failed: %s", e)
+            raise self._new_write_error("optimize_database", e) from e
+        finally:
+            self.return_connection(conn)
+
     def _build_mark_query_scope_sql(
         self: DatabaseManager,
         keyword: str,
@@ -654,7 +669,19 @@ class _DatabaseMutationsMixin:
                 ).fetchone()[0]
                 or 0
             )
-            batch_query = scope_query + " ORDER BY n.link LIMIT ?"
+            conn.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS temp_mark_query_seen_links (link TEXT PRIMARY KEY)"
+            )
+            conn.execute("DELETE FROM temp_mark_query_seen_links")
+            batch_query = (
+                "SELECT scoped.link FROM ("
+                + scope_query
+                + ") AS scoped "
+                "WHERE NOT EXISTS ("
+                "SELECT 1 FROM temp_mark_query_seen_links seen WHERE seen.link = scoped.link"
+                ") "
+                "ORDER BY scoped.link LIMIT ?"
+            )
             while True:
                 if callable(cancel_check):
                     cancel_check()
@@ -663,6 +690,10 @@ class _DatabaseMutationsMixin:
                 if not links:
                     break
                 with conn:
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO temp_mark_query_seen_links (link) VALUES (?)",
+                        [(link,) for link in links],
+                    )
                     updated_total += self._mark_links_as_read_with_conn(conn, links)
                 if callable(progress_callback):
                     progress_callback(updated_total, total)
@@ -684,8 +715,11 @@ class _DatabaseMutationsMixin:
     ) -> int:
         cutoff = (datetime.now() - timedelta(days=days)).timestamp()
         return self._run_chunked_news_delete(
-            "is_bookmarked = 0 AND pubDate_ts > 0 AND pubDate_ts < ?",
-            [cutoff],
+            "is_bookmarked = 0 AND ("
+            "(pubDate_ts > 0 AND pubDate_ts < ?) OR "
+            "((pubDate_ts IS NULL OR pubDate_ts <= 0) AND COALESCE(created_at, 0) > 0 AND created_at < ?)"
+            ")",
+            [cutoff, cutoff],
             chunk_size=chunk_size,
             progress_callback=progress_callback,
             cancel_check=cancel_check,

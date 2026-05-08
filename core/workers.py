@@ -1,4 +1,5 @@
 import html
+import ipaddress
 import json
 import logging
 import re
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 RE_BOLD_TAGS = re.compile(r"</?b>")
 MAX_INLINE_RETRY_AFTER_SECONDS = 30
+MAX_FETCH_COOLDOWN_SECONDS = 6 * 60 * 60
 
 
 class ReadConnectionProtocol(Protocol):
@@ -44,7 +46,7 @@ def _parse_retry_after_seconds(
     if not raw_value:
         return 0
     if raw_value.isdigit():
-        return max(0, int(raw_value))
+        return min(MAX_FETCH_COOLDOWN_SECONDS, max(0, int(raw_value)))
 
     try:
         retry_at = parsedate_to_datetime(raw_value)
@@ -54,7 +56,7 @@ def _parse_retry_after_seconds(
     if retry_at.tzinfo is None:
         retry_at = retry_at.replace(tzinfo=timezone.utc)
     reference_time = now or datetime.now(timezone.utc)
-    return max(0, int((retry_at - reference_time).total_seconds()))
+    return min(MAX_FETCH_COOLDOWN_SECONDS, max(0, int((retry_at - reference_time).total_seconds())))
 
 
 def _retry_after_seconds_from_response(response: Any) -> int:
@@ -82,12 +84,68 @@ def _normalized_http_url(value: Any) -> str:
     parsed = urllib.parse.urlparse(text)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         return ""
+    if _is_disallowed_http_host(parsed.hostname or ""):
+        return ""
     return urllib.parse.urlunparse(parsed)
+
+
+def _is_disallowed_http_host(host: str) -> bool:
+    normalized = str(host or "").strip().strip("[]").lower().rstrip(".")
+    if not normalized:
+        return True
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+    if normalized.endswith(".local") or normalized.endswith(".internal"):
+        return True
+    try:
+        ip = ipaddress.ip_address(normalized)
+    except ValueError:
+        return False
+    return any(
+        (
+            ip.is_loopback,
+            ip.is_private,
+            ip.is_link_local,
+            ip.is_reserved,
+            ip.is_multicast,
+            ip.is_unspecified,
+        )
+    )
+
+
+def _host_from_url(value: str) -> str:
+    try:
+        return str(urllib.parse.urlparse(str(value or "")).hostname or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _is_naver_news_host(host: str) -> bool:
+    normalized = str(host or "").strip().lower().rstrip(".")
+    return normalized == "news.naver.com" or normalized.endswith(".news.naver.com")
+
+
+def _is_naver_news_url(value: str) -> bool:
+    return _is_naver_news_host(_host_from_url(value))
+
+
+def _publisher_source_url(original_link: str, final_link: str) -> str:
+    for candidate in (original_link, final_link):
+        host = _host_from_url(candidate)
+        if host and not _is_naver_news_host(host):
+            return candidate
+    return ""
 
 
 def _publisher_from_url(value: str) -> str:
     parsed = urllib.parse.urlparse(str(value or ""))
     host = parsed.netloc.strip().lower()
+    if "@" in host:
+        host = host.rsplit("@", 1)[-1]
+    if ":" in host and not host.startswith("["):
+        host = host.split(":", 1)[0]
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
     if host.startswith("www."):
         host = host[4:]
     return host or "정보 없음"
@@ -410,10 +468,21 @@ class ApiWorker(QObject):
         cooldown_seconds: int = 0,
         retryable: bool = False,
     ) -> None:
+        safe_cooldown_seconds = min(
+            MAX_FETCH_COOLDOWN_SECONDS,
+            max(0, int(cooldown_seconds or 0)),
+        )
+        if cooldown_seconds and int(cooldown_seconds or 0) > MAX_FETCH_COOLDOWN_SECONDS:
+            logger.warning(
+                "API cooldown capped: kw=%s raw=%s cap=%s",
+                self.display_keyword,
+                cooldown_seconds,
+                MAX_FETCH_COOLDOWN_SECONDS,
+            )
         self.last_error_meta = {
             "kind": str(kind or "unknown"),
             "status_code": max(0, int(status_code or 0)),
-            "cooldown_seconds": max(0, int(cooldown_seconds or 0)),
+            "cooldown_seconds": safe_cooldown_seconds,
             "retryable": bool(retryable),
         }
         self._safe_emit(self.error, message)
@@ -423,6 +492,17 @@ class ApiWorker(QObject):
         if retry_after_seconds > 0:
             return retry_after_seconds
         return max(5, (int(attempt) + 1) * 5)
+
+    def _retry_backoff_seconds(self, attempt: int) -> int:
+        return min(8, max(1, 2 ** max(0, int(attempt))))
+
+    def _sleep_with_cancel(self, seconds: int) -> bool:
+        safe_seconds = max(0, int(seconds or 0))
+        for _ in range(safe_seconds):
+            if not self.is_running:
+                return False
+            time.sleep(1)
+        return self.is_running
 
     def run(self):
         logger.info(f"ApiWorker 시작: {self.display_keyword}")
@@ -478,9 +558,29 @@ class ApiWorker(QObject):
                         }
 
                         with perf_timer("api.request", f"kw={self.display_keyword}|attempt={attempt + 1}"):
-                            resp = session.get(url, headers=headers, params=params, timeout=self.timeout)
+                            resp = session.get(
+                                url,
+                                headers=headers,
+                                params=params,
+                                timeout=self.timeout,
+                                allow_redirects=False,
+                            )
                         if not self.is_running:
                             logger.info(f"ApiWorker cancelled after response: {self.display_keyword}")
+                            return
+
+                        if 300 <= int(resp.status_code) < 400:
+                            logger.warning(
+                                "API redirect blocked: kw=%s status=%s",
+                                self.display_keyword,
+                                resp.status_code,
+                            )
+                            self._emit_error(
+                                "API 응답이 리다이렉트를 반환해 요청을 중단했습니다.",
+                                kind="redirect_error",
+                                status_code=int(resp.status_code),
+                                retryable=False,
+                            )
                             return
 
                         if resp.status_code == 429:
@@ -519,8 +619,10 @@ class ApiWorker(QObject):
                                 error_msg = f"HTTP {resp.status_code}"
                                 error_code = ""
                             if 500 <= int(resp.status_code) < 600 and attempt < self.max_retries - 1:
-                                self._safe_emit(self.progress, "서버 오류. 재시도 중...")
-                                time.sleep(1)
+                                backoff_seconds = self._retry_backoff_seconds(attempt)
+                                self._safe_emit(self.progress, f"서버 오류. {backoff_seconds}초 후 재시도...")
+                                if not self._sleep_with_cancel(backoff_seconds):
+                                    return
                                 continue
                             self._emit_error(
                                 f"API 오류 {resp.status_code} ({error_code}): {error_msg}",
@@ -559,9 +661,9 @@ class ApiWorker(QObject):
 
                                 naver_link = _normalized_http_url(item.get("link", ""))
                                 org_link = _normalized_http_url(item.get("originallink", ""))
-                                if "news.naver.com" in naver_link:
+                                if _is_naver_news_url(naver_link):
                                     final_link = naver_link
-                                elif "news.naver.com" in org_link:
+                                elif _is_naver_news_url(org_link):
                                     final_link = org_link
                                 else:
                                     final_link = naver_link or org_link
@@ -569,7 +671,7 @@ class ApiWorker(QObject):
                                     filtered_count += 1
                                     continue
 
-                                publisher_source = org_link or final_link
+                                publisher_source = _publisher_source_url(org_link, final_link)
                                 publisher = _publisher_from_url(publisher_source)
 
                                 items.append(
@@ -655,8 +757,10 @@ class ApiWorker(QObject):
                             logger.info(f"ApiWorker cancelled on timeout: {self.display_keyword}")
                             return
                         if attempt < self.max_retries - 1:
-                            self._safe_emit(self.progress, "요청 시간 초과. 재시도 중...")
-                            time.sleep(1)
+                            backoff_seconds = self._retry_backoff_seconds(attempt)
+                            self._safe_emit(self.progress, f"요청 시간 초과. {backoff_seconds}초 후 재시도...")
+                            if not self._sleep_with_cancel(backoff_seconds):
+                                return
                             continue
                         self._emit_error(
                             "요청 시간이 초과되었습니다. 네트워크 연결을 확인해주세요.",
@@ -671,8 +775,10 @@ class ApiWorker(QObject):
                             logger.info(f"ApiWorker cancelled on request error: {self.display_keyword}")
                             return
                         if attempt < self.max_retries - 1:
-                            self._safe_emit(self.progress, "네트워크 오류. 재시도 중...")
-                            time.sleep(1)
+                            backoff_seconds = self._retry_backoff_seconds(attempt)
+                            self._safe_emit(self.progress, f"네트워크 오류. {backoff_seconds}초 후 재시도...")
+                            if not self._sleep_with_cancel(backoff_seconds):
+                                return
                             continue
                         self._emit_error(
                             f"네트워크 오류: {str(e)}",
@@ -702,12 +808,6 @@ class ApiWorker(QObject):
         logger.info(f"ApiWorker 중지 요청: {self.display_keyword}")
         self._destroyed = True
         self.is_running = False
-        session = self._request_session
-        if session is not None and self._owns_request_session:
-            try:
-                session.close()
-            except Exception:
-                pass
 
 
 class DBWorker(QThread):

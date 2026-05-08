@@ -1,6 +1,34 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **2026-05-08 Follow-up Review Full Implementation**:
+  - Security/API:
+    - `ApiWorker` and settings API validation now force `allow_redirects=False`; `3xx` responses are surfaced as redirect errors.
+    - API item URL normalization rejects loopback/private/link-local/reserved IPs plus `localhost`, `.local`, and `.internal` hosts before DB storage.
+    - `Retry-After` and fetch cooldown metadata are capped at 6 hours. `5xx`, timeout, and network retries use cancel-aware exponential backoff, and `ApiWorker.stop()` no longer closes the session inline.
+  - Database/persistence:
+    - `mark_query_as_read_chunked(...)` now uses a temp-table seen set to guarantee batch progress.
+    - `delete_old_news_chunked(...)` deletes legacy rows with `pubDate_ts <= 0` by `created_at` cutoff.
+    - `init_db()` now guarantees legacy `news` columns through `PRAGMA table_info(news)` instead of blind `ALTER TABLE` attempts.
+    - `news.is_duplicate` remains only as a legacy column; runtime duplicate truth is `news_keywords.is_duplicate`.
+  - UI/settings/import/export:
+    - Manual refresh success refreshes auto-refresh due timestamps, dedupe skips show a one-time status/toast, countdown text distinguishes disabled auto-refresh, DB maintenance, and network pause states, and tray unread tooltip refresh is asynchronous.
+    - Export schema is now `1.3` with `export_machine_id`; `app_settings.auto_backup_minutes` and system theme mode (`theme_index=2`) are persisted.
+    - Import drops raw tab refresh labels that do not map to known/open/imported tabs, drops empty keyword groups, caps saved searches at 100 with warnings, and forces `auto_start_enabled=false` for exports from another machine.
+  - Backup/startup/UX:
+    - Backup info writes consistently go through the atomic `_write_backup_info(...)` path; startup removes stale `.applied` pending-restore markers; restore scheduling verifies backup directory access first.
+    - Single-instance server names include user identity, and pre-window single-instance signals now quit the process.
+    - Settings data management now exposes DB optimization (`PRAGMA optimize` plus confirmed `VACUUM`), scheduled settings-only auto backup, CSV bookmark/note import for existing links only, and corrupt-backup bulk delete.
+    - Statistics now include tag counts and a publisher-filter simulation tab; alert keywords support `regex:<pattern>`.
+  - Code/docs quality:
+    - `_validate_api_credentials` uses a top-level `ValidationUtils` import; root compatibility wrappers emit `DeprecationWarning`; `parse_tab_query(...)` documents the legacy `db_keyword`/`query_key` split.
+    - Logging now uses `RotatingFileHandler`; docs clarify that user-facing strings are Korean while internal PERF/log event keys may remain English.
+    - Added `tests/test_followup_20260508.py` and extended import/export, validation, cooldown, backup/restore, and worker lifecycle regression tests.
+  - Validation:
+    - `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed` (warnings are intentional root-wrapper `DeprecationWarning`s)
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+    - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - **Implementation Risk Stabilization + Docs/Spec/Gitignore Revalidation (2026-05-03)**:
   - Settings import/export:
     - `saved_searches` now merge by name and import payloads win conflicts.

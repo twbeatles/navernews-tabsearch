@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-03)
+작성일: 2026-03-16 (최근 갱신: 2026-05-08)
 
 ## 분석 범위
 
@@ -16,6 +16,23 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-05-08 후속 리뷰 전면 반영 / 문서·spec·gitignore 재검증
+
+이번 재검증에서는 `implementation_followup_review_2026-05-07.md`의 1-10번 후보를 코드와 문서 기준으로 전면 반영했다.
+
+- `core.workers.ApiWorker`와 `ui._settings_dialog_tasks.py`는 API 요청/검증에서 리다이렉트를 차단하고 `3xx`를 오류로 처리한다. API item URL은 `ipaddress` 기반으로 로컬/사설/내부 host를 저장 전 drop하며, Naver news host만 남은 경우 publisher fallback은 `정보 없음`으로 유지한다.
+- `core._db_mutations.py`는 temp-table seen-set 기반 `mark_query_as_read_chunked(...)`, `pubDate_ts <= 0` legacy row 삭제 보정, `DatabaseManager.optimize_database(...)`, `news.is_duplicate` legacy-only 정책을 담는다.
+- `core._db_schema.py`는 `PRAGMA table_info(news)` 기반 컬럼 보장 경로를 사용해 blind `ALTER TABLE`/catch-all 흐름을 줄였다.
+- `ui._main_window_settings_io.py`와 `core.config_store_impl.py`는 `export_version=1.3`, `export_machine_id`, `app_settings.auto_backup_minutes`, `theme_index=2` 시스템 테마, machine-aware auto-start import 차단, raw tab policy drop, 빈 keyword group drop, saved-search 100개 cap을 담당한다.
+- `core.backup.py`는 atomic `backup_info.json` 기록, stale `.applied` cleanup, 복원 예약 전 백업 디렉터리 접근 검증, 손상 백업 일괄 삭제 helper를 제공한다.
+- `core.bootstrap.py`의 단일 인스턴스 server hash는 runtime path와 사용자 identity를 포함하고, window 생성 전 signal을 받으면 현재 프로세스를 종료한다. legacy migration 실패는 window 생성 후 status/toast로 노출된다.
+- `ui.main_window_support.ui_shell.py`, `ui._main_window_analysis.py`, `ui._settings_dialog_content.py`, `ui._settings_dialog_tasks.py`, `ui.dialogs.py`는 정규식 알림, 시스템 테마, DB 최적화, 설정-only 자동 백업, CSV 메모/북마크 import, 태그 통계, 출처 필터 시뮬레이션, 손상 백업 일괄 삭제를 UI에 연결한다.
+- `ui._main_window_tray.py`는 트레이 unread tooltip을 cached value + `InterruptibleReadWorker` 비동기 refresh로 계산한다.
+- `core.logging_setup.py`는 `RotatingFileHandler`를 사용한다. 사용자 표시 문구는 한국어, 내부 PERF/log event key는 영문 허용이라는 문서 기준을 추가했다.
+- 루트 호환 래퍼(`query_parser.py`, `config_store.py`, `backup_manager.py`, `worker_registry.py`, `workers.py`, `database_manager.py`, `styles.py`)는 기존 import 호환성을 유지하되 `DeprecationWarning`을 낸다.
+- 새 회귀 테스트는 `tests/test_followup_20260508.py`에 추가했고, 기존 import/export/validation/worker/settings 테스트를 새 계약에 맞춰 확장했다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다. pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
 
 ## 0. 2026-05-03 구현 리스크 안정화 / 문서·spec·gitignore 재검증
 

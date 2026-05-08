@@ -32,6 +32,20 @@ def _write_json_atomic(path: str, payload: Dict[str, Any]) -> None:
                 pass
 
 
+def cleanup_applied_pending_restore_files(pending_file: str) -> int:
+    """Remove already-applied pending restore metadata left after a locked delete."""
+    applied_file = f"{pending_file}.applied"
+    if not os.path.exists(applied_file):
+        return 0
+    try:
+        os.remove(applied_file)
+        logger.info("잔여 pending restore applied 파일 정리: %s", applied_file)
+        return 1
+    except OSError as e:
+        logger.warning("잔여 pending restore applied 파일 정리 실패: %s", e)
+        return 0
+
+
 def _atomic_copy_replace(src_path: str, dst_path: str) -> None:
     directory = os.path.dirname(os.path.abspath(dst_path)) or "."
     os.makedirs(directory, exist_ok=True)
@@ -503,8 +517,7 @@ class AutoBackup:
                 "trigger": normalized_trigger,
                 "created_at": datetime.datetime.now().isoformat(),
             }
-            with open(os.path.join(backup_path, "backup_info.json"), "w", encoding="utf-8") as f:
-                json.dump(info, f, indent=2, ensure_ascii=False)
+            self._write_backup_info(backup_path, info)
 
             logger.info(f"백업 생성 완료: {backup_path}")
             verification = verify_backup_payload(
@@ -590,6 +603,15 @@ class AutoBackup:
     ) -> bool:
         try:
             target_pending_file = pending_file or self.pending_restore_file
+            backup_path = os.path.join(self.backup_dir, str(backup_name or ""))
+            if not backup_name or not os.path.isdir(backup_path):
+                logger.error("복원 예약 실패: 백업 디렉터리를 찾을 수 없습니다 (%s)", backup_path)
+                return False
+            try:
+                os.listdir(backup_path)
+            except OSError as access_error:
+                logger.error("복원 예약 실패: 백업 디렉터리에 접근할 수 없습니다 (%s)", access_error)
+                return False
             payload = {
                 "backup_name": backup_name,
                 "restore_db": bool(restore_db),
@@ -601,6 +623,22 @@ class AutoBackup:
         except Exception as e:
             logger.error(f"복원 예약 실패 (restore schedule failed): {e}")
             return False
+
+    def delete_corrupt_backups(self) -> tuple[int, List[str]]:
+        deleted_count = 0
+        errors: List[str] = []
+        for backup in self.get_backup_list():
+            if not bool(backup.get("is_corrupt", False)):
+                continue
+            backup_name = str(backup.get("name") or backup.get("backup_name") or "")
+            if not backup_name:
+                continue
+            deleted, error = self.delete_backup(backup_name)
+            if deleted:
+                deleted_count += 1
+            elif error:
+                errors.append(f"{backup_name}: {error}")
+        return deleted_count, errors
 
     def _cleanup_old_backups(self):
         try:

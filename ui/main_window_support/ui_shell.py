@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import traceback
 from typing import List, Optional, Tuple
 
@@ -11,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QApplication,
     QProgressBar,
     QPushButton,
     QSystemTrayIcon,
@@ -33,6 +35,42 @@ logger = logging.getLogger(__name__)
 
 
 class _MainWindowUIShellMixin:
+    def _effective_theme_idx(self) -> int:
+        try:
+            configured = int(getattr(self, "theme_idx", 0) or 0)
+        except Exception:
+            configured = 0
+        if configured != 2:
+            return 1 if configured == 1 else 0
+        try:
+            app = QApplication.instance()
+            if app is not None and app.styleHints().colorScheme() == Qt.ColorScheme.Dark:
+                return 1
+        except Exception:
+            pass
+        return 0
+
+    def _active_app_stylesheet(self) -> str:
+        return AppStyle.DARK if self._effective_theme_idx() == 1 else AppStyle.LIGHT
+
+    def _refresh_system_theme(self) -> None:
+        if int(getattr(self, "theme_idx", 0) or 0) != 2:
+            return
+        self.setStyleSheet(self._active_app_stylesheet())
+        effective_theme = self._effective_theme_idx()
+        for _index, widget in self._iter_news_tabs():
+            widget.theme = effective_theme
+            widget.render_html()
+
+    def _connect_system_theme_change(self) -> None:
+        try:
+            app = QApplication.instance()
+            if app is None:
+                return
+            app.styleHints().colorSchemeChanged.connect(lambda _scheme: self._refresh_system_theme())
+        except Exception:
+            logger.debug("시스템 테마 변경 신호 연결을 건너뜁니다.", exc_info=True)
+
     def init_ui(self):
         """UI 초기화"""
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
@@ -46,7 +84,7 @@ class _MainWindowUIShellMixin:
         )
 
         self.setMinimumSize(600, 400)
-        self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+        self.setStyleSheet(self._active_app_stylesheet())
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -120,7 +158,7 @@ class _MainWindowUIShellMixin:
         self.btn_add.clicked.connect(self.add_tab_dialog)
         self.btn_save.clicked.connect(self.export_data)
 
-        self.bm_tab = NewsTab("북마크", self._require_db(), self.theme_idx, self)
+        self.bm_tab = NewsTab("북마크", self._require_db(), self._effective_theme_idx(), self)
         self._connect_news_tab_hydration(self.bm_tab)
         self.tabs.addTab(self.bm_tab, "⭐ 북마크")
         self._tab_bar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
@@ -449,10 +487,26 @@ class _MainWindowUIShellMixin:
 
         matched = []
         for item in items:
-            title = item.get("title", "").lower()
-            desc = item.get("description", "").lower()
+            title = str(item.get("title", "") or "")
+            desc = str(item.get("description", "") or "")
+            searchable = f"{title}\n{desc}"
+            searchable_lower = searchable.lower()
             for kw in self.alert_keywords:
-                if kw.lower() in title or kw.lower() in desc:
+                keyword = str(kw or "").strip()
+                if not keyword:
+                    continue
+                if keyword.lower().startswith("regex:"):
+                    pattern = keyword[6:].strip()
+                    if not pattern:
+                        continue
+                    try:
+                        if re.search(pattern, searchable, re.IGNORECASE):
+                            matched.append((item, kw))
+                            break
+                    except re.error as exc:
+                        logger.warning("Invalid alert regex skipped: %s (%s)", pattern, exc)
+                    continue
+                if keyword.lower() in searchable_lower:
                     matched.append((item, kw))
                     break
         return matched
@@ -515,7 +569,7 @@ class _MainWindowUIShellMixin:
                 self.timer.stop()
                 self._countdown_timer.stop()
                 self._next_refresh_seconds = 0
-                self._set_countdown_status_text("")
+                self._set_countdown_status_text("자동 새로고침 끔")
                 self._status_bar().showMessage("⏰ 자동 새로고침 꺼짐")
                 logger.info("자동 새로고침 비활성화됨")
         except Exception as exc:

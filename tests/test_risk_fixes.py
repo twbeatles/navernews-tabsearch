@@ -100,7 +100,9 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
     def test_update_tray_tooltip_uses_db_total_unread_count(self):
         block = inspect.getsource(MainApp.update_tray_tooltip)
-        self.assertIn("self.db.get_total_unread_count(blocked_publishers=getattr(self, \"blocked_publishers\", []))", block)
+        self.assertIn("InterruptibleReadWorker", block)
+        self.assertIn("db.get_total_unread_count(", block)
+        self.assertIn('blocked_publishers=getattr(self, "blocked_publishers", [])', block)
 
     def test_desktop_notification_uses_toast_fallback_without_tray(self):
         block = inspect.getsource(MainApp.show_desktop_notification)

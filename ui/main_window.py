@@ -151,6 +151,7 @@ class MainApp(
             self._sequential_added_count = 0
             self._sequential_dup_count = 0
             self._last_fetch_request_ts: Dict[str, float] = {}
+            self._fetch_dedupe_notified_keys: set[str] = set()
             self._fetch_dedupe_window_sec = 10.0
             self._badge_unread_cache: Dict[str, int] = {}
             self._badge_refresh_running = False
@@ -161,6 +162,7 @@ class MainApp(
             self._request_start_index: Dict[int, int] = {}
             self._query_key_migration_hints_shown: set[str] = set()
             self._export_worker: Optional[IterativeJobWorker] = None
+            self._csv_import_worker: Optional[IterativeJobWorker] = None
             self._export_target_path = ""
             self._export_cancel_requested = False
             self._fts_backfill_worker: Optional[IterativeJobWorker] = None
@@ -182,6 +184,7 @@ class MainApp(
             self.alert_keywords = []
             self.sound_enabled = True
             self.notify_on_refresh = False
+            self.auto_backup_minutes = 60
 
             self.keyword_group_manager = KeywordGroupManager(
                 self.runtime_paths.config_file,
@@ -194,21 +197,27 @@ class MainApp(
             self._max_network_errors = 3
             self._network_available = True
             self._sequential_refresh_is_auto = False
+            self._tray_unread_cache = 0
+            self._tray_unread_worker = None
 
             self._countdown_timer = QTimer(self)
             self._countdown_timer.timeout.connect(self._update_countdown)
             self._next_refresh_seconds = 0
+            self._auto_backup_timer = QTimer(self)
+            self._auto_backup_timer.timeout.connect(self._run_auto_backup_once)
 
             self.set_application_icon()
 
             self.load_config()
             self.init_ui()
+            self._connect_system_theme_change()
             self.setup_shortcuts()
             QTimer.singleShot(0, self._start_fts_backfill)
 
             self.timer = QTimer(self)
             self.timer.timeout.connect(self._safe_refresh_all)
             self.apply_refresh_interval()
+            self.apply_auto_backup_interval()
 
             if self.client_id and self.tabs.count() > 1:
                 QTimer.singleShot(1000, self._safe_refresh_all)
@@ -225,7 +234,7 @@ class MainApp(
             if os.path.exists(self.runtime_paths.config_file):
                 QTimer.singleShot(
                     2000,
-                    lambda: self.auto_backup.create_backup(include_db=False, trigger="auto"),
+                    self._run_auto_backup_once,
                 )
 
             self.setup_system_tray()

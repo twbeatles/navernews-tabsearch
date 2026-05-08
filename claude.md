@@ -140,11 +140,35 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `280 passed, 5 subtests passed`
+- `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
-- PyInstaller 빌드는 이번 2026-05-03 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+- pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+
+---
+
+## 🚀 2026-05-08 Follow-up Review Full Implementation
+
+- Implemented all 1-10 items from `implementation_followup_review_2026-05-07.md`.
+- API calls and settings validation use `allow_redirects=False`; `3xx` responses become redirect errors.
+- API item URLs reject loopback/private/link-local/reserved IPs and local/internal hostnames before storage.
+- `Retry-After`/cooldown is capped at 6 hours, and `5xx`/timeout/network retries use cancel-aware exponential backoff.
+- `mark_query_as_read_chunked(...)` uses a temp-table seen set; old-news cleanup handles legacy `pubDate_ts <= 0` rows by `created_at`; duplicate truth is `news_keywords.is_duplicate`.
+- Settings export is schema `1.3` with `export_machine_id`; `app_settings.auto_backup_minutes` and `theme_index=2` system theme are persisted.
+- Settings import drops unknown raw tab policy labels, empty keyword groups, and saved-search overflow, and forces other-machine `auto_start_enabled=true` to `False`.
+- Startup cleans stale `.applied` restore markers, validates backup directory access before restore scheduling, and includes user identity in the single-instance server hash.
+- Settings data management now includes DB optimization, scheduled settings-only auto backup, CSV bookmark/note import for existing links only, and corrupt-backup bulk delete.
+- Statistics now include tag counts and publisher-filter simulation; alert keywords support `regex:<pattern>`.
+- Root compatibility wrappers emit `DeprecationWarning`; logging uses `RotatingFileHandler`.
+- User-facing strings should remain Korean. Internal PERF/log event keys may stay English.
+- Added `tests/test_followup_20260508.py` and expanded related import/export, validation, worker, backup, and settings regression tests.
+- Validation:
+  - `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ---
 

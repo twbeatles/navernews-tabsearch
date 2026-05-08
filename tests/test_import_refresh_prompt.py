@@ -417,10 +417,52 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertEqual(config_payload["app_settings"]["preferred_publishers"], ["Good.com"])
         self.assertEqual(config_payload["saved_searches"]["Main"]["filter_txt"], "market")
         self.assertTrue(config_payload["saved_searches"]["Main"]["only_unread"])
-        self.assertEqual(config_payload["tab_refresh_policies"], {"ai|": "inherit", "경제|": "30"})
+        self.assertEqual(config_payload["tab_refresh_policies"], {"ai|": "inherit"})
         self.assertEqual(dummy.saved_search_combo_refreshes, 1)
         self.assertEqual(dummy.visibility_reload_calls, 1)
         self.assertEqual(dummy._tabs[1].load_calls, 1)
+
+    def test_import_from_other_machine_forces_auto_start_off(self):
+        dialogs = _FakeDialogAdapter()
+        dummy = _DummyImportMain(dialogs)
+
+        with mock.patch("ui._main_window_settings_io.get_machine_identity", return_value="this-machine"):
+            stage = dummy._stage_settings_import(
+                {
+                    "export_machine_id": "other-machine",
+                    "settings": {"auto_start_enabled": True},
+                    "tabs": [],
+                    "keyword_groups": {},
+                }
+            )
+
+        self.assertFalse(stage["normalized_settings"]["auto_start_enabled"])
+        self.assertFalse(stage["staged_config"]["app_settings"]["auto_start_enabled"])
+        self.assertTrue(any("auto_start_enabled" in warning for warning in stage["import_warnings"]))
+        self.assertEqual(len(dummy.warning_toasts), 1)
+
+    def test_import_drops_empty_groups_and_caps_saved_searches_with_warning(self):
+        dialogs = _FakeDialogAdapter()
+        dummy = _DummyImportMain(dialogs)
+        saved_searches = {
+            f"Search {idx:03d}": {"keyword": "AI", "filter_txt": str(idx)}
+            for idx in range(105)
+        }
+
+        stage = dummy._stage_settings_import(
+            {
+                "settings": {},
+                "tabs": [],
+                "keyword_groups": {"비어있음": [], "정상": ["AI"]},
+                "saved_searches": saved_searches,
+            }
+        )
+
+        self.assertNotIn("비어있음", stage["staged_config"]["keyword_groups"])
+        self.assertIn("정상", stage["staged_config"]["keyword_groups"])
+        self.assertEqual(len(stage["staged_config"]["saved_searches"]), 100)
+        self.assertTrue(any("빈 키워드 그룹" in warning for warning in stage["import_warnings"]))
+        self.assertTrue(any("저장 검색" in warning for warning in stage["import_warnings"]))
 
     def test_import_merges_saved_searches_with_import_wins_and_canonical_policies(self):
         with tempfile.TemporaryDirectory() as td:

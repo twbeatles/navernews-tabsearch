@@ -529,8 +529,11 @@ class BackupDialog(QDialog):
         self.btn_cancel_verify = QPushButton("⏹ 검증 취소")
         self.btn_cancel_verify.setEnabled(False)
         self.btn_cancel_verify.clicked.connect(self.cancel_backup_verification)
+        self.btn_delete_corrupt = QPushButton("손상 백업 일괄 삭제")
+        self.btn_delete_corrupt.clicked.connect(self.delete_corrupt_backups)
         verify_layout.addWidget(self.btn_verify)
         verify_layout.addWidget(self.btn_cancel_verify)
+        verify_layout.addWidget(self.btn_delete_corrupt)
         verify_layout.addStretch()
         layout.addLayout(verify_layout)
 
@@ -838,6 +841,33 @@ class BackupDialog(QDialog):
                 dialogs.information(self, "완료", "손상된 백업 항목을 삭제했습니다.")
             else:
                 dialogs.warning(self, "오류", f"삭제 실패: {error}")
+
+    def delete_corrupt_backups(self) -> None:
+        """Delete every backup currently detected as corrupt."""
+        dialogs = get_dialog_adapter(self)
+        if not dialogs.ask_yes_no(
+            self,
+            "손상 백업 일괄 삭제",
+            "손상된 백업 항목을 모두 삭제하시겠습니까?",
+        ):
+            return
+
+        deleted_count, errors = self.auto_backup.delete_corrupt_backups()
+        self.load_backups()
+        if errors:
+            preview = "\n".join(errors[:5])
+            suffix = "\n..." if len(errors) > 5 else ""
+            dialogs.warning(
+                self,
+                "손상 백업 삭제",
+                f"{deleted_count:,}개를 삭제했지만 일부 항목 삭제에 실패했습니다.\n\n{preview}{suffix}",
+            )
+            return
+
+        if deleted_count > 0:
+            dialogs.information(self, "손상 백업 삭제", f"손상된 백업 {deleted_count:,}개를 삭제했습니다.")
+        else:
+            dialogs.information(self, "손상 백업 삭제", "삭제할 손상 백업이 없습니다.")
 
     def _sqlite_table_count(self, db_path: str, table_name: str) -> Optional[int]:
         if not db_path or not os.path.exists(db_path):

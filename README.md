@@ -22,7 +22,9 @@
 - 기사 북마크/읽음 처리/메모 작성
 - 열린 탭/북마크 탭 사이의 기사 상태 즉시 동기화
 - 알림 키워드와 새 기사 알림은 이번 fetch에서 새로 감지된 링크(`new_items` / `new_count`)에만 적용
+- 알림 키워드는 일반 부분 문자열과 `regex:<패턴>` 정규식 접두어를 지원
 - 현재 탭 필터 전체 결과 CSV 내보내기
+- CSV 메모/북마크 가져오기는 기존 기사 link에 대해서만 상태를 갱신하고 새 기사는 생성하지 않음
 - 출처 차단/선호 필터: 차단 출처는 DB에 저장하되 목록/count/배지/트레이/분석/CSV에서 숨기고, 도메인 출처는 suffix match로 처리하며 선호 출처는 사용자가 `선호 출처만` 필터를 켠 경우에만 적용
 - 기사별 자유 태그 편집, 태그 배지 표시, 태그 필터, CSV 태그 컬럼
 - 현재 탭의 검색어/필터/정렬/기간/태그/선호 출처 조건을 이름으로 저장하고 대상 검색어 탭으로 이동/생성해 다시 적용하는 저장된 검색
@@ -31,9 +33,21 @@
 - 시스템 트레이 동작(최소화/닫기 동작 커스터마이징)
 - 단일 인스턴스 실행 보장(중복 실행 방지)
 - 설정 자동 백업 + 수동 DB 포함 백업 및 재시작 적용형 복원(pending restore), 복원 예약 전 dry-run 요약
+- 설정의 시스템 테마 자동 모드, DB 최적화(`PRAGMA optimize` + 선택 VACUUM), 태그 통계와 출처 필터 시뮬레이션
 
 ## 안정화 포인트 (v32.7.3+ 작업 브랜치 반영)
 
+- API 요청과 설정창 API 검증은 리다이렉트를 따라가지 않으며, `3xx` 응답은 오류로 처리해 API Secret 헤더가 다른 호스트로 전달되지 않게 한다
+- API item URL은 저장 전 `ipaddress` 기반으로 loopback/private/link-local/reserved IP와 `localhost`, `.local`, `.internal` host를 차단한다
+- `Retry-After`/fetch cooldown은 최대 6시간으로 clamp하고, `5xx`/timeout/network retry는 취소 가능한 지수 backoff로 처리한다
+- `ApiWorker.stop()`은 session을 직접 닫지 않고 worker `finally`에서만 정리해 stop/session 수명주기 경합을 줄인다
+- `mark_query_as_read_chunked()`는 temp table 기반 seen-set으로 chunk 진행을 보장하고, 오래된 기사 삭제는 `pubDate_ts <= 0` 행도 `created_at` cutoff 기준으로 정리한다
+- `init_db()`는 `PRAGMA table_info(news)` 기반으로 legacy 컬럼을 보장하며, `news.is_duplicate`는 legacy 컬럼이고 앱의 중복 진실 원본은 `news_keywords.is_duplicate`이다
+- 설정 import는 다른 machine에서 내보낸 `auto_start_enabled=true`를 `False`로 강제하고, raw tab refresh label은 현재/가져온 탭과 매칭되지 않으면 drop한다
+- 시작 시 잔여 `pending_restore.json.applied`는 best-effort로 정리하고, 복원 예약은 백업 디렉터리 접근 가능성을 먼저 검증한다
+- 단일 인스턴스 IPC server name은 runtime 경로와 사용자 identity를 함께 hash하고, window 생성 전 signal 수신 시 현재 프로세스를 종료한다
+- 트레이 tooltip의 unread count는 cached value를 먼저 표시한 뒤 `InterruptibleReadWorker`로 비동기 갱신한다
+- 로그 파일은 `RotatingFileHandler`로 회전 저장한다. 사용자 표시 문구는 한국어를 기준으로 하되, 내부 PERF/log event key는 영문을 허용한다
 - 단건 DB 액션 계약을 정리해 `update_status()`는 실제 변경 없음이면 `False`, `get_note()` 조회 실패는 `DatabaseQueryError`, `delete_link()`는 대상 없음과 DB 실패를 분리해 UI가 각각 다른 메시지를 표시
 - 기사 카드 렌더링 직전에 publisher/date/tag/action 동적 문자열을 escape하고, 외부 링크 열기는 `http`/`https` scheme만 허용
 - `pending_restore.json` 적용 성공 후 먼저 `.applied`로 atomic rename한 뒤 best-effort 삭제해 삭제 실패 상황에서도 다음 시작 때 반복 적용하지 않음
@@ -150,12 +164,13 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-05-03)
+## 최신 검증 메모 (2026-05-08)
 
-- `python -m pytest -q` => `280 passed, 5 subtests passed`
+- `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
+- pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`입니다.
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
-- 이번 변경에서는 PyInstaller 빌드는 실행하지 않았으며, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`입니다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공, 산출물 `dist/NewsScraperPro_Safe.exe`
 - 삭제 상태의 `implementation_gap_review_2026-04-29.md`는 이번 문서 정리/푸쉬 범위에 포함했습니다.
 
 ## 프로젝트 구조
@@ -366,6 +381,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-04-29 기준 `.gitignore`를 `git status --ignored --short`와 runtime/test/build 산출물 기준으로 다시 확인했고, `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, 로그, `__pycache__/`, runtime DB/config/backup/pending restore 잔여물이 기존 규칙으로 모두 무시되어 추가 수정은 필요하지 않았습니다.
 - 2026-05-03 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, import 병합/정규화, canonical tab refresh policy key, saved search 날짜 검증, 토큰 AND 검색, worker cleanup, API URL 정규화는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않음을 확인했습니다.
 - 2026-05-03 기준 `git status --ignored --short`로 `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, `__pycache__/`, runtime DB/config/log/backup/pending restore 잔여물이 계속 무시되는 것을 확인했고, `.gitignore` 추가 수정은 필요하지 않았습니다.
+- 2026-05-08 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 리다이렉트 차단, 사설 URL 필터, DB 최적화, export 1.3 machine id, 설정-only 자동 백업, CSV 메모/북마크 import, 정규식 알림, 태그 통계, 로그 회전은 표준 라이브러리/기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않습니다.
+- 2026-05-08 기준 `git status --ignored --short`와 `git check-ignore -v build dist .pytest_tmp .pytest_cache __pycache__ dist\NewsScraperPro_Safe.exe build\news_scraper_pro\Analysis-00.toc`로 build/dist/cache/log 산출물이 기존 `.gitignore` 규칙으로 무시되는 것을 확인했습니다.
 - 2026-04-29 문서 정합화에서는 삭제 상태인 `implementation_risk_review_2026-04-27.md`를 되돌리지 않고 현재 작업트리 상태로 유지합니다.
 
 ## 네이버 API 키 설정
@@ -410,6 +427,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 레거시 DB 마이그레이션은 SQLite backup API 우선, 실패 시 raw copy fallback + integrity 검증으로 수행됩니다.
 - `keyword_groups`는 별도 파일이 아니라 `news_scraper_config.json` 내부 필드로 저장됩니다.
 - `app_settings.blocked_publishers`와 `app_settings.preferred_publishers`는 쉼표 입력값을 trim/빈 값 제거/case-insensitive dedupe한 뒤 양쪽 충돌을 제거해 저장합니다.
+- `app_settings.auto_backup_minutes`는 설정-only 자동 백업 간격이며 `0`, `30`, `60`, `180`, `360`분 값을 사용합니다. 기본값은 `60`입니다.
+- `theme_index`는 `0=라이트`, `1=다크`, `2=시스템 설정 자동`입니다.
 - `saved_searches`는 검색어, 텍스트 필터, 정렬, 안 읽음, 중복 숨김, 기간, 태그, 선호 출처 필터를 이름별 payload로 저장하며, 적용 시 저장된 검색어 탭으로 이동/생성하고 UI에서 삭제할 수 있습니다.
 - `tab_refresh_policies`는 canonical fetch key별 자동 새로고침 override이며 값은 `inherit`, `off`, 또는 분 단위 문자열(`10`, `30`, `60`, `120`, `360`)입니다. 레거시 raw 탭 키워드 key는 로드/import 시 가능한 범위에서 canonical key로 자동 보정됩니다.
 - 단일 인스턴스 잠금 파일(`news_scraper_pro.lock`)과 crash log(`crash_log.txt`)도 같은 runtime 경로 기준으로 관리됩니다.
@@ -453,6 +472,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `core.workers.ApiWorker`는 `last_error_meta(kind/status_code/cooldown_seconds/retryable)`를 남기며, `MainApp.on_fetch_error(...)`는 이를 읽어 전역 fetch cooldown을 갱신합니다.
 - `core.workers.ApiWorker`는 API 응답의 `originallink`/`link` 중 `http`/`https` URL만 저장 후보로 삼고, 둘 다 유효하지 않으면 해당 item을 건너뜁니다. publisher는 유효한 URL host에서 `www.`를 제거해 산출합니다.
 - `DatabaseManager.iter_news_snapshot_batches(...)`는 현재 탭 필터 전체 결과를 단일 read snapshot 위에서 순회해 CSV export 일관성을 보장합니다.
+- `DatabaseManager.optimize_database(vacuum: bool = False)`는 설정 창의 DB 최적화 작업에서 사용됩니다.
+- `DatabaseManager.get_top_tags(limit=20, ...)`는 통계 다이얼로그의 태그 통계를 제공합니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유하며, 도메인 값은 `example.com`이 `example.com`/`news.example.com`에 매칭되고 `badexample.com`에는 매칭되지 않습니다.
 - `DatabaseManager.get_tags(link)`, `set_tags(link, tags)`, `get_known_tags()`가 기사 태그 CRUD와 태그 필터 목록을 담당합니다.
 - `DatabaseManager.open_read_connection(...)`, `close_read_connection(...)`, `interrupt_connection(...)`은 `DBWorker` 취소/종료 경로에서 사용하는 dedicated read connection helper입니다.
@@ -460,6 +481,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `ui.news_tab.NewsTab`은 scope signature별 append/replace를 구분하고, HTML 렌더는 fragment cache를 재사용하면서 event-loop tick당 한 번만 flush합니다.
 - `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`는 호환 batch API로 유지되며, 실제 탭 배지는 `DBQueryScope` 기반 `count_news(..., only_unread=True)`로 표시 scope와 일치시킵니다.
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
+- `AutoBackup.delete_corrupt_backups()`는 백업 관리 다이얼로그의 손상 백업 일괄 삭제에서 사용됩니다.
 - `core.database.DatabaseQueryError`는 조회/집계 계열 DB 실패를 빈 결과로 삼키지 않는 표준 예외 계약이며, UI는 기존 캐시를 보존한 채 실패를 노출합니다.
 - `core.database.DatabaseWriteError`는 쓰기/변경 계열 DB 실패를 성공처럼 삼키지 않는 표준 예외 계약이며, `ApiWorker`와 fetch UI는 저장 실패를 성공 완료와 명확히 분리합니다.
 - `DatabaseManager.update_status(link, field, value)`는 대상 row가 없으면 `False`를 반환하고 SQLite 쓰기 실패는 `DatabaseWriteError`로 올립니다.
@@ -479,13 +501,14 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 ## 설정 Export/Import
 
-- export 포맷 버전은 `1.2`이며 `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`, `saved_searches`, `tab_refresh_policies`를 포함합니다.
-- API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외되고, `settings.auto_start_enabled`는 export/import 대상에 포함됩니다.
+- export 포맷 버전은 `1.3`이며 `export_machine_id`, `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`, `saved_searches`, `tab_refresh_policies`를 포함합니다.
+- API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외되고, `settings.auto_start_enabled`와 `settings.auto_backup_minutes`는 export/import 대상에 포함됩니다.
 - import 시 `tabs`는 `canonical query` 기준 dedupe, `keyword_groups`는 merge, `search_history`는 `canonical query` 기준 imported-first dedupe 후 최대 10개로 정리합니다.
 - `pagination_state`와 `pagination_totals`는 fetch key별로 병합하며 충돌 시 더 큰 값을 유지합니다.
 - `saved_searches`는 이름 기준으로 기존값과 import값을 병합하고, 같은 이름은 import payload를 우선합니다. 저장된 검색의 target keyword가 비어 있거나 exclude-only이면 빈 target으로 보정하고, 날짜는 유효한 `yyyy-MM-dd`만 유지하며 시작일/종료일 역전은 자동 swap합니다.
 - `tab_refresh_policies`는 canonical fetch key 기준으로 저장/조회/병합합니다. import 충돌은 import payload를 우선하며, raw 탭 키워드 key는 현재 탭/검색 의미와 맞춰 canonical key로 rebasing합니다.
-- import는 `1.1`과 `1.2`를 모두 허용하며, 자동 시작/시작 최소화는 환경 가용성에 따라 안전한 값으로 보정됩니다.
+- import는 `1.1`, `1.2`, `1.3`을 모두 허용하며, 자동 시작/시작 최소화는 환경 가용성에 따라 안전한 값으로 보정됩니다.
+- 다른 machine의 export에서 들어온 `auto_start_enabled=true`는 로컬 시작프로그램 오등록을 막기 위해 `False`로 강제됩니다.
 - 트레이를 사용할 수 없는 환경에서 import된 `start_minimized=true`는 `False`로 강제되고 경고 토스트를 표시합니다.
 - 시작프로그램 기능을 사용할 수 없는 환경에서 import된 `auto_start_enabled=true`는 `False`로 강제되고, 가능한 환경에서는 실제 레지스트리 상태까지 동기화합니다.
 - import로 새 탭이 추가되면 해당 탭들을 지금 새로고침할지 한 번 묻고, 동의하면 새 탭만 순차 새로고침합니다.

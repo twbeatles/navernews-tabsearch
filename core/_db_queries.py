@@ -475,11 +475,14 @@ class _DatabaseQueriesMixin:
     def get_total_unread_count(
         self: DatabaseManager,
         blocked_publishers: Optional[List[str]] = None,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> int:
         """Get unread count across all rows in news."""
-        conn = None
+        owns_connection = conn is None
+        active_conn = conn
         try:
-            conn = self.get_connection()
+            if active_conn is None:
+                active_conn = self.get_connection()
             with perf_timer("db.get_total_unread_count", "scope=all"):
                 params: List[Any] = []
                 query = "SELECT COUNT(*) FROM news n WHERE n.is_read = 0"
@@ -487,14 +490,14 @@ class _DatabaseQueriesMixin:
                     params,
                     blocked_publishers=blocked_publishers,
                 )
-                row = conn.execute(query, params).fetchone()
+                row = active_conn.execute(query, params).fetchone()
                 return int(row[0]) if row else 0
         except Exception as e:
             logger.error("get_total_unread_count failed: %s", e)
             raise self._new_query_error("get_total_unread_count", e) from e
         finally:
-            if conn is not None:
-                self.return_connection(conn)
+            if owns_connection and active_conn is not None:
+                self.return_connection(active_conn)
 
     def _get_grouped_unread_counts(
         self: DatabaseManager,

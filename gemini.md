@@ -96,11 +96,33 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `280 passed, 5 subtests passed`
+- `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
-- PyInstaller 빌드는 2026-05-03 변경에서는 재실행하지 않았고, 마지막 확인 산출물은 기존 `dist/NewsScraperPro_Safe.exe`이다.
+- pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
+- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+
+### 2026-05-08 Follow-up Review Full Implementation
+
+- `implementation_followup_review_2026-05-07.md`의 1-10번 항목을 전면 반영했다.
+- `ApiWorker`와 설정 API 검증은 `allow_redirects=False`를 사용하고, `3xx` 응답은 redirect error로 처리한다.
+- API item URL은 loopback/private/link-local/reserved IP와 `localhost`, `.local`, `.internal` host를 저장 전 차단한다.
+- `Retry-After`/cooldown은 6시간 상한을 적용하고, `5xx`/timeout/network retry는 취소 가능한 지수 backoff를 사용한다.
+- `mark_query_as_read_chunked(...)`는 temp-table seen set으로 진행을 보장하며, `delete_old_news_chunked(...)`는 legacy `pubDate_ts <= 0` row도 `created_at` 기준으로 삭제한다.
+- 중복 판정의 진실 원본은 `news_keywords.is_duplicate`이며, `news.is_duplicate`는 legacy schema compatibility column이다.
+- 설정 export는 `1.3`이며 `export_machine_id`, `app_settings.auto_backup_minutes`, `theme_index=2` 시스템 테마를 포함한다.
+- 설정 import는 다른 machine의 `auto_start_enabled=true`를 `False`로 강제하고, 알 수 없는 raw tab policy label, 빈 keyword group, saved-search 100개 초과분을 보정한다.
+- 백업/부팅 경로는 atomic `backup_info.json`, stale `.applied` cleanup, 복원 예약 전 백업 디렉터리 접근 검증, user-aware single-instance server hash를 사용한다.
+- 설정 데이터 관리에는 DB 최적화, 설정-only 자동 백업 간격, CSV 메모/북마크 가져오기, 손상 백업 일괄 삭제가 추가됐다.
+- 통계 다이얼로그는 태그 통계와 출처 필터 시뮬레이션을 제공하고, 알림 키워드는 `regex:<패턴>`을 지원한다.
+- 루트 호환 래퍼는 `DeprecationWarning`을 내며, logging은 `RotatingFileHandler`를 사용한다.
+- 사용자 표시 문구는 한국어 기준이며, 내부 PERF/log event key는 영문을 허용한다.
+- 검증:
+  - `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+  - `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 
 ### 2026-05-03 Implementation Risk Stabilization
 

@@ -1,3 +1,11 @@
+import warnings
+
+warnings.warn(
+    "Root query_parser imports are deprecated; use core.query_parser instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from core.query_parser import (
     build_fetch_key,
     has_positive_keyword,

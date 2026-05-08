@@ -21,6 +21,7 @@ from core.config_store import (
 from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
 from core.content_filters import normalize_publisher_filter_lists
 from core.keyword_groups import merge_keyword_groups
+from core.machine_identity import get_machine_identity
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker
 from ui.dialog_adapters import get_dialog_adapter
@@ -172,6 +173,53 @@ def export_scope_to_csv(
         raise
 
 
+def _csv_truthy(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "y", "on", "북마크", "bookmarked", "bookmark"}
+
+
+def import_bookmarks_notes_from_csv(
+    context,
+    db,
+    input_path: str,
+    chunk_size: int = 200,
+) -> Dict[str, int]:
+    processed = 0
+    updated_rows = 0
+    missing_rows = 0
+    safe_chunk_size = max(1, int(chunk_size or 200))
+    with open(input_path, "r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames:
+            return {"processed": 0, "updated": 0, "missing": 0}
+        for row in reader:
+            context.check_cancelled()
+            processed += 1
+            link = str(row.get("링크") or row.get("link") or row.get("Link") or "").strip()
+            if not link:
+                missing_rows += 1
+                continue
+            changed = False
+            if any(key in row for key in ("북마크", "bookmark", "Bookmark")):
+                bookmark_value = row.get("북마크", row.get("bookmark", row.get("Bookmark", "")))
+                changed = bool(db.update_status(link, "is_bookmarked", 1 if _csv_truthy(bookmark_value) else 0)) or changed
+            if any(key in row for key in ("메모", "notes", "Notes")):
+                note_value = str(row.get("메모", row.get("notes", row.get("Notes", ""))) or "")
+                changed = bool(db.save_note(link, note_value)) or changed
+            if changed:
+                updated_rows += 1
+            else:
+                missing_rows += 1
+            if processed % safe_chunk_size == 0:
+                context.report(
+                    current=processed,
+                    total=0,
+                    message=f"CSV 가져오는 중... ({processed}행 처리)",
+                )
+    context.report(current=processed, total=processed, message="CSV 가져오기 완료")
+    return {"processed": processed, "updated": updated_rows, "missing": missing_rows}
+
+
 class _MainWindowSettingsIOMixin:
     def _build_current_settings_dialog_config(self: MainApp) -> Dict[str, Any]:
         return {
@@ -187,6 +235,7 @@ class _MainWindowSettingsIOMixin:
             "start_minimized": self.start_minimized,
             "auto_start_enabled": self.auto_start_enabled,
             "notify_on_refresh": self.notify_on_refresh,
+            "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
             "api_timeout": self.api_timeout,
             "blocked_publishers": getattr(self, "blocked_publishers", []),
             "preferred_publishers": getattr(self, "preferred_publishers", []),
@@ -393,6 +442,110 @@ class _MainWindowSettingsIOMixin:
         self._status_bar().showMessage("CSV 내보내기를 취소했습니다.", 3000)
         self.show_warning_toast("CSV 내보내기를 취소했습니다.")
 
+    def import_csv_bookmarks_notes(self: MainApp) -> None:
+        """Import bookmark/note state for existing article links only."""
+        dialogs = _dialogs_for(self)
+        csv_worker = getattr(self, "_csv_import_worker", None)
+        if csv_worker is not None and csv_worker.isRunning():
+            dialogs.information(self, "CSV 가져오기", "이미 CSV 가져오기가 진행 중입니다.")
+            return
+        export_worker = getattr(self, "_export_worker", None)
+        if export_worker is not None and export_worker.isRunning():
+            dialogs.warning(self, "CSV 가져오기", "CSV 내보내기가 끝난 뒤 다시 시도하세요.")
+            return
+
+        fname, _ = dialogs.get_open_file_name(
+            self,
+            "CSV 메모/북마크 가져오기",
+            "",
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        if not fname:
+            return
+
+        started = True
+        reason = ""
+        begin_maintenance = getattr(self, "begin_database_maintenance", None)
+        if callable(begin_maintenance):
+            try:
+                started, reason = begin_maintenance("csv_import")
+            except Exception as exc:
+                started = False
+                reason = str(exc)
+        if not started:
+            dialogs.warning(self, "CSV 가져오기", reason or "현재 DB 작업이 진행 중이라 CSV 가져오기를 시작할 수 없습니다.")
+            return
+
+        self._csv_import_maintenance_active = callable(begin_maintenance)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress.setValue(0)
+        self._status_bar().showMessage("CSV 가져오기를 시작합니다...")
+
+        worker = IterativeJobWorker(
+            import_bookmarks_notes_from_csv,
+            self._require_db(),
+            fname,
+            EXPORT_CHUNK_SIZE,
+        )
+        self._csv_import_worker = worker
+        worker.progress.connect(self._on_csv_import_progress)
+        worker.finished.connect(self._on_csv_import_finished)
+        worker.error.connect(self._on_csv_import_error)
+        worker.cancelled.connect(self._on_csv_import_cancelled)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        worker.cancelled.connect(worker.deleteLater)
+        worker.start()
+
+    def _finish_csv_import_ui(self: MainApp) -> None:
+        self.progress.setVisible(False)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self._csv_import_worker = None
+        if bool(getattr(self, "_csv_import_maintenance_active", False)):
+            try:
+                self.end_database_maintenance()
+            except Exception:
+                pass
+        self._csv_import_maintenance_active = False
+
+    def _on_csv_import_progress(self: MainApp, payload: Dict[str, Any]) -> None:
+        current = int(payload.get("current", 0) or 0)
+        total = int(payload.get("total", 0) or 0)
+        message = str(payload.get("message", "") or "")
+        if total > 0:
+            self.progress.setRange(0, total)
+            self.progress.setValue(min(current, total))
+        else:
+            self.progress.setRange(0, 0)
+        if message:
+            self._status_bar().showMessage(message)
+
+    def _on_csv_import_finished(self: MainApp, result: Dict[str, Any]) -> None:
+        processed = int(result.get("processed", 0) or 0)
+        updated = int(result.get("updated", 0) or 0)
+        missing = int(result.get("missing", 0) or 0)
+        self._finish_csv_import_ui()
+        self._status_bar().showMessage(f"CSV 가져오기 완료: 갱신 {updated}개 / 건너뜀 {missing}개", 5000)
+        self.show_success_toast(f"CSV 가져오기 완료: {updated}개 기사 갱신")
+        self.on_database_maintenance_completed("csv_import", updated)
+        _dialogs_for(self).information(
+            self,
+            "CSV 가져오기 완료",
+            f"처리 행: {processed:,}개\n기존 기사 갱신: {updated:,}개\n건너뜀: {missing:,}개",
+        )
+
+    def _on_csv_import_error(self: MainApp, error_msg: str) -> None:
+        self._finish_csv_import_ui()
+        self._status_bar().showMessage("CSV 가져오기에 실패했습니다.", 4000)
+        _dialogs_for(self).warning(self, "CSV 가져오기 오류", f"CSV 가져오기 중 오류가 발생했습니다:\n{error_msg}")
+
+    def _on_csv_import_cancelled(self: MainApp) -> None:
+        self._finish_csv_import_ui()
+        self._status_bar().showMessage("CSV 가져오기를 취소했습니다.", 3000)
+        self.show_warning_toast("CSV 가져오기를 취소했습니다.")
+
     def _merge_search_history(
         self: MainApp,
         imported_history: Any,
@@ -583,6 +736,12 @@ class _MainWindowSettingsIOMixin:
                 "refresh_interval_index": int(
                     app_settings_overrides.get("refresh_interval_index", self.interval_idx)
                 ),
+                "auto_backup_minutes": int(
+                    app_settings_overrides.get(
+                        "auto_backup_minutes",
+                        getattr(self, "auto_backup_minutes", 60),
+                    )
+                ),
                 "notification_enabled": bool(
                     app_settings_overrides.get("notification_enabled", self.notification_enabled)
                 ),
@@ -648,9 +807,8 @@ class _MainWindowSettingsIOMixin:
             if not canonical_key:
                 continue
             if known_keys and canonical_key not in known_keys and "|" not in key_text:
-                # Keep canonical/imported keys even when their tab is not open yet, but drop
-                # invalid raw labels that cannot be matched to a query identity.
-                pass
+                # Raw labels from imports must map to a known/current tab identity.
+                continue
             policy = str(raw_policy or "inherit").strip().lower()
             if policy not in allowed:
                 policy = "inherit"
@@ -710,6 +868,7 @@ class _MainWindowSettingsIOMixin:
             "start_minimized": self.start_minimized,
             "auto_start_enabled": self.auto_start_enabled,
             "notify_on_refresh": self.notify_on_refresh,
+            "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
             "api_timeout": self.api_timeout,
             "blocked_publishers": list(getattr(self, "blocked_publishers", [])),
             "preferred_publishers": list(getattr(self, "preferred_publishers", [])),
@@ -780,6 +939,7 @@ class _MainWindowSettingsIOMixin:
         self.start_minimized = bool(runtime_snapshot["start_minimized"])
         self.auto_start_enabled = bool(runtime_snapshot["auto_start_enabled"])
         self.notify_on_refresh = bool(runtime_snapshot["notify_on_refresh"])
+        self.auto_backup_minutes = int(runtime_snapshot.get("auto_backup_minutes", 60) or 0)
         self.api_timeout = int(runtime_snapshot["api_timeout"])
         self.blocked_publishers = list(runtime_snapshot["blocked_publishers"])
         self.preferred_publishers = list(runtime_snapshot["preferred_publishers"])
@@ -798,11 +958,13 @@ class _MainWindowSettingsIOMixin:
         )
         self.keyword_group_manager.groups = dict(runtime_snapshot["keyword_groups"])
         self.keyword_group_manager.last_error = ""
-        self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+        self.setStyleSheet(self._active_app_stylesheet() if hasattr(self, "_active_app_stylesheet") else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT))
         for _index, widget in self._iter_news_tabs():
-            widget.theme = self.theme_idx
+            widget.theme = self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx
             widget.render_html()
         self.apply_refresh_interval()
+        if hasattr(self, "apply_auto_backup_interval"):
+            self.apply_auto_backup_interval()
 
     def _apply_import_runtime_stage(
         self: MainApp,
@@ -824,6 +986,7 @@ class _MainWindowSettingsIOMixin:
         self.start_minimized = normalized_settings["start_minimized"]
         self.auto_start_enabled = normalized_settings["auto_start_enabled"]
         self.notify_on_refresh = normalized_settings["notify_on_refresh"]
+        self.auto_backup_minutes = int(normalized_settings.get("auto_backup_minutes", 60) or 0)
         self.api_timeout = normalized_settings["api_timeout"]
         self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
             normalized_settings["blocked_publishers"],
@@ -842,9 +1005,9 @@ class _MainWindowSettingsIOMixin:
                 imported_geometry["width"],
                 imported_geometry["height"],
             )
-        self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+        self.setStyleSheet(self._active_app_stylesheet() if hasattr(self, "_active_app_stylesheet") else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT))
         for _index, widget in self._iter_news_tabs():
-            widget.theme = self.theme_idx
+            widget.theme = self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx
             widget.render_html()
         added_keywords = stage.setdefault("applied_new_keywords", [])
         added_keywords.clear()
@@ -854,6 +1017,8 @@ class _MainWindowSettingsIOMixin:
         self.keyword_group_manager.groups = dict(stage["merged_keyword_groups"])
         self.keyword_group_manager.last_error = ""
         self.apply_refresh_interval()
+        if hasattr(self, "apply_auto_backup_interval"):
+            self.apply_auto_backup_interval()
         refresh_saved_searches = getattr(self, "_refresh_saved_search_combos", None)
         if callable(refresh_saved_searches):
             refresh_saved_searches()
@@ -877,6 +1042,20 @@ class _MainWindowSettingsIOMixin:
         import_data: Dict[str, Any],
     ) -> Dict[str, Any]:
         settings = import_data.get("settings", {})
+        auto_start_forced_by_machine = False
+        if isinstance(settings, dict):
+            settings = dict(settings)
+            source_machine_id = str(import_data.get("export_machine_id", "") or "").strip()
+            if (
+                bool(settings.get("auto_start_enabled", False))
+                and source_machine_id
+                and source_machine_id != get_machine_identity()
+            ):
+                settings["auto_start_enabled"] = False
+                auto_start_forced_by_machine = True
+                self.show_warning_toast("다른 PC에서 내보낸 설정이라 자동 시작은 꺼진 상태로 가져왔습니다.")
+        else:
+            settings = {}
         fallback_settings = {
             "theme_index": self.theme_idx,
             "refresh_interval_index": self.interval_idx,
@@ -888,6 +1067,7 @@ class _MainWindowSettingsIOMixin:
             "start_minimized": self.start_minimized,
             "auto_start_enabled": self.auto_start_enabled,
             "notify_on_refresh": self.notify_on_refresh,
+            "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
             "api_timeout": self.api_timeout,
             "blocked_publishers": getattr(self, "blocked_publishers", []),
             "preferred_publishers": getattr(self, "preferred_publishers", []),
@@ -896,6 +1076,8 @@ class _MainWindowSettingsIOMixin:
             settings,
             fallback_settings,
         )
+        if auto_start_forced_by_machine:
+            import_warnings.append("다른 PC에서 내보낸 설정이라 auto_start_enabled 값을 False로 강제했습니다.")
 
         if normalized_settings["start_minimized"] and not getattr(self, "tray", None):
             normalized_settings["start_minimized"] = False
@@ -923,11 +1105,22 @@ class _MainWindowSettingsIOMixin:
             import_warnings.append("window_geometry 값이 유효 범위를 벗어나 적용하지 않았습니다.")
 
         imported_new_keywords, skipped_invalid_tabs = self._compute_imported_new_tabs(import_data.get("tabs", []))
-        merged_keyword_groups = self._merge_imported_keyword_groups(import_data.get("keyword_groups", {}))
+        incoming_keyword_groups = import_data.get("keyword_groups", {})
+        if isinstance(incoming_keyword_groups, dict):
+            empty_group_count = sum(
+                1
+                for value in incoming_keyword_groups.values()
+                if isinstance(value, list) and len([item for item in value if str(item or "").strip()]) == 0
+            )
+            if empty_group_count > 0:
+                import_warnings.append(f"빈 키워드 그룹 {empty_group_count}개를 건너뛰었습니다.")
+        merged_keyword_groups = self._merge_imported_keyword_groups(incoming_keyword_groups)
         incoming_saved_searches = import_data.get("saved_searches", {})
         merged_saved_searches = dict(getattr(self, "saved_searches", {}))
         if isinstance(incoming_saved_searches, dict):
             merged_saved_searches.update(incoming_saved_searches)
+            if len(merged_saved_searches) > 100:
+                import_warnings.append("저장 검색은 최대 100개까지만 유지되어 초과 항목을 잘랐습니다.")
 
         incoming_tab_refresh_policies = import_data.get("tab_refresh_policies", {})
         merged_tab_refresh_policies = self._canonicalize_tab_refresh_policies(
@@ -956,6 +1149,7 @@ class _MainWindowSettingsIOMixin:
                 "start_minimized": normalized_settings["start_minimized"],
                 "auto_start_enabled": normalized_settings["auto_start_enabled"],
                 "notify_on_refresh": normalized_settings["notify_on_refresh"],
+                "auto_backup_minutes": normalized_settings.get("auto_backup_minutes", 60),
                 "api_timeout": normalized_settings["api_timeout"],
                 "blocked_publishers": normalized_settings["blocked_publishers"],
                 "preferred_publishers": normalized_settings["preferred_publishers"],
@@ -1001,8 +1195,9 @@ class _MainWindowSettingsIOMixin:
             return
 
         export_data = {
-            "export_version": "1.2",
+            "export_version": "1.3",
             "app_version": VERSION,
+            "export_machine_id": get_machine_identity(),
             "settings": {
                 "theme_index": self.theme_idx,
                 "refresh_interval_index": self.interval_idx,
@@ -1014,6 +1209,7 @@ class _MainWindowSettingsIOMixin:
                 "start_minimized": self.start_minimized,
                 "auto_start_enabled": self.auto_start_enabled,
                 "notify_on_refresh": self.notify_on_refresh,
+                "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
                 "api_timeout": self.api_timeout,
                 "blocked_publishers": getattr(self, "blocked_publishers", []),
                 "preferred_publishers": getattr(self, "preferred_publishers", []),
@@ -1204,6 +1400,7 @@ class _MainWindowSettingsIOMixin:
         self.client_id = data["id"]
         self.client_secret = data["secret"]
         self.interval_idx = data["interval"]
+        self.auto_backup_minutes = int(data.get("auto_backup_minutes", 60) or 0)
 
         self.notification_enabled = data.get("notification_enabled", True)
         self.alert_keywords = data.get("alert_keywords", [])
@@ -1273,12 +1470,14 @@ class _MainWindowSettingsIOMixin:
 
         if self.theme_idx != data["theme"]:
             self.theme_idx = data["theme"]
-            self.setStyleSheet(AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+            self.setStyleSheet(self._active_app_stylesheet() if hasattr(self, "_active_app_stylesheet") else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT))
             for _index, widget in self._iter_news_tabs():
-                widget.theme = self.theme_idx
+                widget.theme = self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx
                 widget.render_html()
 
         self.apply_refresh_interval()
+        if hasattr(self, "apply_auto_backup_interval"):
+            self.apply_auto_backup_interval()
         self.save_config()
         for _index, widget in self._iter_news_tabs():
             widget.load_data_from_db()

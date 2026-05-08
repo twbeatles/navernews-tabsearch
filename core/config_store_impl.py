@@ -29,6 +29,7 @@ class AppSettings(TypedDict):
     client_secret_storage: str
     theme_index: int
     refresh_interval_index: int
+    auto_backup_minutes: int
     notification_enabled: bool
     alert_keywords: List[str]
     sound_enabled: bool
@@ -62,6 +63,7 @@ DEFAULT_CONFIG: AppConfig = {
         "client_secret_storage": "plain",
         "theme_index": 0,
         "refresh_interval_index": 2,
+        "auto_backup_minutes": 60,
         "notification_enabled": True,
         "alert_keywords": [],
         "sound_enabled": True,
@@ -523,6 +525,10 @@ def normalize_import_settings(
             fallback_settings.get("refresh_interval_index"),
             baseline["refresh_interval_index"],
         )
+        baseline["auto_backup_minutes"] = _to_int(
+            fallback_settings.get("auto_backup_minutes"),
+            baseline["auto_backup_minutes"],
+        )
         baseline["notification_enabled"] = _to_bool(
             fallback_settings.get("notification_enabled"),
             baseline["notification_enabled"],
@@ -557,8 +563,9 @@ def normalize_import_settings(
         )
 
     normalized = {
-        "theme_index": max(0, min(1, int(baseline["theme_index"]))),
+        "theme_index": max(0, min(2, int(baseline["theme_index"]))),
         "refresh_interval_index": max(0, min(5, int(baseline["refresh_interval_index"]))),
+        "auto_backup_minutes": max(0, min(360, int(baseline["auto_backup_minutes"]))),
         "notification_enabled": bool(baseline["notification_enabled"]),
         "alert_keywords": list(baseline["alert_keywords"]),
         "sound_enabled": bool(baseline["sound_enabled"]),
@@ -577,8 +584,9 @@ def normalize_import_settings(
         return normalized, warnings
 
     int_fields = {
-        "theme_index": (0, 1),
+        "theme_index": (0, 2),
         "refresh_interval_index": (0, 5),
+        "auto_backup_minutes": (0, 360),
         "api_timeout": (5, 60),
     }
     bool_fields = [
@@ -652,7 +660,7 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         app_cfg["client_secret_storage"] = _normalize_secret_storage(
             app_raw.get("client_secret_storage", app_cfg["client_secret_storage"])
         )
-        app_cfg["theme_index"] = max(0, min(1, _to_int(app_raw.get("theme_index"), app_cfg["theme_index"])))
+        app_cfg["theme_index"] = max(0, min(2, _to_int(app_raw.get("theme_index"), app_cfg["theme_index"])))
         app_cfg["refresh_interval_index"] = max(
             0,
             min(
@@ -660,6 +668,13 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
                 _to_int(
                     app_raw.get("refresh_interval_index"), app_cfg["refresh_interval_index"]
                 ),
+            ),
+        )
+        app_cfg["auto_backup_minutes"] = max(
+            0,
+            min(
+                360,
+                _to_int(app_raw.get("auto_backup_minutes"), app_cfg["auto_backup_minutes"]),
             ),
         )
         app_cfg["notification_enabled"] = _to_bool(
@@ -706,9 +721,13 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     app_cfg["client_secret_storage"] = _normalize_secret_storage(
         raw.get("client_secret_storage", app_cfg["client_secret_storage"])
     )
-    app_cfg["theme_index"] = max(0, min(1, _to_int(raw.get("theme"), app_cfg["theme_index"])))
+    app_cfg["theme_index"] = max(0, min(2, _to_int(raw.get("theme"), app_cfg["theme_index"])))
     app_cfg["refresh_interval_index"] = max(
         0, min(5, _to_int(raw.get("interval"), app_cfg["refresh_interval_index"]))
+    )
+    app_cfg["auto_backup_minutes"] = max(
+        0,
+        min(360, _to_int(raw.get("auto_backup_minutes"), app_cfg["auto_backup_minutes"])),
     )
     app_cfg["notification_enabled"] = _to_bool(
         raw.get("notification_enabled"), app_cfg["notification_enabled"]

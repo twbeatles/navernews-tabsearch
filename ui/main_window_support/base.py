@@ -549,6 +549,8 @@ class _MainWindowBaseMixin:
             "delete_old_news": "오래된 기사 정리",
             "delete_all_news": "전체 기사 정리",
             "mark_all_read": "읽음 상태 일괄 반영",
+            "optimize_database": "DB 최적화",
+            "csv_import": "CSV 가져오기",
         }.get(str(operation or "").strip(), "데이터 정리")
         self._maintenance_mode = True
         self._maintenance_reason = operation_label
@@ -573,8 +575,14 @@ class _MainWindowBaseMixin:
 
     def _update_countdown(self):
         """상태바 카운트다운 업데이트"""
-        if self._sequential_refresh_active or self.is_maintenance_mode_active():
-            self._set_countdown_status_text("")
+        if self.is_maintenance_mode_active():
+            self._set_countdown_status_text("DB 유지보수 중")
+            return
+        if self._sequential_refresh_active:
+            self._set_countdown_status_text("새로고침 진행 중")
+            return
+        if not bool(getattr(self, "_network_available", True)):
+            self._set_countdown_status_text("네트워크 오류로 일시 중지")
             return
 
         if self._next_refresh_seconds > 0:
@@ -588,5 +596,5 @@ class _MainWindowBaseMixin:
                 countdown_text = f"⏰ 다음 새로고침: {seconds}초 후"
             self._set_countdown_status_text(countdown_text)
         else:
-            self._set_countdown_status_text("")
+            self._set_countdown_status_text("자동 새로고침 끔")
             self._countdown_timer.stop()

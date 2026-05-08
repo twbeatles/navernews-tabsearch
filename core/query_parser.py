@@ -18,7 +18,12 @@ def _split_query_tokens(raw: str) -> Tuple[List[str], List[str]]:
 
 
 def parse_tab_query(raw: str) -> Tuple[str, List[str]]:
-    """DB 그룹핑 키워드(첫 양키워드) + 제외어를 반환."""
+    """Return legacy db_keyword metadata and excludes for a tab query.
+
+    The first positive token remains the compatibility `db_keyword` value for
+    old storage/grouping paths. The actual tab/fetch identity must be derived
+    from `parse_search_query(...)` plus excludes through `build_fetch_key(...)`.
+    """
     positive_words, exclude_words = _split_query_tokens(raw)
     db_keyword = positive_words[0] if positive_words else ""
     return db_keyword, exclude_words

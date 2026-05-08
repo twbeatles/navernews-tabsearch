@@ -155,7 +155,7 @@ class TestWorkerCancellation(unittest.TestCase):
         self.assertEqual(db.upsert_calls, 0)
         self.assertEqual(errors, [])
 
-    def test_stop_closes_worker_owned_session(self):
+    def test_stop_marks_worker_cancelled_without_closing_session_inline(self):
         worker, _db = self._make_worker(session=None)
         closable = _ClosableSession()
         worker._request_session = closable
@@ -163,7 +163,8 @@ class TestWorkerCancellation(unittest.TestCase):
 
         worker.stop()
 
-        self.assertTrue(closable.close_called)
+        self.assertFalse(closable.close_called)
+        self.assertFalse(worker.is_running)
 
     def test_finished_result_only_exposes_new_items_for_alerts(self):
         payload = {

@@ -101,6 +101,13 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   filtering, worker cleanup deleteLater calls, and API URL normalization rely on
 #   stdlib / already-bundled modules only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-05-08 review:
+# - Redirect blocking, private-host URL filtering, cooldown clamping, DB
+#   optimize, settings export 1.3 machine identity, scheduled settings backup,
+#   CSV bookmark/note import, regex alerts, tag stats, RotatingFileHandler, and
+#   compatibility-wrapper warnings rely on stdlib / already-bundled modules
+#   only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

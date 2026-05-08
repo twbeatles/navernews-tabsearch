@@ -43,6 +43,10 @@ class _NewsTabLoadingMixin:
         finished = self.worker.wait(max(50, int(wait_ms)))
         if finished:
             self._finalize_cancelled_initial_request(request_id)
+        else:
+            self._request_scope_signatures.pop(request_id, None)
+            self._pending_append_request_ids.discard(request_id)
+            self._pending_scroll_restore = 0
         return finished
 
     def set_maintenance_mode(self, active: bool) -> None:

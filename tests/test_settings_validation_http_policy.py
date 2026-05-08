@@ -90,9 +90,21 @@ class TestSettingsValidationHttpPolicy(unittest.TestCase):
         self.assertEqual(parent.create_http_session_calls, 1)
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(session.calls[0]["timeout"], 27)
+        self.assertFalse(session.calls[0]["allow_redirects"])
         self.assertTrue(session.close_called)
         self.assertEqual(result["status_code"], 200)
         self.assertEqual(result["error_kind"], "")
+
+    def test_validation_rejects_redirect_response(self):
+        session = _DummySession(response=_DummyResponse(302))
+        parent = _DummyParent(session)
+        dialog = _ValidationDialog(parent=parent)
+
+        result = dialog._run_api_validation_request("id", "secret", timeout=15)
+
+        self.assertEqual(result["status_code"], 302)
+        self.assertEqual(result["error_kind"], "redirect_error")
+        self.assertTrue(session.close_called)
 
     def test_validation_timeout_returns_timeout_kind_and_closes_session(self):
         session = _DummySession(raises=requests.Timeout("slow"))

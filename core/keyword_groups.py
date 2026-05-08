@@ -21,6 +21,8 @@ def merge_keyword_groups(
         merged[group_name] = list(keywords)
 
     for group_name, incoming_keywords in incoming_groups.items():
+        if group_name not in merged and not incoming_keywords:
+            continue
         if group_name not in merged:
             merged[group_name] = []
         for keyword in incoming_keywords:

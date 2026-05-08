@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import QMessageBox
 
 from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
 from core.text_utils import RE_HTML_TAGS
+from core.validation import ValidationUtils
 from core.worker_registry import WorkerHandle
 from core.workers import ApiWorker
 
@@ -189,6 +190,7 @@ class _MainWindowFetchMixin:
                     self._network_error_count,
                 )
                 self._network_available = False
+                self._set_countdown_status_text("네트워크 오류로 일시 중지")
                 self._status_bar().showMessage(
                     "네트워크 오류로 자동 새로고침을 잠시 중지했습니다. 수동 새로고침으로 다시 확인해주세요."
                 )
@@ -523,6 +525,13 @@ class _MainWindowFetchMixin:
                     fetch_key,
                     self._fetch_dedupe_window_sec,
                 )
+                notified_keys = getattr(self, "_fetch_dedupe_notified_keys", set())
+                if fetch_key not in notified_keys:
+                    notified_keys.add(fetch_key)
+                    self._fetch_dedupe_notified_keys = notified_keys
+                    message = "같은 조건의 새로고침 요청이 너무 가까워 한 번 건너뛰었습니다."
+                    self._status_bar().showMessage(message, 3000)
+                    self.show_warning_toast(message)
                 return
             self._last_fetch_request_ts[fetch_key] = now_ts
 
@@ -707,14 +716,15 @@ class _MainWindowFetchMixin:
                     new_count=new_count,
                     new_items=new_items,
                 )
-                if bool(getattr(self, "_sequential_refresh_is_auto", False)):
-                    last_by_keyword = dict(getattr(self, "_last_auto_refresh_by_keyword", {}) or {})
-                    last_by_keyword[keyword] = time.time()
-                    self._last_auto_refresh_by_keyword = last_by_keyword
                 self._sequential_new_count += new_count
                 self._sequential_added_count += added_count
                 self._sequential_dup_count += dup_count
                 self._on_sequential_fetch_done(keyword)
+
+            if not is_more:
+                last_by_keyword = dict(getattr(self, "_last_auto_refresh_by_keyword", {}) or {})
+                last_by_keyword[keyword] = time.time()
+                self._last_auto_refresh_by_keyword = last_by_keyword
 
             self._network_error_count = 0
             self._network_available = True
@@ -886,6 +896,4 @@ class _MainWindowFetchMixin:
             return False
 
     def _validate_api_credentials(self: MainApp):
-        from core.validation import ValidationUtils
-
         return ValidationUtils.validate_api_credentials(self.client_id, self.client_secret)

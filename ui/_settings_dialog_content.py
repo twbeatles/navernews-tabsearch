@@ -151,8 +151,25 @@ class _SettingsDialogContentMixin:
         self.cb_time.setCurrentIndex(idx if isinstance(idx, int) and 0 <= idx <= 5 else 2)
 
         self.cb_theme = NoScrollComboBox()
-        self.cb_theme.addItems(["☀ 라이트 모드", "🌙 다크 모드"])
+        self.cb_theme.addItems(["☀ 라이트 모드", "🌙 다크 모드", "시스템 설정 자동"])
         self.cb_theme.setCurrentIndex(self.config.get("theme", 0))
+
+        self.cb_auto_backup = NoScrollComboBox()
+        for label, minutes in [
+            ("사용 안함", 0),
+            ("30분", 30),
+            ("1시간", 60),
+            ("180분", 180),
+            ("6시간", 360),
+        ]:
+            self.cb_auto_backup.addItem(label, minutes)
+        configured_backup_minutes = int(self.config.get("auto_backup_minutes", 60) or 0)
+        backup_values = [0, 30, 60, 180, 360]
+        self.cb_auto_backup.setCurrentIndex(
+            backup_values.index(configured_backup_minutes)
+            if configured_backup_minutes in backup_values
+            else 2
+        )
 
         self.spn_api_timeout = QSpinBox()
         self.spn_api_timeout.setRange(5, 60)
@@ -178,12 +195,14 @@ class _SettingsDialogContentMixin:
         form.addWidget(self.cb_time, 0, 1)
         form.addWidget(QLabel("테마:"), 1, 0)
         form.addWidget(self.cb_theme, 1, 1)
-        form.addWidget(QLabel("API 타임아웃:"), 2, 0)
-        form.addWidget(self.spn_api_timeout, 2, 1)
-        form.addWidget(QLabel("차단 출처:"), 3, 0)
-        form.addWidget(self.txt_blocked_publishers, 3, 1)
-        form.addWidget(QLabel("선호 출처:"), 4, 0)
-        form.addWidget(self.txt_preferred_publishers, 4, 1)
+        form.addWidget(QLabel("설정 자동 백업:"), 2, 0)
+        form.addWidget(self.cb_auto_backup, 2, 1)
+        form.addWidget(QLabel("API 타임아웃:"), 3, 0)
+        form.addWidget(self.spn_api_timeout, 3, 1)
+        form.addWidget(QLabel("차단 출처:"), 4, 0)
+        form.addWidget(self.txt_blocked_publishers, 4, 1)
+        form.addWidget(QLabel("선호 출처:"), 5, 0)
+        form.addWidget(self.txt_preferred_publishers, 5, 1)
 
         group.setLayout(form)
         return group
@@ -263,6 +282,10 @@ class _SettingsDialogContentMixin:
         self.btn_all.clicked.connect(self.clean_all)
         layout.addWidget(self.btn_all)
 
+        self.btn_optimize_db = QPushButton("DB 최적화")
+        self.btn_optimize_db.clicked.connect(self.optimize_database)
+        layout.addWidget(self.btn_optimize_db)
+
         backup_layout = QHBoxLayout()
         btn_export_settings = QPushButton("📤 설정 내보내기")
         btn_export_settings.clicked.connect(self.export_settings_dialog)
@@ -283,6 +306,12 @@ class _SettingsDialogContentMixin:
         tools_layout.addWidget(btn_folder)
         tools_layout.addWidget(btn_groups)
         layout.addLayout(tools_layout)
+
+        import_layout = QHBoxLayout()
+        btn_import_csv = QPushButton("CSV 메모/북마크 가져오기")
+        btn_import_csv.clicked.connect(self.import_csv_dialog)
+        import_layout.addWidget(btn_import_csv)
+        layout.addLayout(import_layout)
 
         group.setLayout(layout)
         return group
