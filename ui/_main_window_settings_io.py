@@ -23,7 +23,7 @@ from core.content_filters import normalize_publisher_filter_lists
 from core.keyword_groups import merge_keyword_groups
 from core.machine_identity import get_machine_identity
 from core.startup import StartupManager
-from core.workers import DBQueryScope, IterativeJobWorker
+from core.workers import DBQueryScope, IterativeJobWorker, delete_qthread_when_finished
 from ui.dialog_adapters import get_dialog_adapter
 from ui.settings_dialog import SettingsDialog
 from ui.styles import AppStyle
@@ -388,9 +388,7 @@ class _MainWindowSettingsIOMixin:
         worker.finished.connect(self._on_export_finished)
         worker.error.connect(self._on_export_error)
         worker.cancelled.connect(self._on_export_cancelled)
-        worker.finished.connect(worker.deleteLater)
-        worker.error.connect(worker.deleteLater)
-        worker.cancelled.connect(worker.deleteLater)
+        delete_qthread_when_finished(worker)
         worker.start()
 
     def _cancel_export_job(self: MainApp) -> None:
@@ -493,9 +491,7 @@ class _MainWindowSettingsIOMixin:
         worker.finished.connect(self._on_csv_import_finished)
         worker.error.connect(self._on_csv_import_error)
         worker.cancelled.connect(self._on_csv_import_cancelled)
-        worker.finished.connect(worker.deleteLater)
-        worker.error.connect(worker.deleteLater)
-        worker.cancelled.connect(worker.deleteLater)
+        delete_qthread_when_finished(worker)
         worker.start()
 
     def _finish_csv_import_ui(self: MainApp) -> None:

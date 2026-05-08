@@ -31,7 +31,7 @@ from core.backup import AutoBackup
 from core.keyword_groups import KeywordGroupManager
 from core.logging_setup import configure_logging
 from core.constants import LOG_FILE
-from core.workers import IterativeJobWorker, retain_worker_until_finished
+from core.workers import IterativeJobWorker, delete_qthread_when_finished, retain_worker_until_finished
 from ui.dialog_adapters import get_dialog_adapter
 
 configure_logging()
@@ -733,9 +733,7 @@ class BackupDialog(QDialog):
         worker.finished.connect(self._on_backup_verification_finished)
         worker.error.connect(self._on_backup_verification_error)
         worker.cancelled.connect(self._on_backup_verification_cancelled)
-        worker.finished.connect(worker.deleteLater)
-        worker.error.connect(worker.deleteLater)
-        worker.cancelled.connect(worker.deleteLater)
+        delete_qthread_when_finished(worker)
         worker.start()
 
     def cancel_backup_verification(self):

@@ -12,7 +12,7 @@ from PyQt6.QtGui import QCloseEvent, QIcon
 from PyQt6.QtWidgets import QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from core.constants import APP_NAME
-from core.workers import InterruptibleReadWorker, retain_worker_until_finished
+from core.workers import InterruptibleReadWorker, delete_qthread_when_finished, retain_worker_until_finished
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
@@ -142,9 +142,7 @@ class _MainWindowTrayMixin:
             worker.finished.connect(apply_unread)
             worker.error.connect(clear_worker)
             worker.cancelled.connect(clear_worker)
-            worker.finished.connect(worker.deleteLater)
-            worker.error.connect(worker.deleteLater)
-            worker.cancelled.connect(worker.deleteLater)
+            delete_qthread_when_finished(worker)
             worker.start()
         except Exception as e:
             logger.warning(f"트레이 툴팁 업데이트 오류: {e}")

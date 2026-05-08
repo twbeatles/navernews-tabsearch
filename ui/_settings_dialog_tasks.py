@@ -13,7 +13,12 @@ from core.constants import DATA_DIR, RUNTIME_PATHS, RuntimePaths
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
 from core.validation import ValidationUtils
-from core.workers import AsyncJobWorker, IterativeJobWorker, retain_worker_until_finished
+from core.workers import (
+    AsyncJobWorker,
+    IterativeJobWorker,
+    delete_qthread_when_finished,
+    retain_worker_until_finished,
+)
 
 if TYPE_CHECKING:
     from ui.settings_dialog import SettingsDialog
@@ -166,10 +171,7 @@ class _SettingsDialogTasksMixin:
         job_func: Callable[..., Any],
     ) -> AsyncJobWorker:
         worker = AsyncJobWorker(job_func, parent=None)
-        try:
-            worker.finished.connect(worker.deleteLater)
-        except Exception:
-            pass
+        delete_qthread_when_finished(worker)
         return worker
 
     def _create_iterative_worker(
@@ -177,14 +179,7 @@ class _SettingsDialogTasksMixin:
         job_func: Callable[..., Any],
     ) -> IterativeJobWorker:
         worker = IterativeJobWorker(job_func, parent=None)
-        try:
-            worker.finished.connect(worker.deleteLater)
-        except Exception:
-            pass
-        try:
-            worker.cancelled.connect(worker.deleteLater)
-        except Exception:
-            pass
+        delete_qthread_when_finished(worker)
         return worker
 
     def validate_api_key(self: SettingsDialog):

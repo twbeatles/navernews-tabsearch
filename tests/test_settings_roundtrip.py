@@ -44,7 +44,7 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         src = inspect.getsource(SettingsDialog._create_worker)
         self.assertIn("def _create_worker", src)
         self.assertIn("AsyncJobWorker(job_func, parent=None)", src)
-        self.assertIn("worker.finished.connect(worker.deleteLater)", src)
+        self.assertIn("delete_qthread_when_finished(worker)", src)
 
     def test_shutdown_worker_detaches_parent_when_wait_times_out(self):
         block = inspect.getsource(SettingsDialog._shutdown_worker)

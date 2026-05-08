@@ -37,6 +37,23 @@ def _safe_delete_later(obj: Any) -> None:
         pass
 
 
+def connect_qthread_finished(worker: Any, slot: Callable[..., Any]) -> bool:
+    """Connect to QThread.finished even when subclasses define result signals named finished."""
+    if not isinstance(worker, QThread):
+        return False
+    try:
+        finished_signal = QThread.finished.__get__(worker, type(worker))
+        finished_signal.connect(slot)
+        return True
+    except Exception:
+        return False
+
+
+def delete_qthread_when_finished(worker: Any) -> bool:
+    """Delete a QThread subclass only after Qt reports the native thread has finished."""
+    return connect_qthread_finished(worker, lambda *_args: _safe_delete_later(worker))
+
+
 def retain_worker_until_finished(worker: Any) -> None:
     """Keep a detached QThread subclass alive until its run method settles."""
     if worker is None:
@@ -49,9 +66,9 @@ def retain_worker_until_finished(worker: Any) -> None:
         if retained is not None:
             _safe_delete_later(retained)
 
-    connected = False
+    connected = connect_qthread_finished(worker, release)
     settled = getattr(worker, "settled", None)
-    if settled is not None:
+    if not connected and settled is not None:
         try:
             settled.connect(release)
             connected = True

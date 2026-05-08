@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
 from core.database import DatabaseWriteError
 from core.content_filters import normalize_tags, tags_to_csv
-from core.workers import IterativeJobWorker
+from core.workers import IterativeJobWorker, delete_qthread_when_finished
 from ui.dialogs import NoteDialog
 from ui.protocols import MainWindowProtocol
 
@@ -536,10 +536,11 @@ class _NewsTabActionsMixin:
         detach_worker_signals = getattr(self, "_detach_worker_signals", None)
         if callable(detach_worker_signals):
             detach_worker_signals(worker, ("finished", "error", "cancelled", "progress"))
-        try:
-            worker.deleteLater()
-        except Exception:
-            pass
+        if not delete_qthread_when_finished(worker):
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
         self.job_worker = None
 
     def _end_mark_all_read_maintenance(self) -> None:
