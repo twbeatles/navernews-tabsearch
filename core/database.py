@@ -7,6 +7,7 @@ from queue import Queue
 from typing import Iterator, Optional, TYPE_CHECKING
 
 from core._db_analytics import _DatabaseAnalyticsMixin
+from core._db_cloud_sync import _DatabaseCloudSyncMixin
 from core._db_duplicates import _DatabaseDuplicatesMixin
 from core._db_mutations import _DatabaseMutationsMixin
 from core._db_queries import _DatabaseQueriesMixin
@@ -103,6 +104,7 @@ class DatabaseManager(
     _DatabaseQueriesMixin,
     _DatabaseMutationsMixin,
     _DatabaseAnalyticsMixin,
+    _DatabaseCloudSyncMixin,
 ):
     """스레드 안전한 데이터베이스 매니저 (연결 풀 사용)"""
 

@@ -244,6 +244,17 @@ class _DatabaseSchemaMixin:
             """
         )
 
+    def _ensure_news_tag_state_schema(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS news_tag_state (
+                link TEXT PRIMARY KEY,
+                tags_updated_at REAL DEFAULT 0,
+                FOREIGN KEY (link) REFERENCES news(link) ON DELETE CASCADE
+            )
+            """
+        )
+
     def _ensure_app_meta_table(self: DatabaseManager, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
@@ -470,10 +481,12 @@ class _DatabaseSchemaMixin:
             )
             self._ensure_news_keywords_schema(conn)
             self._ensure_news_tags_schema(conn)
+            self._ensure_news_tag_state_schema(conn)
             self._ensure_app_meta_table(conn)
             self._ensure_news_fts_schema(conn)
 
             existing_columns = self._news_column_names(conn)
+            columns_before_migration = set(existing_columns)
             for col, dtype in [
                 ("pubDate_ts", "REAL"),
                 ("publisher", "TEXT"),
@@ -483,8 +496,46 @@ class _DatabaseSchemaMixin:
                 ("notes", "TEXT"),
                 ("title_hash", "TEXT"),
                 ("is_duplicate", "INTEGER DEFAULT 0"),
+                ("read_updated_at", "REAL DEFAULT 0"),
+                ("bookmark_updated_at", "REAL DEFAULT 0"),
+                ("notes_updated_at", "REAL DEFAULT 0"),
             ]:
                 self._ensure_news_column(conn, existing_columns, col, dtype)
+
+            state_timestamp_added = any(
+                column not in columns_before_migration
+                for column in (
+                    "read_updated_at",
+                    "bookmark_updated_at",
+                    "notes_updated_at",
+                )
+            )
+            if state_timestamp_added:
+                now_ts = datetime.now().timestamp()
+                conn.execute(
+                    "UPDATE news SET read_updated_at = ? "
+                    "WHERE COALESCE(is_read, 0) != 0 AND COALESCE(read_updated_at, 0) = 0",
+                    (now_ts,),
+                )
+                conn.execute(
+                    "UPDATE news SET bookmark_updated_at = ? "
+                    "WHERE COALESCE(is_bookmarked, 0) != 0 AND COALESCE(bookmark_updated_at, 0) = 0",
+                    (now_ts,),
+                )
+                conn.execute(
+                    "UPDATE news SET notes_updated_at = ? "
+                    "WHERE COALESCE(notes, '') != '' AND COALESCE(notes_updated_at, 0) = 0",
+                    (now_ts,),
+                )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO news_tag_state(link, tags_updated_at)
+                SELECT DISTINCT link, ?
+                FROM news_tags
+                WHERE link IS NOT NULL AND link != ''
+                """,
+                (datetime.now().timestamp(),),
+            )
 
             indexes = [
                 "CREATE INDEX IF NOT EXISTS idx_keyword ON news(keyword)",

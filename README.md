@@ -30,6 +30,7 @@
 - 현재 탭의 검색어/필터/정렬/기간/태그/선호 출처 조건을 이름으로 저장하고 대상 검색어 탭으로 이동/생성해 다시 적용하는 저장된 검색
 - 탭별 자동 새로고침 정책: 기본은 전역 설정 상속, 탭 컨텍스트 메뉴에서 상속/끔/개별 간격 override
 - 키워드 그룹 관리
+- 로컬 DB + 클라우드 스냅샷 ZIP 기반 동기화(기본 30분, 수동 내보내기/병합 지원)
 - 시스템 트레이 동작(최소화/닫기 동작 커스터마이징)
 - 단일 인스턴스 실행 보장(중복 실행 방지)
 - 설정 자동 백업 + 수동 DB 포함 백업 및 재시작 적용형 복원(pending restore), 복원 예약 전 dry-run 요약
@@ -73,6 +74,9 @@
 - `모두 읽음`, 오래된 기사 삭제, 전체 기사 삭제는 chunked `IterativeJobWorker` 경로로 옮겨 유지보수/종료 시 `stop()`이 실제 효력을 갖도록 조정
 - `RuntimePaths`를 도입해 `config/db/log/pending_restore/backups/lock/crash` 경로를 단일 객체로 통합하고, 실행 폴더 대신 `DATA_DIR` 기준으로 런타임 저장 위치를 고정
 - 레거시 런타임 파일 마이그레이션은 `core/runtime_support/migration.py`로 분리하고, DB는 SQLite backup API 우선 + fallback integrity 검증, `pending_restore.json`은 `backup_dir` rebasing, `backups/`는 폴더 단위 merge로 강화
+- 클라우드 동기화는 OneDrive/Google Drive 폴더의 live SQLite DB를 직접 열지 않고, 로컬 DB와 검증된 `news_scraper_sync_*.zip` 스냅샷을 교환한다
+- 클라우드 스냅샷은 `manifest.json`, secret 제거 설정 JSON, SQLite backup API로 만든 DB 복사본만 포함하며 API 자격증명과 `-wal`/`-shm` sidecar는 제외한다
+- 스냅샷 병합은 기사/검색범위를 union하고 읽음/북마크/메모/태그는 per-field timestamp 최신값을 반영하며, v1에서는 삭제 전파를 하지 않는다
 - `MainApp`과 `NewsTab`은 얇은 facade로 유지하고, 실제 책임은 `ui/main_window_support/`와 `ui/news_tab_support/` 아래 모듈로 분리해 SOLID 기준의 변경 지점을 더 명확히 했다
 - 저장소 주요 텍스트 자산의 mojibake 문자열을 정리하고, 인코딩 스모크 테스트를 다중 suspicious token/패턴 감시로 강화
 - 백업 메타는 legacy `include_db` 누락을 실제 payload 파일 기준으로 자동 판별하고, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 다시 기록
@@ -164,14 +168,12 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-05-08)
+## 최신 검증 메모 (2026-05-10)
 
-- `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`입니다.
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => 성공, 산출물 `dist/NewsScraperPro_Safe.exe`
-- 삭제 상태의 `implementation_gap_review_2026-04-29.md`는 이번 문서 정리/푸쉬 범위에 포함했습니다.
+- `news_scraper_pro.spec`는 2026-05-10 cloud snapshot sync 기준으로 재검토했으며, 표준 라이브러리와 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않습니다.
 
 ## 프로젝트 구조
 
@@ -189,6 +191,7 @@ navernews-tabsearch/
 │   ├── config_store.py          # 설정 import 호환 facade
 │   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
 │   ├── content_filters.py       # 출처/태그 정규화 helper
+│   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -199,6 +202,7 @@ navernews-tabsearch/
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
+│   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 / seen snapshot 추적
 │   ├── protocols.py             # lock/session capability Protocol 정의
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
@@ -264,6 +268,7 @@ navernews-tabsearch/
 │   ├── test_worker_cancellation.py
 │   ├── test_backup_collision_and_restore.py
 │   ├── test_backup_restore_mode.py
+│   ├── test_cloud_sync.py
 │   ├── test_audit_followthrough.py
 │   ├── test_dialog_adapters_smoke.py
 │   ├── test_import_refresh_prompt.py
@@ -383,6 +388,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-05-03 기준 `git status --ignored --short`로 `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, `__pycache__/`, runtime DB/config/log/backup/pending restore 잔여물이 계속 무시되는 것을 확인했고, `.gitignore` 추가 수정은 필요하지 않았습니다.
 - 2026-05-08 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 리다이렉트 차단, 사설 URL 필터, DB 최적화, export 1.3 machine id, 설정-only 자동 백업, CSV 메모/북마크 import, 정규식 알림, 태그 통계, 로그 회전은 표준 라이브러리/기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않습니다.
 - 2026-05-08 기준 `git status --ignored --short`와 `git check-ignore -v build dist .pytest_tmp .pytest_cache __pycache__ dist\NewsScraperPro_Safe.exe build\news_scraper_pro\Analysis-00.toc`로 build/dist/cache/log 산출물이 기존 `.gitignore` 규칙으로 무시되는 것을 확인했습니다.
+- 2026-05-10 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, cloud snapshot sync는 표준 라이브러리(`json`, `zipfile`, `tempfile`, `shutil`, `uuid`)와 SQLite backup API만 추가 사용하므로 별도 hidden import/exclude/data 변경은 필요하지 않습니다.
+- 2026-05-10 기준 `.gitignore`에는 cloud snapshot 산출물(`news_scraper_sync_*.zip`, `.news_scraper_sync_*.zip.tmp`)을 추가로 무시하도록 보강했습니다.
 - 2026-04-29 문서 정합화에서는 삭제 상태인 `implementation_risk_review_2026-04-27.md`를 되돌리지 않고 현재 작업트리 상태로 유지합니다.
 
 ## 네이버 API 키 설정
@@ -436,6 +443,10 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `pagination_state` 값은 `1..1000` 범위로 정규화됩니다.
 - `pagination_totals`는 `fetch_key -> 마지막으로 확인한 API total` 매핑이며 `0`도 유효한 값으로 저장됩니다.
 - `search_history`는 `canonical query` 기준으로 dedupe되며 공백/대소문자만 다른 변형은 별도 항목으로 누적되지 않습니다.
+- 클라우드 동기화는 live DB를 로컬 `DATA_DIR`에 두고, OneDrive/Google Drive 같은 폴더에는 `news_scraper_sync_*.zip` 스냅샷만 교환합니다.
+- `DATA_DIR` 또는 `news_database.db`가 클라우드 동기화 폴더 안에 있는 것으로 감지되면 주기 동기화는 차단됩니다.
+- 클라우드 스냅샷 ZIP에는 `manifest.json`, secret 제거 `settings.json`, SQLite backup API로 만든 `news_database.db`만 들어갑니다. API 자격증명과 SQLite `-wal`/`-shm` sidecar는 포함하지 않습니다.
+- 클라우드 동기화는 기사/검색범위를 `link`, `(link, query_key)` 기준으로 union 병합합니다. 읽음/북마크/메모/태그 충돌은 per-field timestamp 최신 변경을 따르며, v1에서는 삭제 전파를 지원하지 않습니다.
 - 백업 복원 예약은 선택한 백업의 `include_db` 메타를 우선 사용하고, legacy 백업처럼 메타가 없으면 실제 DB payload 존재 여부로 복원 범위(`설정만`/`설정+DB`)를 자동 판별합니다.
 - 백업 메타의 `trigger`는 `auto`/`manual` 값을 가지며, 자동 시작 백업은 수동 백업과 별도 보존 정책으로 관리됩니다.
 - 자동 시작 백업은 `설정만` 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
@@ -472,6 +483,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `core.workers.ApiWorker`는 `last_error_meta(kind/status_code/cooldown_seconds/retryable)`를 남기며, `MainApp.on_fetch_error(...)`는 이를 읽어 전역 fetch cooldown을 갱신합니다.
 - `core.workers.ApiWorker`는 API 응답의 `originallink`/`link` 중 `http`/`https` URL만 저장 후보로 삼고, 둘 다 유효하지 않으면 해당 item을 건너뜁니다. publisher는 유효한 URL host에서 `www.`를 제거해 산출합니다.
 - `DatabaseManager.iter_news_snapshot_batches(...)`는 현재 탭 필터 전체 결과를 단일 read snapshot 위에서 순회해 CSV export 일관성을 보장합니다.
+- `DatabaseManager.merge_cloud_snapshot_db(...)`는 스냅샷 DB를 단일 transaction에서 병합하고, 실패 시 사전 백업으로 rollback합니다. 이미 가져온 snapshot id와 같은 PC snapshot은 건너뜁니다.
+- `core.cloud_sync.create_cloud_snapshot(...)` / `import_cloud_snapshot(...)` / `run_cloud_sync_cycle(...)`는 클라우드 스냅샷 ZIP의 생성, 검증, 병합, 오래된 스냅샷 정리를 담당합니다.
 - `DatabaseManager.optimize_database(vacuum: bool = False)`는 설정 창의 DB 최적화 작업에서 사용됩니다.
 - `DatabaseManager.get_top_tags(limit=20, ...)`는 통계 다이얼로그의 태그 통계를 제공합니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유하며, 도메인 값은 `example.com`이 `example.com`/`news.example.com`에 매칭되고 `badexample.com`에는 매칭되지 않습니다.

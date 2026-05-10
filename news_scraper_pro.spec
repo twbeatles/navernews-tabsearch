@@ -108,6 +108,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   compatibility-wrapper warnings rely on stdlib / already-bundled modules
 #   only.
 # - No additional hidden import/exclude/data change is required for this pass.
+# 2026-05-10 review:
+# - Local DB + cloud snapshot sync uses stdlib json/zipfile/tempfile/shutil/uuid
+#   plus existing SQLite backup APIs and already-bundled PyQt worker/dialog paths.
+# - Snapshot ZIPs are runtime data, not bundled datas; no additional hidden
+#   import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

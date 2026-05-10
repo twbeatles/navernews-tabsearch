@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-08)
+작성일: 2026-03-16 (최근 갱신: 2026-05-10)
 
 ## 분석 범위
 
@@ -16,6 +16,20 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-05-10 클라우드 스냅샷 동기화 / 문서·spec·gitignore 재검증
+
+이번 재검증에서는 OneDrive/Google Drive 같은 동기화 폴더에서 live SQLite DB를 직접 여는 위험을 피하기 위해 로컬 DB + 클라우드 스냅샷 병합 구조를 추가했다.
+
+- `core.cloud_sync.py`는 `news_scraper_sync_*.zip` 생성/검증/추출/가져오기/cycle/정리와 cloud/runtime path overlap 감지를 담당한다. ZIP payload는 `manifest.json`, secret 제거 `settings.json`, SQLite backup API로 만든 `news_database.db`만 포함한다.
+- `core._db_cloud_sync.py`는 `DatabaseManager.merge_cloud_snapshot_db(...)`, seen snapshot id 추적, 같은 PC snapshot skip, 사전 rollback backup, 단일 transaction 병합을 제공한다.
+- `core._db_schema.py`는 `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, `news_tag_state(link, tags_updated_at)`를 보장하고, legacy 데이터는 사용자 상태가 실제로 있는 필드만 현재 시각 timestamp로 초기화한다.
+- `core._db_mutations.py`는 읽음/북마크/메모/태그 변경 시 per-field timestamp를 갱신한다. 삭제 전파는 v1에서 의도적으로 제외한다.
+- `ui._settings_dialog_content.py`, `ui._settings_dialog_tasks.py`, `ui._main_window_settings_io.py`, `ui.main_window.py`는 설정 화면의 클라우드 동기화 UI, 수동 내보내기/병합, 30분 기본 주기 timer, 유지보수/fetch 중 skip, 병합 후 열린 탭/북마크/배지 refresh를 연결한다.
+- API 자격증명은 기존 DPAPI 로컬 저장 정책을 유지하고, settings export/import와 cloud snapshot 모두에서 `client_id`, `client_secret`, `client_secret_enc`, `client_secret_storage`를 제외한다.
+- `news_scraper_pro.spec`는 2026-05-10 기준 다시 검토했으며, 이번 변경은 표준 라이브러리와 기존 SQLite/PyQt 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
+- `.gitignore`는 cloud snapshot 산출물(`news_scraper_sync_*.zip`, `.news_scraper_sync_*.zip.tmp`)을 무시하도록 보강했다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`이다.
 
 ## 0. 2026-05-08 후속 리뷰 전면 반영 / 문서·spec·gitignore 재검증
 
@@ -349,12 +363,14 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `core/config_store.py` | 기존 import 경로를 유지하는 설정 facade |
 | `core/config_store_impl.py` | 설정 TypedDict, 로드 정규화, 원자 저장/.backup 회전, import 보정, DPAPI |
 | `core/content_filters.py` | 차단/선호 출처 충돌 정규화와 자유 태그 정규화 |
+| `core/cloud_sync.py` | 클라우드 스냅샷 ZIP 생성/검증/가져오기/cycle/정리 |
 | `core/database.py` | `DatabaseManager` facade, 연결 풀 수명 주기 |
 | `core/_db_schema.py` | DB 초기화, 마이그레이션, 무결성 검사, 복구 |
 | `core/_db_duplicates.py` | 제목 해시, 중복 플래그 계산/복구 |
 | `core/_db_queries.py` | 조회, count, unread 집계 |
 | `core/_db_mutations.py` | upsert, 상태 변경, 삭제, mark-read |
 | `core/_db_analytics.py` | 통계, 언론사별 집계 |
+| `core/_db_cloud_sync.py` | 스냅샷 DB 병합, per-field timestamp 충돌 해결, seen snapshot 추적 |
 | `core/http_client.py` | 중앙 HTTP 설정, session factory |
 | `core/workers.py` | `ApiWorker`, `DBWorker`, `AsyncJobWorker`, `IterativeJobWorker`, `InterruptibleReadWorker`, `DBQueryScope` |
 | `core/worker_registry.py` | 요청 ID 기반 워커 활성 상태 관리 |
@@ -371,6 +387,7 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 
 - `core.database.py`는 133줄 수준의 facade로 축소됐고, 실제 책임은 `core/_db_*.py`로 분리됐다.
 - `core.config_store.py`는 이제 호환성 facade이고, 실제 설정 보안/정규화/파일 I/O는 `core.config_store_impl.py`에 있다.
+- `core.cloud_sync.py`는 live DB를 클라우드 폴더에서 직접 열지 않도록 스냅샷 ZIP만 다루며, `core._db_cloud_sync.py`는 DB 병합 책임만 분리해 가진다.
 - 출처/태그처럼 UI, 설정, DB export가 함께 쓰는 normalization은 `core.content_filters.py`에 모아져 있다. 차단/선호 출처는 cross-list 충돌까지 이 helper에서 정리한다.
 - `core.query_parser.py`는 작지만 의미상 매우 중요하다. 탭 의미, API 질의, 페이지네이션 키가 여기 정책에 묶여 있다.
 - `core.backup.py`는 파일 복사 유틸이 아니라, **복원 무결성 보장 모듈**에 가깝다.
@@ -430,6 +447,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 검색/페이지네이션: `test_query_parser_search_policy.py`, `test_pagination_state_persistence.py`, `test_load_more_total_guard.py`
 - 단일 인스턴스/시작: `test_single_instance_guard.py`, `test_start_minimized_guard.py`, `test_startup_registry_command.py`
 - 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`, `test_stabilization_round1.py`
+- 클라우드 동기화: `test_cloud_sync.py`
 - 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_news_tab_performance.py`, `test_settings_dialog_maintenance.py`, `test_stabilization_round1.py`
 - 2026-04-27 기능 배치: `test_implementation_batch_20260427.py`
 - 2026-04-29 구현 갭 클로저: `test_implementation_plan_20260429.py`
@@ -465,6 +483,9 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - `pagination_totals`
 - `saved_searches`
 - `tab_refresh_policies`
+- `cloud_sync_enabled`
+- `cloud_sync_dir`
+- `cloud_sync_interval_minutes`
 
 특징:
 
@@ -474,23 +495,26 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - `app_settings.blocked_publishers` / `preferred_publishers`는 trim, 빈 값 제거, case-insensitive dedupe와 양쪽 충돌 제거를 거친다.
 - `saved_searches`는 검색어, 탭 필터/정렬/기간/태그/선호 출처 조건을 이름별 payload로 저장하고, 적용 시 저장된 검색어 탭으로 이동/생성한다.
 - `tab_refresh_policies`는 탭별 자동 새로고침 override이며 기본값은 전역 설정 상속이다.
+- `cloud_sync_*` 설정은 로컬 PC의 스냅샷 폴더와 주기만 관리한다. API 자격증명과 live DB 경로는 cloud snapshot payload에 포함하지 않는다.
 - 손상 시 `.backup` fallback 복구가 있다.
 - Windows에서는 `client_secret_enc` + `client_secret_storage=dpapi` 경로를 지원한다.
 
 ### 데이터베이스
 
-핵심 테이블은 3개다.
+핵심 테이블은 4개다.
 
 - `news`
 - `news_keywords`
 - `news_tags`
+- `news_tag_state`
 
 설계 의도는 다음과 같다.
 
 - `news`는 기사 자체의 단일 원본 저장소
 - `news_keywords`는 "어떤 탭 의미(키워드 그룹)에 이 기사가 속하는가"를 표현하는 매핑
 - 중복 여부는 기사 전체가 아니라 **키워드 맥락별**로 계산할 수 있게 `news_keywords.is_duplicate`에 반영
-- `news_tags`는 기사별 자유 태그 매핑이며, `link` 삭제 시 FK cascade와 명시 cleanup을 함께 적용한다.
+- `news_tags`는 기사별 자유 태그 매핑이며, `news_tag_state`는 태그 변경 timestamp를 저장해 클라우드 스냅샷 병합 충돌 해결에 사용한다.
+- `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`은 여러 PC에서 같은 기사의 상태가 달라졌을 때 최신 필드 변경만 반영하기 위한 timestamp다.
 
 즉, 앞으로 "커스텀 분류", "보관함", "소스 차단 규칙" 같은 기능을 넣을 때도 이 매핑 구조를 확장하는 방향이 자연스럽다. 다만 태그는 이미 `news_tags`로 분리되어 있으므로 새 태그성 기능은 이 테이블/API와 먼저 맞춰야 한다.
 
@@ -507,6 +531,15 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - 복원은 즉시 강행하지 않고 pending restore로 예약
 - 적용 중 실패하면 rollback
 - 메타 손상 백업도 목록에서 완전히 숨기지 않고 `손상됨` 상태로 노출
+
+### 클라우드 스냅샷 동기화
+
+클라우드 동기화는 `DATA_DIR/news_database.db`를 직접 공유하지 않고, 사용자가 선택한 동기화 폴더에 `news_scraper_sync_*.zip`만 둔다.
+
+- ZIP에는 `manifest.json`, sanitized `settings.json`, SQLite backup API로 만든 `news_database.db`가 들어간다.
+- `client_id`, `client_secret`, `client_secret_enc`, `client_secret_storage`, `cloud_sync_dir`는 snapshot settings에서 제거한다.
+- `DATA_DIR` 또는 live DB가 OneDrive/Google Drive 같은 동기화 폴더 안에 있거나 snapshot 폴더가 runtime 경로와 겹치면 자동 동기화는 차단된다.
+- 삭제 전파는 v1에서 하지 않는다. 여러 PC 병합에서 데이터 손실보다 보존을 우선하는 정책이다.
 
 ## 6. 비동기 / 스레드 구조
 

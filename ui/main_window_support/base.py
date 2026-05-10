@@ -552,6 +552,8 @@ class _MainWindowBaseMixin:
             "optimize_database": "DB 최적화",
             "csv_import": "CSV 가져오기",
         }.get(str(operation or "").strip(), "데이터 정리")
+        if str(operation or "").strip() == "cloud_sync":
+            operation_label = "클라우드 동기화"
         self._maintenance_mode = True
         self._maintenance_reason = operation_label
         self._pause_fts_backfill(retry_delay_ms=1000)

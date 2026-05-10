@@ -69,3 +69,9 @@ class SettingsDialogParentProtocol(Protocol):
 
     def create_http_session(self) -> Any:
         ...
+
+    def run_cloud_sync_export_now(self) -> None:
+        ...
+
+    def run_cloud_sync_import_now(self) -> None:
+        ...

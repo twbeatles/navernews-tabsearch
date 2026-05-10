@@ -233,7 +233,18 @@ class _DatabaseMutationsMixin:
         conn = self.get_connection()
         try:
             with conn:
-                cursor = conn.execute(f"UPDATE news SET {field} = ? WHERE link = ?", (value, link))
+                timestamp_field = {
+                    "is_read": "read_updated_at",
+                    "is_bookmarked": "bookmark_updated_at",
+                    "notes": "notes_updated_at",
+                }.get(field)
+                if timestamp_field:
+                    cursor = conn.execute(
+                        f"UPDATE news SET {field} = ?, {timestamp_field} = ? WHERE link = ?",
+                        (value, datetime.now().timestamp(), link),
+                    )
+                else:
+                    cursor = conn.execute(f"UPDATE news SET {field} = ? WHERE link = ?", (value, link))
             return int(cursor.rowcount or 0) > 0
         except sqlite3.Error as e:
             logger.error("DB update failed: %s", e)
@@ -254,6 +265,7 @@ class _DatabaseMutationsMixin:
             with conn:
                 affected = self._collect_affected_query_key_hashes(conn, "n.link = ?", [link])
                 conn.execute("DELETE FROM news_tags WHERE link = ?", (link,))
+                conn.execute("DELETE FROM news_tag_state WHERE link = ?", (link,))
                 cursor = conn.execute("DELETE FROM news WHERE link = ?", (link,))
                 deleted = int(cursor.rowcount or 0)
                 if deleted <= 0:
@@ -315,6 +327,15 @@ class _DatabaseMutationsMixin:
                         "INSERT OR IGNORE INTO news_tags(link, tag) VALUES (?, ?)",
                         [(link, tag) for tag in normalized_tags],
                     )
+                conn.execute(
+                    """
+                    INSERT INTO news_tag_state(link, tags_updated_at)
+                    VALUES (?, ?)
+                    ON CONFLICT(link) DO UPDATE SET
+                        tags_updated_at = excluded.tags_updated_at
+                    """,
+                    (link, datetime.now().timestamp()),
+                )
             return True
         except sqlite3.Error as e:
             logger.error("set_tags failed: %s", e)

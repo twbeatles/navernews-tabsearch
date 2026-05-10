@@ -313,6 +313,49 @@ class _SettingsDialogContentMixin:
         import_layout.addWidget(btn_import_csv)
         layout.addLayout(import_layout)
 
+        cloud_group = QGroupBox("클라우드 동기화")
+        cloud_layout = QVBoxLayout()
+        self.chk_cloud_sync_enabled = QCheckBox("주기적 클라우드 동기화 사용")
+        self.chk_cloud_sync_enabled.setChecked(bool(self.config.get("cloud_sync_enabled", True)))
+        cloud_layout.addWidget(self.chk_cloud_sync_enabled)
+
+        cloud_dir_layout = QHBoxLayout()
+        self.txt_cloud_sync_dir = QLineEdit(str(self.config.get("cloud_sync_dir", "") or ""))
+        self.txt_cloud_sync_dir.setPlaceholderText("OneDrive/Google Drive 스냅샷 폴더")
+        btn_cloud_browse = QPushButton("폴더 선택")
+        btn_cloud_browse.clicked.connect(self.choose_cloud_sync_folder)
+        cloud_dir_layout.addWidget(self.txt_cloud_sync_dir)
+        cloud_dir_layout.addWidget(btn_cloud_browse)
+        cloud_layout.addLayout(cloud_dir_layout)
+
+        cloud_interval_layout = QHBoxLayout()
+        cloud_interval_layout.addWidget(QLabel("동기화 간격:"))
+        self.cb_cloud_sync_interval = NoScrollComboBox()
+        for minutes in (10, 30, 60, 120, 360):
+            self.cb_cloud_sync_interval.addItem(f"{minutes}분", minutes)
+        current_interval = int(self.config.get("cloud_sync_interval_minutes", 30) or 30)
+        interval_index = self.cb_cloud_sync_interval.findData(current_interval)
+        self.cb_cloud_sync_interval.setCurrentIndex(interval_index if interval_index >= 0 else 1)
+        cloud_interval_layout.addWidget(self.cb_cloud_sync_interval)
+        cloud_interval_layout.addStretch()
+        cloud_layout.addLayout(cloud_interval_layout)
+
+        cloud_buttons = QHBoxLayout()
+        btn_cloud_export = QPushButton("지금 내보내기")
+        btn_cloud_export.clicked.connect(self.cloud_sync_export_dialog)
+        btn_cloud_import = QPushButton("지금 병합")
+        btn_cloud_import.clicked.connect(self.cloud_sync_import_dialog)
+        cloud_buttons.addWidget(btn_cloud_export)
+        cloud_buttons.addWidget(btn_cloud_import)
+        cloud_layout.addLayout(cloud_buttons)
+
+        self.lbl_cloud_sync_status = QLabel(str(self.config.get("cloud_sync_last_status", "") or ""))
+        self.lbl_cloud_sync_status.setWordWrap(True)
+        self.lbl_cloud_sync_status.setStyleSheet("color: #666; font-size: 9pt;")
+        cloud_layout.addWidget(self.lbl_cloud_sync_status)
+        cloud_group.setLayout(cloud_layout)
+        layout.addWidget(cloud_group)
+
         group.setLayout(layout)
         return group
 

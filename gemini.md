@@ -31,6 +31,7 @@ navernews-tabsearch/
 │   ├── config_store.py          # 설정 import 호환 facade
 │   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
 │   ├── content_filters.py       # 출처/태그 정규화 helper
+│   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -41,6 +42,7 @@ navernews-tabsearch/
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
+│   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 / seen snapshot 추적
 │   ├── protocols.py             # lock/session capability Protocol
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
@@ -96,12 +98,27 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- `news_scraper_pro.spec`는 2026-05-10 cloud snapshot sync 기준으로 재검토했으며 추가 hidden import/exclude/data 변경이 필요하지 않다.
+
+### 2026-05-10 Cloud Snapshot Sync Safety
+
+- live SQLite DB를 OneDrive/Google Drive 폴더에서 직접 공유하지 않고, 로컬 DB + `news_scraper_sync_*.zip` 스냅샷 병합 방식으로 동기화한다.
+- `core.cloud_sync`가 snapshot 생성/검증/가져오기/cycle/정리와 cloud/runtime path overlap 감지를 담당한다.
+- `core._db_cloud_sync`와 `DatabaseManager.merge_cloud_snapshot_db(...)`가 단일 transaction 병합, 사전 rollback backup, 같은 PC/이미 가져온 snapshot skip, seen snapshot tracking을 담당한다.
+- 스키마는 `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, `news_tag_state(link, tags_updated_at)`를 보장해 읽음/북마크/메모/태그 충돌에서 최신 필드 변경만 반영한다.
+- Snapshot ZIP에는 `manifest.json`, secret 제거 `settings.json`, SQLite backup API DB 복사본만 포함한다. API credentials, local cloud folder path, WAL/SHM sidecar는 제외한다.
+- 설정 화면 데이터 관리에는 cloud sync 사용 여부, 폴더 선택, 주기 선택, 즉시 내보내기, 즉시 병합, 최근 상태 표시가 추가됐다. 기본 주기는 30분이다.
+- 자동 동기화는 live runtime data가 cloud-synced folder 안에 있거나 snapshot folder가 `DATA_DIR`와 겹치면 차단된다.
+- `news_scraper_pro.spec`는 표준 라이브러리와 기존 SQLite/PyQt 경로만 사용함을 재확인했다.
+- `.gitignore`는 cloud snapshot ZIP artifacts를 무시한다.
+- 검증:
+  - `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
 
 ### 2026-05-08 Follow-up Review Full Implementation
 

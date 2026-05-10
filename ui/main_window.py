@@ -174,6 +174,8 @@ class MainApp(
             self._fts_backfill_retry_timer.timeout.connect(self._start_fts_backfill)
             self._fetch_cooldown_until = 0.0
             self._fetch_cooldown_reason = ""
+            self._cloud_sync_worker: Optional[IterativeJobWorker] = None
+            self._cloud_sync_last_status = ""
             self._tab_hydration_queue: deque[str] = deque()
             self._hydration_inflight_keyword = ""
             self._hydration_timer = QTimer(self)
@@ -205,6 +207,8 @@ class MainApp(
             self._next_refresh_seconds = 0
             self._auto_backup_timer = QTimer(self)
             self._auto_backup_timer.timeout.connect(self._run_auto_backup_once)
+            self._cloud_sync_timer = QTimer(self)
+            self._cloud_sync_timer.timeout.connect(lambda: self._run_cloud_sync_once(manual=False, mode="full"))
 
             self.set_application_icon()
 
@@ -218,6 +222,7 @@ class MainApp(
             self.timer.timeout.connect(self._safe_refresh_all)
             self.apply_refresh_interval()
             self.apply_auto_backup_interval()
+            self.apply_cloud_sync_settings()
 
             if self.client_id and self.tabs.count() > 1:
                 QTimer.singleShot(1000, self._safe_refresh_all)
@@ -235,6 +240,10 @@ class MainApp(
                 QTimer.singleShot(
                     2000,
                     self._run_auto_backup_once,
+                )
+                QTimer.singleShot(
+                    3000,
+                    lambda: self._run_cloud_sync_once(manual=False, mode="import"),
                 )
 
             self.setup_system_tray()

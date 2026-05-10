@@ -41,6 +41,9 @@ class AppSettings(TypedDict):
     api_timeout: int
     blocked_publishers: List[str]
     preferred_publishers: List[str]
+    cloud_sync_enabled: bool
+    cloud_sync_dir: str
+    cloud_sync_interval_minutes: int
     window_geometry: WindowGeometry
 
 
@@ -75,6 +78,9 @@ DEFAULT_CONFIG: AppConfig = {
         "api_timeout": 15,
         "blocked_publishers": [],
         "preferred_publishers": [],
+        "cloud_sync_enabled": True,
+        "cloud_sync_dir": "",
+        "cloud_sync_interval_minutes": 30,
         "window_geometry": {
             "x": 100,
             "y": 100,
@@ -93,6 +99,8 @@ DEFAULT_CONFIG: AppConfig = {
 
 ALLOWED_AUTO_BACKUP_MINUTES = {0, 30, 60, 180, 360}
 DEFAULT_AUTO_BACKUP_MINUTES = 60
+ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES = {10, 30, 60, 120, 360}
+DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES = 30
 
 
 def _is_windows_platform() -> bool:
@@ -298,6 +306,21 @@ def _normalize_auto_backup_minutes(
     fallback = int(default) if int(default) in ALLOWED_AUTO_BACKUP_MINUTES else DEFAULT_AUTO_BACKUP_MINUTES
     parsed = _to_int(value, fallback)
     if parsed in ALLOWED_AUTO_BACKUP_MINUTES:
+        return parsed
+    return fallback
+
+
+def _normalize_cloud_sync_interval_minutes(
+    value: Any,
+    default: int = DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES,
+) -> int:
+    fallback = (
+        int(default)
+        if int(default) in ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES
+        else DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES
+    )
+    parsed = _to_int(value, fallback)
+    if parsed in ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES:
         return parsed
     return fallback
 
@@ -591,6 +614,14 @@ def normalize_import_settings(
             fallback_settings.get("blocked_publishers", baseline["blocked_publishers"]),
             fallback_settings.get("preferred_publishers", baseline["preferred_publishers"]),
         )
+        baseline["cloud_sync_enabled"] = _to_bool(
+            fallback_settings.get("cloud_sync_enabled"),
+            baseline["cloud_sync_enabled"],
+        )
+        baseline["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+            fallback_settings.get("cloud_sync_interval_minutes"),
+            baseline["cloud_sync_interval_minutes"],
+        )
 
     normalized = {
         "theme_index": max(0, min(2, int(baseline["theme_index"]))),
@@ -607,6 +638,10 @@ def normalize_import_settings(
         "api_timeout": max(5, min(60, int(baseline["api_timeout"]))),
         "blocked_publishers": list(baseline["blocked_publishers"]),
         "preferred_publishers": list(baseline["preferred_publishers"]),
+        "cloud_sync_enabled": bool(baseline["cloud_sync_enabled"]),
+        "cloud_sync_interval_minutes": _normalize_cloud_sync_interval_minutes(
+            baseline["cloud_sync_interval_minutes"]
+        ),
     }
 
     if not isinstance(raw_settings, dict):
@@ -626,6 +661,7 @@ def normalize_import_settings(
         "start_minimized",
         "auto_start_enabled",
         "notify_on_refresh",
+        "cloud_sync_enabled",
     ]
 
     for field, (minimum, maximum) in int_fields.items():
@@ -646,6 +682,12 @@ def normalize_import_settings(
     if changed_backup_minutes and "auto_backup_minutes" in raw_settings:
         warnings.append(
             f"auto_backup_minutes 값을 {coerced_backup_minutes}(으)로 보정했습니다."
+        )
+
+    if "cloud_sync_interval_minutes" in raw_settings:
+        normalized["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+            raw_settings.get("cloud_sync_interval_minutes"),
+            int(normalized["cloud_sync_interval_minutes"]),
         )
 
     for field in bool_fields:
@@ -730,6 +772,17 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
             app_raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
             app_raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
         )
+        app_cfg["cloud_sync_enabled"] = _to_bool(
+            app_raw.get("cloud_sync_enabled"),
+            app_cfg["cloud_sync_enabled"],
+        )
+        app_cfg["cloud_sync_dir"] = str(
+            app_raw.get("cloud_sync_dir", app_cfg["cloud_sync_dir"]) or ""
+        ).strip()
+        app_cfg["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+            app_raw.get("cloud_sync_interval_minutes"),
+            app_cfg["cloud_sync_interval_minutes"],
+        )
 
         geom_raw = app_raw.get("window_geometry")
         if isinstance(geom_raw, dict):
@@ -779,6 +832,15 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = normalize_publisher_filter_lists(
         raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
         raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
+    )
+    app_cfg["cloud_sync_enabled"] = _to_bool(
+        raw.get("cloud_sync_enabled"),
+        app_cfg["cloud_sync_enabled"],
+    )
+    app_cfg["cloud_sync_dir"] = str(raw.get("cloud_sync_dir", app_cfg["cloud_sync_dir"]) or "").strip()
+    app_cfg["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+        raw.get("cloud_sync_interval_minutes"),
+        app_cfg["cloud_sync_interval_minutes"],
     )
     cfg["tabs"] = _to_str_list(raw.get("tabs"))
     cfg["search_history"] = _to_str_list(raw.get("search_history"))

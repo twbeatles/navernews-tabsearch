@@ -48,6 +48,7 @@ navernews-tabsearch/
 │   ├── config_store.py          # 설정 import 호환 facade
 │   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
 │   ├── content_filters.py       # 출처/태그 정규화 helper
+│   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -58,6 +59,7 @@ navernews-tabsearch/
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
 │   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
+│   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 / seen snapshot 추적
 │   ├── protocols.py             # lock/session Protocol 계약
 │   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
@@ -116,6 +118,7 @@ navernews-tabsearch/
 │   ├── test_symbol_resolution.py
 │   ├── test_keyword_groups_storage.py
 │   ├── test_backup_restore_mode.py
+│   ├── test_cloud_sync.py
 │   ├── test_dialog_adapters_smoke.py
 │   ├── test_import_refresh_prompt.py
 │   ├── test_news_tab_ext_read_policy.py
@@ -140,12 +143,30 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `pyinstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- `news_scraper_pro.spec` re-reviewed for 2026-05-10 cloud snapshot sync; no additional hidden import/exclude/data change is required.
+
+---
+
+## 🚀 2026-05-10 Cloud Snapshot Sync Safety
+
+- Implemented local DB + cloud snapshot ZIP sync instead of direct SQLite access inside OneDrive/Google Drive folders.
+- Added `core.cloud_sync` for `news_scraper_sync_*.zip` creation, manifest/settings/DB validation, import, cycle execution, cleanup, and runtime/cloud path overlap detection.
+- Added `core._db_cloud_sync` and `DatabaseManager.merge_cloud_snapshot_db(...)` for single-transaction snapshot DB merge, rollback backup, same-machine/already-seen snapshot skip, and seen snapshot tracking.
+- Extended schema with `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, and `news_tag_state(link, tags_updated_at)` for per-field conflict resolution.
+- Snapshot ZIPs contain `manifest.json`, sanitized `settings.json`, and a SQLite backup API copy of `news_database.db`; API credentials, local cloud path, WAL/SHM sidecars, and temp files are excluded.
+- Settings data management now includes cloud sync enable/folder/interval controls plus manual export and merge. The default periodic interval is 30 minutes.
+- Automatic cloud sync is blocked when live runtime data appears to be inside a cloud-synced folder or the selected snapshot folder overlaps `DATA_DIR`.
+- User-facing cloud sync UI strings were kept Korean; internal log keys may remain English.
+- `news_scraper_pro.spec` was re-reviewed; the feature uses stdlib modules and existing PyQt/SQLite runtime paths only.
+- `.gitignore` now ignores cloud snapshot ZIP artifacts.
+- Validation:
+  - `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
 
 ---
 
@@ -470,6 +491,9 @@ navernews-tabsearch/
         "client_secret_storage": "plain",   // plain | dpapi
         "theme_index": 0,              // 0=라이트, 1=다크
         "refresh_interval_index": 2,   // 콤보박스 인덱스
+        "cloud_sync_enabled": true,
+        "cloud_sync_dir": "",
+        "cloud_sync_interval_minutes": 30,
         "notification_enabled": true,
         "minimize_to_tray": true,      // 최소화 버튼 → 트레이
         "close_to_tray": true,         // 닫기(X) 버튼 → 트레이
@@ -485,6 +509,8 @@ navernews-tabsearch/
     }
 }
 ```
+
+Cloud sync snapshots intentionally exclude API credentials and the local `cloud_sync_dir`; each PC keeps its own DPAPI/local secret state and selected cloud folder.
 
 ---
 

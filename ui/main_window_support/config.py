@@ -104,6 +104,9 @@ class _MainWindowConfigMixin:
             "api_timeout": settings.get("api_timeout", 15),
             "blocked_publishers": settings.get("blocked_publishers", []),
             "preferred_publishers": settings.get("preferred_publishers", []),
+            "cloud_sync_enabled": settings.get("cloud_sync_enabled", True),
+            "cloud_sync_dir": settings.get("cloud_sync_dir", ""),
+            "cloud_sync_interval_minutes": settings.get("cloud_sync_interval_minutes", 30),
             "keyword_groups": loaded_cfg.get("keyword_groups", {}),
             "pagination_state": loaded_cfg.get("pagination_state", {}),
             "pagination_totals": loaded_cfg.get("pagination_totals", {}),
@@ -129,6 +132,9 @@ class _MainWindowConfigMixin:
         self.notify_on_refresh = self.config.get("notify_on_refresh", False)
         self.search_history = self.config.get("search_history", [])
         self.api_timeout = self.config.get("api_timeout", 15)
+        self.cloud_sync_enabled = bool(self.config.get("cloud_sync_enabled", True))
+        self.cloud_sync_dir = str(self.config.get("cloud_sync_dir", "") or "")
+        self.cloud_sync_interval_minutes = int(self.config.get("cloud_sync_interval_minutes", 30) or 30)
         self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
             self.config.get("blocked_publishers", []),
             self.config.get("preferred_publishers", []),
@@ -191,6 +197,11 @@ class _MainWindowConfigMixin:
                 "api_timeout": self.api_timeout,
                 "blocked_publishers": blocked_publishers,
                 "preferred_publishers": preferred_publishers,
+                "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
+                "cloud_sync_dir": str(getattr(self, "cloud_sync_dir", "") or ""),
+                "cloud_sync_interval_minutes": int(
+                    getattr(self, "cloud_sync_interval_minutes", 30) or 30
+                ),
                 "window_geometry": {
                     "x": self.x(),
                     "y": self.y(),

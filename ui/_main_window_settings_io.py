@@ -18,6 +18,16 @@ from core.config_store import (
     normalize_loaded_config,
     save_primary_config_file,
 )
+from core.cloud_sync import (
+    CloudSyncError,
+    cleanup_old_snapshots,
+    cloud_sync_path_conflicts_with_runtime,
+    create_cloud_snapshot,
+    import_cloud_snapshot,
+    list_cloud_snapshots,
+    run_cloud_sync_cycle,
+    runtime_storage_is_probably_cloud,
+)
 from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
 from core.content_filters import normalize_publisher_filter_lists
 from core.keyword_groups import merge_keyword_groups
@@ -239,6 +249,10 @@ class _MainWindowSettingsIOMixin:
             "api_timeout": self.api_timeout,
             "blocked_publishers": getattr(self, "blocked_publishers", []),
             "preferred_publishers": getattr(self, "preferred_publishers", []),
+            "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
+            "cloud_sync_dir": str(getattr(self, "cloud_sync_dir", "") or ""),
+            "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
+            "cloud_sync_last_status": str(getattr(self, "_cloud_sync_last_status", "") or ""),
         }
 
     def refresh_bookmark_tab(self: MainApp):
@@ -275,6 +289,158 @@ class _MainWindowSettingsIOMixin:
 
         if self._prompt_refresh_imported_tabs(imported_keywords):
             self.refresh_selected_tabs(imported_keywords)
+
+    def _cloud_sync_block_reason(self: MainApp, *, require_folder: bool = True) -> str:
+        if not bool(getattr(self, "cloud_sync_enabled", True)):
+            return "클라우드 동기화가 꺼져 있습니다."
+        sync_dir = str(getattr(self, "cloud_sync_dir", "") or "").strip()
+        if require_folder and not sync_dir:
+            return "클라우드 동기화 폴더가 선택되지 않았습니다."
+        if runtime_storage_is_probably_cloud(self.runtime_paths):
+            return "실시간 DATA_DIR/DB가 클라우드 동기화 폴더 안에 있는 것으로 보입니다. 먼저 로컬 폴더로 옮겨 주세요."
+        if sync_dir and cloud_sync_path_conflicts_with_runtime(sync_dir, self.runtime_paths):
+            return "클라우드 동기화 폴더가 실시간 런타임 데이터 폴더와 겹칩니다."
+        if self.is_maintenance_mode_active():
+            return "데이터베이스 유지보수 작업이 이미 실행 중입니다."
+        if getattr(self, "_refresh_in_progress", False) or getattr(self, "_sequential_refresh_active", False):
+            return "새로고침이 실행 중이라 이번 클라우드 동기화는 건너뜁니다."
+        if getattr(self, "_cloud_sync_worker", None) is not None:
+            return "클라우드 동기화가 이미 실행 중입니다."
+        return ""
+
+    def apply_cloud_sync_settings(self: MainApp) -> None:
+        timer = getattr(self, "_cloud_sync_timer", None)
+        if timer is None:
+            return
+        timer.stop()
+        interval_minutes = int(getattr(self, "cloud_sync_interval_minutes", 30) or 30)
+        interval_minutes = interval_minutes if interval_minutes in {10, 30, 60, 120, 360} else 30
+        self.cloud_sync_interval_minutes = interval_minutes
+        if self._cloud_sync_block_reason(require_folder=True):
+            return
+        timer.setInterval(interval_minutes * 60 * 1000)
+        timer.start()
+
+    def run_cloud_sync_now(self: MainApp) -> None:
+        self._run_cloud_sync_once(manual=True, mode="full")
+
+    def run_cloud_sync_export_now(self: MainApp) -> None:
+        self._run_cloud_sync_once(manual=True, mode="export")
+
+    def run_cloud_sync_import_now(self: MainApp) -> None:
+        self._run_cloud_sync_once(manual=True, mode="import")
+
+    def _run_cloud_sync_once(self: MainApp, *, manual: bool = False, mode: str = "full") -> None:
+        mode = str(mode or "full").strip().lower()
+        if mode not in {"full", "export", "import"}:
+            mode = "full"
+        block_reason = self._cloud_sync_block_reason(require_folder=True)
+        if block_reason:
+            self._cloud_sync_last_status = block_reason
+            if manual:
+                self.show_warning_toast(block_reason)
+                _dialogs_for(self).warning(self, "클라우드 동기화", block_reason)
+            return
+
+        ok, reason = self.begin_database_maintenance("cloud_sync")
+        if not ok:
+            self._cloud_sync_last_status = reason
+            if manual:
+                self.show_warning_toast(reason)
+            return
+
+        sync_dir = str(getattr(self, "cloud_sync_dir", "") or "").strip()
+        config_payload = self._build_runtime_config_payload()
+        db_file = self.runtime_paths.db_file
+        machine_id = get_machine_identity()
+        app_version = VERSION
+
+        def _job(context):
+            context.report(current=0, total=0, message="클라우드 동기화 시작")
+            if mode == "export":
+                snapshot = create_cloud_snapshot(
+                    sync_dir=sync_dir,
+                    config=config_payload,
+                    db_file=db_file,
+                    machine_id=machine_id,
+                    app_version=app_version,
+                )
+                self._require_db().mark_cloud_sync_snapshot_seen(snapshot.snapshot_id)
+                cleanup_old_snapshots(sync_dir, keep=100)
+                return {"mode": mode, "exported": snapshot, "imported": [], "errors": []}
+            if mode == "import":
+                imported = []
+                errors = []
+                for zip_path in list_cloud_snapshots(sync_dir)[-20:]:
+                    context.check_cancelled()
+                    try:
+                        imported.append(
+                            import_cloud_snapshot(
+                                db_manager=self._require_db(),
+                                zip_path=zip_path,
+                                local_machine_id=machine_id,
+                            )
+                        )
+                    except CloudSyncError as exc:
+                        errors.append(f"{os.path.basename(zip_path)}: {exc}")
+                cleanup_old_snapshots(sync_dir, keep=100)
+                return {"mode": mode, "exported": None, "imported": imported, "errors": errors}
+            result = run_cloud_sync_cycle(
+                db_manager=self._require_db(),
+                sync_dir=sync_dir,
+                config=config_payload,
+                db_file=db_file,
+                machine_id=machine_id,
+                app_version=app_version,
+                max_imports=20,
+            )
+            result["mode"] = mode
+            return result
+
+        worker_cls = getattr(self, "_iterative_job_worker_cls", lambda: IterativeJobWorker)()
+        worker = worker_cls(_job, parent=self)
+        self._cloud_sync_worker = worker
+        worker.finished.connect(self._on_cloud_sync_finished)
+        worker.error.connect(self._on_cloud_sync_error)
+        worker.cancelled.connect(self._on_cloud_sync_cancelled)
+        delete_qthread_when_finished(worker)
+        worker.start()
+
+    def _finish_cloud_sync_worker(self: MainApp) -> None:
+        self._cloud_sync_worker = None
+        self.end_database_maintenance()
+        self.apply_cloud_sync_settings()
+
+    def _on_cloud_sync_finished(self: MainApp, result: Dict[str, Any]) -> None:
+        imported = list(result.get("imported", []) or [])
+        errors = list(result.get("errors", []) or [])
+        merged = [item for item in imported if bool(item.get("merged", False))]
+        news_added = sum(int(item.get("news_added", 0) or 0) for item in merged)
+        memberships_added = sum(int(item.get("memberships_added", 0) or 0) for item in merged)
+        exported = result.get("exported")
+        exported_text = "내보냄" if exported else "내보내기 없음"
+        status = (
+            f"클라우드 동기화 완료: {exported_text}, "
+            f"병합 {len(merged)}개, 기사 +{news_added}, 검색범위 +{memberships_added}"
+        )
+        if errors:
+            status += f", 오류 {len(errors)}건"
+            logger.warning("Cloud sync import errors:\n- %s", "\n- ".join(errors))
+        self._cloud_sync_last_status = status
+        self._finish_cloud_sync_worker()
+        if merged:
+            self.on_database_maintenance_completed("cloud_sync", news_added + memberships_added)
+        self.show_success_toast(status)
+
+    def _on_cloud_sync_error(self: MainApp, error_msg: str) -> None:
+        self._cloud_sync_last_status = f"클라우드 동기화 실패: {error_msg}"
+        self._finish_cloud_sync_worker()
+        self.show_error_toast(self._cloud_sync_last_status)
+
+    def _on_cloud_sync_cancelled(self: MainApp) -> None:
+        self._cloud_sync_last_status = "클라우드 동기화가 취소되었습니다."
+        self._finish_cloud_sync_worker()
+        self.show_warning_toast(self._cloud_sync_last_status)
 
     def on_database_maintenance_completed(
         self: MainApp,
@@ -759,6 +925,26 @@ class _MainWindowSettingsIOMixin:
                 "api_timeout": int(app_settings_overrides.get("api_timeout", self.api_timeout)),
                 "blocked_publishers": blocked_publishers,
                 "preferred_publishers": preferred_publishers,
+                "cloud_sync_enabled": bool(
+                    app_settings_overrides.get(
+                        "cloud_sync_enabled",
+                        getattr(self, "cloud_sync_enabled", True),
+                    )
+                ),
+                "cloud_sync_dir": str(
+                    app_settings_overrides.get(
+                        "cloud_sync_dir",
+                        getattr(self, "cloud_sync_dir", ""),
+                    )
+                    or ""
+                ),
+                "cloud_sync_interval_minutes": int(
+                    app_settings_overrides.get(
+                        "cloud_sync_interval_minutes",
+                        getattr(self, "cloud_sync_interval_minutes", 30),
+                    )
+                    or 30
+                ),
                 "window_geometry": {
                     "x": int(geometry["x"]),
                     "y": int(geometry["y"]),
@@ -868,6 +1054,9 @@ class _MainWindowSettingsIOMixin:
             "api_timeout": self.api_timeout,
             "blocked_publishers": list(getattr(self, "blocked_publishers", [])),
             "preferred_publishers": list(getattr(self, "preferred_publishers", [])),
+            "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
+            "cloud_sync_dir": str(getattr(self, "cloud_sync_dir", "") or ""),
+            "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
             "saved_searches": dict(getattr(self, "saved_searches", {})),
             "tab_refresh_policies": dict(getattr(self, "tab_refresh_policies", {})),
             "search_history": list(self.search_history),
@@ -939,6 +1128,9 @@ class _MainWindowSettingsIOMixin:
         self.api_timeout = int(runtime_snapshot["api_timeout"])
         self.blocked_publishers = list(runtime_snapshot["blocked_publishers"])
         self.preferred_publishers = list(runtime_snapshot["preferred_publishers"])
+        self.cloud_sync_enabled = bool(runtime_snapshot.get("cloud_sync_enabled", True))
+        self.cloud_sync_dir = str(runtime_snapshot.get("cloud_sync_dir", "") or "")
+        self.cloud_sync_interval_minutes = int(runtime_snapshot.get("cloud_sync_interval_minutes", 30) or 30)
         self.saved_searches = dict(runtime_snapshot["saved_searches"])
         self.tab_refresh_policies = dict(runtime_snapshot["tab_refresh_policies"])
         self.search_history = list(runtime_snapshot["search_history"])
@@ -984,6 +1176,8 @@ class _MainWindowSettingsIOMixin:
         self.notify_on_refresh = normalized_settings["notify_on_refresh"]
         self.auto_backup_minutes = int(normalized_settings.get("auto_backup_minutes", 60) or 0)
         self.api_timeout = normalized_settings["api_timeout"]
+        self.cloud_sync_enabled = bool(normalized_settings.get("cloud_sync_enabled", True))
+        self.cloud_sync_interval_minutes = int(normalized_settings.get("cloud_sync_interval_minutes", 30) or 30)
         self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
             normalized_settings["blocked_publishers"],
             normalized_settings["preferred_publishers"],
@@ -1015,6 +1209,8 @@ class _MainWindowSettingsIOMixin:
         self.apply_refresh_interval()
         if hasattr(self, "apply_auto_backup_interval"):
             self.apply_auto_backup_interval()
+        if hasattr(self, "apply_cloud_sync_settings"):
+            self.apply_cloud_sync_settings()
         refresh_saved_searches = getattr(self, "_refresh_saved_search_combos", None)
         if callable(refresh_saved_searches):
             refresh_saved_searches()
@@ -1067,6 +1263,8 @@ class _MainWindowSettingsIOMixin:
             "api_timeout": self.api_timeout,
             "blocked_publishers": getattr(self, "blocked_publishers", []),
             "preferred_publishers": getattr(self, "preferred_publishers", []),
+            "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
+            "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
         }
         normalized_settings, import_warnings = normalize_import_settings(
             settings,
@@ -1149,6 +1347,9 @@ class _MainWindowSettingsIOMixin:
                 "api_timeout": normalized_settings["api_timeout"],
                 "blocked_publishers": normalized_settings["blocked_publishers"],
                 "preferred_publishers": normalized_settings["preferred_publishers"],
+                "cloud_sync_enabled": normalized_settings.get("cloud_sync_enabled", True),
+                "cloud_sync_dir": getattr(self, "cloud_sync_dir", ""),
+                "cloud_sync_interval_minutes": normalized_settings.get("cloud_sync_interval_minutes", 30),
             },
             tab_keywords=[
                 tab.keyword
@@ -1209,6 +1410,8 @@ class _MainWindowSettingsIOMixin:
                 "api_timeout": self.api_timeout,
                 "blocked_publishers": getattr(self, "blocked_publishers", []),
                 "preferred_publishers": getattr(self, "preferred_publishers", []),
+                "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
+                "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
             },
             "tabs": [tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)],
             "keyword_groups": self.keyword_group_manager.groups,
@@ -1402,6 +1605,9 @@ class _MainWindowSettingsIOMixin:
         self.alert_keywords = data.get("alert_keywords", [])
         self.sound_enabled = data.get("sound_enabled", True)
         self.api_timeout = data.get("api_timeout", 15)
+        self.cloud_sync_enabled = bool(data.get("cloud_sync_enabled", True))
+        self.cloud_sync_dir = str(data.get("cloud_sync_dir", "") or "")
+        self.cloud_sync_interval_minutes = int(data.get("cloud_sync_interval_minutes", 30) or 30)
         self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
             data.get("blocked_publishers", []),
             data.get("preferred_publishers", []),
@@ -1474,6 +1680,8 @@ class _MainWindowSettingsIOMixin:
         self.apply_refresh_interval()
         if hasattr(self, "apply_auto_backup_interval"):
             self.apply_auto_backup_interval()
+        if hasattr(self, "apply_cloud_sync_settings"):
+            self.apply_cloud_sync_settings()
         self.save_config()
         for _index, widget in self._iter_news_tabs():
             widget.load_data_from_db()

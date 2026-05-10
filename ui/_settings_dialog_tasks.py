@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 import requests
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core.constants import DATA_DIR, RUNTIME_PATHS, RuntimePaths
 from core.database import DatabaseManager
@@ -484,6 +484,42 @@ class _SettingsDialogTasksMixin:
         parent = self._typed_parent()
         if parent is not None:
             parent.import_settings()
+
+    def choose_cloud_sync_folder(self: SettingsDialog):
+        current = ""
+        if hasattr(self, "txt_cloud_sync_dir"):
+            current = self.txt_cloud_sync_dir.text().strip()
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "클라우드 동기화 폴더 선택",
+            current or os.path.expanduser("~"),
+        )
+        if folder and hasattr(self, "txt_cloud_sync_dir"):
+            self.txt_cloud_sync_dir.setText(folder)
+
+    def cloud_sync_export_dialog(self: SettingsDialog):
+        parent = self._typed_parent()
+        if parent is None:
+            return
+        if hasattr(self, "txt_cloud_sync_dir"):
+            parent.cloud_sync_dir = self.txt_cloud_sync_dir.text().strip()
+        if hasattr(self, "chk_cloud_sync_enabled"):
+            parent.cloud_sync_enabled = self.chk_cloud_sync_enabled.isChecked()
+        if hasattr(self, "cb_cloud_sync_interval"):
+            parent.cloud_sync_interval_minutes = int(self.cb_cloud_sync_interval.currentData() or 30)
+        parent.run_cloud_sync_export_now()
+
+    def cloud_sync_import_dialog(self: SettingsDialog):
+        parent = self._typed_parent()
+        if parent is None:
+            return
+        if hasattr(self, "txt_cloud_sync_dir"):
+            parent.cloud_sync_dir = self.txt_cloud_sync_dir.text().strip()
+        if hasattr(self, "chk_cloud_sync_enabled"):
+            parent.cloud_sync_enabled = self.chk_cloud_sync_enabled.isChecked()
+        if hasattr(self, "cb_cloud_sync_interval"):
+            parent.cloud_sync_interval_minutes = int(self.cb_cloud_sync_interval.currentData() or 30)
+        parent.run_cloud_sync_import_now()
 
     def show_log_dialog(self: SettingsDialog):
         parent = self._typed_parent()

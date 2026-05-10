@@ -29,6 +29,9 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         self.assertIn("sound_enabled", keys)
         self.assertIn("api_timeout", keys)
         self.assertIn("minimize_to_tray", keys)
+        self.assertIn("cloud_sync_enabled", keys)
+        self.assertIn("cloud_sync_dir", keys)
+        self.assertIn("cloud_sync_interval_minutes", keys)
 
     def test_api_timeout_spinbox_is_present(self):
         src = inspect.getsource(cast(Any, _SettingsDialogContentMixin)._build_general_group)

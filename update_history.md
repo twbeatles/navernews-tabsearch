@@ -1,6 +1,21 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Cloud Snapshot Sync Safety (2026-05-10)**:
+  - Cloud sync now uses a local live DB plus portable `news_scraper_sync_*.zip` snapshots instead of opening a SQLite DB directly from OneDrive/Google Drive style folders.
+  - Added `core.cloud_sync` for snapshot creation, validation, import, cycle execution, cleanup, and cloud/runtime path overlap detection.
+  - Snapshot ZIPs contain `manifest.json`, sanitized `settings.json`, and a SQLite backup API copy of `news_database.db`; API credentials, local cloud folder paths, WAL/SHM sidecars, and temp files are excluded.
+  - Added cloud merge support in `DatabaseManager.merge_cloud_snapshot_db(...)` through `core._db_cloud_sync`: articles and query scopes merge by `link` / `(link, query_key)`, already-seen and same-machine snapshots are skipped, and failed merges rollback from a pre-merge DB backup.
+  - Extended the schema with `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, and `news_tag_state(link, tags_updated_at)` so read/bookmark/note/tag conflicts use latest-field timestamps.
+  - Settings data management now has a cloud sync section with enable toggle, folder selection, interval selection, manual export, manual merge, and latest status. The default periodic interval is 30 minutes.
+  - Automatic cloud sync is blocked when the live runtime data path appears to be inside a cloud-synced folder or the selected snapshot folder overlaps `DATA_DIR`.
+  - API credentials remain PC-local through the existing DPAPI policy and are still excluded from all settings export/import and cloud snapshot payloads.
+  - Added `tests/test_cloud_sync.py` and expanded settings roundtrip coverage for the new config fields.
+  - Re-reviewed `news_scraper_pro.spec`; cloud sync relies on stdlib modules plus existing SQLite/PyQt paths, so no hidden import/exclude/data change is required.
+  - Updated `.gitignore` for cloud snapshot ZIP artifacts (`news_scraper_sync_*.zip`, `.news_scraper_sync_*.zip.tmp`).
+  - Validation:
+    - `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
 - **2026-05-08 Follow-up Review Full Implementation**:
   - Security/API:
     - `ApiWorker` and settings API validation now force `allow_redirects=False`; `3xx` responses are surfaced as redirect errors.
