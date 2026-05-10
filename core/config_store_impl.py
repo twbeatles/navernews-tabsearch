@@ -91,6 +91,9 @@ DEFAULT_CONFIG: AppConfig = {
     "tab_refresh_policies": {},
 }
 
+ALLOWED_AUTO_BACKUP_MINUTES = {0, 30, 60, 180, 360}
+DEFAULT_AUTO_BACKUP_MINUTES = 60
+
 
 def _is_windows_platform() -> bool:
     return sys.platform == "win32"
@@ -286,6 +289,17 @@ def _to_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _normalize_auto_backup_minutes(
+    value: Any,
+    default: int = DEFAULT_AUTO_BACKUP_MINUTES,
+) -> int:
+    fallback = int(default) if int(default) in ALLOWED_AUTO_BACKUP_MINUTES else DEFAULT_AUTO_BACKUP_MINUTES
+    parsed = _to_int(value, fallback)
+    if parsed in ALLOWED_AUTO_BACKUP_MINUTES:
+        return parsed
+    return fallback
 
 
 def _to_str_list(value: Any) -> List[str]:
@@ -512,6 +526,22 @@ def _coerce_int_range_for_import(
     return clamped, changed
 
 
+def _coerce_auto_backup_minutes_for_import(value: Any, fallback: int) -> Tuple[int, bool]:
+    fallback = _normalize_auto_backup_minutes(fallback)
+    if isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+        changed = False
+    else:
+        try:
+            parsed = int(value)
+            changed = True
+        except (TypeError, ValueError):
+            return fallback, True
+    if parsed in ALLOWED_AUTO_BACKUP_MINUTES:
+        return parsed, changed
+    return DEFAULT_AUTO_BACKUP_MINUTES, True
+
+
 def normalize_import_settings(
     raw_settings: Any, fallback_settings: Dict[str, Any]
 ) -> Tuple[Dict[str, Any], List[str]]:
@@ -525,7 +555,7 @@ def normalize_import_settings(
             fallback_settings.get("refresh_interval_index"),
             baseline["refresh_interval_index"],
         )
-        baseline["auto_backup_minutes"] = _to_int(
+        baseline["auto_backup_minutes"] = _normalize_auto_backup_minutes(
             fallback_settings.get("auto_backup_minutes"),
             baseline["auto_backup_minutes"],
         )
@@ -565,7 +595,7 @@ def normalize_import_settings(
     normalized = {
         "theme_index": max(0, min(2, int(baseline["theme_index"]))),
         "refresh_interval_index": max(0, min(5, int(baseline["refresh_interval_index"]))),
-        "auto_backup_minutes": max(0, min(360, int(baseline["auto_backup_minutes"]))),
+        "auto_backup_minutes": _normalize_auto_backup_minutes(baseline["auto_backup_minutes"]),
         "notification_enabled": bool(baseline["notification_enabled"]),
         "alert_keywords": list(baseline["alert_keywords"]),
         "sound_enabled": bool(baseline["sound_enabled"]),
@@ -586,7 +616,6 @@ def normalize_import_settings(
     int_fields = {
         "theme_index": (0, 2),
         "refresh_interval_index": (0, 5),
-        "auto_backup_minutes": (0, 360),
         "api_timeout": (5, 60),
     }
     bool_fields = [
@@ -608,6 +637,16 @@ def normalize_import_settings(
             warnings.append(
                 f"{field} 값을 {coerced}(으)로 보정했습니다."
             )
+
+    coerced_backup_minutes, changed_backup_minutes = _coerce_auto_backup_minutes_for_import(
+        raw_settings.get("auto_backup_minutes"),
+        int(normalized["auto_backup_minutes"]),
+    )
+    normalized["auto_backup_minutes"] = coerced_backup_minutes
+    if changed_backup_minutes and "auto_backup_minutes" in raw_settings:
+        warnings.append(
+            f"auto_backup_minutes 값을 {coerced_backup_minutes}(으)로 보정했습니다."
+        )
 
     for field in bool_fields:
         coerced, changed = _coerce_bool_for_import(raw_settings.get(field), normalized[field])
@@ -670,12 +709,9 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
                 ),
             ),
         )
-        app_cfg["auto_backup_minutes"] = max(
-            0,
-            min(
-                360,
-                _to_int(app_raw.get("auto_backup_minutes"), app_cfg["auto_backup_minutes"]),
-            ),
+        app_cfg["auto_backup_minutes"] = _normalize_auto_backup_minutes(
+            app_raw.get("auto_backup_minutes"),
+            app_cfg["auto_backup_minutes"],
         )
         app_cfg["notification_enabled"] = _to_bool(
             app_raw.get("notification_enabled"), app_cfg["notification_enabled"]
@@ -725,9 +761,9 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     app_cfg["refresh_interval_index"] = max(
         0, min(5, _to_int(raw.get("interval"), app_cfg["refresh_interval_index"]))
     )
-    app_cfg["auto_backup_minutes"] = max(
-        0,
-        min(360, _to_int(raw.get("auto_backup_minutes"), app_cfg["auto_backup_minutes"])),
+    app_cfg["auto_backup_minutes"] = _normalize_auto_backup_minutes(
+        raw.get("auto_backup_minutes"),
+        app_cfg["auto_backup_minutes"],
     )
     app_cfg["notification_enabled"] = _to_bool(
         raw.get("notification_enabled"), app_cfg["notification_enabled"]

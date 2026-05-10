@@ -129,6 +129,13 @@ class TestImplementationBatchUiSafety(unittest.TestCase):
                     failure_message="blocked",
                 )
             )
+            self.assertFalse(
+                NewsTab._open_article_url(
+                    cast(Any, tab),
+                    "http://127.0.0.1/news",
+                    failure_message="blocked",
+                )
+            )
             self.assertTrue(
                 NewsTab._open_article_url(
                     cast(Any, tab),
@@ -139,7 +146,7 @@ class TestImplementationBatchUiSafety(unittest.TestCase):
 
         self.assertEqual(open_url.call_count, 1)
         self.assertEqual(open_url.call_args.args[0].scheme(), "https")
-        self.assertEqual(tab.failures, ["blocked"])
+        self.assertEqual(tab.failures, ["blocked", "blocked"])
 
     def test_render_escapes_publisher_date_and_tags(self):
         tab = _DummyActionTab()

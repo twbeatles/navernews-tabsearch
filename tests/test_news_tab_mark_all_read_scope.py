@@ -237,6 +237,8 @@ class TestNewsTabMarkAllReadScope(unittest.TestCase):
                 dummy.mark_all_read()
 
         self.assertIsNone(dummy.job_worker)
+        self.assertTrue(dummy.btn_read_all.enabled)
+        self.assertEqual(dummy.lbl_status.text, "읽음 처리 작업을 시작하지 않았습니다.")
         self.assertEqual(parent.events, [("begin", "mark_all_read")])
         message_box_cls.warning.assert_called_once()
 

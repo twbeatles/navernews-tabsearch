@@ -945,6 +945,13 @@ def apply_pending_restore_if_any(
         logger.error("pending restore validation failed: backup path is invalid (file is kept)")
         return False
 
+    applied_file = f"{pending_file}.applied"
+    try:
+        os.replace(pending_file, applied_file)
+    except OSError as rename_err:
+        logger.warning("pending restore archive failed before apply: %s", rename_err)
+        return False
+
     restored = _apply_restore_from_backup(
         backup_path=backup_path,
         config_file=config_file,
@@ -953,13 +960,10 @@ def apply_pending_restore_if_any(
         context_label="pending restore",
     )
     if not restored:
-        return False
-
-    applied_file = f"{pending_file}.applied"
-    try:
-        os.replace(pending_file, applied_file)
-    except OSError as rename_err:
-        logger.warning("restore applied but pending file archive failed: %s", rename_err)
+        try:
+            os.replace(applied_file, pending_file)
+        except OSError as rollback_err:
+            logger.warning("pending restore archive rollback failed: %s", rollback_err)
         return False
 
     try:

@@ -11,7 +11,7 @@ from core.workers import (
     ApiWorker,
     MAX_FETCH_COOLDOWN_SECONDS,
     _normalized_http_url,
-    _publisher_from_url,
+    _publisher_from_naver_news_url,
     _publisher_source_url,
 )
 from ui._main_window_settings_io import import_bookmarks_notes_from_csv
@@ -44,12 +44,14 @@ class _SequenceSession:
 class _FakeDB:
     def __init__(self):
         self.upsert_calls = 0
+        self.items = []
 
     def get_existing_links_for_query(self, links, keyword="", query_key=None):
         return set()
 
     def upsert_news(self, items, keyword, query_key=None):
         self.upsert_calls += 1
+        self.items = list(items)
         return len(items), 0
 
 
@@ -111,10 +113,37 @@ class TestFollowup20260508(unittest.TestCase):
         self.assertFalse(_normalized_http_url("http://printer.local/news"))
         self.assertEqual(_normalized_http_url("https://example.com/news"), "https://example.com/news")
 
-    def test_naver_only_links_do_not_become_publisher_fallback(self):
+    def test_naver_only_links_use_oid_publisher_fallback(self):
         source = _publisher_source_url("", "https://news.naver.com/main/read.naver?oid=001")
         self.assertEqual(source, "")
-        self.assertEqual(_publisher_from_url(source), "정보 없음")
+        self.assertEqual(
+            _publisher_from_naver_news_url("https://news.naver.com/main/read.naver?oid=001"),
+            "naver:oid:001",
+        )
+        self.assertEqual(
+            _publisher_from_naver_news_url("https://news.naver.com/mnews/article/001/0000000001"),
+            "naver:oid:001",
+        )
+
+    def test_api_worker_saves_naver_oid_publisher_when_originallink_is_missing(self):
+        payload = {
+            "total": 1,
+            "items": [
+                {
+                    "title": "AI",
+                    "description": "desc",
+                    "link": "https://news.naver.com/main/read.naver?oid=001&aid=0000000001",
+                    "originallink": "",
+                    "pubDate": "2026-05-08T10:00:00",
+                }
+            ],
+        }
+        session = _SequenceSession([_FakeResponse(200, payload)])
+        worker, db = self._make_api_worker(session)
+
+        worker.run()
+
+        self.assertEqual(db.items[0]["publisher"], "naver:oid:001")
 
     def test_fetch_cooldown_is_clamped_to_six_hours(self):
         session = _SequenceSession([])

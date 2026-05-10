@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
 from core.database import DatabaseWriteError
 from core.content_filters import normalize_tags, tags_to_csv
-from core.workers import IterativeJobWorker, delete_qthread_when_finished
+from core.workers import IterativeJobWorker, _normalized_http_url, delete_qthread_when_finished
 from ui.dialogs import NoteDialog
 from ui.protocols import MainWindowProtocol
 
@@ -50,6 +50,11 @@ class _NewsTabActionsMixin:
         if not url.isValid() or url.scheme().lower() not in {"http", "https"}:
             self._emit_local_action_failure(failure_message)
             return False
+        safe_url = _normalized_http_url(url.toString())
+        if not safe_url:
+            self._emit_local_action_failure(failure_message)
+            return False
+        url = QUrl(safe_url)
 
         desktop_services = _NewsTabActionsMixin._runtime_attr(self, "QDesktopServices", QDesktopServices)
         if not desktop_services.openUrl(url):
@@ -473,6 +478,8 @@ class _NewsTabActionsMixin:
             }
 
         if not self._begin_mark_all_read_maintenance():
+            self.btn_read_all.setEnabled(True)
+            self.lbl_status.setText("읽음 처리 작업을 시작하지 않았습니다.")
             return
 
         def job_func(context) -> int:

@@ -133,6 +133,39 @@ class TestPendingRestoreStrictPolicy(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_archive_failure_does_not_apply_pending_restore(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "db.sqlite"
+            pending = root / "pending_restore.json"
+            backup_dir = root / "backups" / "backup_1"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+
+            cfg.write_text(json.dumps({"app_settings": {"x": 1}}), encoding="utf-8")
+            pending.write_text(
+                json.dumps(
+                    {
+                        "backup_name": "backup_1",
+                        "backup_dir": str(root / "backups"),
+                        "restore_db": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch("core.backup.os.replace", side_effect=OSError("locked")):
+                with mock.patch.object(backup_module, "_apply_restore_from_backup", return_value=True) as apply_mock:
+                    ok = apply_pending_restore_if_any(
+                        pending_file=str(pending),
+                        config_file=str(cfg),
+                        db_file=str(db),
+                    )
+
+            self.assertFalse(ok)
+            self.assertTrue(pending.exists())
+            apply_mock.assert_not_called()
+
     def test_apply_failure_rolls_back_and_keeps_pending(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

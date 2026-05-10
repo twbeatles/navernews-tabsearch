@@ -44,6 +44,26 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(len(paged), 2)
         self.assertEqual([r["link"] for r in paged], [r["link"] for r in baseline[1:3]])
 
+    def test_fetch_news_same_timestamp_pagination_is_deterministic(self):
+        items = [
+            self._make_item(910, "2026-01-01T09:00:00"),
+            self._make_item(912, "2026-01-01T09:00:00"),
+            self._make_item(911, "2026-01-01T09:00:00"),
+        ]
+        self.mgr.upsert_news(items, "AI")
+
+        baseline = self.mgr.fetch_news("AI")
+        page_1 = self.mgr.fetch_news("AI", limit=2, offset=0)
+        page_2 = self.mgr.fetch_news("AI", limit=2, offset=2)
+        baseline_links = [row["link"] for row in baseline]
+
+        self.assertEqual(baseline_links, sorted(baseline_links, reverse=True))
+        self.assertEqual(
+            [row["link"] for row in page_1 + page_2],
+            baseline_links,
+        )
+        self.assertEqual(len(set(baseline_links)), len(baseline_links))
+
     def test_get_unread_counts_by_keywords_matches_single_queries(self):
         self.mgr.upsert_news([self._make_item(10, "2026-01-10T09:00:00")], "AI")
         self.mgr.upsert_news([self._make_item(20, "2026-01-10T09:00:00")], "ECON")
@@ -454,6 +474,53 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(read_by_link["https://example.com/filter-feb"], 0)
         self.assertEqual(read_by_link["https://example.com/filter-dup-1"], 0)
         self.assertEqual(read_by_link["https://example.com/filter-dup-2"], 0)
+
+    def test_mark_query_as_read_matches_fetch_news_multi_token_filter_scope(self):
+        q1 = build_fetch_key("AI finance", [])
+        items = [
+            {
+                "title": "AI quarterly update",
+                "description": "Samsung launch roadmap",
+                "link": "https://example.com/multi-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "launch only",
+                "description": "without second token",
+                "link": "https://example.com/multi-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "AI only",
+                "description": "without matching token",
+                "link": "https://example.com/multi-3",
+                "pubDate": "2026-01-03T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI", query_key=q1)
+
+        visible = self.mgr.fetch_news("AI", query_key=q1, filter_txt="launch AI")
+        self.assertEqual([row["link"] for row in visible], ["https://example.com/multi-1"])
+
+        updated = self.mgr.mark_query_as_read("AI", query_key=q1, filter_txt="launch AI")
+        self.assertEqual(updated, 1)
+        rows = self.mgr.fetch_news("AI", query_key=q1)
+        read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
+        self.assertEqual(read_by_link["https://example.com/multi-1"], 1)
+        self.assertEqual(read_by_link["https://example.com/multi-2"], 0)
+        self.assertEqual(read_by_link["https://example.com/multi-3"], 0)
+
+        self.assertTrue(self.mgr.update_status("https://example.com/multi-1", "is_read", 0))
+        updated_chunked = self.mgr.mark_query_as_read_chunked(
+            "AI",
+            query_key=q1,
+            filter_txt="launch AI",
+            chunk_size=1,
+        )
+        self.assertEqual(updated_chunked, 1)
 
     def test_mark_query_as_read_only_bookmark_scope_respects_filter_text(self):
         items = [

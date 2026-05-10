@@ -290,9 +290,9 @@ class _DatabaseQueriesMixin:
                         logger.warning("Invalid end_date format: %s", end_date)
 
                 if sort_mode == "최신순":
-                    query += " ORDER BY n.pubDate_ts DESC"
+                    query += " ORDER BY n.pubDate_ts DESC, n.link DESC"
                 else:
-                    query += " ORDER BY n.pubDate_ts ASC"
+                    query += " ORDER BY n.pubDate_ts ASC, n.link ASC"
 
                 safe_offset = max(0, int(offset))
                 if limit is not None:

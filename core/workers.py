@@ -226,6 +226,31 @@ def _publisher_source_url(original_link: str, final_link: str) -> str:
     return ""
 
 
+def _publisher_from_naver_news_url(value: str) -> str:
+    if not _is_naver_news_url(value):
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(str(value or ""))
+    except Exception:
+        return ""
+
+    oid = ""
+    query_values = urllib.parse.parse_qs(parsed.query).get("oid", [])
+    if query_values:
+        oid = str(query_values[0] or "").strip()
+
+    if not oid:
+        path_parts = [part for part in parsed.path.split("/") if part]
+        for idx, part in enumerate(path_parts):
+            if part == "article" and idx + 1 < len(path_parts):
+                oid = str(path_parts[idx + 1] or "").strip()
+                break
+
+    if not oid or not re.fullmatch(r"[0-9A-Za-z_-]{1,20}", oid):
+        return ""
+    return f"naver:oid:{oid}"
+
+
 def _publisher_from_url(value: str) -> str:
     parsed = urllib.parse.urlparse(str(value or ""))
     host = parsed.netloc.strip().lower()
@@ -770,6 +795,13 @@ class ApiWorker(QObject):
 
                                 publisher_source = _publisher_source_url(org_link, final_link)
                                 publisher = _publisher_from_url(publisher_source)
+                                if not publisher_source and _is_naver_news_url(final_link):
+                                    publisher = _publisher_from_naver_news_url(final_link) or publisher
+                                    if publisher == _publisher_from_url(""):
+                                        logger.info(
+                                            "Naver publisher oid fallback unavailable: %s",
+                                            final_link,
+                                        )
 
                                 items.append(
                                     {

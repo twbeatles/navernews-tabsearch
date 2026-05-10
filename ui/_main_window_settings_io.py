@@ -1358,9 +1358,9 @@ class _MainWindowSettingsIOMixin:
             saved_search_import_count = int(stage.get("saved_search_import_count", 0) or 0)
             tab_policy_import_count = int(stage.get("tab_policy_import_count", 0) or 0)
             if saved_search_import_count > 0:
-                msg += f" / saved search {saved_search_import_count}개 병합"
+                msg += f" / 저장 검색 {saved_search_import_count}개 병합"
             if tab_policy_import_count > 0:
-                msg += f" / tab policy {tab_policy_import_count}개 병합"
+                msg += f" / 탭 정책 {tab_policy_import_count}개 병합"
             if skipped_invalid_tabs > 0:
                 msg += f" / 유효하지 않은 탭 {skipped_invalid_tabs}개 건너뜀"
             if import_warnings:

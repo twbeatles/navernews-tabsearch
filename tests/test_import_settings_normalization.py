@@ -11,6 +11,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
         fallback = {
             "theme_index": 0,
             "refresh_interval_index": 2,
+            "auto_backup_minutes": 30,
             "notification_enabled": True,
             "alert_keywords": ["기존"],
             "sound_enabled": True,
@@ -23,6 +24,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
         raw = {
             "theme_index": "9",
             "refresh_interval_index": "abc",
+            "auto_backup_minutes": 17,
             "notification_enabled": "no",
             "alert_keywords": ["AI", "AI", "", "경제", 100, None, "증시"],
             "sound_enabled": 0,
@@ -37,6 +39,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
 
         self.assertEqual(normalized["theme_index"], 2)
         self.assertEqual(normalized["refresh_interval_index"], 2)
+        self.assertEqual(normalized["auto_backup_minutes"], 60)
         self.assertEqual(normalized["notification_enabled"], False)
         self.assertEqual(normalized["alert_keywords"], ["AI", "경제", "100", "증시"])
         self.assertEqual(normalized["sound_enabled"], False)
@@ -48,6 +51,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
 
         self.assertGreaterEqual(len(warnings), 1)
         self.assertTrue(any("api_timeout" in warning for warning in warnings))
+        self.assertTrue(any("auto_backup_minutes" in warning for warning in warnings))
         self.assertTrue(any("alert_keywords" in warning for warning in warnings))
 
     def test_normalize_import_settings_handles_invalid_settings_payload(self):
@@ -108,6 +112,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
                             "start_minimized": 1,
                             "auto_start_enabled": 0,
                             "notify_on_refresh": "off",
+                            "auto_backup_minutes": 1,
                             "api_timeout": -1,
                         },
                         "pagination_state": {
@@ -132,6 +137,7 @@ class TestImportSettingsNormalization(unittest.TestCase):
             self.assertEqual(app["theme_index"], 2)
             self.assertEqual(app["refresh_interval_index"], 5)
             self.assertEqual(app["api_timeout"], 5)
+            self.assertEqual(app["auto_backup_minutes"], 60)
             self.assertTrue(app["notification_enabled"])
             self.assertFalse(app["sound_enabled"])
             self.assertTrue(app["minimize_to_tray"])

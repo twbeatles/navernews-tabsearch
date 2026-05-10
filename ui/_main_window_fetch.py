@@ -122,13 +122,13 @@ class _MainWindowFetchMixin:
         if self.is_maintenance_mode_active():
             return self._maintenance_block_message(action_label)
         if self._sequential_refresh_active:
-            return "Another refresh is already running. Please try again after it finishes."
+            return "다른 새로고침이 이미 진행 중입니다. 완료 후 다시 시도해 주세요."
         cooldown_msg = self._fetch_cooldown_message(action_label)
         if cooldown_msg:
             return cooldown_msg
         valid, msg = self._validate_api_credentials()
         if not valid:
-            return f"API credentials are not ready, so {action_label} cannot run. {msg}"
+            return f"API 인증 정보가 준비되지 않아 {action_label}을(를) 실행할 수 없습니다. {msg}"
         return ""
 
     def _notify_refresh_blocked(

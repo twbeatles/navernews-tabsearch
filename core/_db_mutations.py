@@ -496,7 +496,10 @@ class _DatabaseMutationsMixin:
                 tag_filter=tag_filter,
             ))
 
-        if filter_txt:
+        append_text_filter = getattr(self, "_append_text_filter_clause", None)
+        if callable(append_text_filter):
+            scope_query += cast(str, append_text_filter(params, filter_txt))
+        elif filter_txt:
             scope_query += " AND (n.title LIKE ? OR n.description LIKE ?)"
             wildcard = f"%{filter_txt}%"
             params.extend([wildcard, wildcard])
