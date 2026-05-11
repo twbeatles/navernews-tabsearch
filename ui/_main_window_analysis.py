@@ -21,9 +21,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.automation_rules import evaluate_automation_rules, normalize_automation_rules
 from core.content_filters import normalize_publisher_filter_lists
+from core.publisher_aliases import expand_publisher_filters, normalize_publisher_aliases
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.workers import InterruptibleReadWorker, retain_worker_until_finished
+from ui.dialogs import ArchiveSearchDialog, AutomationRulesDialog, PublisherAliasDialog, TagManagerDialog
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
@@ -64,8 +67,128 @@ class _MainWindowAnalysisMixin:
             worker.setParent(None)
         except Exception:
             pass
-        retain_worker_until_finished(worker)
+            retain_worker_until_finished(worker)
         return False
+
+    def _current_scope_items(self: MainApp) -> List[Dict[str, Any]]:
+        current_tab = self._current_news_tab()
+        if current_tab is None:
+            return []
+        getter = getattr(current_tab, "get_all_filtered_items", None)
+        if callable(getter):
+            return list(getter() or [])
+        return list(getattr(current_tab, "filtered_data_cache", []) or [])
+
+    def _after_bulk_data_change(self: MainApp, operation: str = "bulk_change") -> None:
+        try:
+            self.on_database_maintenance_completed(operation, 0)
+        except Exception:
+            for _index, tab in self._iter_news_tabs():
+                try:
+                    tab.load_data_from_db()
+                except Exception:
+                    pass
+
+    def _apply_automation_rules_to_items(
+        self: MainApp,
+        items: List[Dict[str, Any]],
+        rules: Optional[List[Dict[str, Any]]] = None,
+        *,
+        dry_run: bool = False,
+    ) -> Dict[str, int]:
+        normalized_rules = normalize_automation_rules(
+            rules if rules is not None else getattr(self, "automation_rules", [])
+        )
+        aliases = normalize_publisher_aliases(getattr(self, "publisher_aliases", {}))
+        result = {"matched": 0, "tagged": 0, "read": 0, "bookmarked": 0}
+        if not normalized_rules or not items:
+            return result
+        db = self._require_db()
+        for item in items:
+            actions = evaluate_automation_rules(item, normalized_rules, publisher_aliases=aliases)
+            if not actions.has_actions:
+                continue
+            result["matched"] += 1
+            link = str(item.get("link", "") or "").strip()
+            if not link:
+                continue
+            if actions.add_tags:
+                result["tagged"] += 1
+            if actions.mark_read:
+                result["read"] += 1
+            if actions.mark_bookmark:
+                result["bookmarked"] += 1
+            if dry_run:
+                continue
+            if actions.add_tags:
+                current_tags = db.get_tags(link)
+                next_tags = list(current_tags)
+                seen = {tag.casefold() for tag in next_tags}
+                for tag in actions.add_tags:
+                    if tag.casefold() not in seen:
+                        seen.add(tag.casefold())
+                        next_tags.append(tag)
+                db.set_tags(link, next_tags)
+                item["tags"] = ",".join(next_tags)
+            if actions.mark_read:
+                db.update_status(link, "is_read", 1)
+                item["is_read"] = 1
+            if actions.mark_bookmark:
+                db.update_status(link, "is_bookmarked", 1)
+                item["is_bookmarked"] = 1
+        if not dry_run and result["matched"]:
+            self._after_bulk_data_change("automation_rules")
+        return result
+
+    def _save_automation_rules(self: MainApp, rules: List[Dict[str, Any]]) -> None:
+        self.automation_rules = normalize_automation_rules(rules)
+        self.save_config()
+
+    def _save_publisher_aliases(self: MainApp, aliases: Dict[str, str]) -> None:
+        self.publisher_aliases = normalize_publisher_aliases(aliases)
+        self.save_config()
+        self._after_bulk_data_change("publisher_aliases")
+
+    def show_tag_manager(self: MainApp) -> None:
+        if self.should_block_db_action("태그 관리"):
+            return
+        dialog = TagManagerDialog(
+            self._require_db(),
+            scope_items_provider=self._current_scope_items,
+            refresh_callback=lambda: self._after_bulk_data_change("tag_manager"),
+            parent=self,
+        )
+        dialog.exec()
+
+    def show_archive_search(self: MainApp) -> None:
+        if self.should_block_db_action("아카이브 검색"):
+            return
+        dialog = ArchiveSearchDialog(
+            self._require_db(),
+            publisher_aliases=getattr(self, "publisher_aliases", {}),
+            parent=self,
+        )
+        dialog.exec()
+
+    def show_automation_rules(self: MainApp) -> None:
+        if self.should_block_db_action("자동화 규칙"):
+            return
+        dialog = AutomationRulesDialog(
+            getattr(self, "automation_rules", []),
+            self._current_scope_items,
+            self._apply_automation_rules_to_items,
+            self._save_automation_rules,
+            parent=self,
+        )
+        dialog.exec()
+
+    def show_publisher_aliases(self: MainApp) -> None:
+        dialog = PublisherAliasDialog(
+            getattr(self, "publisher_aliases", {}),
+            self._save_publisher_aliases,
+            parent=self,
+        )
+        dialog.exec()
 
     def show_statistics(self: MainApp):
         """통계 정보 표시"""
@@ -86,7 +209,10 @@ class _MainWindowAnalysisMixin:
 
         def load_stats(conn) -> Dict[str, int]:
             return self._require_db().get_statistics(
-                blocked_publishers=getattr(self, "blocked_publishers", []),
+                blocked_publishers=expand_publisher_filters(
+                    list(getattr(self, "blocked_publishers", [])),
+                    getattr(self, "publisher_aliases", {}),
+                ),
                 conn=conn,
             )
 
@@ -244,7 +370,10 @@ class _MainWindowAnalysisMixin:
 
         def load_stats(conn) -> Dict[str, int]:
             return self._require_db().get_statistics(
-                blocked_publishers=getattr(self, "blocked_publishers", []),
+                blocked_publishers=expand_publisher_filters(
+                    list(getattr(self, "blocked_publishers", [])),
+                    getattr(self, "publisher_aliases", {}),
+                ),
                 conn=conn,
             )
 
@@ -325,6 +454,9 @@ class _MainWindowAnalysisMixin:
                 if preferred_publishers is None
                 else preferred_publishers
             )
+            aliases = getattr(self, "publisher_aliases", {})
+            blocked = expand_publisher_filters(list(blocked), aliases)
+            preferred = expand_publisher_filters(list(preferred), aliases)
             if isinstance(tab_query, str) and tab_query.strip():
                 db_keyword, exclude_words = parse_tab_query(tab_query)
                 search_keyword, _ = parse_search_query(tab_query)
@@ -337,6 +469,7 @@ class _MainWindowAnalysisMixin:
                     only_preferred_publishers=only_preferred_publishers,
                     limit=20,
                     query_key=query_key,
+                    publisher_aliases=getattr(self, "publisher_aliases", {}),
                     conn=conn,
                 )
             return self._require_db().get_top_publishers(
@@ -345,14 +478,21 @@ class _MainWindowAnalysisMixin:
                 preferred_publishers=preferred,
                 only_preferred_publishers=only_preferred_publishers,
                 limit=20,
+                publisher_aliases=getattr(self, "publisher_aliases", {}),
                 conn=conn,
             )
 
         def load_tags(conn) -> List[tuple[str, int]]:
             return self._require_db().get_top_tags(
                 limit=20,
-                blocked_publishers=getattr(self, "blocked_publishers", []),
-                preferred_publishers=getattr(self, "preferred_publishers", []),
+                blocked_publishers=expand_publisher_filters(
+                    list(getattr(self, "blocked_publishers", [])),
+                    getattr(self, "publisher_aliases", {}),
+                ),
+                preferred_publishers=expand_publisher_filters(
+                    list(getattr(self, "preferred_publishers", [])),
+                    getattr(self, "publisher_aliases", {}),
+                ),
                 conn=conn,
             )
 

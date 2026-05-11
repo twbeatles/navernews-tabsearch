@@ -49,6 +49,8 @@ navernews-tabsearch/
 │   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
 │   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
+│   ├── automation_rules.py      # rule-based auto tag/bookmark/read helper
+│   ├── publisher_aliases.py     # publisher alias display/filter helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -126,7 +128,8 @@ navernews-tabsearch/
 │   ├── test_news_tab_performance.py
 │   ├── test_settings_dialog_maintenance.py
 │   ├── test_risk_fixes.py
-│   └── test_implementation_plan_20260429.py
+│   ├── test_implementation_plan_20260429.py
+│   └── test_functional_risk_20260511.py
 ├── query_parser.py              # 호환 래퍼 (→ core.query_parser)
 ├── config_store.py              # 호환 래퍼 (→ core.config_store)
 ├── backup_manager.py            # 호환 래퍼 (→ core.backup)
@@ -143,12 +146,27 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec` re-reviewed for 2026-05-10 cloud snapshot sync; no additional hidden import/exclude/data change is required.
+- `news_scraper_pro.spec` re-reviewed for 2026-05-11 functional risk fixes, tag manager, Markdown digest, archive search, automation rules, and publisher alias mapping; no additional hidden import/exclude/data change is required.
+
+---
+
+## 🚀 2026-05-11 Functional Risk Batch + Feature Completion
+
+- Bulk/range read operations now update `read_updated_at` with the same timestamp as `is_read=1`, so cloud merge can propagate read state reliably.
+- Cloud snapshot import isolates per-snapshot failures, records invalid/error counts, and continues to later valid snapshots. Import selection reads manifests first, skips already seen snapshot ids, and processes oldest unseen snapshots first.
+- Cloud snapshot `settings.json` remains sanitized diagnostic metadata only. Cloud import does not apply settings, and automation rules / publisher aliases are removed from snapshot settings to reduce private metadata exposure.
+- SettingsDialog manual cloud export/import passes dialog values as runtime overrides instead of mutating parent runtime fields before save.
+- Tag manager, Markdown digest export, archive search, automation rules, and publisher alias mapping are implemented without new third-party dependencies.
+- `.gitignore` now excludes `.claude/` local worktree scratch in addition to build/test/runtime artifacts.
+- Validation baseline for this batch:
+  - `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 
 ---
 
@@ -158,8 +176,8 @@ navernews-tabsearch/
 - Added `core.cloud_sync` for `news_scraper_sync_*.zip` creation, manifest/settings/DB validation, import, cycle execution, cleanup, and runtime/cloud path overlap detection.
 - Added `core._db_cloud_sync` and `DatabaseManager.merge_cloud_snapshot_db(...)` for single-transaction snapshot DB merge, rollback backup, same-machine/already-seen snapshot skip, and seen snapshot tracking.
 - Extended schema with `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, and `news_tag_state(link, tags_updated_at)` for per-field conflict resolution.
-- Snapshot ZIPs contain `manifest.json`, sanitized `settings.json`, and a SQLite backup API copy of `news_database.db`; API credentials, local cloud path, WAL/SHM sidecars, and temp files are excluded.
-- Settings data management now includes cloud sync enable/folder/interval controls plus manual export and merge. The default periodic interval is 30 minutes.
+- Snapshot ZIPs contain `manifest.json`, sanitized diagnostic `settings.json`, and a SQLite backup API copy of `news_database.db`; API credentials, local cloud path, automation rules, publisher aliases, WAL/SHM sidecars, and temp files are excluded.
+- Settings data management now includes cloud sync enable/folder/interval controls plus manual export and merge. Cloud snapshot import only merges DB state; user settings are transferred through the explicit settings export/import path. The default periodic interval is 30 minutes.
 - Automatic cloud sync is blocked when live runtime data appears to be inside a cloud-synced folder or the selected snapshot folder overlaps `DATA_DIR`.
 - User-facing cloud sync UI strings were kept Korean; internal log keys may remain English.
 - `news_scraper_pro.spec` was re-reviewed; the feature uses stdlib modules and existing PyQt/SQLite runtime paths only.
@@ -246,7 +264,8 @@ navernews-tabsearch/
   - Pending restore success first renames `pending_restore.json` to `.applied`; CSV snapshot export always closes the iterator; large 429 `Retry-After` values move directly to cooldown metadata.
 - Feature additions:
   - Publisher block/prefer lists are stored in config; blocked publishers stay in DB but are hidden from list/count/analysis/CSV, while preferred publishers only apply when `선호 출처만` is enabled.
-  - Article tags use `news_tags(link, tag)`, appear as card badges, participate in tag filtering, and export as a CSV column.
+  - Article tags use `news_tags(link, tag)`, appear as card badges, participate in tag filtering, export as CSV/Markdown, and can be renamed/merged/deleted or applied in bulk through the tag manager.
+  - Full archive search, automation rules, and publisher alias mapping are local-config features; aliases preserve raw `publisher` values and apply to display/filter/statistics mapping.
   - Saved searches and tab-level auto-refresh policies are top-level config fields; tab policies default to global inheritance.
   - Backup restore scheduling now shows a dry-run summary with config/DB scope, row counts, tag row counts, and verification state.
 - Structure / docs / packaging:
@@ -510,7 +529,7 @@ navernews-tabsearch/
 }
 ```
 
-Cloud sync snapshots intentionally exclude API credentials and the local `cloud_sync_dir`; each PC keeps its own DPAPI/local secret state and selected cloud folder.
+Cloud sync snapshots intentionally exclude API credentials, automation rules, publisher aliases, and the local `cloud_sync_dir`; each PC keeps its own DPAPI/local secret state, selected cloud folder, local automation, and alias settings. Snapshot import merges DB state only.
 
 ---
 

@@ -5,6 +5,7 @@ import hashlib
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
+from core.publisher_aliases import expand_publisher_filters
 from core.text_utils import parse_date_string
 from core.workers import DBQueryScope
 from ui.protocols import MainWindowProtocol
@@ -54,6 +55,9 @@ class _NewsTabStateMixin:
         parent = self.window()
         blocked = getattr(parent, "blocked_publishers", []) if parent is not None else []
         preferred = getattr(parent, "preferred_publishers", []) if parent is not None else []
+        aliases = getattr(parent, "publisher_aliases", {}) if parent is not None else {}
+        blocked = expand_publisher_filters(list(blocked), aliases)
+        preferred = expand_publisher_filters(list(preferred), aliases)
         return tuple(str(item) for item in blocked), tuple(str(item) for item in preferred)
 
     def _current_tag_filter(self) -> str:

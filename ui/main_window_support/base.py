@@ -400,6 +400,13 @@ class _MainWindowBaseMixin:
                 tabs_to_reload.append(tab)
             if is_read is False and tab.chk_unread.isChecked() and tab not in tabs_to_reload:
                 tabs_to_reload.append(tab)
+            current_tag_filter = getattr(tab, "_current_tag_filter", lambda: "")()
+            if tags is not None and str(current_tag_filter or "").strip() and tab not in tabs_to_reload:
+                tabs_to_reload.append(tab)
+            if tags is not None:
+                refresh_tags = getattr(tab, "_refresh_tag_filter_options", None)
+                if callable(refresh_tags):
+                    refresh_tags()
 
         for tab in tabs_to_reload:
             try:

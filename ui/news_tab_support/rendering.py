@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from PyQt6.QtCore import QTimer
 
+from core.publisher_aliases import canonical_publisher
 from core.text_utils import TextUtils, parse_date_string, perf_timer
 from ui.styles import AppStyle, Colors
 
@@ -77,6 +78,7 @@ class _NewsTabRenderingMixin:
             str(item.get("title", "") or ""),
             str(item.get("description", "") or ""),
             str(item.get("publisher", "") or ""),
+            str(getattr(self._main_window(), "publisher_aliases", {}) or {}),
             str(item.get("_date_fmt", "") or ""),
             str(item.get("tags", "") or ""),
         )
@@ -215,7 +217,16 @@ class _NewsTabRenderingMixin:
 
         date_str = item.get("_date_fmt") or parse_date_string(item.get("pubDate", ""))
         item["_date_fmt"] = date_str
-        publisher_html = html.escape(str(item.get("publisher", "출처없음") or "출처없음"))
+        raw_publisher = str(item.get("publisher", "출처없음") or "출처없음")
+        aliases = getattr(self._main_window(), "publisher_aliases", {}) or {}
+        display_publisher = canonical_publisher(raw_publisher, aliases) or raw_publisher
+        if display_publisher != raw_publisher:
+            publisher_html = (
+                f"{html.escape(display_publisher)}"
+                f" <span title='{html.escape(raw_publisher)}'>(alias)</span>"
+            )
+        else:
+            publisher_html = html.escape(raw_publisher)
         date_html = html.escape(str(date_str or ""))
         tags = [
             tag.strip()

@@ -274,7 +274,10 @@ class _NewsTabActionsMixin:
             return False
         target["tags"] = ",".join(tags)
         _NewsTabActionsMixin._invalidate_local_render_cache(self, target)
-        self._refresh_after_local_change()
+        current_tag_filter = getattr(self, "_current_tag_filter", lambda: "")()
+        self._refresh_after_local_change(
+            requires_refilter=bool(str(current_tag_filter or "").strip())
+        )
         parent = self._main_window()
         if parent is not None:
             if hasattr(parent, "sync_link_state_across_tabs"):

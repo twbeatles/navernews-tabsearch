@@ -20,6 +20,8 @@ from core.config_store import (
 )
 from core.content_filters import normalize_publisher_filter_lists
 from core.constants import APP_DIR, APP_NAME, ICON_FILE, ICON_PNG, VERSION
+from core.automation_rules import normalize_automation_rules
+from core.publisher_aliases import normalize_publisher_aliases
 from core.startup import StartupManager
 
 logger = logging.getLogger(__name__)
@@ -112,6 +114,8 @@ class _MainWindowConfigMixin:
             "pagination_totals": loaded_cfg.get("pagination_totals", {}),
             "saved_searches": loaded_cfg.get("saved_searches", {}),
             "tab_refresh_policies": loaded_cfg.get("tab_refresh_policies", {}),
+            "automation_rules": loaded_cfg.get("automation_rules", []),
+            "publisher_aliases": loaded_cfg.get("publisher_aliases", {}),
         }
 
         self.client_id = self.config["client_id"]
@@ -140,6 +144,8 @@ class _MainWindowConfigMixin:
             self.config.get("preferred_publishers", []),
         )
         self.saved_searches = dict(self.config.get("saved_searches", {}))
+        self.automation_rules = normalize_automation_rules(self.config.get("automation_rules", []))
+        self.publisher_aliases = normalize_publisher_aliases(self.config.get("publisher_aliases", {}))
         canonicalize_policies = getattr(self, "_canonicalize_tab_refresh_policies", None)
         raw_tab_refresh_policies = dict(self.config.get("tab_refresh_policies", {}))
         if callable(canonicalize_policies):
@@ -231,6 +237,8 @@ class _MainWindowConfigMixin:
                 if hasattr(self, "_canonicalize_tab_refresh_policies")
                 else dict(getattr(self, "tab_refresh_policies", {}))
             ),
+            "automation_rules": normalize_automation_rules(getattr(self, "automation_rules", [])),
+            "publisher_aliases": normalize_publisher_aliases(getattr(self, "publisher_aliases", {})),
         }
 
         try:

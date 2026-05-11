@@ -32,6 +32,8 @@ navernews-tabsearch/
 │   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
 │   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
+│   ├── automation_rules.py      # 규칙 기반 자동 태그/북마크/읽음 처리 helper
+│   ├── publisher_aliases.py     # 출처 alias 정규화/표시/필터 확장 helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
 │   ├── http_client.py           # 중앙 HTTP 구성 + worker-owned requests.Session factory
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
@@ -98,12 +100,24 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec`는 2026-05-10 cloud snapshot sync 기준으로 재검토했으며 추가 hidden import/exclude/data 변경이 필요하지 않다.
+- `news_scraper_pro.spec`는 2026-05-11 기능 리스크 수정/태그 관리자/Markdown digest/아카이브/자동화/출처 alias 기준으로 재검토했으며 추가 hidden import/exclude/data 변경이 필요하지 않다.
+
+### 2026-05-11 Functional Risk Batch + Feature Completion
+
+- 일괄/범위 읽음 처리는 `is_read=1`과 함께 `read_updated_at`을 갱신해 cloud merge의 읽음 상태 전파 기준을 맞춘다.
+- cloud import는 snapshot별 오류를 격리하고, manifest 기준으로 이미 본 snapshot을 제외한 오래된 unseen snapshot부터 처리한다.
+- cloud snapshot의 `settings.json`은 진단 메타데이터이며 import에서 설정을 적용하지 않는다. `automation_rules`, `publisher_aliases`, API 자격증명, cloud local path는 snapshot settings에서 제외된다.
+- 태그 관리자, Markdown digest export, 전체 아카이브 검색, 자동화 규칙, 출처 alias 표시/필터 매핑이 추가됐다.
+- `.gitignore`는 `.claude/` 로컬 worktree scratch를 ignore한다.
+- 검증:
+  - `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 
 ### 2026-05-10 Cloud Snapshot Sync Safety
 

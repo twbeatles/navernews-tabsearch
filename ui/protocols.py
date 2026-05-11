@@ -70,8 +70,20 @@ class SettingsDialogParentProtocol(Protocol):
     def create_http_session(self) -> Any:
         ...
 
-    def run_cloud_sync_export_now(self) -> None:
+    def run_cloud_sync_export_now(
+        self,
+        *,
+        sync_dir_override: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+        interval_override: Optional[int] = None,
+    ) -> None:
         ...
 
-    def run_cloud_sync_import_now(self) -> None:
+    def run_cloud_sync_import_now(
+        self,
+        *,
+        sync_dir_override: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+        interval_override: Optional[int] = None,
+    ) -> None:
         ...

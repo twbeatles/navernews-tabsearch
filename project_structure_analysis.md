@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-10)
+작성일: 2026-03-16 (최근 갱신: 2026-05-11)
 
 ## 분석 범위
 
@@ -17,6 +17,21 @@
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
 
+## 0. 2026-05-11 기능 리스크 수정 / 신규 기능 / 문서·spec·gitignore 재검증
+
+이번 재검증에서는 `implementation_functional_risk_review_2026-05-11.md`의 P1/P2 리스크와 기능 후보를 실제 코드 기준으로 맞췄다.
+
+- `core._db_mutations.py`는 일괄/범위 읽음 처리에서 `is_read=1`과 같은 timestamp로 `read_updated_at`을 갱신한다.
+- `core.cloud_sync.py`는 snapshot별 오류를 격리해 `errors`/`invalid_count`에 기록하고 다음 snapshot을 계속 처리한다. import 후보는 manifest를 먼저 읽어 이미 본 snapshot id를 제외하고 오래된 unseen snapshot부터 최대 20개 처리한다.
+- cloud snapshot의 `settings.json`은 계속 sanitized diagnostic metadata이며, import에서는 설정을 적용하지 않는다. `automation_rules`, `publisher_aliases`, API 자격증명, 로컬 cloud path는 snapshot settings에서 제외한다.
+- `core.automation_rules.py`는 텍스트 키워드, 제외어, 출처, 탭/검색어 조건을 정규화하고 자동 태그/북마크/읽음/`제외` 태그+읽음 action을 계산한다.
+- `core.publisher_aliases.py`는 원본 `publisher` 값을 DB에서 바꾸지 않고 표시/필터/통계/아카이브/Markdown export에서 대표 출처명을 계산한다.
+- `core._db_queries.py`는 `search_archive()` / `count_archive()`를 제공하고, `core._db_analytics.py`는 alias 적용 출처 통계를 지원한다.
+- `ui.dialogs.py`, `ui._main_window_analysis.py`, `ui.news_tab_support.*`, `ui._main_window_settings_io.py`는 태그 관리자, 전체 아카이브 검색, 자동화 규칙 관리자, 출처 alias 관리자, Markdown digest export, 태그/alias 재필터링을 UI에 연결한다.
+- `news_scraper_pro.spec`는 2026-05-11 기준 다시 검토했으며, 이번 배치는 표준 라이브러리와 기존 PyQt/SQLite 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
+- `.gitignore`는 build/test/runtime 산출물에 더해 `.claude/` 로컬 worktree scratch를 무시하도록 보강했다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`이다.
+
 ## 0. 2026-05-10 클라우드 스냅샷 동기화 / 문서·spec·gitignore 재검증
 
 이번 재검증에서는 OneDrive/Google Drive 같은 동기화 폴더에서 live SQLite DB를 직접 여는 위험을 피하기 위해 로컬 DB + 클라우드 스냅샷 병합 구조를 추가했다.
@@ -29,7 +44,7 @@
 - API 자격증명은 기존 DPAPI 로컬 저장 정책을 유지하고, settings export/import와 cloud snapshot 모두에서 `client_id`, `client_secret`, `client_secret_enc`, `client_secret_storage`를 제외한다.
 - `news_scraper_pro.spec`는 2026-05-10 기준 다시 검토했으며, 이번 변경은 표준 라이브러리와 기존 SQLite/PyQt 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
 - `.gitignore`는 cloud snapshot 산출물(`news_scraper_sync_*.zip`, `.news_scraper_sync_*.zip.tmp`)을 무시하도록 보강했다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`이다.
+- 당시 검증선은 `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`이다.
 
 ## 0. 2026-05-08 후속 리뷰 전면 반영 / 문서·spec·gitignore 재검증
 
@@ -233,7 +248,7 @@
 - 설정 export/import는 `1.2` 기준이며 API 자격증명은 제외하고 `settings.auto_start_enabled`는 포함한다.
 - 설정 창 데이터 정리 전에는 앱 전역 유지보수 모드가 활성화되며, active fetch 취소와 새 fetch 진입 차단이 함께 적용된다.
 - 백업 목록은 이제 `is_restorable`, `restore_error` 메타를 포함해 UI에서 복원 가능 여부를 사전 표시한다.
-- 현재 검증 기준은 `python -m pytest -q` 기준 `180 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
+- 당시 검증 기준은 `python -m pytest -q` 기준 `180 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
 
 ## 0. 2026-03-16 기능 감사 후속 반영
 
@@ -245,7 +260,7 @@
 - 탭 dedupe, 탭 리네임 충돌 판정, 설정 import dedupe, 검색 이력 dedupe는 모두 `canonical query` 기준으로 통일되었다.
 - CSV 내보내기는 2026-03-16 시점의 visible-only 경로를 거쳐, 현재는 "현재 탭 필터 조건 전체 결과"를 DB에서 다시 조회해 저장하는 방식으로 정착되었다.
 - 시작 시 자동 백업은 계속 설정만 저장하며, DB 복원 지점은 수동 백업(DB 포함)으로 만들도록 UI/문서가 맞춰졌다.
-- 현재 검증 기준은 최신 배치 기준 `python -m pytest -q` => `180 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
+- 당시 검증 기준은 `python -m pytest -q` => `180 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
 
 ## 0. 2026-03-12 리팩토링 반영 상태
 
@@ -364,6 +379,8 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `core/config_store_impl.py` | 설정 TypedDict, 로드 정규화, 원자 저장/.backup 회전, import 보정, DPAPI |
 | `core/content_filters.py` | 차단/선호 출처 충돌 정규화와 자유 태그 정규화 |
 | `core/cloud_sync.py` | 클라우드 스냅샷 ZIP 생성/검증/가져오기/cycle/정리 |
+| `core/automation_rules.py` | 자동화 규칙 정규화와 태그/북마크/읽음 action 평가 |
+| `core/publisher_aliases.py` | 출처 alias 정규화, 대표명 표시, alias 필터 확장 |
 | `core/database.py` | `DatabaseManager` facade, 연결 풀 수명 주기 |
 | `core/_db_schema.py` | DB 초기화, 마이그레이션, 무결성 검사, 복구 |
 | `core/_db_duplicates.py` | 제목 해시, 중복 플래그 계산/복구 |

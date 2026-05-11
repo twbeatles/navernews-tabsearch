@@ -30,6 +30,10 @@ SANITIZED_APP_SETTING_KEYS = {
     "client_secret_storage",
     "cloud_sync_dir",
 }
+SANITIZED_ROOT_KEYS = {
+    "automation_rules",
+    "publisher_aliases",
+}
 CLOUD_PATH_MARKERS = {
     "onedrive",
     "google drive",
@@ -84,6 +88,8 @@ def _atomic_write_json(path: str, payload: Mapping[str, Any]) -> None:
 
 def sanitize_config_for_cloud(config: Mapping[str, Any]) -> Dict[str, Any]:
     sanitized = copy.deepcopy(dict(config))
+    for key in SANITIZED_ROOT_KEYS:
+        sanitized.pop(key, None)
     app_settings = sanitized.get("app_settings")
     if isinstance(app_settings, dict):
         for key in SANITIZED_APP_SETTING_KEYS:
@@ -265,6 +271,51 @@ def list_cloud_snapshots(sync_dir: str) -> List[str]:
     return paths
 
 
+def _snapshot_import_error(zip_path: str, exc: BaseException) -> str:
+    return f"{os.path.basename(zip_path)}: {exc}"
+
+
+def select_cloud_snapshots_for_import(
+    *,
+    db_manager: Any,
+    sync_dir: str,
+    local_snapshot_id: str = "",
+    max_imports: int = 20,
+) -> Dict[str, Any]:
+    seen_ids = set()
+    try:
+        seen_ids = set(db_manager.get_cloud_sync_seen_snapshot_ids())
+    except Exception:
+        seen_ids = set()
+
+    candidates: List[tuple[float, str, str]] = []
+    errors: List[str] = []
+    skipped_seen = 0
+    local_snapshot_id = str(local_snapshot_id or "")
+    for zip_path in list_cloud_snapshots(sync_dir):
+        try:
+            manifest = read_snapshot_manifest(zip_path)
+            snapshot_id = str(manifest.get("snapshot_id", "") or "").strip()
+            if not snapshot_id:
+                raise CloudSyncError("snapshot_id is missing")
+            if snapshot_id == local_snapshot_id or snapshot_id in seen_ids:
+                skipped_seen += 1
+                continue
+            candidates.append((os.path.getmtime(zip_path), zip_path, snapshot_id))
+        except Exception as exc:
+            errors.append(_snapshot_import_error(zip_path, exc))
+
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    limit = max(1, int(max_imports or 20))
+    selected = [path for _mtime, path, _snapshot_id in candidates[:limit]]
+    return {
+        "paths": selected,
+        "errors": errors,
+        "skipped_seen": skipped_seen,
+        "pending_unseen": max(0, len(candidates) - len(selected)),
+    }
+
+
 def import_cloud_snapshot(
     *,
     db_manager: Any,
@@ -315,19 +366,27 @@ def run_cloud_sync_cycle(
 
     imported: List[Dict[str, Any]] = []
     errors: List[str] = []
-    for zip_path in list_cloud_snapshots(sync_dir)[-max(1, int(max_imports)) :]:
+    selection = select_cloud_snapshots_for_import(
+        db_manager=db_manager,
+        sync_dir=sync_dir,
+        local_snapshot_id=snapshot.snapshot_id,
+        max_imports=max_imports,
+    )
+    errors.extend(selection["errors"])
+    invalid_count = len(selection["errors"])
+    pending_unseen = int(selection.get("pending_unseen", 0) or 0)
+    skipped_seen = int(selection.get("skipped_seen", 0) or 0)
+    for zip_path in selection["paths"]:
         try:
-            manifest = read_snapshot_manifest(zip_path)
-            if str(manifest.get("snapshot_id", "") or "") == snapshot.snapshot_id:
-                continue
             result = import_cloud_snapshot(
                 db_manager=db_manager,
                 zip_path=zip_path,
                 local_machine_id=machine_id,
             )
             imported.append(result)
-        except CloudSyncError as exc:
-            errors.append(f"{os.path.basename(zip_path)}: {exc}")
+        except Exception as exc:
+            errors.append(_snapshot_import_error(zip_path, exc))
+            invalid_count += 1
 
     cleanup_old_snapshots(sync_dir, keep=100)
     return {
@@ -336,6 +395,9 @@ def run_cloud_sync_cycle(
         "errors": errors,
         "merged_count": sum(1 for item in imported if bool(item.get("merged", False))),
         "skipped_count": sum(1 for item in imported if bool(item.get("skipped", False))),
+        "invalid_count": invalid_count,
+        "pending_unseen": pending_unseen,
+        "skipped_seen": skipped_seen,
     }
 
 
@@ -417,4 +479,5 @@ __all__ = [
     "run_cloud_sync_cycle",
     "runtime_storage_is_probably_cloud",
     "sanitize_config_for_cloud",
+    "select_cloud_snapshots_for_import",
 ]

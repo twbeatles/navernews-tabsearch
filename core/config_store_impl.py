@@ -9,7 +9,9 @@ import tempfile
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Tuple, TypedDict
 
+from core.automation_rules import normalize_automation_rules
 from core.content_filters import normalize_publisher_filter_lists
+from core.publisher_aliases import normalize_publisher_aliases
 from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,8 @@ class AppConfig(TypedDict):
     pagination_totals: Dict[str, int]
     saved_searches: Dict[str, Dict[str, Any]]
     tab_refresh_policies: Dict[str, str]
+    automation_rules: List[Dict[str, Any]]
+    publisher_aliases: Dict[str, str]
 
 
 DEFAULT_CONFIG: AppConfig = {
@@ -95,6 +99,8 @@ DEFAULT_CONFIG: AppConfig = {
     "pagination_totals": {},
     "saved_searches": {},
     "tab_refresh_policies": {},
+    "automation_rules": [],
+    "publisher_aliases": {},
 }
 
 ALLOWED_AUTO_BACKUP_MINUTES = {0, 30, 60, 180, 360}
@@ -800,6 +806,8 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
         cfg["saved_searches"] = _to_saved_searches(raw.get("saved_searches"))
         cfg["tab_refresh_policies"] = _to_tab_refresh_policies(raw.get("tab_refresh_policies"))
+        cfg["automation_rules"] = normalize_automation_rules(raw.get("automation_rules"))
+        cfg["publisher_aliases"] = normalize_publisher_aliases(raw.get("publisher_aliases"))
         return cfg
 
     # Legacy flat schema
@@ -849,6 +857,8 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
     cfg["saved_searches"] = _to_saved_searches(raw.get("saved_searches"))
     cfg["tab_refresh_policies"] = _to_tab_refresh_policies(raw.get("tab_refresh_policies"))
+    cfg["automation_rules"] = normalize_automation_rules(raw.get("automation_rules"))
+    cfg["publisher_aliases"] = normalize_publisher_aliases(raw.get("publisher_aliases"))
     return cfg
 
 

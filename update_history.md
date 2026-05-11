@@ -1,6 +1,24 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Functional Risk Batch + Feature Completion (2026-05-11)**:
+  - Bulk/range read operations now update `read_updated_at` whenever they set `is_read=1`, keeping cloud merge conflict resolution consistent.
+  - Cloud snapshot import isolates `CloudSyncError`, `DatabaseWriteError`, and unexpected per-snapshot failures, records error/invalid counts, and continues with later valid snapshots.
+  - Snapshot import selection now reads manifests first, skips already seen snapshot ids, and imports oldest unseen snapshots before newer ones.
+  - Cloud snapshot `settings.json` remains sanitized diagnostic metadata only. Import still merges DB state only, while manual settings export/import remains the explicit settings transfer path.
+  - `automation_rules` and `publisher_aliases` are stored in local config and normal settings export/import, but are removed from cloud snapshot settings along with API credentials and cloud local paths.
+  - Added tag manager operations for usage, rename/merge, delete, and current-tab full-scope bulk add/remove. Tag filters and dropdown candidates refresh after tag/cloud merge changes.
+  - `Ctrl+S` keeps CSV export and adds Markdown digest export over the current tab's full filter scope with title links, metadata, read/bookmark state, tags, summaries, and notes.
+  - Added full archive search for title/summary FTS, notes, tags, publisher alias, date range, bookmark, and unread criteria.
+  - Added JSON automation rules for keywords/excludes/publisher/query conditions with tag/bookmark/read/exclude actions, plus preview/apply over existing DB scope.
+  - Added publisher alias mapping without rewriting raw DB publisher values; display, statistics, filters, archive search, and exports use canonical labels where configured.
+  - Added `core.automation_rules`, `core.publisher_aliases`, and `tests/test_functional_risk_20260511.py`.
+  - Re-reviewed `news_scraper_pro.spec`; the batch uses stdlib plus existing PyQt/SQLite/runtime paths, so no hidden import/exclude/data change is required.
+  - Re-reviewed `.gitignore`; build/test/runtime outputs remain ignored, and `.claude/` local worktree scratch is now ignored.
+  - Validation:
+    - `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - **Cloud Snapshot Sync Safety (2026-05-10)**:
   - Cloud sync now uses a local live DB plus portable `news_scraper_sync_*.zip` snapshots instead of opening a SQLite DB directly from OneDrive/Google Drive style folders.
   - Added `core.cloud_sync` for snapshot creation, validation, import, cycle execution, cleanup, and cloud/runtime path overlap detection.

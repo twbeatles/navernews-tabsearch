@@ -682,6 +682,18 @@ class _MainWindowFetchMixin:
                         self._fetch_cursor_by_key[fetch_key] = int(completed_start_idx)
 
             self._fetch_total_by_key[fetch_key] = total
+            if new_items:
+                for item in new_items:
+                    item.setdefault("keyword", keyword)
+                    item.setdefault("db_keyword", parse_tab_query(keyword)[0] or search_keyword)
+                apply_rules = getattr(self, "_apply_automation_rules_to_items", None)
+                if callable(apply_rules):
+                    try:
+                        applied = apply_rules(new_items, dry_run=False)
+                        if int(applied.get("matched", 0) or 0) > 0:
+                            logger.info("Automation rules applied to new items: %s", applied)
+                    except Exception as exc:
+                        logger.warning("Automation rule application failed: %s", exc)
 
             located_tab = self._find_news_tab(keyword)
             if located_tab is not None:

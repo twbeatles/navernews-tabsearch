@@ -19,19 +19,20 @@ from core.config_store import (
     save_primary_config_file,
 )
 from core.cloud_sync import (
-    CloudSyncError,
     cleanup_old_snapshots,
     cloud_sync_path_conflicts_with_runtime,
     create_cloud_snapshot,
     import_cloud_snapshot,
-    list_cloud_snapshots,
     run_cloud_sync_cycle,
     runtime_storage_is_probably_cloud,
+    select_cloud_snapshots_for_import,
 )
 from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
 from core.content_filters import normalize_publisher_filter_lists
 from core.keyword_groups import merge_keyword_groups
 from core.machine_identity import get_machine_identity
+from core.automation_rules import normalize_automation_rules
+from core.publisher_aliases import canonical_publisher, normalize_publisher_aliases
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker, delete_qthread_when_finished
 from ui.dialog_adapters import get_dialog_adapter
@@ -66,6 +67,40 @@ def _export_row(item: Dict[str, Any]) -> List[str]:
     ]
 
 
+def _markdown_escape(value: Any) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return text.replace("|", "\\|")
+
+
+def _export_item_markdown(item: Dict[str, Any], aliases: Optional[Dict[str, str]] = None) -> str:
+    title = str(item.get("title", "") or "(제목 없음)").strip()
+    link = str(item.get("link", "") or "").strip()
+    publisher = canonical_publisher(item.get("publisher", ""), aliases or {}) or str(item.get("publisher", "") or "")
+    date = str(item.get("pubDate", "") or "").strip()
+    tags = str(item.get("tags", "") or "").strip()
+    notes = str(item.get("notes", "") or "").strip()
+    description = str(item.get("description", "") or "").strip()
+    state = ["읽음" if item.get("is_read") else "안읽음"]
+    if item.get("is_bookmarked"):
+        state.append("북마크")
+    if item.get("is_duplicate"):
+        state.append("중복")
+    title_line = f"### [{title}]({link})" if link else f"### {title}"
+    lines = [
+        title_line,
+        f"- 날짜: {_markdown_escape(date)}",
+        f"- 출처: {_markdown_escape(publisher)}",
+        f"- 상태: {_markdown_escape(', '.join(state))}",
+    ]
+    if tags:
+        lines.append(f"- 태그: {_markdown_escape(tags)}")
+    if description:
+        lines.extend(["", description])
+    if notes:
+        lines.extend(["", f"> 메모: {_markdown_escape(notes)}"])
+    return "\n".join(lines).strip()
+
+
 def export_items_to_csv(
     items: List[Dict[str, Any]],
     output_path: str,
@@ -87,6 +122,39 @@ def export_items_to_csv(
             os.fsync(f.fileno())
         os.replace(tmp_path, output_path)
         return {"count": written, "path": output_path, "keyword": keyword}
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
+def export_items_to_markdown(
+    items: List[Dict[str, Any]],
+    output_path: str,
+    keyword: str,
+    *,
+    publisher_aliases: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    directory = os.path.dirname(os.path.abspath(output_path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".export_", suffix=".tmp", dir=directory)
+    written = 0
+    try:
+        with os.fdopen(fd, "w", newline="\n", encoding="utf-8") as f:
+            f.write(f"# 뉴스 Digest - {keyword or '뉴스'}\n\n")
+            f.write(f"- 생성: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"- 항목 수: {len(items)}\n\n")
+            for item in items:
+                f.write(_export_item_markdown(item, publisher_aliases))
+                f.write("\n\n")
+                written += 1
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, output_path)
+        return {"count": written, "path": output_path, "keyword": keyword, "format": "markdown"}
     except Exception:
         if os.path.exists(tmp_path):
             try:
@@ -171,6 +239,94 @@ def export_scope_to_csv(
 
         os.replace(tmp_path, output_path)
         return {"count": written, "path": output_path, "keyword": keyword}
+    except Exception:
+        close_batch_iter = getattr(batch_iter, "close", None)
+        if callable(close_batch_iter):
+            close_batch_iter()
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
+def export_scope_to_markdown(
+    context,
+    db_manager,
+    scope: DBQueryScope,
+    output_path: str,
+    keyword: str,
+    chunk_size: int = EXPORT_CHUNK_SIZE,
+    *,
+    publisher_aliases: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    if hasattr(db_manager, "iter_news_snapshot_batches"):
+        total_count, batch_iter = db_manager.iter_news_snapshot_batches(
+            scope,
+            chunk_size=max(1, int(chunk_size)),
+        )
+    else:
+        total_count = int(db_manager.count_news(**scope.count_kwargs()))
+        batch_iter = None
+    try:
+        context.report(current=0, total=total_count, message="Markdown 준비 중...", payload={"stage": "count"})
+        context.check_cancelled()
+        if total_count <= 0:
+            raise ValueError("내보낼 뉴스가 없습니다.")
+    except Exception:
+        close_batch_iter = getattr(batch_iter, "close", None)
+        if callable(close_batch_iter):
+            close_batch_iter()
+        raise
+
+    directory = os.path.dirname(os.path.abspath(output_path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".export_", suffix=".tmp", dir=directory)
+    written = 0
+
+    try:
+        with os.fdopen(fd, "w", newline="\n", encoding="utf-8") as f:
+            f.write(f"# 뉴스 Digest - {keyword or '뉴스'}\n\n")
+            f.write(f"- 생성: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"- 항목 수: {total_count}\n\n")
+
+            if batch_iter is None:
+                def _fallback_iter():
+                    offset = 0
+                    while written < total_count:
+                        rows = db_manager.fetch_news(
+                            limit=max(1, int(chunk_size)),
+                            offset=max(0, int(offset)),
+                            **scope.fetch_kwargs(),
+                        )
+                        if not rows:
+                            break
+                        offset += len(rows)
+                        yield rows
+
+                batch_iter = _fallback_iter()
+
+            for rows in batch_iter:
+                context.check_cancelled()
+                if not rows:
+                    break
+                for item in rows:
+                    context.check_cancelled()
+                    f.write(_export_item_markdown(item, publisher_aliases))
+                    f.write("\n\n")
+                    written += 1
+                f.flush()
+                os.fsync(f.fileno())
+                context.report(
+                    current=written,
+                    total=total_count,
+                    message=f"Markdown 내보내는 중... ({written}/{total_count})",
+                    payload={"stage": "write", "written": written, "path": output_path},
+                )
+
+        os.replace(tmp_path, output_path)
+        return {"count": written, "path": output_path, "keyword": keyword, "format": "markdown"}
     except Exception:
         close_batch_iter = getattr(batch_iter, "close", None)
         if callable(close_batch_iter):
@@ -290,10 +446,21 @@ class _MainWindowSettingsIOMixin:
         if self._prompt_refresh_imported_tabs(imported_keywords):
             self.refresh_selected_tabs(imported_keywords)
 
-    def _cloud_sync_block_reason(self: MainApp, *, require_folder: bool = True) -> str:
-        if not bool(getattr(self, "cloud_sync_enabled", True)):
+    def _cloud_sync_block_reason(
+        self: MainApp,
+        *,
+        require_folder: bool = True,
+        sync_dir_override: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+    ) -> str:
+        enabled = bool(getattr(self, "cloud_sync_enabled", True)) if enabled_override is None else bool(enabled_override)
+        if not enabled:
             return "클라우드 동기화가 꺼져 있습니다."
-        sync_dir = str(getattr(self, "cloud_sync_dir", "") or "").strip()
+        sync_dir = (
+            str(getattr(self, "cloud_sync_dir", "") or "").strip()
+            if sync_dir_override is None
+            else str(sync_dir_override or "").strip()
+        )
         if require_folder and not sync_dir:
             return "클라우드 동기화 폴더가 선택되지 않았습니다."
         if runtime_storage_is_probably_cloud(self.runtime_paths):
@@ -321,20 +488,68 @@ class _MainWindowSettingsIOMixin:
         timer.setInterval(interval_minutes * 60 * 1000)
         timer.start()
 
-    def run_cloud_sync_now(self: MainApp) -> None:
-        self._run_cloud_sync_once(manual=True, mode="full")
+    def run_cloud_sync_now(
+        self: MainApp,
+        *,
+        sync_dir_override: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+        interval_override: Optional[int] = None,
+    ) -> None:
+        self._run_cloud_sync_once(
+            manual=True,
+            mode="full",
+            sync_dir_override=sync_dir_override,
+            enabled_override=enabled_override,
+            interval_override=interval_override,
+        )
 
-    def run_cloud_sync_export_now(self: MainApp) -> None:
-        self._run_cloud_sync_once(manual=True, mode="export")
+    def run_cloud_sync_export_now(
+        self: MainApp,
+        *,
+        sync_dir_override: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+        interval_override: Optional[int] = None,
+    ) -> None:
+        self._run_cloud_sync_once(
+            manual=True,
+            mode="export",
+            sync_dir_override=sync_dir_override,
+            enabled_override=enabled_override,
+            interval_override=interval_override,
+        )
 
-    def run_cloud_sync_import_now(self: MainApp) -> None:
-        self._run_cloud_sync_once(manual=True, mode="import")
+    def run_cloud_sync_import_now(
+        self: MainApp,
+        *,
+        sync_dir_override: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+        interval_override: Optional[int] = None,
+    ) -> None:
+        self._run_cloud_sync_once(
+            manual=True,
+            mode="import",
+            sync_dir_override=sync_dir_override,
+            enabled_override=enabled_override,
+            interval_override=interval_override,
+        )
 
-    def _run_cloud_sync_once(self: MainApp, *, manual: bool = False, mode: str = "full") -> None:
+    def _run_cloud_sync_once(
+        self: MainApp,
+        *,
+        manual: bool = False,
+        mode: str = "full",
+        sync_dir_override: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+        interval_override: Optional[int] = None,
+    ) -> None:
         mode = str(mode or "full").strip().lower()
         if mode not in {"full", "export", "import"}:
             mode = "full"
-        block_reason = self._cloud_sync_block_reason(require_folder=True)
+        block_reason = self._cloud_sync_block_reason(
+            require_folder=True,
+            sync_dir_override=sync_dir_override,
+            enabled_override=enabled_override,
+        )
         if block_reason:
             self._cloud_sync_last_status = block_reason
             if manual:
@@ -349,11 +564,20 @@ class _MainWindowSettingsIOMixin:
                 self.show_warning_toast(reason)
             return
 
-        sync_dir = str(getattr(self, "cloud_sync_dir", "") or "").strip()
+        sync_dir = (
+            str(getattr(self, "cloud_sync_dir", "") or "").strip()
+            if sync_dir_override is None
+            else str(sync_dir_override or "").strip()
+        )
         config_payload = self._build_runtime_config_payload()
         db_file = self.runtime_paths.db_file
         machine_id = get_machine_identity()
         app_version = VERSION
+        interval_minutes = (
+            int(getattr(self, "cloud_sync_interval_minutes", 30) or 30)
+            if interval_override is None
+            else int(interval_override or 30)
+        )
 
         def _job(context):
             context.report(current=0, total=0, message="클라우드 동기화 시작")
@@ -371,7 +595,14 @@ class _MainWindowSettingsIOMixin:
             if mode == "import":
                 imported = []
                 errors = []
-                for zip_path in list_cloud_snapshots(sync_dir)[-20:]:
+                selection = select_cloud_snapshots_for_import(
+                    db_manager=self._require_db(),
+                    sync_dir=sync_dir,
+                    max_imports=20,
+                )
+                errors.extend(selection["errors"])
+                invalid_count = len(selection["errors"])
+                for zip_path in selection["paths"]:
                     context.check_cancelled()
                     try:
                         imported.append(
@@ -381,10 +612,20 @@ class _MainWindowSettingsIOMixin:
                                 local_machine_id=machine_id,
                             )
                         )
-                    except CloudSyncError as exc:
+                    except Exception as exc:
                         errors.append(f"{os.path.basename(zip_path)}: {exc}")
+                        invalid_count += 1
                 cleanup_old_snapshots(sync_dir, keep=100)
-                return {"mode": mode, "exported": None, "imported": imported, "errors": errors}
+                return {
+                    "mode": mode,
+                    "exported": None,
+                    "imported": imported,
+                    "errors": errors,
+                    "invalid_count": invalid_count,
+                    "pending_unseen": selection.get("pending_unseen", 0),
+                    "skipped_seen": selection.get("skipped_seen", 0),
+                    "interval_minutes": interval_minutes,
+                }
             result = run_cloud_sync_cycle(
                 db_manager=self._require_db(),
                 sync_dir=sync_dir,
@@ -395,6 +636,7 @@ class _MainWindowSettingsIOMixin:
                 max_imports=20,
             )
             result["mode"] = mode
+            result["interval_minutes"] = interval_minutes
             return result
 
         worker_cls = getattr(self, "_iterative_job_worker_cls", lambda: IterativeJobWorker)()
@@ -423,6 +665,12 @@ class _MainWindowSettingsIOMixin:
             f"클라우드 동기화 완료: {exported_text}, "
             f"병합 {len(merged)}개, 기사 +{news_added}, 검색범위 +{memberships_added}"
         )
+        invalid_count = int(result.get("invalid_count", 0) or 0)
+        pending_unseen = int(result.get("pending_unseen", 0) or 0)
+        if invalid_count:
+            status += f", 무시한 스냅샷 {invalid_count}개"
+        if pending_unseen:
+            status += f", 대기 {pending_unseen}개"
         if errors:
             status += f", 오류 {len(errors)}건"
             logger.warning("Cloud sync import errors:\n- %s", "\n- ".join(errors))
@@ -457,6 +705,9 @@ class _MainWindowSettingsIOMixin:
             return
         try:
             for _index, widget in self._iter_news_tabs():
+                refresh_tags = getattr(widget, "_refresh_tag_filter_options", None)
+                if callable(refresh_tags):
+                    refresh_tags()
                 if widget.needs_initial_hydration():
                     self._enqueue_tab_hydration(widget.keyword, prioritize=False)
                     continue
@@ -474,7 +725,7 @@ class _MainWindowSettingsIOMixin:
             logger.warning("UI sync after DB maintenance failed: %s", e)
 
     def export_data(self: MainApp):
-        """Export the current tab's rows as CSV."""
+        """Export the current tab's rows as CSV or Markdown."""
         dialogs = _dialogs_for(self)
         export_worker = getattr(self, "_export_worker", None)
         if export_worker is not None and export_worker.isRunning():
@@ -502,14 +753,20 @@ class _MainWindowSettingsIOMixin:
             self,
             "데이터 내보내기",
             default_name,
-            "CSV Files (*.csv);;All Files (*)",
+            "CSV Files (*.csv);;Markdown Digest (*.md);;All Files (*)",
         )
         if not fname:
             return
+        export_format = "markdown" if str(fname).lower().endswith(".md") else "csv"
 
         scope_builder = getattr(cur_widget, "_build_query_scope", None)
         if callable(scope_builder):
-            self._start_export_job(scope_builder(), keyword, fname)
+            try:
+                self._start_export_job(scope_builder(), keyword, fname, export_format=export_format)
+            except TypeError as exc:
+                if "export_format" not in str(exc):
+                    raise
+                self._start_export_job(scope_builder(), keyword, fname)
             return
 
         visible_items = list(getattr(cur_widget, "filtered_data_cache", []))
@@ -518,7 +775,15 @@ class _MainWindowSettingsIOMixin:
             return
 
         try:
-            result = export_items_to_csv(visible_items, fname, keyword)
+            if export_format == "markdown":
+                result = export_items_to_markdown(
+                    visible_items,
+                    fname,
+                    keyword,
+                    publisher_aliases=getattr(self, "publisher_aliases", {}),
+                )
+            else:
+                result = export_items_to_csv(visible_items, fname, keyword)
         except Exception as e:
             dialogs.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{e}")
             return
@@ -531,6 +796,8 @@ class _MainWindowSettingsIOMixin:
         scope: DBQueryScope,
         keyword: str,
         output_path: str,
+        *,
+        export_format: str = "csv",
     ) -> None:
         self._export_target_path = str(output_path or "")
         self._export_cancel_requested = False
@@ -539,15 +806,26 @@ class _MainWindowSettingsIOMixin:
         self.progress.setValue(0)
         self.btn_save.setText("⏹ 내보내기 취소")
         self.btn_save.setEnabled(True)
-        self._status_bar().showMessage("CSV 내보내기를 시작합니다...")
+        export_format = "markdown" if str(export_format).lower() == "markdown" else "csv"
+        label = "Markdown" if export_format == "markdown" else "CSV"
+        self._status_bar().showMessage(f"{label} 내보내기를 시작합니다...")
 
-        worker = IterativeJobWorker(
-            export_scope_to_csv,
+        job_fn = export_scope_to_markdown if export_format == "markdown" else export_scope_to_csv
+        job_args = (
             self._require_db(),
             scope,
             output_path,
             keyword,
             EXPORT_CHUNK_SIZE,
+        )
+        worker = IterativeJobWorker(
+            job_fn,
+            *job_args,
+            **(
+                {"publisher_aliases": getattr(self, "publisher_aliases", {})}
+                if export_format == "markdown"
+                else {}
+            ),
         )
         self._export_worker = worker
         worker.progress.connect(self._on_export_progress)
@@ -564,7 +842,7 @@ class _MainWindowSettingsIOMixin:
         self._export_cancel_requested = True
         self.btn_save.setEnabled(False)
         self.btn_save.setText("⏳ 취소 중...")
-        self._status_bar().showMessage("CSV 내보내기 취소 요청 중...")
+        self._status_bar().showMessage("내보내기 취소 요청 중...")
         worker.requestInterruption()
 
     def _reset_export_ui(self: MainApp) -> None:
@@ -594,7 +872,9 @@ class _MainWindowSettingsIOMixin:
         target_path = str(result.get("path", "") or self._export_target_path)
         self._reset_export_ui()
         self.show_success_toast(f"총 {exported_count}개 항목을 저장했습니다.")
-        self._status_bar().showMessage(f"CSV 내보내기 완료 ({exported_count}개)", 4000)
+        fmt = str(result.get("format", "csv") or "csv")
+        label = "Markdown" if fmt == "markdown" else "CSV"
+        self._status_bar().showMessage(f"{label} 내보내기 완료 ({exported_count}개)", 4000)
         _dialogs_for(self).information(self, "완료", f"파일이 저장되었습니다:\n{target_path}")
 
     def _on_export_error(self: MainApp, error_msg: str) -> None:
@@ -603,8 +883,8 @@ class _MainWindowSettingsIOMixin:
 
     def _on_export_cancelled(self: MainApp) -> None:
         self._reset_export_ui()
-        self._status_bar().showMessage("CSV 내보내기를 취소했습니다.", 3000)
-        self.show_warning_toast("CSV 내보내기를 취소했습니다.")
+        self._status_bar().showMessage("내보내기를 취소했습니다.", 3000)
+        self.show_warning_toast("내보내기를 취소했습니다.")
 
     def import_csv_bookmarks_notes(self: MainApp) -> None:
         """Import bookmark/note state for existing article links only."""
@@ -800,6 +1080,8 @@ class _MainWindowSettingsIOMixin:
         pagination_totals: Optional[Dict[str, int]] = None,
         saved_searches: Optional[Dict[str, Dict[str, Any]]] = None,
         tab_refresh_policies: Optional[Dict[str, str]] = None,
+        automation_rules: Optional[List[Dict[str, Any]]] = None,
+        publisher_aliases: Optional[Dict[str, str]] = None,
         window_geometry: Optional[Dict[str, int]] = None,
     ) -> AppConfig:
         app_settings_overrides = dict(app_settings_overrides or {})
@@ -961,6 +1243,12 @@ class _MainWindowSettingsIOMixin:
                 saved_searches if saved_searches is not None else getattr(self, "saved_searches", {})
             ),
             "tab_refresh_policies": tab_refresh_policies_payload,
+            "automation_rules": normalize_automation_rules(
+                automation_rules if automation_rules is not None else getattr(self, "automation_rules", [])
+            ),
+            "publisher_aliases": normalize_publisher_aliases(
+                publisher_aliases if publisher_aliases is not None else getattr(self, "publisher_aliases", {})
+            ),
         }
 
     def _canonicalize_tab_refresh_policies(
@@ -1059,6 +1347,8 @@ class _MainWindowSettingsIOMixin:
             "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
             "saved_searches": dict(getattr(self, "saved_searches", {})),
             "tab_refresh_policies": dict(getattr(self, "tab_refresh_policies", {})),
+            "automation_rules": list(getattr(self, "automation_rules", [])),
+            "publisher_aliases": dict(getattr(self, "publisher_aliases", {})),
             "search_history": list(self.search_history),
             "fetch_cursor_by_key": dict(self._fetch_cursor_by_key),
             "fetch_total_by_key": dict(self._fetch_total_by_key),
@@ -1133,6 +1423,8 @@ class _MainWindowSettingsIOMixin:
         self.cloud_sync_interval_minutes = int(runtime_snapshot.get("cloud_sync_interval_minutes", 30) or 30)
         self.saved_searches = dict(runtime_snapshot["saved_searches"])
         self.tab_refresh_policies = dict(runtime_snapshot["tab_refresh_policies"])
+        self.automation_rules = normalize_automation_rules(runtime_snapshot.get("automation_rules", []))
+        self.publisher_aliases = normalize_publisher_aliases(runtime_snapshot.get("publisher_aliases", {}))
         self.search_history = list(runtime_snapshot["search_history"])
         self._fetch_cursor_by_key = dict(runtime_snapshot["fetch_cursor_by_key"])
         self._fetch_total_by_key = dict(runtime_snapshot["fetch_total_by_key"])
@@ -1184,6 +1476,8 @@ class _MainWindowSettingsIOMixin:
         )
         self.saved_searches = dict(stage["staged_config"].get("saved_searches", {}))
         self.tab_refresh_policies = dict(stage["staged_config"].get("tab_refresh_policies", {}))
+        self.automation_rules = normalize_automation_rules(stage["staged_config"].get("automation_rules", []))
+        self.publisher_aliases = normalize_publisher_aliases(stage["staged_config"].get("publisher_aliases", {}))
         self.search_history = list(stage["merged_search_history"])
         self._fetch_cursor_by_key = dict(stage["merged_pagination_state"])
         self._fetch_total_by_key = dict(stage["merged_pagination_totals"])
@@ -1331,6 +1625,16 @@ class _MainWindowSettingsIOMixin:
                 )
             )
 
+        incoming_automation_rules = import_data.get("automation_rules", [])
+        merged_automation_rules = normalize_automation_rules(
+            list(getattr(self, "automation_rules", []))
+            + (incoming_automation_rules if isinstance(incoming_automation_rules, list) else [])
+        )
+        incoming_publisher_aliases = import_data.get("publisher_aliases", {})
+        merged_publisher_aliases = normalize_publisher_aliases(getattr(self, "publisher_aliases", {}))
+        if isinstance(incoming_publisher_aliases, dict):
+            merged_publisher_aliases.update(normalize_publisher_aliases(incoming_publisher_aliases))
+
         staged_config = self._build_runtime_config_payload(
             app_settings_overrides={
                 "theme_index": normalized_settings["theme_index"],
@@ -1361,6 +1665,8 @@ class _MainWindowSettingsIOMixin:
             pagination_totals=merged_pagination_totals,
             saved_searches=merged_saved_searches,
             tab_refresh_policies=merged_tab_refresh_policies,
+            automation_rules=merged_automation_rules,
+            publisher_aliases=merged_publisher_aliases,
             window_geometry=imported_geometry,
         )
         staged_config = normalize_loaded_config(staged_config)
@@ -1377,6 +1683,8 @@ class _MainWindowSettingsIOMixin:
             "staged_config": staged_config,
             "saved_search_import_count": len(incoming_saved_searches) if isinstance(incoming_saved_searches, dict) else 0,
             "tab_policy_import_count": len(incoming_tab_refresh_policies) if isinstance(incoming_tab_refresh_policies, dict) else 0,
+            "automation_rule_import_count": len(incoming_automation_rules) if isinstance(incoming_automation_rules, list) else 0,
+            "publisher_alias_import_count": len(incoming_publisher_aliases) if isinstance(incoming_publisher_aliases, dict) else 0,
         }
 
     def export_settings(self: MainApp):
@@ -1420,6 +1728,8 @@ class _MainWindowSettingsIOMixin:
             "pagination_totals": self._fetch_total_by_key,
             "saved_searches": getattr(self, "saved_searches", {}),
             "tab_refresh_policies": getattr(self, "tab_refresh_policies", {}),
+            "automation_rules": normalize_automation_rules(getattr(self, "automation_rules", [])),
+            "publisher_aliases": normalize_publisher_aliases(getattr(self, "publisher_aliases", {})),
             "window_geometry": {
                 "x": self.x(),
                 "y": self.y(),

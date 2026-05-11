@@ -5,6 +5,8 @@ import logging
 import sqlite3
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 
+from core.publisher_aliases import combine_publisher_counts
+
 if TYPE_CHECKING:
     from core.database import DatabaseManager
 
@@ -79,6 +81,7 @@ class _DatabaseAnalyticsMixin:
         only_preferred_publishers: bool = False,
         tag_filter: str = "",
         query_key: Optional[str] = None,
+        publisher_aliases: Optional[Dict[str, str]] = None,
         conn: Optional[sqlite3.Connection] = None,
     ) -> List[Tuple[str, int]]:
         """Return publisher counts for all news or a specific tab scope."""
@@ -132,11 +135,15 @@ class _DatabaseAnalyticsMixin:
             query += """
                 GROUP BY n.publisher
                 ORDER BY count DESC
-                LIMIT ?
             """
-            params.append(limit)
+            if not publisher_aliases:
+                query += " LIMIT ?"
+                params.append(limit)
             cursor = active_conn.execute(query, params)
-            return [(str(row[0]), int(row[1])) for row in cursor.fetchall()]
+            rows = [(str(row[0]), int(row[1])) for row in cursor.fetchall()]
+            if publisher_aliases:
+                return combine_publisher_counts(rows, publisher_aliases, limit=limit)
+            return rows
         except Exception as e:
             logger.error("get_top_publishers failed: %s", e)
             raise self._new_query_error("get_top_publishers", e) from e

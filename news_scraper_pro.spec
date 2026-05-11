@@ -113,6 +113,11 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   plus existing SQLite backup APIs and already-bundled PyQt worker/dialog paths.
 # - Snapshot ZIPs are runtime data, not bundled datas; no additional hidden
 #   import/exclude/data change is required for this pass.
+# 2026-05-11 review:
+# - Functional risk fixes, tag manager, Markdown digest export, archive search,
+#   automation rules, and publisher alias mapping use stdlib json/tempfile/os
+#   plus existing PyQt/SQLite paths only.
+# - No additional hidden import/exclude/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [
