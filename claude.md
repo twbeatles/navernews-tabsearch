@@ -46,7 +46,8 @@ navernews-tabsearch/
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # RuntimePaths facade + 경로/버전 상수 (VERSION = '32.7.3')
 │   ├── config_store.py          # 설정 import 호환 facade
-│   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
+│   ├── config_store_impl.py     # 설정 구현 호환 facade
+│   ├── config_store_support/    # 설정 스키마/정규화/secret storage/파일 I/O 구현
 │   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
 │   ├── automation_rules.py      # rule-based auto tag/bookmark/read helper
@@ -59,14 +60,17 @@ navernews-tabsearch/
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
-│   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
+│   ├── _db_mutations.py         # DB mutation 호환 facade
+│   ├── db_mutations_support/    # upsert / 상태·태그 변경 / mark-read / maintenance 구현
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 / seen snapshot 추적
 │   ├── protocols.py             # lock/session Protocol 계약
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
+│   ├── workers.py               # worker API 호환 facade
+│   ├── workers_support/         # lifecycle / HTTP policy / job workers / ApiWorker / DBWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
-│   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
+│   ├── backup.py                # backup/restore API 호환 facade
+│   ├── backup_support/          # 파일 백업 / payload 검증 / pending restore / AutoBackup 구현
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
@@ -82,8 +86,10 @@ navernews-tabsearch/
 │   │   ├── config.py
 │   │   └── ui_shell.py
 │   ├── _main_window_tabs.py     # 탭 추가/닫기/리네임/그룹 연결
-│   ├── _main_window_fetch.py    # fetch orchestration / worker 수명 주기
-│   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
+│   ├── _main_window_fetch.py    # fetch orchestration 호환 facade
+│   ├── main_window_fetch_support/ # refresh policy / fetch worker lifecycle
+│   ├── _main_window_settings_io.py # 설정 import/export 호환 facade
+│   ├── main_window_io_support/  # cloud sync / export/import / settings staging
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
 │   ├── news_tab.py              # NewsTab facade / compatibility root
@@ -99,8 +105,10 @@ navernews-tabsearch/
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
 │   ├── _settings_dialog_docs.py # 도움말 / 단축키 HTML
 │   ├── _settings_dialog_tasks.py # API 검증 / 데이터 정리 / 워커 정리
-│   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
-│   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
+│   ├── dialogs.py               # 보조 다이얼로그 호환 facade
+│   ├── dialogs_support/         # article tools / logs / keyword groups / backups dialogs
+│   ├── styles.py                # 스타일 API 호환 facade
+│   ├── styles_support/          # color tokens / constants / QSS / HTML template
 │   ├── toast.py                 # ToastQueue/ToastMessage
 │   └── widgets.py               # NewsBrowser/NoScrollComboBox
 ├── tests/                       # 회귀/호환성/안정성 테스트
@@ -146,12 +154,14 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+- `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- packaged smoke => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec` re-reviewed for 2026-05-11 functional risk fixes, tag manager, Markdown digest, archive search, automation rules, and publisher alias mapping; no additional hidden import/exclude/data change is required.
+- `news_scraper_pro.spec` re-reviewed for 2026-05-11 functional risk fixes and support-package refactor; `urllib3.contrib.emscripten` is excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path.
 
 ---
 
@@ -164,9 +174,11 @@ navernews-tabsearch/
 - Tag manager, Markdown digest export, archive search, automation rules, and publisher alias mapping are implemented without new third-party dependencies.
 - `.gitignore` now excludes `.claude/` local worktree scratch in addition to build/test/runtime artifacts.
 - Validation baseline for this batch:
-  - `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+  - `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
   - `pyright` => `0 errors, 0 warnings, 0 informations`
   - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+  - `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+  - packaged smoke => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 
 ---
 
@@ -475,16 +487,16 @@ navernews-tabsearch/
 | `NotificationSound` | 시스템 알림 소리 재생 | `core/notifications.py` |
 | `ValidationUtils` | API 키/키워드 입력 검증 | `core/validation.py` |
 | `TextUtils` | 텍스트 처리 (하이라이팅 등) | `core/text_utils.py` |
-| `AppConfig` | 설정 파일 TypedDict 스키마 | `core/config_store_impl.py` (via `core.config_store` facade) |
+| `AppConfig` | 설정 파일 TypedDict 스키마 | `core/config_store_support/impl.py` (via `core.config_store` facade) |
 | `MainApp` | 메인 윈도우 | `ui/main_window.py` |
 | `MainWindowProtocol` | `NewsTab`이 의존하는 메인 윈도우 capability | `ui/protocols.py` |
 | `NewsTab` | 개별 뉴스 탭 위젯 (fragment cache + coalesced render) | `ui/news_tab.py` |
 | `SettingsDialog` | 설정 다이얼로그 | `ui/settings_dialog.py` |
 | `SettingsDialogParentProtocol` | `SettingsDialog` 부모 capability | `ui/protocols.py` |
-| `NoteDialog` | 메모 편집 다이얼로그 | `ui/dialogs.py` |
-| `LogViewerDialog` | 로그 뷰어 다이얼로그 | `ui/dialogs.py` |
-| `KeywordGroupDialog` | 키워드 그룹 관리 다이얼로그 | `ui/dialogs.py` |
-| `BackupDialog` | 백업 관리 다이얼로그 | `ui/dialogs.py` |
+| `NoteDialog` | 메모 편집 다이얼로그 | `ui/dialogs_support/basic.py` (via `ui.dialogs` facade) |
+| `LogViewerDialog` | 로그 뷰어 다이얼로그 | `ui/dialogs_support/basic.py` (via `ui.dialogs` facade) |
+| `KeywordGroupDialog` | 키워드 그룹 관리 다이얼로그 | `ui/dialogs_support/keyword_groups.py` (via `ui.dialogs` facade) |
+| `BackupDialog` | 백업 관리 다이얼로그 | `ui/dialogs_support/backups.py` (via `ui.dialogs` facade) |
 
 ---
 

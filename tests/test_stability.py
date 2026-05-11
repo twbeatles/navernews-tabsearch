@@ -192,6 +192,14 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
             'ui/dialogs.py',
             'ui/settings_dialog.py',
             'ui/styles.py',
+            'core/workers_support/api_worker.py',
+            'core/workers_support/db_worker.py',
+            'core/backup_support/auto_backup.py',
+            'core/db_mutations_support/mixin.py',
+            'ui/dialogs_support/backups.py',
+            'ui/styles_support/app_style.py',
+            'ui/main_window_fetch_support/mixin.py',
+            'ui/main_window_io_support/mixin.py',
         ]
         for path in required:
             self.assertTrue(Path(path).exists(), path)
@@ -227,7 +235,7 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         self.assertNotIn('search_keyword = keyword.split()[0] if keyword.split() else keyword', src)
 
     def test_dbworker_gates_total_count_lookup_for_append(self):
-        src = Path('core/workers.py').read_text(encoding='utf-8')
+        src = Path('core/workers_support/db_worker.py').read_text(encoding='utf-8')
         start = src.index('class DBWorker')
         block = src[start:]
         self.assertIn('open_read_connection(timeout=1.5)', block)

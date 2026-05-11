@@ -29,7 +29,8 @@ navernews-tabsearch/
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # RuntimePaths facade + 경로/버전/앱 상수
 │   ├── config_store.py          # 설정 import 호환 facade
-│   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
+│   ├── config_store_impl.py     # 설정 구현 호환 facade
+│   ├── config_store_support/    # 설정 스키마/정규화/secret storage/파일 I/O 구현
 │   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
 │   ├── automation_rules.py      # 규칙 기반 자동 태그/북마크/읽음 처리 helper
@@ -42,14 +43,17 @@ navernews-tabsearch/
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
-│   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
+│   ├── _db_mutations.py         # DB mutation 호환 facade
+│   ├── db_mutations_support/    # upsert / 상태·태그 변경 / mark-read / maintenance 구현
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 / seen snapshot 추적
 │   ├── protocols.py             # lock/session capability Protocol
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
+│   ├── workers.py               # worker API 호환 facade
+│   ├── workers_support/         # lifecycle / HTTP policy / job workers / ApiWorker / DBWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
-│   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
+│   ├── backup.py                # backup/restore API 호환 facade
+│   ├── backup_support/          # 파일 백업 / payload 검증 / pending restore / AutoBackup 구현
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
@@ -65,8 +69,10 @@ navernews-tabsearch/
 │   │   ├── config.py
 │   │   └── ui_shell.py
 │   ├── _main_window_tabs.py     # 탭 추가/닫기/리네임/그룹 연결
-│   ├── _main_window_fetch.py    # fetch orchestration / worker 수명 주기
-│   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
+│   ├── _main_window_fetch.py    # fetch orchestration 호환 facade
+│   ├── main_window_fetch_support/ # refresh policy / fetch worker lifecycle
+│   ├── _main_window_settings_io.py # 설정 import/export 호환 facade
+│   ├── main_window_io_support/  # cloud sync / export/import / settings staging
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
 │   ├── news_tab.py              # NewsTab facade / compatibility root
@@ -82,8 +88,10 @@ navernews-tabsearch/
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
 │   ├── _settings_dialog_docs.py # 도움말 / 단축키 HTML
 │   ├── _settings_dialog_tasks.py # API 검증 / 데이터 정리 / 워커 정리
-│   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
-│   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
+│   ├── dialogs.py               # 보조 다이얼로그 호환 facade
+│   ├── dialogs_support/         # article tools / logs / keyword groups / backups dialogs
+│   ├── styles.py                # 스타일 API 호환 facade
+│   ├── styles_support/          # color tokens / constants / QSS / HTML template
 │   ├── toast.py                 # ToastQueue/ToastMessage
 │   └── widgets.py               # NewsBrowser/NoScrollComboBox
 ├── tests/                       # 회귀/호환성/안정성 테스트 (최신 목록은 tests/ 디렉터리 기준)
@@ -100,12 +108,14 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+- `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- 패키지 스모크 => 새 `NEWS_SCRAPER_DATA_DIR`와 `QT_QPA_PLATFORM=offscreen` 기준 성공
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec`는 2026-05-11 기능 리스크 수정/태그 관리자/Markdown digest/아카이브/자동화/출처 alias 기준으로 재검토했으며 추가 hidden import/exclude/data 변경이 필요하지 않다.
+- `news_scraper_pro.spec`는 2026-05-11 기능 리스크 수정/support-package 리팩토링 기준으로 재검토했으며, Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 submodule 수집에서 제외한다.
 
 ### 2026-05-11 Functional Risk Batch + Feature Completion
 
@@ -115,9 +125,11 @@ navernews-tabsearch/
 - 태그 관리자, Markdown digest export, 전체 아카이브 검색, 자동화 규칙, 출처 alias 표시/필터 매핑이 추가됐다.
 - `.gitignore`는 `.claude/` 로컬 worktree scratch를 ignore한다.
 - 검증:
-  - `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+  - `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
   - `pyright` => `0 errors, 0 warnings, 0 informations`
   - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+  - `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+  - 패키지 스모크 => 새 `NEWS_SCRAPER_DATA_DIR`와 `QT_QPA_PLATFORM=offscreen` 기준 성공
 
 ### 2026-05-10 Cloud Snapshot Sync Safety
 

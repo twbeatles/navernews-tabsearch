@@ -33,6 +33,21 @@ class TestRefactorCompat(unittest.TestCase):
             mod = importlib.import_module(mod_name)
             self.assertIsNotNone(mod)
 
+    def test_support_packages_import(self):
+        modules = [
+            'core.workers_support.api_worker',
+            'core.workers_support.db_worker',
+            'core.backup_support.auto_backup',
+            'core.db_mutations_support.maintenance',
+            'ui.main_window_fetch_support.worker_flow',
+            'ui.main_window_io_support.settings_dialogs',
+            'ui.dialogs_support.backups',
+            'ui.styles_support.app_style',
+        ]
+        for mod_name in modules:
+            mod = importlib.import_module(mod_name)
+            self.assertIsNotNone(mod)
+
     def test_database_manager_wrapper_points_to_core(self):
         core_db = importlib.import_module('core.database')
         wrapper = importlib.import_module('database_manager')

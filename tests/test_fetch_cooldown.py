@@ -324,7 +324,7 @@ class TestFetchCooldown(unittest.TestCase):
         dummy = _DummyFetchMain()
         dummy._set_fetch_cooldown(12, reason="rate_limit")
 
-        with mock.patch("ui._main_window_fetch.ApiWorker", side_effect=AssertionError("worker should not start")):
+        with mock.patch("ui.main_window_fetch_support.worker_flow.ApiWorker", side_effect=AssertionError("worker should not start")):
             dummy.fetch_news("AI launch", is_more=False, is_sequential=False)
 
         self.assertTrue(dummy.warning_messages)
@@ -342,7 +342,7 @@ class TestFetchCooldown(unittest.TestCase):
     def test_db_fetch_error_does_not_emit_success_notifications(self):
         dummy = _DummyFetchMain()
 
-        with mock.patch("ui._main_window_fetch.QMessageBox.critical") as critical_mock:
+        with mock.patch("ui.main_window_fetch_support.worker_flow.QMessageBox.critical") as critical_mock:
             dummy.on_fetch_error(
                 "데이터베이스 저장 실패: upsert_news failed: disk full",
                 "AI launch",
@@ -434,7 +434,7 @@ class TestFetchCooldown(unittest.TestCase):
         dummy._worker_registry.register(handle)
         dummy.workers["AI launch"] = (worker, thread)
 
-        with mock.patch("ui._main_window_fetch.ApiWorker", side_effect=AssertionError("new worker should not start")):
+        with mock.patch("ui.main_window_fetch_support.worker_flow.ApiWorker", side_effect=AssertionError("new worker should not start")):
             dummy.fetch_news("AI launch")
 
         self.assertIn("AI launch", dummy.workers)
@@ -500,14 +500,14 @@ class TestFetchCooldown(unittest.TestCase):
         old_ts = 1000.0
         dummy._last_auto_refresh_by_keyword = {"AI launch": old_ts}
 
-        with mock.patch("ui._main_window_fetch.time.time", return_value=old_ts + 601):
+        with mock.patch("ui.main_window_fetch_support.worker_flow.time.time", return_value=old_ts + 601):
             due = dummy._auto_refresh_keywords_due(["AI launch"])
 
         self.assertEqual(due, ["AI launch"])
         self.assertEqual(dummy._last_auto_refresh_by_keyword["AI launch"], old_ts)
 
         dummy._sequential_refresh_is_auto = True
-        with mock.patch("ui._main_window_fetch.time.time", return_value=old_ts + 602):
+        with mock.patch("ui.main_window_fetch_support.worker_flow.time.time", return_value=old_ts + 602):
             dummy.on_fetch_done(
                 {
                     "new_items": [],

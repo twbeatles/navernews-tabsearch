@@ -63,10 +63,9 @@ class TestPlanSourceGuards(unittest.TestCase):
         self.assertIn('pending_file=PENDING_RESTORE_FILE', src)
 
     def test_backup_dialog_restore_uses_schedule_restore(self):
-        src = self._read('ui/dialogs.py')
-        start = src.index('def restore_backup(self):')
-        end = src.index('def delete_backup(self):')
-        block = src[start:end]
+        from ui.dialogs import BackupDialog
+
+        block = inspect.getsource(BackupDialog.restore_backup)
         self.assertIn('self.auto_backup.schedule_restore(', block)
         self.assertNotIn('self.auto_backup.restore_backup(', block)
 

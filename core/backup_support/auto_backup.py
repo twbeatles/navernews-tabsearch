@@ -1,0 +1,593 @@
+import datetime
+import json
+import logging
+import os
+import shutil
+import sqlite3
+import traceback
+from typing import Any, Dict, List, Optional
+
+from core.backup_support.constants import DEFAULT_BACKUP_DIR, PENDING_RESTORE_FILENAME
+from core.backup_support.fs import _rmtree_force, _write_json_atomic
+from core.backup_support.restore import _apply_restore_from_backup
+from core.backup_support.validation import verify_backup_payload
+
+logger = logging.getLogger(__name__)
+
+class AutoBackup:
+    """설정 및 데이터베이스 자동 백업"""
+
+    BACKUP_DIR: str = DEFAULT_BACKUP_DIR
+    MAX_AUTO_BACKUPS: int = 5
+    MAX_MANUAL_BACKUPS: int = 20
+
+    def __init__(
+        self,
+        config_file: str,
+        db_file: str,
+        app_version: str = "unknown",
+        pending_restore_file: Optional[str] = None,
+    ):
+        self.config_file = config_file
+        self.db_file = db_file
+        self.app_version = app_version
+        self.backup_dir = os.path.join(
+            os.path.dirname(os.path.abspath(config_file)), self.BACKUP_DIR
+        )
+        self.pending_restore_file = pending_restore_file or os.path.join(
+            os.path.dirname(os.path.abspath(config_file)), PENDING_RESTORE_FILENAME
+        )
+        self.last_create_error = ""
+        self._ensure_backup_dir()
+
+    def _ensure_backup_dir(self):
+        if not os.path.exists(self.backup_dir):
+            try:
+                os.makedirs(self.backup_dir)
+                logger.info(f"백업 디렉토리 생성: {self.backup_dir}")
+            except Exception as e:
+                logger.error(f"백업 디렉토리 생성 실패: {e}")
+
+    def _backup_info_path(self, backup_path: str) -> str:
+        return os.path.join(str(backup_path), "backup_info.json")
+
+    def _write_backup_info(self, backup_path: str, info: Dict[str, Any]) -> None:
+        _write_json_atomic(self._backup_info_path(backup_path), info)
+
+    def _read_backup_info(self, backup_path: str) -> Dict[str, Any]:
+        info_path = self._backup_info_path(backup_path)
+        with open(info_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            raise ValueError("backup_info.json root is not a JSON object")
+        return payload
+
+    def _detect_backup_contains_db(self, backup_path: str) -> bool:
+        db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
+        return os.path.exists(db_backup)
+
+    def _resolve_backup_include_db(
+        self,
+        backup_entry: Dict[str, Any],
+        *,
+        fallback_to_files: bool = True,
+    ) -> bool:
+        include_db = backup_entry.get("include_db")
+        if isinstance(include_db, bool):
+            return include_db
+        if not fallback_to_files:
+            return False
+        backup_path = str(
+            backup_entry.get("path")
+            or os.path.join(self.backup_dir, str(backup_entry.get("name") or backup_entry.get("backup_name") or ""))
+        )
+        if not backup_path:
+            return False
+        return self._detect_backup_contains_db(backup_path)
+
+    def _verification_metadata_from_result(
+        self,
+        verification: Dict[str, Any],
+        *,
+        include_db: bool,
+    ) -> Dict[str, Any]:
+        return {
+            "include_db": bool(include_db),
+            "verification_state": str(verification.get("verification_state", "failed") or "failed"),
+            "verification_error": str(
+                verification.get("verification_error", "")
+                or verification.get("restore_error", "")
+                or verification.get("error", "")
+                or ""
+            ),
+            "is_restorable": bool(verification.get("is_restorable", False)),
+            "restore_error": str(verification.get("restore_error", "") or ""),
+            "is_corrupt": bool(verification.get("is_corrupt", False)),
+            "error": str(verification.get("error", "") or ""),
+            "last_verified_at": datetime.datetime.now().isoformat(),
+        }
+
+    def persist_backup_verification(
+        self,
+        backup_entry: Dict[str, Any],
+        verification: Dict[str, Any],
+        *,
+        include_db: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        persisted = dict(verification)
+        backup_name = str(
+            persisted.get("name") or persisted.get("backup_name") or backup_entry.get("name") or backup_entry.get("backup_name") or ""
+        ).strip()
+        backup_path = str(
+            persisted.get("path") or backup_entry.get("path") or os.path.join(self.backup_dir, backup_name)
+        )
+        resolved_include_db = (
+            bool(include_db)
+            if include_db is not None
+            else self._resolve_backup_include_db({**backup_entry, **persisted}, fallback_to_files=True)
+        )
+        metadata = self._verification_metadata_from_result(persisted, include_db=resolved_include_db)
+        persisted["name"] = backup_name
+        persisted["backup_name"] = backup_name
+        persisted["path"] = backup_path
+        persisted.update(metadata)
+        if not os.path.isdir(backup_path):
+            return persisted
+        try:
+            info = self._read_backup_info(backup_path)
+        except Exception:
+            info = {}
+        info["timestamp"] = str(
+            info.get("timestamp")
+            or persisted.get("timestamp")
+            or ""
+        )
+        info["app_version"] = str(
+            info.get("app_version")
+            or persisted.get("app_version")
+            or self.app_version
+        )
+        info["trigger"] = str(info.get("trigger") or persisted.get("trigger") or "manual")
+        info["created_at"] = str(
+            info.get("created_at")
+            or persisted.get("created_at")
+            or ""
+        )
+        info.update(metadata)
+        self._write_backup_info(backup_path, info)
+        persisted["timestamp"] = info["timestamp"]
+        persisted["app_version"] = info["app_version"]
+        persisted["trigger"] = info["trigger"]
+        persisted["created_at"] = info["created_at"]
+        return persisted
+
+    def validate_create_backup_prerequisites(
+        self,
+        include_db: bool = True,
+    ) -> tuple[bool, str]:
+        if not os.path.exists(self.config_file):
+            return False, "설정 파일이 없어 복원 가능한 백업을 만들 수 없습니다."
+        if include_db and not os.path.exists(self.db_file):
+            return False, "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다."
+        return True, ""
+
+    def create_backup(self, include_db: bool = True, trigger: str = "manual") -> Optional[str]:
+        try:
+            self.last_create_error = ""
+            normalized_trigger = str(trigger or "manual").strip().lower()
+            if normalized_trigger not in {"auto", "manual"}:
+                normalized_trigger = "manual"
+            ok, reason = self.validate_create_backup_prerequisites(include_db=include_db)
+            if not ok:
+                logger.warning(
+                    "백업 생성 건너뜀: trigger=%s, include_db=%s, reason=%s",
+                    normalized_trigger,
+                    int(bool(include_db)),
+                    reason,
+                )
+                self.last_create_error = reason
+                return None
+
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            base_backup_name = f"backup_{timestamp}"
+            backup_name = ""
+            backup_path = ""
+            for attempt in range(10):
+                suffix = "" if attempt == 0 else f"_{attempt:02d}"
+                candidate_name = f"{base_backup_name}{suffix}"
+                candidate_path = os.path.join(self.backup_dir, candidate_name)
+                try:
+                    os.makedirs(candidate_path, exist_ok=False)
+                    backup_name = candidate_name
+                    backup_path = candidate_path
+                    break
+                except FileExistsError:
+                    continue
+            if not backup_path:
+                logger.error("백업 폴더 생성 실패: 이름 충돌 재시도 한도 초과")
+                return None
+
+            actual_include_db = False
+            shutil.copy2(self.config_file, os.path.join(backup_path, os.path.basename(self.config_file)))
+
+            if include_db:
+                backup_db = os.path.join(backup_path, os.path.basename(self.db_file))
+                if not self._snapshot_db(backup_db):
+                    self._copy_db_with_sidecars(backup_db)
+                actual_include_db = True
+
+            info = {
+                "timestamp": timestamp,
+                "app_version": self.app_version,
+                "include_db": actual_include_db,
+                "trigger": normalized_trigger,
+                "created_at": datetime.datetime.now().isoformat(),
+            }
+            self._write_backup_info(backup_path, info)
+
+            logger.info(f"백업 생성 완료: {backup_path}")
+            verification = verify_backup_payload(
+                backup_path=backup_path,
+                config_file=self.config_file,
+                db_file=self.db_file,
+                require_db=actual_include_db,
+            )
+            info.update(
+                {
+                    "verification_state": str(verification.get("verification_state", "failed") or "failed"),
+                    "verification_error": str(
+                        verification.get("verification_error", "")
+                        or verification.get("restore_error", "")
+                        or verification.get("error", "")
+                        or ""
+                    ),
+                    "is_restorable": bool(verification.get("is_restorable", False)),
+                    "restore_error": str(verification.get("restore_error", "") or ""),
+                    "is_corrupt": bool(verification.get("is_corrupt", False)),
+                    "error": str(verification.get("error", "") or ""),
+                    "last_verified_at": datetime.datetime.now().isoformat(),
+                }
+            )
+            self._write_backup_info(backup_path, info)
+            if not bool(verification.get("is_restorable", False)):
+                self.last_create_error = str(
+                    verification.get("verification_error", "")
+                    or verification.get("restore_error", "")
+                    or verification.get("error", "")
+                    or "backup self-verification failed"
+                )
+                logger.error("Backup self-verification failed: %s", self.last_create_error)
+                self._cleanup_old_backups()
+                return None
+
+            self._cleanup_old_backups()
+            return backup_path
+        except Exception as e:
+            logger.error(f"백업 생성 실패: {e}")
+            self.last_create_error = str(e)
+            traceback.print_exc()
+            if "backup_path" in locals() and backup_path:
+                try:
+                    _rmtree_force(backup_path)
+                except Exception as cleanup_error:
+                    logger.warning("실패한 백업 폴더 정리 실패: %s", cleanup_error)
+            return None
+
+    def _copy_db_with_sidecars(self, dst_db_path: str):
+        shutil.copy2(self.db_file, dst_db_path)
+        for suffix in ("-wal", "-shm"):
+            src_sidecar = f"{self.db_file}{suffix}"
+            dst_sidecar = f"{dst_db_path}{suffix}"
+            if os.path.exists(src_sidecar):
+                shutil.copy2(src_sidecar, dst_sidecar)
+
+    def _snapshot_db(self, dst_db_path: str) -> bool:
+        src_conn = None
+        dst_conn = None
+        try:
+            src_conn = sqlite3.connect(self.db_file)
+            dst_conn = sqlite3.connect(dst_db_path)
+            src_conn.backup(dst_conn)
+            dst_conn.commit()
+            return True
+        except Exception as e:
+            logger.warning(
+                f"스냅샷 백업 실패, 복사 fallback 사용 (snapshot backup failed, fallback copy path will be used): {e}"
+            )
+            return False
+        finally:
+            if dst_conn:
+                dst_conn.close()
+            if src_conn:
+                src_conn.close()
+
+    def schedule_restore(
+        self,
+        backup_name: str,
+        restore_db: bool = True,
+        pending_file: Optional[str] = None,
+    ) -> bool:
+        try:
+            target_pending_file = pending_file or self.pending_restore_file
+            backup_path = os.path.join(self.backup_dir, str(backup_name or ""))
+            if not backup_name or not os.path.isdir(backup_path):
+                logger.error("복원 예약 실패: 백업 디렉터리를 찾을 수 없습니다 (%s)", backup_path)
+                return False
+            try:
+                os.listdir(backup_path)
+            except OSError as access_error:
+                logger.error("복원 예약 실패: 백업 디렉터리에 접근할 수 없습니다 (%s)", access_error)
+                return False
+            payload = {
+                "backup_name": backup_name,
+                "restore_db": bool(restore_db),
+                "backup_dir": self.backup_dir,
+                "created_at": datetime.datetime.now().isoformat(),
+            }
+            _write_json_atomic(target_pending_file, payload)
+            return True
+        except Exception as e:
+            logger.error(f"복원 예약 실패 (restore schedule failed): {e}")
+            return False
+
+    def delete_corrupt_backups(self) -> tuple[int, List[str]]:
+        deleted_count = 0
+        errors: List[str] = []
+        for backup in self.get_backup_list():
+            if not bool(backup.get("is_corrupt", False)):
+                continue
+            backup_name = str(backup.get("name") or backup.get("backup_name") or "")
+            if not backup_name:
+                continue
+            deleted, error = self.delete_backup(backup_name)
+            if deleted:
+                deleted_count += 1
+            elif error:
+                errors.append(f"{backup_name}: {error}")
+        return deleted_count, errors
+
+    def _cleanup_old_backups(self):
+        try:
+            backups = self.get_backup_list()
+            manual_backups = [
+                backup for backup in backups if str(backup.get("trigger", "manual")).lower() == "manual"
+            ]
+            auto_backups = [
+                backup for backup in backups if str(backup.get("trigger", "manual")).lower() == "auto"
+            ]
+
+            if len(manual_backups) > self.MAX_MANUAL_BACKUPS:
+                for backup in manual_backups[self.MAX_MANUAL_BACKUPS :]:
+                    deleted, error = self.delete_backup(str(backup["name"]))
+                    if deleted:
+                        logger.info(f"오래된 수동 백업 삭제: {backup['name']}")
+                    else:
+                        logger.warning(f"오래된 수동 백업 삭제 실패: {backup['name']} ({error})")
+
+            if len(auto_backups) > self.MAX_AUTO_BACKUPS:
+                for backup in auto_backups[self.MAX_AUTO_BACKUPS :]:
+                    deleted, error = self.delete_backup(str(backup["name"]))
+                    if deleted:
+                        logger.info(f"오래된 자동 백업 삭제: {backup['name']}")
+                    else:
+                        logger.warning(f"오래된 자동 백업 삭제 실패: {backup['name']} ({error})")
+        except Exception as e:
+            logger.error(f"백업 정리 오류: {e}")
+
+    def get_backup_list(self) -> List[Dict]:
+        backups: List[Dict[str, Any]] = []
+        if not os.path.exists(self.backup_dir):
+            return backups
+
+        try:
+            backup_names = sorted(os.listdir(self.backup_dir), reverse=True)
+        except Exception as e:
+            logger.error(f"failed to list backup directory: {e}")
+            return backups
+
+        for name in backup_names:
+            backup_path = os.path.join(self.backup_dir, name)
+            if not os.path.isdir(backup_path):
+                continue
+
+            item: Dict[str, Any] = {
+                "name": name,
+                "path": backup_path,
+                "timestamp": "",
+                "app_version": self.app_version,
+                "include_db": None,
+                "resolved_include_db": False,
+                "trigger": "manual",
+                "created_at": "",
+                "is_corrupt": False,
+                "error": "",
+                "is_restorable": False,
+                "restore_error": "",
+                "verification_state": "pending",
+                "verification_error": "",
+                "last_verified_at": "",
+            }
+            info_file = os.path.join(backup_path, "backup_info.json")
+            try:
+                if not os.path.exists(info_file):
+                    raise FileNotFoundError("backup_info.json is missing")
+
+                raw_info = self._read_backup_info(backup_path)
+
+                item["timestamp"] = str(raw_info.get("timestamp", "") or "")
+                item["app_version"] = str(raw_info.get("app_version", self.app_version) or self.app_version)
+                include_db_raw = raw_info.get("include_db")
+                item["include_db"] = include_db_raw if isinstance(include_db_raw, bool) else None
+                trigger = str(raw_info.get("trigger", "manual") or "manual").strip().lower()
+                item["trigger"] = trigger if trigger in {"auto", "manual"} else "manual"
+                item["created_at"] = str(raw_info.get("created_at", "") or "")
+                item["verification_state"] = str(
+                    raw_info.get("verification_state", item["verification_state"]) or item["verification_state"]
+                ).lower()
+                item["verification_error"] = str(
+                    raw_info.get("verification_error", item["verification_error"]) or item["verification_error"]
+                )
+                item["is_restorable"] = bool(
+                    raw_info.get(
+                        "is_restorable",
+                        item["verification_state"] != "failed",
+                    )
+                )
+                item["restore_error"] = str(
+                    raw_info.get("restore_error", item["restore_error"]) or item["restore_error"]
+                )
+                item["is_corrupt"] = bool(raw_info.get("is_corrupt", False))
+                item["error"] = str(raw_info.get("error", item["error"]) or item["error"])
+                item["last_verified_at"] = str(raw_info.get("last_verified_at", "") or "")
+            except Exception as item_error:
+                item["is_corrupt"] = True
+                item["error"] = str(item_error)
+                item["is_restorable"] = False
+                item["restore_error"] = "백업 메타데이터가 손상되었습니다."
+                item["verification_state"] = "failed"
+                item["verification_error"] = item["restore_error"]
+                logger.warning("corrupt backup metadata detected: %s (%s)", name, item_error)
+            else:
+                cfg_backup = os.path.join(backup_path, os.path.basename(self.config_file))
+                db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
+                resolved_include_db = self._resolve_backup_include_db(item, fallback_to_files=True)
+                item["resolved_include_db"] = resolved_include_db
+                if item["is_corrupt"]:
+                    item["is_restorable"] = False
+                    item["verification_state"] = "failed"
+                    if not item["restore_error"]:
+                        item["restore_error"] = item["error"] or item["verification_error"] or "backup is corrupt"
+                    if not item["verification_error"]:
+                        item["verification_error"] = item["restore_error"]
+                    backups.append(item)
+                    continue
+                if item["verification_state"] == "failed":
+                    item["is_restorable"] = False
+                    if not item["restore_error"]:
+                        item["restore_error"] = (
+                            item["verification_error"]
+                            or item["error"]
+                            or "backup self-verification failed"
+                        )
+                    if not item["verification_error"]:
+                        item["verification_error"] = item["restore_error"]
+                    backups.append(item)
+                    continue
+                if not os.path.exists(cfg_backup):
+                    item["is_restorable"] = False
+                    item["restore_error"] = "설정 백업 파일이 없습니다."
+                    item["verification_state"] = "failed"
+                    item["verification_error"] = item["restore_error"]
+                elif resolved_include_db and not os.path.exists(db_backup):
+                    item["is_restorable"] = False
+                    item["restore_error"] = "데이터베이스 백업 파일이 없습니다."
+                    item["verification_state"] = "failed"
+                    item["verification_error"] = item["restore_error"]
+                else:
+                    item["is_restorable"] = True
+                    if item["verification_state"] != "ok":
+                        item["verification_state"] = "pending"
+                        item["verification_error"] = ""
+                        item["restore_error"] = ""
+
+            backups.append(item)
+
+        backups.sort(
+            key=lambda x: str(x.get("timestamp", "")) or str(x.get("name", "")),
+            reverse=True,
+        )
+        return backups
+
+    def verify_backup_entry(
+        self,
+        backup_entry: Dict[str, Any],
+        *,
+        require_db: Optional[bool] = None,
+        persist: bool = False,
+    ) -> Dict[str, Any]:
+        verified = dict(backup_entry)
+        backup_name = str(verified.get("name") or verified.get("backup_name") or "").strip()
+        backup_path = str(verified.get("path") or os.path.join(self.backup_dir, backup_name))
+        include_db = (
+            self._resolve_backup_include_db(verified, fallback_to_files=True)
+            if require_db is None
+            else bool(require_db)
+        )
+        verification = verify_backup_payload(
+            backup_path=backup_path,
+            config_file=self.config_file,
+            db_file=self.db_file,
+            require_db=include_db,
+        )
+        verified.update(verification)
+        verified["name"] = backup_name
+        verified["path"] = backup_path
+        verified["backup_name"] = backup_name
+        verified["include_db"] = include_db
+        verified["resolved_include_db"] = include_db
+        if persist:
+            return self.persist_backup_verification(backup_entry, verified, include_db=include_db)
+        return verified
+
+    def verify_backup_by_name(
+        self,
+        backup_name: str,
+        *,
+        require_db: Optional[bool] = None,
+        persist: bool = False,
+    ) -> Dict[str, Any]:
+        backup_name = str(backup_name or "").strip()
+        for entry in self.get_backup_list():
+            if str(entry.get("name", "")).strip() == backup_name:
+                return self.verify_backup_entry(entry, require_db=require_db, persist=persist)
+
+        return self.verify_backup_entry(
+            {
+                "name": backup_name,
+                "backup_name": backup_name,
+                "path": os.path.join(self.backup_dir, backup_name),
+                "include_db": require_db if isinstance(require_db, bool) else None,
+            },
+            require_db=require_db,
+            persist=persist,
+        )
+
+    def delete_backup(self, backup_name: str) -> tuple[bool, str]:
+        backup_name = str(backup_name or "").strip()
+        if not backup_name:
+            return False, "백업 이름이 비어 있습니다."
+
+        backup_path = os.path.join(self.backup_dir, backup_name)
+        if not os.path.exists(backup_path):
+            return False, "삭제할 백업 경로가 존재하지 않습니다."
+
+        try:
+            _rmtree_force(backup_path)
+        except Exception as e:
+            return False, str(e)
+
+        if os.path.exists(backup_path):
+            return False, "백업 디렉터리가 삭제되지 않았습니다."
+        return True, ""
+
+    def restore_backup(self, backup_name: str, restore_db: bool = True) -> bool:
+        """오프라인 복원용 즉시 복원 API (UI에서는 schedule_restore 사용 권장)."""
+        try:
+            backup_path = os.path.join(self.backup_dir, backup_name)
+            if not os.path.exists(backup_path):
+                logger.error(f"백업을 찾을 수 없음: {backup_name}")
+                return False
+            restored = _apply_restore_from_backup(
+                backup_path=backup_path,
+                config_file=self.config_file,
+                db_file=self.db_file,
+                restore_db=bool(restore_db),
+                context_label=f"restore_backup({backup_name})",
+            )
+            if restored:
+                logger.info("백업 복원 완료: %s", backup_name)
+            return restored
+        except Exception as e:
+            logger.error(f"백업 복원 실패: {e}")
+            traceback.print_exc()
+            return False

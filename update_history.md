@@ -2,6 +2,15 @@
 
 ## v32.7.3 (Unreleased)
 - **Functional Risk Batch + Feature Completion (2026-05-11)**:
+  - Split large remaining modules into support packages while preserving compatibility facades:
+    - `core.workers` -> `core/workers_support/`
+    - `core.backup` -> `core/backup_support/`
+    - `core.config_store_impl` -> `core/config_store_support/`
+    - `core._db_mutations` -> `core/db_mutations_support/`
+    - `ui.dialogs` -> `ui/dialogs_support/`
+    - `ui.styles` -> `ui/styles_support/`
+    - `ui._main_window_fetch` -> `ui/main_window_fetch_support/`
+    - `ui._main_window_settings_io` -> `ui/main_window_io_support/`
   - Bulk/range read operations now update `read_updated_at` whenever they set `is_read=1`, keeping cloud merge conflict resolution consistent.
   - Cloud snapshot import isolates `CloudSyncError`, `DatabaseWriteError`, and unexpected per-snapshot failures, records error/invalid counts, and continues with later valid snapshots.
   - Snapshot import selection now reads manifests first, skips already seen snapshot ids, and imports oldest unseen snapshots before newer ones.
@@ -13,12 +22,15 @@
   - Added JSON automation rules for keywords/excludes/publisher/query conditions with tag/bookmark/read/exclude actions, plus preview/apply over existing DB scope.
   - Added publisher alias mapping without rewriting raw DB publisher values; display, statistics, filters, archive search, and exports use canonical labels where configured.
   - Added `core.automation_rules`, `core.publisher_aliases`, and `tests/test_functional_risk_20260511.py`.
-  - Re-reviewed `news_scraper_pro.spec`; the batch uses stdlib plus existing PyQt/SQLite/runtime paths, so no hidden import/exclude/data change is required.
+  - Re-reviewed `news_scraper_pro.spec`; the batch uses stdlib plus existing PyQt/SQLite/runtime paths. `urllib3.contrib.emscripten` is excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path and is not part of the Windows onefile runtime.
   - Re-reviewed `.gitignore`; build/test/runtime outputs remain ignored, and `.claude/` local worktree scratch is now ignored.
+  - The deleted `implementation_functional_risk_review_2026-05-11.md` is intentionally included in this publish as a workspace deletion.
   - Validation:
-    - `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+    - `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
     - `pyright` => `0 errors, 0 warnings, 0 informations`
     - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+    - `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+    - packaged startup smoke => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 - **Cloud Snapshot Sync Safety (2026-05-10)**:
   - Cloud sync now uses a local live DB plus portable `news_scraper_sync_*.zip` snapshots instead of opening a SQLite DB directly from OneDrive/Google Drive style folders.
   - Added `core.cloud_sync` for snapshot creation, validation, import, cycle execution, cleanup, and cloud/runtime path overlap detection.

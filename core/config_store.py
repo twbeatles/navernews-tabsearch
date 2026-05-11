@@ -10,7 +10,7 @@ changing existing imports.
 import os
 from typing import Any, Dict, Mapping, Tuple
 
-from core import config_store_impl as _impl
+from core.config_store_support import impl as _impl
 from core.config_store_impl import (
     AppConfig,
     AppSettings,

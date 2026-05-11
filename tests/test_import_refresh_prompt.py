@@ -352,7 +352,7 @@ class TestImportRefreshPrompt(unittest.TestCase):
             dummy = _DummyImportMain(dialogs)
 
             with mock.patch(
-                "ui._main_window_settings_io.save_primary_config_file",
+                "ui.main_window_io_support.settings_dialogs.save_primary_config_file",
                 side_effect=OSError("disk full"),
             ):
                 dummy.import_settings()
@@ -426,7 +426,7 @@ class TestImportRefreshPrompt(unittest.TestCase):
         dialogs = _FakeDialogAdapter()
         dummy = _DummyImportMain(dialogs)
 
-        with mock.patch("ui._main_window_settings_io.get_machine_identity", return_value="this-machine"):
+        with mock.patch("ui.main_window_io_support.settings_dialogs.get_machine_identity", return_value="this-machine"):
             stage = dummy._stage_settings_import(
                 {
                     "export_machine_id": "other-machine",

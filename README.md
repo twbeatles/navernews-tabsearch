@@ -58,7 +58,7 @@
 - HTTP 429 `Retry-After`는 30초 이하만 worker 내부 sleep 재시도하며, 더 긴 값은 즉시 rate-limit cooldown meta로 넘겨 UI/자동 새로고침 제어에 맡김
 - 자동 새로고침 네트워크 오류 누적은 `error_meta.kind` 기반으로 판정하고, legacy 경로만 문자열 fallback을 사용
 - 자동 새로고침 due timestamp는 실제 fetch 성공 후에만 갱신해 실패 탭이 한 주기 전체를 건너뛰지 않도록 조정
-- `core.config_store`는 기존 import 호환 facade로 남기고, 실제 기본값/정규화/secret storage/파일 I/O 구현은 `core.config_store_impl`로 분리
+- `core.config_store`와 `core.config_store_impl`은 기존 import 호환 facade로 남기고, 실제 기본값/정규화/secret storage/파일 I/O 구현은 `core/config_store_support/` 아래에 둔다
 - 중앙 HTTP 구성 계층(`core.http_client.HttpClientConfig`)을 도입하고 `ApiWorker`가 worker-owned session으로 API를 호출하도록 정리
 - fetch 성공 기준을 "API 응답 수신"이 아니라 "DB upsert 완료"로 강화하고, `DatabaseWriteError`를 통해 저장 실패를 명시적으로 error 경로로 승격
 - `ApiWorker.last_error_meta`와 전역 fetch cooldown을 추가해 429/quota 성격 오류 후 수동/자동/순차 refresh와 `더 불러오기`를 일관되게 차단/재개
@@ -79,7 +79,7 @@
 - 클라우드 동기화는 OneDrive/Google Drive 폴더의 live SQLite DB를 직접 열지 않고, 로컬 DB와 검증된 `news_scraper_sync_*.zip` 스냅샷을 교환한다
 - 클라우드 스냅샷은 `manifest.json`, secret 제거 설정 JSON, SQLite backup API로 만든 DB 복사본만 포함하며 API 자격증명, 자동화 규칙, 출처 alias, `-wal`/`-shm` sidecar는 제외한다
 - 스냅샷 병합은 기사/검색범위를 union하고 읽음/북마크/메모/태그는 per-field timestamp 최신값을 반영하며, v1에서는 삭제 전파와 설정 병합을 하지 않는다
-- `MainApp`과 `NewsTab`은 얇은 facade로 유지하고, 실제 책임은 `ui/main_window_support/`와 `ui/news_tab_support/` 아래 모듈로 분리해 SOLID 기준의 변경 지점을 더 명확히 했다
+- `MainApp`, `NewsTab`, worker, backup, dialogs, styles, DB mutation 경로는 얇은 facade를 유지하고 실제 책임은 `*_support/` 패키지로 분리해 SOLID 기준의 변경 지점을 더 명확히 했다
 - 저장소 주요 텍스트 자산의 mojibake 문자열을 정리하고, 인코딩 스모크 테스트를 다중 suspicious token/패턴 감시로 강화
 - 백업 메타는 legacy `include_db` 누락을 실제 payload 파일 기준으로 자동 판별하고, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 다시 기록
 - 설정 창의 오래된 기사 정리/전체 기사 삭제는 완료 결과를 유지보수 해제 직후에 flush해 열린 탭, 배지, 트레이 툴팁 동기화가 skip되지 않도록 보장
@@ -172,10 +172,12 @@
 
 ## 최신 검증 메모 (2026-05-11)
 
-- `python -m pytest -q` => `315 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`입니다.
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `news_scraper_pro.spec`는 2026-05-11 기능 리스크 수정/태그 관리자/Markdown digest/아카이브/자동화/출처 alias 기준으로 재검토했으며, 표준 라이브러리와 기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않습니다.
+- `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- 패키지 스모크: `QT_QPA_PLATFORM=offscreen` + 새 `NEWS_SCRAPER_DATA_DIR`로 실행형이 15초 이상 정상 시작 상태를 유지함
+- `news_scraper_pro.spec`는 2026-05-11 기능 리스크 수정과 support-package 리팩토링 기준으로 재검토했으며, 표준 라이브러리와 기존 번들 의존성만 사용합니다. Windows onefile 런타임에 쓰지 않는 `urllib3.contrib.emscripten` optional 경로는 수집 제외해 `js` optional import 경고를 제거했습니다.
 
 ## 프로젝트 구조
 
@@ -191,7 +193,8 @@ navernews-tabsearch/
 │   ├── bootstrap.py             # 앱 부팅(main), 전역 예외 처리, 단일 인스턴스 가드
 │   ├── constants.py             # RuntimePaths facade + 경로/버전 상수 호환 export
 │   ├── config_store.py          # 설정 import 호환 facade
-│   ├── config_store_impl.py     # 설정 스키마 정규화 + 원자 저장/.backup 회전 + secret storage
+│   ├── config_store_impl.py     # 설정 구현 호환 facade
+│   ├── config_store_support/    # 설정 스키마/정규화/secret storage/파일 I/O 구현
 │   ├── content_filters.py       # 출처/태그 정규화 helper
 │   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
 │   ├── automation_rules.py      # 규칙 기반 자동 태그/북마크/읽음 처리 helper
@@ -204,14 +207,17 @@ navernews-tabsearch/
 │   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
 │   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
-│   ├── _db_mutations.py         # upsert / 상태 변경 / 삭제 / 읽음 처리
+│   ├── _db_mutations.py         # DB mutation 호환 facade
+│   ├── db_mutations_support/    # upsert / 상태·태그 변경 / mark-read / maintenance 구현
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
 │   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 / seen snapshot 추적
 │   ├── protocols.py             # lock/session capability Protocol 정의
-│   ├── workers.py               # ApiWorker/DBWorker/AsyncJobWorker/IterativeJobWorker/InterruptibleReadWorker/DBQueryScope
+│   ├── workers.py               # worker API 호환 facade
+│   ├── workers_support/         # lifecycle / HTTP policy / job workers / ApiWorker / DBWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/build_fetch_key
-│   ├── backup.py                # AutoBackup/on-demand backup verification/apply_pending_restore_if_any
+│   ├── backup.py                # backup/restore API 호환 facade
+│   ├── backup_support/          # 파일 백업 / payload 검증 / pending restore / AutoBackup 구현
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
@@ -227,8 +233,10 @@ navernews-tabsearch/
 │   │   ├── config.py
 │   │   └── ui_shell.py
 │   ├── _main_window_tabs.py     # 탭 추가/닫기/리네임/그룹 연결
-│   ├── _main_window_fetch.py    # fetch orchestration / worker 수명 주기
-│   ├── _main_window_settings_io.py # 설정 import/export / 유지보수 동기화
+│   ├── _main_window_fetch.py    # fetch orchestration 호환 facade
+│   ├── main_window_fetch_support/ # refresh policy / fetch worker lifecycle
+│   ├── _main_window_settings_io.py # 설정 import/export 호환 facade
+│   ├── main_window_io_support/  # cloud sync / export/import / settings staging
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 언론사 분석 UI
 │   ├── news_tab.py              # NewsTab facade / compatibility root
@@ -244,8 +252,10 @@ navernews-tabsearch/
 │   ├── _settings_dialog_content.py # 설정/도움말/단축키 탭 조립
 │   ├── _settings_dialog_docs.py # 도움말 / 단축키 HTML
 │   ├── _settings_dialog_tasks.py # API 검증 / 데이터 정리 / 워커 정리
-│   ├── dialogs.py               # NoteDialog/LogViewerDialog/KeywordGroupDialog/BackupDialog
-│   ├── styles.py                # Colors/UIConstants/ToastType/AppStyle
+│   ├── dialogs.py               # 보조 다이얼로그 호환 facade
+│   ├── dialogs_support/         # article tools / logs / keyword groups / backups dialogs
+│   ├── styles.py                # 스타일 API 호환 facade
+│   ├── styles_support/          # color tokens / constants / QSS / HTML template
 │   ├── toast.py                 # ToastQueue/ToastMessage
 │   └── widgets.py               # NewsBrowser/NoScrollComboBox
 ├── tests/                       # 회귀/호환성/안정성 테스트
@@ -339,7 +349,7 @@ pyright
 - `pyrightconfig.json`은 루트 Python 파일, `core/`, `ui/`, `tests/`를 검사 대상으로 고정합니다.
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산(`.py`, `.md`, `.json`, `.ini`, `.spec`, `.txt`, `.yml`, `.yaml`)의 UTF-8 decode 실패, `\ufffd`, 알려진 깨진 토큰, 대표적인 mojibake 정규식 패턴 재등장을 함께 감시합니다.
 - `tests/test_settings_validation_http_policy.py`는 설정 창 API 검증이 raw `requests.get(...)`가 아니라 공용 session + 현재 timeout 정책을 쓰는지 회귀 테스트로 검증합니다.
-- facade 공개 경로(`ui.main_window.MainApp`, `core.database.DatabaseManager`, `ui.settings_dialog.SettingsDialog`)는 유지하고, 내부 구현만 private helper module로 분리했습니다.
+- facade 공개 경로(`ui.main_window.MainApp`, `core.database.DatabaseManager`, `ui.settings_dialog.SettingsDialog`, `core.workers`, `core.backup`, `ui.dialogs`, `ui.styles`)는 유지하고, 내부 구현은 support package/private helper module로 분리했습니다.
 
 ## PyInstaller 빌드 (onefile)
 
@@ -351,6 +361,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 
 - 산출물: `dist/NewsScraperPro_Safe.exe`
 - 아이콘 리소스: `news_icon.ico` 포함 (`news_icon.png`는 존재할 경우 fallback으로 함께 번들)
+- 2026-05-11 support-package 리팩토링 기준 `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드가 성공했고, 새 데이터 디렉터리 + `QT_QPA_PLATFORM=offscreen` 패키지 스모크에서 실행형이 정상 시작됨을 확인했습니다. `urllib3.contrib.emscripten`은 브라우저/Emscripten 전용 optional 경로라 submodule 수집에서 제외합니다.
 - v32.7.2 핵심 안정화 1차(2026-02-25)는 런타임 로직/스키마 변경만 포함하며 `.spec` 추가 수정은 필요하지 않습니다.
 - v32.7.2 핵심+테스트 보강 2차(2026-02-28)도 런타임/테스트/문서 변경만 포함하며 `.spec` 수정은 필요하지 않습니다.
 - v32.7.2 감사 반영(2026-03-02)에서는 단일 인스턴스 IPC(`QLocalServer/QLocalSocket`) 경로 보호를 위해 `PyQt6.QtNetwork`를 `.spec`에 명시 반영했습니다.
@@ -393,7 +404,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-05-03 기준 `git status --ignored --short`로 `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, `__pycache__/`, runtime DB/config/log/backup/pending restore 잔여물이 계속 무시되는 것을 확인했고, `.gitignore` 추가 수정은 필요하지 않았습니다.
 - 2026-05-08 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 리다이렉트 차단, 사설 URL 필터, DB 최적화, export 1.3 machine id, 설정-only 자동 백업, CSV 메모/북마크 import, 정규식 알림, 태그 통계, 로그 회전은 표준 라이브러리/기존 번들 의존성만 사용하므로 추가 hidden import/exclude/data 변경이 필요하지 않습니다.
 - 2026-05-08 기준 `git status --ignored --short`와 `git check-ignore -v build dist .pytest_tmp .pytest_cache __pycache__ dist\NewsScraperPro_Safe.exe build\news_scraper_pro\Analysis-00.toc`로 build/dist/cache/log 산출물이 기존 `.gitignore` 규칙으로 무시되는 것을 확인했습니다.
-- 2026-05-11 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 기능 리스크 수정과 태그 관리자/Markdown digest/아카이브 검색/자동화 규칙/출처 alias는 표준 라이브러리와 기존 PyQt/SQLite 경로만 사용하므로 별도 hidden import/exclude/data 변경은 필요하지 않습니다. `.claude/` worktree scratch는 publish 대상 소스가 아니므로 ignore합니다.
+- 2026-05-11 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 기능 리스크 수정과 support-package 리팩토링은 표준 라이브러리와 기존 PyQt/SQLite 경로만 사용하므로 별도 hidden import/exclude/data 변경은 필요하지 않습니다. `.claude/` worktree scratch는 publish 대상 소스가 아니므로 ignore합니다.
 - 2026-05-10 기준 `.gitignore`에는 cloud snapshot 산출물(`news_scraper_sync_*.zip`, `.news_scraper_sync_*.zip.tmp`)을 추가로 무시하도록 보강했습니다.
 - 2026-04-29 문서 정합화에서는 삭제 상태인 `implementation_risk_review_2026-04-27.md`를 되돌리지 않고 현재 작업트리 상태로 유지합니다.
 

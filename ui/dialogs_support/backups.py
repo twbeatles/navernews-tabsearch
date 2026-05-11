@@ -1,0 +1,680 @@
+import html
+import json
+import logging
+import os
+import sqlite3
+from datetime import datetime
+from typing import Any, Dict, List, Optional, cast
+
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QCloseEvent, QDesktopServices
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QGroupBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTextBrowser,
+    QTextEdit,
+    QVBoxLayout,
+)
+
+from core.backup import AutoBackup
+from core.automation_rules import normalize_automation_rules
+from core.keyword_groups import KeywordGroupManager
+from core.logging_setup import configure_logging
+from core.constants import LOG_FILE
+from core.publisher_aliases import canonical_publisher, normalize_publisher_aliases
+from core.workers import IterativeJobWorker, delete_qthread_when_finished, retain_worker_until_finished
+from ui.dialog_adapters import get_dialog_adapter
+
+configure_logging()
+logger = logging.getLogger(__name__)
+
+def _verify_backups_job(context, auto_backup: AutoBackup, backup_entries: List[Dict[str, Any]]):
+    total = len(backup_entries)
+    verified_entries: List[Dict[str, Any]] = []
+    context.report(current=0, total=total, message="백업 검증 준비 중...", payload={"stage": "start"})
+
+    for index, entry in enumerate(backup_entries, start=1):
+        context.check_cancelled()
+        backup_name = str(entry.get("backup_name") or entry.get("name") or "").strip()
+        verified_entry = auto_backup.verify_backup_entry(entry, persist=True)
+        verified_entry["backup_name"] = backup_name
+        verified_entries.append(verified_entry)
+        context.report(
+            current=index,
+            total=total,
+            message=f"백업 검증 중... ({index}/{total})",
+            payload={"stage": "verified", "entry": verified_entry},
+        )
+
+    return verified_entries
+class BackupDialog(QDialog):
+    """백업 관리 UI"""
+
+    def __init__(self, auto_backup: AutoBackup, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("💾 백업 관리")
+        self.resize(500, 400)
+        self.auto_backup = auto_backup
+        self._verify_worker: Optional[IterativeJobWorker] = None
+        self.setup_ui()
+        self.load_backups()
+
+    @staticmethod
+    def format_backup_timestamp(timestamp: str, created_at: Optional[str] = None) -> str:
+        raw_timestamp = str(timestamp or "").strip()
+        for fmt in ("%Y%m%d_%H%M%S_%f", "%Y%m%d_%H%M%S"):
+            try:
+                dt = datetime.strptime(raw_timestamp, fmt)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+
+        raw_created_at = str(created_at or "").strip()
+        if raw_created_at:
+            try:
+                dt = datetime.fromisoformat(raw_created_at)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                pass
+
+        return raw_timestamp or "Unknown"
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        # 백업 생성 버튼
+        btn_layout = QHBoxLayout()
+
+        self.btn_create = QPushButton("📦 새 백업 생성")
+        self.btn_create.clicked.connect(self.create_backup)
+
+        self.chk_include_db = QCheckBox("데이터베이스 포함")
+        self.chk_include_db.setChecked(True)
+
+        btn_layout.addWidget(self.btn_create)
+        btn_layout.addWidget(self.chk_include_db)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        info_label = QLabel(
+            "참고: 시작 시 자동 백업은 설정만 저장합니다. DB 복원 지점이 필요하면 수동 백업에서 "
+            "'데이터베이스 포함'을 선택하세요."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; margin-bottom: 8px;")
+        layout.addWidget(info_label)
+
+        verify_layout = QHBoxLayout()
+        self.btn_verify = QPushButton("🔍 백업 검증")
+        self.btn_verify.clicked.connect(self.start_backup_verification)
+        self.btn_cancel_verify = QPushButton("⏹ 검증 취소")
+        self.btn_cancel_verify.setEnabled(False)
+        self.btn_cancel_verify.clicked.connect(self.cancel_backup_verification)
+        self.btn_delete_corrupt = QPushButton("손상 백업 일괄 삭제")
+        self.btn_delete_corrupt.clicked.connect(self.delete_corrupt_backups)
+        verify_layout.addWidget(self.btn_verify)
+        verify_layout.addWidget(self.btn_cancel_verify)
+        verify_layout.addWidget(self.btn_delete_corrupt)
+        verify_layout.addStretch()
+        layout.addLayout(verify_layout)
+
+        self.verify_progress = QProgressBar()
+        self.verify_progress.setVisible(False)
+        layout.addWidget(self.verify_progress)
+
+        self.lbl_verify_status = QLabel("백업 목록을 불러오는 중...")
+        self.lbl_verify_status.setStyleSheet("color: #666;")
+        layout.addWidget(self.lbl_verify_status)
+
+        # 백업 목록
+        layout.addWidget(QLabel("📁 백업 목록:"))
+        self.backup_list = QListWidget()
+        self.backup_list.itemDoubleClicked.connect(self.restore_backup)
+        layout.addWidget(self.backup_list)
+
+        # 하단 버튼
+        bottom_layout = QHBoxLayout()
+
+        self.btn_restore = QPushButton("♻ 복원")
+        self.btn_restore.clicked.connect(self.restore_backup)
+
+        self.btn_delete = QPushButton("🗑 삭제")
+        self.btn_delete.clicked.connect(self.delete_backup)
+
+        self.btn_open_folder = QPushButton("📂 폴더 열기")
+        self.btn_open_folder.clicked.connect(self.open_backup_folder)
+
+        bottom_layout.addWidget(self.btn_restore)
+        bottom_layout.addWidget(self.btn_delete)
+        bottom_layout.addWidget(self.btn_open_folder)
+        bottom_layout.addStretch()
+        layout.addLayout(bottom_layout)
+
+        # 닫기 버튼
+        btn_close = QPushButton("닫기")
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)
+
+    def closeEvent(self, event: Optional[QCloseEvent]):
+        self._stop_verify_worker(wait_ms=600)
+        super().closeEvent(event)
+
+    def _stop_verify_worker(self, wait_ms: int = 200):
+        worker = getattr(self, "_verify_worker", None)
+        if worker is None:
+            return
+        if worker.isRunning():
+            try:
+                worker.requestInterruption()
+                if not worker.wait(max(0, int(wait_ms))):
+                    retain_worker_until_finished(worker)
+            except Exception:
+                pass
+        self._verify_worker = None
+
+    def _backup_item_text(self, backup: Dict[str, Any]) -> str:
+        timestamp = backup.get("timestamp", "Unknown")
+        version = backup.get("app_version", "?")
+        include_db_value = backup.get("include_db")
+        resolved_include_db = backup.get("resolved_include_db")
+        if isinstance(include_db_value, bool):
+            include_db = "DB 포함" if include_db_value else "설정만"
+        elif isinstance(resolved_include_db, bool):
+            include_db = "DB 포함" if resolved_include_db else "설정만"
+        else:
+            include_db = "자동 판별"
+        trigger_label = "자동" if str(backup.get("trigger", "manual")).lower() == "auto" else "수동"
+        date_str = self.format_backup_timestamp(
+            str(timestamp),
+            created_at=str(backup.get("created_at", "")),
+        )
+
+        is_corrupt = bool(backup.get("is_corrupt", False))
+        is_restorable = bool(backup.get("is_restorable", not is_corrupt))
+        verification_state = str(backup.get("verification_state", "pending") or "pending").lower()
+        restore_error = str(backup.get("restore_error", "") or "")
+        verification_error = str(backup.get("verification_error", "") or "")
+
+        if is_corrupt:
+            item_text = f"[손상됨] {date_str} (v{version})"
+            if verification_error:
+                item_text += f" - {verification_error}"
+            return item_text
+
+        if verification_state == "pending":
+            return f"[검증 전] {date_str} (v{version}) {include_db} {trigger_label}"
+
+        if not is_restorable:
+            item_text = f"[복원 불가] {date_str} (v{version}) {include_db} {trigger_label}"
+            if restore_error:
+                item_text += f" - {restore_error}"
+            return item_text
+
+        return f"{date_str} (v{version}) {include_db} {trigger_label} [정상]"
+
+    def _backup_item_meta(self, backup: Dict[str, Any]) -> Dict[str, Any]:
+        is_corrupt = bool(backup.get("is_corrupt", False))
+        return {
+            "name": str(backup.get("name", "") or backup.get("backup_name", "")),
+            "backup_name": str(backup.get("name", "") or backup.get("backup_name", "")),
+            "path": str(backup.get("path", "") or ""),
+            "timestamp": str(backup.get("timestamp", "") or ""),
+            "app_version": str(backup.get("app_version", "") or ""),
+            "include_db": backup.get("include_db") if isinstance(backup.get("include_db"), bool) else None,
+            "resolved_include_db": bool(backup.get("resolved_include_db", backup.get("include_db", False))),
+            "trigger": str(backup.get("trigger", "manual")).lower(),
+            "created_at": str(backup.get("created_at", "") or ""),
+            "is_corrupt": is_corrupt,
+            "error": str(backup.get("error", "") or ""),
+            "is_restorable": bool(backup.get("is_restorable", not is_corrupt)),
+            "restore_error": str(backup.get("restore_error", "") or ""),
+            "verification_state": str(backup.get("verification_state", "pending") or "pending"),
+            "verification_error": str(backup.get("verification_error", "") or ""),
+            "last_verified_at": str(backup.get("last_verified_at", "") or ""),
+        }
+
+    def _apply_backup_item_state(self, item, backup: Dict[str, Any]):
+        text_value = self._backup_item_text(backup)
+        if hasattr(item, "setText"):
+            item.setText(text_value)
+        else:
+            item.text = text_value
+        item.setData(Qt.ItemDataRole.UserRole, self._backup_item_meta(backup))
+
+    def _find_backup_item(self, backup_name: str):
+        for index in range(self.backup_list.count()):
+            item = self.backup_list.item(index)
+            if item is None:
+                continue
+            meta = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(meta, dict) and str(meta.get("backup_name", "")).strip() == str(backup_name).strip():
+                return item
+        return None
+
+    def load_backups(self):
+        """백업 목록 로드"""
+        if hasattr(self, "_stop_verify_worker"):
+            self._stop_verify_worker(wait_ms=250)
+        self.backup_list.clear()
+        backups = self.auto_backup.get_backup_list()
+
+        for backup in backups:
+            item_text = self._backup_item_text(backup)
+            self.backup_list.addItem(item_text)
+            item = self.backup_list.item(self.backup_list.count() - 1)
+            if item is not None:
+                item.setData(Qt.ItemDataRole.UserRole, self._backup_item_meta(backup))
+
+        if not backups:
+            if hasattr(self, "verify_progress"):
+                self.verify_progress.setVisible(False)
+            if hasattr(self, "lbl_verify_status"):
+                self.lbl_verify_status.setText("검증할 백업이 없습니다.")
+            if hasattr(self, "btn_verify"):
+                self.btn_verify.setEnabled(False)
+            if hasattr(self, "btn_cancel_verify"):
+                self.btn_cancel_verify.setEnabled(False)
+            return
+
+        if hasattr(self, "btn_verify"):
+            self.btn_verify.setEnabled(True)
+        if hasattr(self, "btn_cancel_verify"):
+            self.btn_cancel_verify.setEnabled(False)
+        if hasattr(self, "lbl_verify_status"):
+            self.lbl_verify_status.setText("백업 목록을 불러왔습니다. 필요 시 '백업 검증'을 실행하세요.")
+
+    def start_backup_verification(self):
+        if self._verify_worker is not None and self._verify_worker.isRunning():
+            return
+
+        backup_entries: List[Dict[str, Any]] = []
+        for index in range(self.backup_list.count()):
+            item = self.backup_list.item(index)
+            if item is None:
+                continue
+            meta = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(meta, dict):
+                backup_entries.append(dict(meta))
+
+        if not backup_entries:
+            self.verify_progress.setVisible(False)
+            self.lbl_verify_status.setText("검증할 백업이 없습니다.")
+            return
+
+        self.verify_progress.setVisible(True)
+        self.verify_progress.setRange(0, len(backup_entries))
+        self.verify_progress.setValue(0)
+        self.lbl_verify_status.setText("백업 검증을 시작합니다...")
+        self.btn_verify.setEnabled(False)
+        self.btn_cancel_verify.setEnabled(True)
+
+        worker = IterativeJobWorker(_verify_backups_job, self.auto_backup, backup_entries)
+        self._verify_worker = worker
+        worker.progress.connect(self._on_backup_verification_progress)
+        worker.finished.connect(self._on_backup_verification_finished)
+        worker.error.connect(self._on_backup_verification_error)
+        worker.cancelled.connect(self._on_backup_verification_cancelled)
+        delete_qthread_when_finished(worker)
+        worker.start()
+
+    def cancel_backup_verification(self):
+        if self._verify_worker is None or not self._verify_worker.isRunning():
+            return
+        self.btn_cancel_verify.setEnabled(False)
+        self.lbl_verify_status.setText("백업 검증 취소 요청 중...")
+        self._verify_worker.requestInterruption()
+
+    def _on_backup_verification_progress(self, payload: Dict[str, Any]):
+        current = int(payload.get("current", 0) or 0)
+        total = int(payload.get("total", 0) or 0)
+        message = str(payload.get("message", "") or "")
+        if total > 0:
+            self.verify_progress.setRange(0, total)
+            self.verify_progress.setValue(min(current, total))
+        if message:
+            self.lbl_verify_status.setText(message)
+
+        entry = payload.get("entry")
+        if isinstance(entry, dict):
+            item = self._find_backup_item(str(entry.get("backup_name", "") or entry.get("name", "")))
+            if item is not None:
+                self._apply_backup_item_state(item, entry)
+
+    def _finish_backup_verification_ui(self, message: str):
+        self._verify_worker = None
+        if hasattr(self, "btn_verify"):
+            self.btn_verify.setEnabled(self.backup_list.count() > 0)
+        if hasattr(self, "btn_cancel_verify"):
+            self.btn_cancel_verify.setEnabled(False)
+        if hasattr(self, "verify_progress"):
+            self.verify_progress.setVisible(self.backup_list.count() > 0)
+        if hasattr(self, "lbl_verify_status"):
+            self.lbl_verify_status.setText(message)
+
+    def _on_backup_verification_finished(self, result: List[Dict[str, Any]]):
+        for entry in result:
+            item = self._find_backup_item(str(entry.get("backup_name", "") or entry.get("name", "")))
+            if item is not None:
+                self._apply_backup_item_state(item, entry)
+
+        ok_count = sum(1 for entry in result if bool(entry.get("is_restorable")) and not bool(entry.get("is_corrupt")))
+        failed_count = max(0, len(result) - ok_count)
+        self._finish_backup_verification_ui(
+            f"백업 검증 완료: 정상 {ok_count}개 / 문제 {failed_count}개"
+        )
+
+    def _on_backup_verification_error(self, error_msg: str):
+        self._finish_backup_verification_ui(f"백업 검증 실패: {error_msg}")
+        get_dialog_adapter(self).warning(
+            self,
+            "백업 검증",
+            f"백업 검증 중 오류가 발생했습니다:\n{error_msg}",
+        )
+
+    def _on_backup_verification_cancelled(self):
+        self._finish_backup_verification_ui("백업 검증을 취소했습니다.")
+
+    def _create_backup_legacy_unused(self):
+        """백업 생성"""
+        dialogs = get_dialog_adapter(self)
+        include_db = self.chk_include_db.isChecked()
+        ok, reason = self.auto_backup.validate_create_backup_prerequisites(include_db=include_db)
+        if not ok:
+            dialogs.warning(self, "백업 생성 실패", reason)
+            return
+        result = self.auto_backup.create_backup(include_db)
+
+        if result:
+            dialogs.information(self, "완료", f"백업이 생성되었습니다:\n{result}")
+            self.load_backups()
+        else:
+            self.load_backups()
+            dialogs.warning(self, "오류", "백업 생성에 실패했습니다.")
+
+    def create_backup(self):
+        """백업 생성"""
+        dialogs = get_dialog_adapter(self)
+        include_db = self.chk_include_db.isChecked()
+        ok, reason = self.auto_backup.validate_create_backup_prerequisites(include_db=include_db)
+        if not ok:
+            dialogs.warning(self, "백업 생성 실패", reason)
+            return
+
+        result = self.auto_backup.create_backup(include_db)
+        self.load_backups()
+        if result:
+            dialogs.information(self, "완료", f"백업이 생성되었습니다.\n{result}")
+            return
+
+        error_detail = str(getattr(self.auto_backup, "last_create_error", "") or "").strip()
+        if error_detail:
+            dialogs.warning(self, "오류", f"백업 생성에 실패했습니다.\n\n{error_detail}")
+        else:
+            dialogs.warning(self, "오류", "백업 생성에 실패했습니다.")
+
+    def _handle_corrupt_backup(self, backup_name: str, corrupt_error: str) -> None:
+        dialogs = get_dialog_adapter(self)
+        if dialogs.ask_corrupt_backup_action(self, backup_name, corrupt_error) == "delete":
+            deleted, error = self.auto_backup.delete_backup(backup_name)
+            if deleted:
+                self.load_backups()
+                dialogs.information(self, "완료", "손상된 백업 항목을 삭제했습니다.")
+            else:
+                dialogs.warning(self, "오류", f"삭제 실패: {error}")
+
+    def delete_corrupt_backups(self) -> None:
+        """Delete every backup currently detected as corrupt."""
+        dialogs = get_dialog_adapter(self)
+        if not dialogs.ask_yes_no(
+            self,
+            "손상 백업 일괄 삭제",
+            "손상된 백업 항목을 모두 삭제하시겠습니까?",
+        ):
+            return
+
+        deleted_count, errors = self.auto_backup.delete_corrupt_backups()
+        self.load_backups()
+        if errors:
+            preview = "\n".join(errors[:5])
+            suffix = "\n..." if len(errors) > 5 else ""
+            dialogs.warning(
+                self,
+                "손상 백업 삭제",
+                f"{deleted_count:,}개를 삭제했지만 일부 항목 삭제에 실패했습니다.\n\n{preview}{suffix}",
+            )
+            return
+
+        if deleted_count > 0:
+            dialogs.information(self, "손상 백업 삭제", f"손상된 백업 {deleted_count:,}개를 삭제했습니다.")
+        else:
+            dialogs.information(self, "손상 백업 삭제", "삭제할 손상 백업이 없습니다.")
+
+    def _sqlite_table_count(self, db_path: str, table_name: str) -> Optional[int]:
+        if not db_path or not os.path.exists(db_path):
+            return None
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path)
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            ).fetchone()
+            if not exists:
+                return 0
+            row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+            return int(row[0]) if row else 0
+        except Exception as exc:
+            logger.warning("dry-run table count failed (%s.%s): %s", db_path, table_name, exc)
+            return None
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def _build_restore_dry_run_report(
+        self,
+        backup_name: str,
+        *,
+        restore_db: bool,
+        verified_item: Dict[str, Any],
+    ) -> str:
+        backup_path = os.path.join(self.auto_backup.backup_dir, backup_name)
+        cfg_name = os.path.basename(getattr(self.auto_backup, "config_file", "news_scraper_config.json"))
+        live_cfg_path = getattr(self.auto_backup, "config_file", "")
+        backup_cfg_path = os.path.join(backup_path, cfg_name)
+
+        config_summary = "설정 파일: 확인 불가"
+        try:
+            live_cfg = {}
+            backup_cfg = {}
+            if os.path.exists(live_cfg_path):
+                with open(live_cfg_path, "r", encoding="utf-8") as f:
+                    live_cfg = json.load(f)
+            if os.path.exists(backup_cfg_path):
+                with open(backup_cfg_path, "r", encoding="utf-8") as f:
+                    backup_cfg = json.load(f)
+            live_settings = live_cfg.get("app_settings", {}) if isinstance(live_cfg, dict) else {}
+            backup_settings = backup_cfg.get("app_settings", {}) if isinstance(backup_cfg, dict) else {}
+            changed_keys = sorted(
+                key
+                for key in set(live_settings.keys()) | set(backup_settings.keys())
+                if live_settings.get(key) != backup_settings.get(key)
+            )
+            if changed_keys:
+                preview = ", ".join(changed_keys[:6])
+                suffix = "..." if len(changed_keys) > 6 else ""
+                config_summary = f"설정 변경: {len(changed_keys)}개 항목 ({preview}{suffix})"
+            else:
+                config_summary = "설정 변경: 없음"
+        except Exception as exc:
+            config_summary = f"설정 파일: 비교 실패 ({exc})"
+
+        db_summary = "데이터베이스: 변경 없음"
+        if restore_db:
+            db_name = os.path.basename(getattr(self.auto_backup, "db_file", "news_database.db"))
+            live_db_path = getattr(self.auto_backup, "db_file", "")
+            backup_db_path = os.path.join(backup_path, db_name)
+            live_news = self._sqlite_table_count(live_db_path, "news")
+            backup_news = self._sqlite_table_count(backup_db_path, "news")
+            live_tags = self._sqlite_table_count(live_db_path, "news_tags")
+            backup_tags = self._sqlite_table_count(backup_db_path, "news_tags")
+            db_summary = (
+                "데이터베이스: 복원 예정\n"
+                f"현재 기사/태그: {live_news if live_news is not None else '?'} / {live_tags if live_tags is not None else '?'}\n"
+                f"백업 기사/태그: {backup_news if backup_news is not None else '?'} / {backup_tags if backup_tags is not None else '?'}"
+            )
+
+        verification_state = str(verified_item.get("verification_state", "pending") or "pending")
+        verification_error = str(verified_item.get("verification_error", "") or "")
+        verification_summary = f"검증 상태: {verification_state}"
+        if verification_error:
+            verification_summary += f" ({verification_error})"
+
+        return f"{config_summary}\n{db_summary}\n{verification_summary}"
+
+    def restore_backup(self):
+        """백업 복원 예약 (재시작 시 적용)"""
+        dialogs = get_dialog_adapter(self)
+        current_item = self.backup_list.currentItem()
+        if not current_item:
+            dialogs.information(self, "알림", "복원할 백업을 선택하세요.")
+            return
+
+        item_meta = current_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(item_meta, dict):
+            backup_name = str(item_meta.get("backup_name", "")).strip()
+            include_db_meta = item_meta.get("include_db")
+            is_corrupt = bool(item_meta.get("is_corrupt", False))
+            corrupt_error = str(item_meta.get("error", "") or "")
+            is_restorable = bool(item_meta.get("is_restorable", True))
+            restore_error = str(item_meta.get("restore_error", "") or "")
+        else:
+            backup_name = str(item_meta or "").strip()
+            include_db_meta = None
+            is_corrupt = False
+            corrupt_error = ""
+            is_restorable = True
+            restore_error = ""
+
+        if not backup_name:
+            dialogs.warning(self, "오류", "선택한 백업 정보를 읽을 수 없습니다.")
+            return
+
+        if is_corrupt:
+            self._handle_corrupt_backup(backup_name, corrupt_error)
+            return
+
+        if not is_restorable:
+            dialogs.warning(
+                self,
+                "복원 불가",
+                restore_error or "선택한 백업은 필요한 파일이 없어 복원할 수 없습니다.",
+            )
+            return
+
+        if isinstance(include_db_meta, bool):
+            restore_db = include_db_meta
+        else:
+            db_name = os.path.basename(getattr(self.auto_backup, "db_file", "news_database.db"))
+            db_backup_path = os.path.join(self.auto_backup.backup_dir, backup_name, db_name)
+            restore_db = os.path.exists(db_backup_path)
+
+        verified_item = self.auto_backup.verify_backup_by_name(
+            backup_name,
+            require_db=restore_db,
+            persist=True,
+        )
+        self._apply_backup_item_state(current_item, verified_item)
+        if bool(verified_item.get("is_corrupt", False)):
+            self._handle_corrupt_backup(backup_name, str(verified_item.get("error", "") or ""))
+            return
+        if not bool(verified_item.get("is_restorable", False)):
+            dialogs.warning(
+                self,
+                "복원 불가",
+                str(verified_item.get("restore_error", "") or "선택한 백업은 복원할 수 없습니다."),
+            )
+            return
+
+        restore_scope = "설정 + 데이터베이스" if restore_db else "설정만"
+        restore_notice = (
+            "주의: 현재 설정과 데이터가 덮어써집니다."
+            if restore_db
+            else "주의: 현재 설정만 덮어써집니다. 데이터베이스는 변경되지 않습니다."
+        )
+        dry_run_builder = getattr(self, "_build_restore_dry_run_report", None)
+        dry_run_report = (
+            dry_run_builder(backup_name, restore_db=restore_db, verified_item=verified_item)
+            if callable(dry_run_builder)
+            else ""
+        )
+        dry_run_block = f"{dry_run_report}\n\n" if dry_run_report else ""
+
+        if dialogs.ask_yes_no(
+            self,
+            "백업 복원",
+            f"'{backup_name}' 백업을 복원하시겠습니까?\n\n"
+            f"복원 범위: {restore_scope}\n"
+            f"{dry_run_block}"
+            f"{restore_notice}\n"
+            "복원은 프로그램을 재시작해야 적용됩니다.",
+        ):
+            safeguard = self.auto_backup.create_backup(include_db=restore_db, trigger="manual")
+            if safeguard is None:
+                if not dialogs.ask_yes_no(
+                    self,
+                    "보호 백업 실패",
+                    "현재 상태의 보호 백업 생성에 실패했습니다.\n"
+                    "백업 없이 복원을 계속 진행하시겠습니까?",
+                ):
+                    return
+            if self.auto_backup.schedule_restore(backup_name, restore_db=restore_db):
+                dialogs.information(
+                    self,
+                    "완료",
+                    "복원을 예약했습니다.\n프로그램을 재시작하면 백업이 적용됩니다.",
+                )
+            else:
+                dialogs.warning(self, "오류", "백업 복원 예약에 실패했습니다.")
+
+    def delete_backup(self):
+        """백업 삭제"""
+        dialogs = get_dialog_adapter(self)
+        current_item = self.backup_list.currentItem()
+        if not current_item:
+            return
+
+        item_meta = current_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(item_meta, dict):
+            backup_name = str(item_meta.get("backup_name", "")).strip()
+        else:
+            backup_name = str(item_meta or "").strip()
+
+        if not backup_name:
+            dialogs.warning(self, "오류", "선택한 백업 정보를 읽을 수 없습니다.")
+            return
+
+        if dialogs.ask_yes_no(
+            self,
+            "백업 삭제",
+            f"'{backup_name}' 백업을 삭제하시겠습니까?",
+        ):
+            deleted, error = self.auto_backup.delete_backup(backup_name)
+            if deleted:
+                self.load_backups()
+            else:
+                dialogs.warning(self, "오류", f"삭제 실패: {error}")
+
+    def open_backup_folder(self):
+        """백업 폴더 열기"""
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.auto_backup.backup_dir))

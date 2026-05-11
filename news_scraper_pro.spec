@@ -117,7 +117,13 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 # - Functional risk fixes, tag manager, Markdown digest export, archive search,
 #   automation rules, and publisher alias mapping use stdlib json/tempfile/os
 #   plus existing PyQt/SQLite paths only.
-# - No additional hidden import/exclude/data change is required for this pass.
+# - The support-package refactor only moves existing code behind compatibility
+#   facades (`core.workers`, `core.backup`, `ui.dialogs`, `ui.styles`, and
+#   MainApp helper modules); it does not add a new dependency surface.
+# - `urllib3.contrib.emscripten` is a browser/Emscripten-only optional path and
+#   is excluded from urllib3 submodule collection to avoid a non-runtime `js`
+#   import warning during Windows onefile builds.
+# - No additional runtime hidden import/data change is required for this pass.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [
@@ -132,7 +138,10 @@ hiddenimports = [
     'charset_normalizer',
 ]
 hiddenimports += collect_submodules('requests')
-hiddenimports += collect_submodules('urllib3')
+hiddenimports += collect_submodules(
+    'urllib3',
+    filter=lambda name: not name.startswith('urllib3.contrib.emscripten'),
+)
 
 excludes = [
     'tkinter', '_tkinter', 'Tkinter',
@@ -168,6 +177,8 @@ excludes = [
     'PyQt6.QtWebEngineWidgets',
     'PyQt6.QtWebSockets',
     'PyQt6.QtXml',
+    'urllib3.contrib.emscripten',
+    'urllib3.contrib.emscripten.fetch',
 ]
 
 a = Analysis(

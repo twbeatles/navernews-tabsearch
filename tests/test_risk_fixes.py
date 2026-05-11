@@ -143,7 +143,7 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
 class TestStyleRiskFixes(unittest.TestCase):
     def test_tab_style_has_min_height_for_emoji_clipping(self):
-        src = Path("ui/styles.py").read_text(encoding="utf-8")
+        src = Path("ui/styles_support/app_style.py").read_text(encoding="utf-8")
         self.assertIn("QTabBar::tab {{", src)
         self.assertIn("min-height: 30px;", src)
 
