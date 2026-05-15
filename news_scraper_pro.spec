@@ -124,6 +124,13 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   is excluded from urllib3 submodule collection to avoid a non-runtime `js`
 #   import warning during Windows onefile builds.
 # - No additional runtime hidden import/data change is required for this pass.
+# 2026-05-15 review:
+# - P0/P1 functional-risk closure disabled the FTS rowid hard prefilter, added
+#   automation notification suppression, moved current-tab tag/automation bulk
+#   apply to DBQueryScope snapshots + IterativeJobWorker maintenance mode, and
+#   expanded archive/automation/alias dialogs with existing PyQt6 widgets.
+# - The changes use existing stdlib/PyQt6/SQLite/runtime modules only. No new
+#   hidden import, data file, or optional dependency exclusion is required.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

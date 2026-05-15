@@ -26,23 +26,12 @@ class _DatabaseQueriesMixin:
         return [token.strip() for token in RE_FTS_ACCEL_TOKEN.findall(raw) if token.strip()]
 
     def _fts_match_expression(self: DatabaseManager, filter_txt: str) -> str:
-        raw = str(filter_txt or "").strip()
-        if not raw:
-            return ""
-        if not self.is_news_fts_backfill_complete():
-            return ""
-        tokens = self._filter_tokens(raw)
-        if len(tokens) < 2:
-            return ""
-        lowered = []
-        for token in tokens:
-            normalized = token.strip().lower()
-            if not normalized:
-                continue
-            lowered.append(f'"{normalized}"')
-        if len(lowered) < 2:
-            return ""
-        return " AND ".join(lowered)
+        # Keep the FTS schema/backfill path available for future ranking or
+        # acceleration work, but do not use it as a hard rowid prefilter.
+        # The user-facing search contract is token-AND substring matching via
+        # LIKE; an FTS MATCH prefilter can drop Korean compound-word results
+        # and make results differ before/after backfill.
+        return ""
 
     def _append_text_filter_clause(
         self: DatabaseManager,

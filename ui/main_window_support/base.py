@@ -558,6 +558,8 @@ class _MainWindowBaseMixin:
             "mark_all_read": "읽음 상태 일괄 반영",
             "optimize_database": "DB 최적화",
             "csv_import": "CSV 가져오기",
+            "tag_scope_update": "현재 탭 전체 태그 적용",
+            "automation_rules": "자동화 규칙 적용",
         }.get(str(operation or "").strip(), "데이터 정리")
         if str(operation or "").strip() == "cloud_sync":
             operation_label = "클라우드 동기화"

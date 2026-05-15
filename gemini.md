@@ -108,14 +108,25 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
-- `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
-- 패키지 스모크 => 새 `NEWS_SCRAPER_DATA_DIR`와 `QT_QPA_PLATFORM=offscreen` 기준 성공
+- `git diff --check` => pass
+- 마지막 PyInstaller 검증(2026-05-11): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- 마지막 패키지 스모크(2026-05-11) => 새 `NEWS_SCRAPER_DATA_DIR`와 `QT_QPA_PLATFORM=offscreen` 기준 성공
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec`는 2026-05-11 기능 리스크 수정/support-package 리팩토링 기준으로 재검토했으며, Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 submodule 수집에서 제외한다.
+- `news_scraper_pro.spec`는 2026-05-15 P0/P1 기능 리스크 클로저 기준으로 재검토했다. 새 동작은 stdlib/PyQt6/SQLite/runtime 경로만 사용하며, Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 계속 submodule 수집에서 제외한다.
+
+### 2026-05-15 P0/P1 Functional Risk Closure
+
+- FTS schema/backfill은 유지하되 FTS rowid hard prefilter를 비활성화했다. `fetch_news`, `count_news`, `search_archive`, `count_archive`는 FTS 완료 전후 모두 LIKE token-AND 검색 의미를 유지한다.
+- `AutomationActions.suppress_notification`이 추가됐다. `exclude=true` 규칙은 기존 `제외` 태그 + 읽음 처리에 더해 이번 fetch의 데스크톱/트레이/알림 키워드 대상에서 해당 링크를 제외한다.
+- 태그 관리자와 자동화 규칙의 "현재 탭 전체 적용"은 현재 로드 cache가 아니라 활성 탭 `DBQueryScope` snapshot 전체를 대상으로 하며, `IterativeJobWorker` + 유지보수 모드로 실행된다.
+- 아카이브 검색 결과 row는 link payload를 보존하며, 더블클릭 열기/읽음 처리와 컨텍스트 메뉴의 열기, 북마크, 읽음, 메모, 태그 액션을 지원한다.
+- 자동화 규칙은 목록 + 폼 UI를 기본으로 하고 JSON 편집은 고급 옵션으로 유지한다. 출처 alias는 source/alias 행 기반 편집 UI를 제공한다.
+- `.gitignore`는 build/dist/cache/log/runtime 산출물과 `.claude/` scratch를 계속 무시하므로 이번 변경에서 추가 수정이 필요하지 않았다.
+- 삭제 상태인 `feature_enhancement_analysis_2026-05-10.md`는 이번 publish 범위의 문서 삭제로 유지한다.
 
 ### 2026-05-11 Functional Risk Batch + Feature Completion
 

@@ -1,6 +1,21 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **P0/P1 Functional Risk Closure + Docs/Spec/Gitignore Revalidation (2026-05-15)**:
+  - Disabled the FTS rowid hard prefilter while keeping the `news_fts` schema/backfill path. Text filtering in `fetch_news`, `count_news`, `search_archive`, and `count_archive` now keeps LIKE token-AND as the source of truth before and after FTS backfill.
+  - Added `AutomationActions.suppress_notification`. `exclude=true` still applies the `제외` tag and read state, and now also removes the affected links from the current fetch desktop/tray/alert-keyword notification set.
+  - Added active-tab `DBQueryScope` snapshot helpers. Tag manager and automation "current tab full apply" now operate on the full DB scope instead of the loaded page cache.
+  - Moved current-tab bulk tag and automation application through `IterativeJobWorker` under maintenance mode, then refreshed tabs, badges, and tray state through the existing maintenance completion path.
+  - Archive search result rows now retain raw row/link payloads. Double-click opens safe `http`/`https` links and marks read; the context menu supports open, bookmark toggle, read toggle, note edit, and tag edit.
+  - Automation rules now use a list + form editor for name/enabled/keywords/exclude words/publishers/queries/add tags/read/bookmark/exclude/suppress notification, with JSON kept as an advanced editor. Publisher aliases now use source/alias row editing plus advanced JSON.
+  - Re-reviewed `news_scraper_pro.spec`; this batch uses existing stdlib/PyQt6/SQLite/runtime paths only and needs no hidden import, data, or optional dependency exclusion changes.
+  - Re-reviewed `.gitignore` with ignored build/test/runtime artifacts; existing rules still cover `build/`, `dist/`, `.pytest_tmp/`, `.pytest_cache/`, `__pycache__/`, logs, local DB/config files, cloud snapshot ZIPs, and `.claude/` scratch.
+  - The deleted `feature_enhancement_analysis_2026-05-10.md` is intentionally included in this publish as a workspace deletion.
+  - Validation:
+    - `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+    - `git diff --check` => pass
 - **Functional Risk Batch + Feature Completion (2026-05-11)**:
   - Split large remaining modules into support packages while preserving compatibility facades:
     - `core.workers` -> `core/workers_support/`

@@ -21,14 +21,14 @@
 - 자동 새로고침(10분~6시간) 및 수동 전체 새로고침
 - 기사 북마크/읽음 처리/메모 작성
 - 열린 탭/북마크 탭 사이의 기사 상태 즉시 동기화
-- 알림 키워드와 새 기사 알림은 이번 fetch에서 새로 감지된 링크(`new_items` / `new_count`)에만 적용
+- 알림 키워드와 새 기사 알림은 이번 fetch에서 새로 감지된 링크(`new_items` / `new_count`) 중 자동화 규칙으로 알림 억제되지 않은 항목에만 적용
 - 알림 키워드는 일반 부분 문자열과 `regex:<패턴>` 정규식 접두어를 지원
 - 현재 탭 필터 전체 결과 CSV/Markdown digest 내보내기
 - CSV 메모/북마크 가져오기는 기존 기사 link에 대해서만 상태를 갱신하고 새 기사는 생성하지 않음
 - 출처 차단/선호 필터: 차단 출처는 DB에 저장하되 목록/count/배지/트레이/분석/CSV에서 숨기고, 도메인 출처는 suffix match로 처리하며 선호 출처는 사용자가 `선호 출처만` 필터를 켠 경우에만 적용
-- 기사별 자유 태그 편집, 태그 배지 표시, 태그 필터, CSV/Markdown 태그 컬럼, 태그 관리자(이름 변경/병합/삭제/현재 탭 일괄 적용)
-- 전체 아카이브 검색(제목/요약, 메모, 태그, 출처 alias, 날짜, 북마크/미읽음 조건)
-- 자동화 규칙(JSON 기반 자동 태그/북마크/읽음/제외 태그+읽음)과 출처 alias 표시/필터 매핑
+- 기사별 자유 태그 편집, 태그 배지 표시, 태그 필터, CSV/Markdown 태그 컬럼, 태그 관리자(이름 변경/병합/삭제/현재 탭 전체 DB scope 일괄 적용)
+- 전체 아카이브 검색(제목/요약, 메모, 태그, 출처 alias, 날짜, 북마크/미읽음 조건)과 결과 열기/북마크/읽음/메모/태그 액션
+- 자동화 규칙(목록+폼 UI, 고급 JSON, 자동 태그/북마크/읽음/제외/알림 억제)과 출처 alias 행 기반 편집/표시/필터 매핑
 - 현재 탭의 검색어/필터/정렬/기간/태그/선호 출처 조건을 이름으로 저장하고 대상 검색어 탭으로 이동/생성해 다시 적용하는 저장된 검색
 - 탭별 자동 새로고침 정책: 기본은 전역 설정 상속, 탭 컨텍스트 메뉴에서 상속/끔/개별 간격 override
 - 키워드 그룹 관리
@@ -68,7 +68,12 @@
 - 통계/언론사 분석 다이얼로그는 즉시 열고 `InterruptibleReadWorker`로 비동기 로드해 닫힘 시 SQLite read interruption까지 함께 요청
 - SQLite FTS5(`news_fts`) + trigger + `app_meta` 기반 증분 backfill을 추가하고, backfill 완료 전에는 기존 `LIKE/NOT LIKE` 경로를 진실 원본으로 유지
 - 텍스트 필터의 다중 단어 입력은 FTS 백필 완료 여부와 무관하게 토큰 AND 검색으로 동작하며, 단일 토큰 substring 검색은 유지
+- FTS rowid hard prefilter는 비활성화해 한글 복합어/부분 문자열 검색 결과가 backfill 전후 달라지지 않도록 고정
 - SQLite FTS5(`news_fts`) 증분 backfill은 유지보수/전체 fetch/순차 refresh/종료 경계에서 pause/retry/resume 되며 `5초 -> 15초 -> 30초 cap` backoff로 재개
+- 태그 관리자와 자동화 규칙의 "현재 탭 전체 적용"은 로드된 50개 slice가 아니라 현재 탭 `DBQueryScope` snapshot 전체를 대상으로 하며, 유지보수 모드 + `IterativeJobWorker`로 실행
+- 자동화 `exclude=true`는 `제외` 태그와 읽음 처리를 유지하면서 이번 fetch의 데스크톱/트레이/알림 키워드 대상에서 해당 링크를 제외
+- 보관함 검색 결과는 link payload를 보존하고 더블클릭 열기, 북마크/읽음 토글, 메모/태그 편집 후 열린 탭과 배지를 refresh한다
+- 자동화 규칙과 출처 alias 설정은 폼/목록 편집을 기본으로 제공하고 JSON 편집은 고급 옵션으로 유지한다
 - 레거시 DB의 `title_hash IS NULL` / `pubDate_ts IS NULL` backfill을 반복 배치 루프로 바꿔 대용량 DB에서도 startup migration 누락이 남지 않도록 보강
 - 시작 시 북마크와 현재 탭만 즉시 로드하고, 나머지 뉴스 탭은 hydration queue로 순차 로드하며 초기 hydration 취소는 request-id 기반 late cleanup으로 정리
 - 설정 창의 API 키 검증도 `HttpClientConfig` 기반 공용 session과 현재 `api_timeout` 값을 사용하도록 통합
@@ -144,7 +149,7 @@
 - UTF-8 인코딩 스모크 테스트를 리포지토리 주요 텍스트 자산 전체로 확장
 - 단건 기사 상태 변경(`읽음/북마크/메모/삭제`) 시 열린 뉴스/북마크 탭 캐시를 `link` 기준으로 즉시 동기화
 - `모두 읽음`/DB 유지보수 완료 후에는 열린 탭과 북마크 탭을 full refresh 경로로 재정렬해 정합성 보장
-- 알림 키워드는 이번 fetch에서 실제로 새로 추가된 기사(`new_items`)에만 적용
+- 알림 키워드는 이번 fetch에서 실제로 새로 추가된 기사(`new_items`) 중 자동화 규칙으로 알림 억제되지 않은 항목에만 적용
 - 탭 중복 방지, 설정 import dedupe, 검색 이력 dedupe를 `canonical query` 기준으로 통일
 - CSV 내보내기는 현재 로드된 slice가 아니라 현재 탭 필터 조건 전체 결과를 DB에서 다시 조회해 저장
 - 자동 시작 백업은 계속 `설정만` 대상으로 유지하고, UI/문서에서 DB 포함 수동 백업 필요성을 명시
@@ -170,14 +175,16 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-05-11)
+## 최신 검증 메모 (2026-05-15)
 
-- `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`입니다.
 - `pyright` => `0 errors, 0 warnings, 0 informations`
-- `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
-- 패키지 스모크: `QT_QPA_PLATFORM=offscreen` + 새 `NEWS_SCRAPER_DATA_DIR`로 실행형이 15초 이상 정상 시작 상태를 유지함
-- `news_scraper_pro.spec`는 2026-05-11 기능 리스크 수정과 support-package 리팩토링 기준으로 재검토했으며, 표준 라이브러리와 기존 번들 의존성만 사용합니다. Windows onefile 런타임에 쓰지 않는 `urllib3.contrib.emscripten` optional 경로는 수집 제외해 `js` optional import 경고를 제거했습니다.
+- 마지막 PyInstaller 검증(2026-05-11): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+- `git diff --check` => pass
+- 마지막 패키지 스모크(2026-05-11): `QT_QPA_PLATFORM=offscreen` + 새 `NEWS_SCRAPER_DATA_DIR`로 실행형이 15초 이상 정상 시작 상태를 유지함
+- `news_scraper_pro.spec`는 2026-05-15 P0/P1 기능 리스크 클로저 기준으로 재검토했으며, 이번 변경은 표준 라이브러리와 기존 PyQt6/SQLite/runtime 의존성만 사용합니다. Windows onefile 런타임에 쓰지 않는 `urllib3.contrib.emscripten` optional 경로는 계속 수집 제외합니다.
 
 ## 프로젝트 구조
 
@@ -473,7 +480,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 백업 생성은 payload 기록 직후 self-verify를 수행하며, 검증 실패 항목은 폴더를 지우지 않고 백업 목록에서 `복원 불가` 상태로 남깁니다.
 - 수동 검증과 복원 직전 검증은 `verification_state`, `verification_error`, `is_restorable`, `restore_error`, `is_corrupt`, `error`, `last_verified_at`를 `backup_info.json`에 다시 기록합니다.
 - 시작 시 자동 백업은 설정 파일이 없으면 사용자 차단 없이 skip되고 로그만 남깁니다.
-- 알림 키워드 매칭은 fetch 결과 전체가 아니라 이번 요청에서 새로 추가된 기사 집합에만 적용됩니다.
+- 알림 키워드 매칭은 fetch 결과 전체가 아니라 이번 요청에서 새로 추가된 기사 중 자동화 규칙으로 알림 억제되지 않은 집합에만 적용됩니다.
 - `app_settings`는 `client_secret_enc`, `client_secret_storage` 필드를 지원하며 Windows에서는 평문 `client_secret`를 비우고 암호문을 저장합니다.
 - pending restore 실패(검증/적용 실패) 시 pending 파일은 유지되며, 적용 중 오류가 나면 변경 파일을 롤백합니다.
 - pending restore 성공 시 `pending_restore.json`을 먼저 `pending_restore.json.applied`로 atomic rename한 뒤 삭제를 시도하므로, 삭제가 실패해도 다음 시작 때 같은 복원이 반복 적용되지 않습니다.
@@ -508,10 +515,10 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `DatabaseManager.get_top_tags(limit=20, ...)`는 통계 다이얼로그의 태그 통계를 제공합니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유하며, 도메인 값은 `example.com`이 `example.com`/`news.example.com`에 매칭되고 `badexample.com`에는 매칭되지 않습니다.
 - `DatabaseManager.get_tags(link)`, `set_tags(link, tags)`, `get_known_tags()`, `get_tag_usage()`, `rename_tag()`, `delete_tag_everywhere()`, `bulk_add_tag_to_links()`, `bulk_remove_tag_from_links()`가 기사 태그 CRUD, 태그 관리자, 태그 필터 목록을 담당합니다.
-- `DatabaseManager.search_archive()` / `count_archive()`는 전체 DB 아카이브 검색을 담당하고, 출처 alias는 원본 `publisher`를 보존한 채 표시/필터/통계 매핑으로 적용됩니다.
+- `DatabaseManager.search_archive()` / `count_archive()`는 전체 DB 아카이브 검색을 담당하고, 출처 alias는 원본 `publisher`를 보존한 채 표시/필터/통계 매핑으로 적용됩니다. 아카이브 검색 다이얼로그는 결과 row의 link payload로 열기/북마크/읽음/메모/태그 액션을 수행합니다.
 - `automation_rules`와 `publisher_aliases`는 로컬 설정 export/import에는 포함되지만 cloud snapshot settings에서는 제외됩니다.
 - `DatabaseManager.open_read_connection(...)`, `close_read_connection(...)`, `interrupt_connection(...)`은 `DBWorker` 취소/종료 경로에서 사용하는 dedicated read connection helper입니다.
-- `DatabaseManager.is_news_fts_backfill_complete()`와 `backfill_news_fts_chunk(...)`는 `news_fts` 증분 백필 상태를 `app_meta`에 저장하며, FTS acceleration은 backfill 완료 후 positive token filter에만 사용됩니다.
+- `DatabaseManager.is_news_fts_backfill_complete()`와 `backfill_news_fts_chunk(...)`는 `news_fts` 증분 백필 상태를 `app_meta`에 저장합니다. 현재 텍스트 필터의 의미 기준은 FTS가 아니라 LIKE token-AND이며, FTS rowid prefilter는 false negative 방지를 위해 사용하지 않습니다.
 - `ui.news_tab.NewsTab`은 scope signature별 append/replace를 구분하고, HTML 렌더는 fragment cache를 재사용하면서 event-loop tick당 한 번만 flush합니다.
 - `DatabaseManager.get_unread_counts_by_query_keys(query_keys: List[str]) -> Dict[str, int]`는 호환 batch API로 유지되며, 실제 탭 배지는 `DBQueryScope` 기반 `count_news(..., only_unread=True)`로 표시 scope와 일치시킵니다.
 - `AutoBackup.get_backup_list()`는 항목별 `is_corrupt`, `error`, `is_restorable`, `restore_error` 메타를 포함해 UI가 손상/복원 불가 항목을 분리 표시할 수 있습니다.
@@ -532,6 +539,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 실제 탭 범위/배지/분석/중복 판정/페이지 상태는 `query_key = build_fetch_key(parse_search_query(raw_tab_query))` 기준으로 동작합니다.
 - 기존 DB에서 마이그레이션된 멀티 키워드 탭은 각 탭을 한 번 새로고침한 뒤부터 정확히 분리됩니다.
 - 제목/본문 텍스트 필터에서 공백으로 분리된 여러 단어는 모두 포함되어야 하는 토큰 AND 의미입니다. 예: `AI 삼성`은 순서와 간격이 달라도 두 토큰이 모두 있는 기사를 찾고, `AI` 같은 단일 토큰은 기존 substring 검색처럼 동작합니다.
+- 이 token-AND 의미는 FTS backfill 완료 전후 동일하게 유지됩니다. 한글 복합어/부분 문자열도 FTS rowid prefilter로 먼저 잘리지 않습니다.
 
 ## 설정 Export/Import
 

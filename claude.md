@@ -154,14 +154,15 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
-- `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
-- packaged smoke => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
+- `git diff --check` => pass
+- Last packaged validation (2026-05-11): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- Last packaged smoke (2026-05-11) => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec` re-reviewed for 2026-05-11 functional risk fixes and support-package refactor; `urllib3.contrib.emscripten` is excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path.
+- `news_scraper_pro.spec` re-reviewed for the 2026-05-15 P0/P1 functional risk closure; the batch uses existing stdlib/PyQt6/SQLite/runtime paths only, and `urllib3.contrib.emscripten` remains excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path.
 
 ---
 
@@ -172,6 +173,7 @@ navernews-tabsearch/
 - Cloud snapshot `settings.json` remains sanitized diagnostic metadata only. Cloud import does not apply settings, and automation rules / publisher aliases are removed from snapshot settings to reduce private metadata exposure.
 - SettingsDialog manual cloud export/import passes dialog values as runtime overrides instead of mutating parent runtime fields before save.
 - Tag manager, Markdown digest export, archive search, automation rules, and publisher alias mapping are implemented without new third-party dependencies.
+- As of 2026-05-15, tag/automation "current tab full apply" uses the active `DBQueryScope` snapshot instead of the loaded page cache, archive search rows carry link payloads for direct actions, and automation/publisher alias dialogs provide form/list editing with JSON kept as an advanced path.
 - `.gitignore` now excludes `.claude/` local worktree scratch in addition to build/test/runtime artifacts.
 - Validation baseline for this batch:
   - `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`
@@ -179,6 +181,18 @@ navernews-tabsearch/
   - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
   - `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
   - packaged smoke => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
+
+---
+
+## 🚀 2026-05-15 P0+P1 Functional Risk Closure
+
+- Disabled FTS rowid hard prefilter for text filters. `news_fts` schema/backfill remains in place, but `fetch_news`, `count_news`, `search_archive`, and `count_archive` keep LIKE token-AND as the semantic source of truth so Korean compound/substring results do not change after backfill.
+- Added current-tab scope snapshot helpers in `ui._main_window_analysis`. Tag manager and automation "현재 탭 전체 적용" now operate on the full active `DBQueryScope`, not the currently loaded 50-row page cache.
+- Current-tab bulk tag and automation apply run through `IterativeJobWorker` under maintenance mode, then refresh open tabs, badges, and tray state through the existing maintenance completion path.
+- Added `AutomationActions.suppress_notification`. `exclude=true` keeps the existing `제외` tag + read behavior and suppresses the affected links from this fetch's desktop/tray/alert keyword notification set while preserving raw fetch summary counts.
+- Archive search result items keep raw row/link payloads. Double-click opens safe `http/https` links and marks read; context menu actions support open, bookmark toggle, read toggle, note edit, and tag edit.
+- Automation rules now use a list + form editor for name/enabled/keywords/exclude words/publishers/queries/add tags/read/bookmark/exclude/suppress notification, with JSON retained as an advanced editor. Publisher aliases now use source/alias row editing plus advanced JSON.
+- Added regression coverage for Korean FTS-before/after semantics, automation suppression DB effects/dry-run counts, full DB-scope current-tab reads, and dialog contract exports.
 
 ---
 
@@ -365,9 +379,9 @@ navernews-tabsearch/
 - DB read/export stability:
   - Added `DatabaseManager.iter_news_snapshot_batches(...)` so CSV export traverses one read snapshot from start to finish instead of live offset paging across separate reads.
   - `DBWorker` now uses `open_read_connection(...)` / `interrupt_connection(...)` / `close_read_connection(...)` and requests interruption on `stop()` to improve cancellation during maintenance/close paths.
-- Analysis async + FTS accelerator:
+- Analysis async + FTS schema/backfill:
   - `show_statistics()` and `show_stats_analysis()` now open dialogs immediately and load DB-backed content through `AsyncJobWorker` with stale-result guards.
-  - Added SQLite FTS5 schema (`news_fts`), sync triggers, `app_meta`, and incremental backfill worker startup. Until backfill completes, the app keeps the old `LIKE/NOT LIKE` SQL path as the semantic source of truth.
+  - Added SQLite FTS5 schema (`news_fts`), sync triggers, `app_meta`, and incremental backfill worker startup. Text filtering keeps `LIKE/NOT LIKE` token-AND as the semantic source of truth before and after backfill; FTS rowid hard prefilter is disabled to avoid Korean compound false negatives.
 - Docs / spec / tests:
   - Synced `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`, and `news_scraper_pro.spec` to the new contracts.
   - Added regression coverage for fetch cooldown, async analysis loading, FTS acceleration/backfill, snapshot export, and dedicated-read DB worker cancellation.

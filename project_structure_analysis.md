@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-11)
+작성일: 2026-03-16 (최근 갱신: 2026-05-15)
 
 ## 분석 범위
 
@@ -16,6 +16,20 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-05-15 P0/P1 기능 리스크 클로저 / 문서·spec·gitignore 재검증
+
+이번 재검증에서는 2026-05-15 P0/P1 기능 리스크 계획을 실제 코드 기준으로 닫고, 삭제 상태인 `feature_enhancement_analysis_2026-05-10.md`를 publish 범위에 포함한다.
+
+- `core._db_queries.py`는 FTS schema/backfill은 유지하되 FTS rowid hard prefilter를 비활성화했다. `fetch_news`, `count_news`, `search_archive`, `count_archive`의 사용자 검색 의미는 FTS 완료 전후 모두 LIKE token-AND가 진실 원본이다.
+- `core.automation_rules.py`는 `AutomationActions.suppress_notification`을 추가했다. `exclude=true`는 기존 `제외` 태그 + 읽음 처리에 더해 이번 fetch의 데스크톱/트레이/알림 키워드 대상에서 해당 링크를 제외한다.
+- `ui._main_window_analysis.py`는 현재 탭의 `DBQueryScope`를 가져오는 helper와 snapshot rows 조회 helper를 제공한다. 태그 관리자와 자동화 규칙의 "현재 탭 전체 적용"은 로드된 50개 cache가 아니라 DB snapshot 전체 scope를 대상으로 한다.
+- `ui.dialogs_support.article_tools.TagManagerDialog`와 `AutomationRulesDialog`는 전체 scope 작업을 `IterativeJobWorker`와 유지보수 모드로 실행하고, 완료/취소/오류 시 기존 유지보수 완료 refresh 경로로 열린 탭, 배지, 트레이 상태를 갱신한다.
+- `ArchiveSearchDialog`는 result item에 raw row/link payload를 저장하고, 더블클릭 열기 + 읽음 처리, 컨텍스트 메뉴의 열기/북마크/읽음/메모/태그 액션을 지원한다.
+- `AutomationRulesDialog`는 목록 + 폼 UI를 기본으로 하고 JSON 편집은 고급 옵션으로 유지한다. `PublisherAliasDialog`는 source/alias 행 기반 편집 UI와 고급 JSON을 함께 제공한다.
+- `news_scraper_pro.spec`는 2026-05-15 기준 다시 검토했다. 이번 변경은 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
+- `.gitignore`는 `git status --ignored --short`와 `git check-ignore -v`로 build/dist/cache/log/runtime 산출물과 `.claude/` scratch가 계속 무시됨을 확인했다. 새 기능 산출물 기준 추가 ignore 규칙은 필요하지 않다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `git diff --check` 통과다.
 
 ## 0. 2026-05-11 기능 리스크 수정 / support-package 리팩토링 / 문서·spec 재검증
 
@@ -34,7 +48,7 @@
 - `ui.dialogs.py`, `ui._main_window_analysis.py`, `ui.news_tab_support.*`, `ui._main_window_settings_io.py`는 태그 관리자, 전체 아카이브 검색, 자동화 규칙 관리자, 출처 alias 관리자, Markdown digest export, 태그/alias 재필터링을 UI에 연결한다.
 - `news_scraper_pro.spec`는 2026-05-11 기준 다시 검토했으며, support-package 리팩토링은 기존 패키지 내부 모듈 분리만 추가한다. Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 submodule 수집에서 제외해 `js` optional import 경고를 제거했다.
 - `.gitignore`는 build/test/runtime 산출물에 더해 `.claude/` 로컬 worktree scratch를 무시하도록 보강했다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` 성공, 새 `NEWS_SCRAPER_DATA_DIR` + `QT_QPA_PLATFORM=offscreen` 패키지 스모크 성공이다.
+- 2026-05-11 당시 검증선은 `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` 성공, 새 `NEWS_SCRAPER_DATA_DIR` + `QT_QPA_PLATFORM=offscreen` 패키지 스모크 성공이다.
 
 ## 0. 2026-05-10 클라우드 스냅샷 동기화 / 문서·spec·gitignore 재검증
 
@@ -176,7 +190,7 @@
 - CSV export는 `DatabaseManager.iter_news_snapshot_batches(...)`로 한 read snapshot 안에서 `count + paged fetch`를 끝까지 순회하므로 export 중 DB 변화가 있어도 결과가 시작 시점 기준으로 고정된다.
 - `DBWorker`는 일반 pool connection 대신 `open_read_connection(...)`으로 연 dedicated read connection을 사용하고 `stop()` 시 `interrupt_connection(...)`을 요청해 종료/유지보수 시 취소 성공률을 높인다.
 - 통계/언론사 분석은 메인 스레드 동기 DB 조회가 아니라 `AsyncJobWorker` 기반 비동기 로딩으로 전환되었고, 다이얼로그 close/탭 변경 후 stale 결과를 버리는 가드가 추가됐다.
-- `news_fts` FTS5 가상 테이블, 동기화 trigger, `app_meta` 기반 백필 상태 저장, UI 초기화 후 incremental backfill worker가 추가됐다. 다만 검색 의미의 진실 원본은 계속 기존 `LIKE/NOT LIKE` SQL이고, FTS는 backfill 완료 후 positive token filter의 candidate pruning에만 사용된다.
+- `news_fts` FTS5 가상 테이블, 동기화 trigger, `app_meta` 기반 백필 상태 저장, UI 초기화 후 incremental backfill worker가 추가됐다. 검색 의미의 진실 원본은 계속 기존 `LIKE/NOT LIKE` SQL이다. 2026-05-15 이후에는 한글 복합어 false negative 방지를 위해 FTS rowid hard prefilter도 사용하지 않는다.
 - `news_scraper_pro.spec`는 2026-04-09 기준 다시 재검토되었고, 이번 패스의 HTTP 구성 계층/FTS5/backfill/async analysis는 기존 번들 의존성만 사용하므로 hidden import/exclude/data 추가 수정이 필요하지 않았다.
 - `.gitignore`는 build/dist/runtime/test 산출물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
 - 문서 기준 현재 검증선은 `python -m pytest -q` => `203 passed, 5 subtests passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이며, `pyright`는 로컬 환경에서 `PyQt6`/`requests` import source 미해결과 기존 타입 이슈 때문에 `55 errors, 5 warnings, 0 informations` 상태다.

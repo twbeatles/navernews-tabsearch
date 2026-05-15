@@ -253,6 +253,7 @@ class _MainWindowFetchWorkerMixin:
             dup_count = int(result.get("dup_count", 0) or 0)
             total = int(result.get("total", 0) or 0)
             filtered_count = int(result.get("filtered", 0) or 0)
+            notifiable_new_items = list(new_items)
 
             completed_start_idx = None
             if request_id is not None:
@@ -276,6 +277,17 @@ class _MainWindowFetchWorkerMixin:
                         applied = apply_rules(new_items, dry_run=False)
                         if int(applied.get("matched", 0) or 0) > 0:
                             logger.info("Automation rules applied to new items: %s", applied)
+                        suppressed_links = {
+                            str(link)
+                            for link in (applied.get("suppressed_links", []) or [])
+                            if str(link or "").strip()
+                        }
+                        if suppressed_links:
+                            notifiable_new_items = [
+                                item
+                                for item in notifiable_new_items
+                                if str(item.get("link") or "") not in suppressed_links
+                            ]
                     except Exception as exc:
                         logger.warning("Automation rule application failed: %s", exc)
 
@@ -304,6 +316,8 @@ class _MainWindowFetchWorkerMixin:
                         )
                     )
 
+            notification_new_count = len(notifiable_new_items) if new_items else new_count
+
             if not is_sequential:
                 self.progress.setVisible(False)
                 self.progress.setRange(0, 100)
@@ -320,14 +334,14 @@ class _MainWindowFetchWorkerMixin:
                     self._status_bar().showMessage(toast_msg, 3000)
                     self._notify_fetch_new_items(
                         keyword,
-                        new_count=new_count,
-                        new_items=new_items,
+                        new_count=notification_new_count,
+                        new_items=notifiable_new_items,
                     )
             else:
                 self._notify_fetch_new_items(
                     keyword,
-                    new_count=new_count,
-                    new_items=new_items,
+                    new_count=notification_new_count,
+                    new_items=notifiable_new_items,
                 )
                 self._sequential_new_count += new_count
                 self._sequential_added_count += added_count

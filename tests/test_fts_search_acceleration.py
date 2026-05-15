@@ -147,10 +147,13 @@ class TestFtsSearchAcceleration(unittest.TestCase):
         self.assertTrue(mgr.is_news_fts_backfill_complete())
         self.assertEqual(
             mgr.count_news(keyword="AI", query_key=query_key, filter_txt="AI launch"),
-            1,
+            2,
         )
         rows = mgr.fetch_news(keyword="AI", query_key=query_key, filter_txt="AI launch")
-        self.assertEqual([row["link"] for row in rows], ["https://example.com/1"])
+        self.assertEqual(
+            {row["link"] for row in rows},
+            {"https://example.com/1", "https://example.com/2"},
+        )
 
     def test_single_token_filter_falls_back_to_like_semantics(self):
         mgr = self._make_manager()
@@ -189,7 +192,69 @@ class TestFtsSearchAcceleration(unittest.TestCase):
 
         rows = mgr.fetch_news(keyword="AI", query_key=query_key, filter_txt="launch AI")
 
-        self.assertEqual([row["link"] for row in rows], ["https://example.com/1"])
+        self.assertEqual(
+            {row["link"] for row in rows},
+            {"https://example.com/1", "https://example.com/2"},
+        )
+
+    def test_korean_compound_token_and_semantics_are_stable_after_fts_backfill(self):
+        mgr = self._make_manager()
+        query_key = build_fetch_key("삼성", [])
+        mgr.upsert_news(
+            [
+                {
+                    "title": "삼성전자 반도체 AI 투자",
+                    "description": "복합어 검색 케이스",
+                    "link": "https://example.com/k1",
+                    "pubDate": "2026-04-10T10:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": "삼성 반도체 AI 전략",
+                    "description": "분리 토큰 검색 케이스",
+                    "link": "https://example.com/k2",
+                    "pubDate": "2026-04-10T11:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": "삼성전자 배터리 AI",
+                    "description": "배터리 토픽",
+                    "link": "https://example.com/k3",
+                    "pubDate": "2026-04-10T12:00:00",
+                    "publisher": "example.com",
+                },
+            ],
+            "삼성",
+            query_key=query_key,
+        )
+
+        before = {
+            row["link"]
+            for row in mgr.fetch_news(
+                keyword="삼성",
+                query_key=query_key,
+                filter_txt="삼성 반도체 AI",
+            )
+        }
+
+        while True:
+            result = mgr.backfill_news_fts_chunk(limit=10)
+            if result["done"]:
+                break
+
+        after = {
+            row["link"]
+            for row in mgr.fetch_news(
+                keyword="삼성",
+                query_key=query_key,
+                filter_txt="삼성 반도체 AI",
+            )
+        }
+        archive_after = {row["link"] for row in mgr.search_archive(filter_txt="삼성 반도체 AI")}
+
+        self.assertEqual(before, {"https://example.com/k1", "https://example.com/k2"})
+        self.assertEqual(after, before)
+        self.assertEqual(archive_after, before)
 
     def test_start_backfill_defers_when_paused_and_resume_nudges_retry_timer(self):
         dummy = _DummyFtsMain()

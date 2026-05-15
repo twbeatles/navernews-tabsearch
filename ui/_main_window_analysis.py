@@ -1,7 +1,7 @@
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -25,7 +25,7 @@ from core.automation_rules import evaluate_automation_rules, normalize_automatio
 from core.content_filters import normalize_publisher_filter_lists
 from core.publisher_aliases import expand_publisher_filters, normalize_publisher_aliases
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
-from core.workers import InterruptibleReadWorker, retain_worker_until_finished
+from core.workers import DBQueryScope, InterruptibleReadWorker, retain_worker_until_finished
 from ui.dialogs import ArchiveSearchDialog, AutomationRulesDialog, PublisherAliasDialog, TagManagerDialog
 
 if TYPE_CHECKING:
@@ -70,7 +70,58 @@ class _MainWindowAnalysisMixin:
             retain_worker_until_finished(worker)
         return False
 
-    def _current_scope_items(self: MainApp) -> List[Dict[str, Any]]:
+    def _current_query_scope(self: MainApp) -> Optional[DBQueryScope]:
+        current_tab = self._current_news_tab()
+        if current_tab is None:
+            return None
+        builder = getattr(current_tab, "_build_query_scope", None)
+        if callable(builder):
+            return cast(DBQueryScope, builder())
+        return None
+
+    def _scope_items_for_scope(
+        self: MainApp,
+        scope: Optional[DBQueryScope],
+        *,
+        context: Optional[Any] = None,
+        chunk_size: int = 200,
+    ) -> List[Dict[str, Any]]:
+        if scope is None:
+            return []
+        if context is not None:
+            context.check_cancelled()
+        db = self._require_db()
+        iterator = None
+        try:
+            total_count, iterator = db.iter_news_snapshot_batches(scope, chunk_size=chunk_size)
+            rows: List[Dict[str, Any]] = []
+            loaded = 0
+            for batch in iterator:
+                if context is not None:
+                    context.check_cancelled()
+                rows.extend(batch)
+                loaded += len(batch)
+                if context is not None:
+                    context.report(
+                        current=loaded,
+                        total=total_count,
+                        message=f"범위 데이터 읽는 중... {loaded:,}/{total_count:,}",
+                    )
+            return rows
+        finally:
+            if iterator is not None:
+                close = getattr(iterator, "close", None)
+                if callable(close):
+                    close()
+
+    def _current_scope_items(
+        self: MainApp,
+        context: Optional[Any] = None,
+        chunk_size: int = 200,
+    ) -> List[Dict[str, Any]]:
+        scope = self._current_query_scope()
+        if scope is not None:
+            return self._scope_items_for_scope(scope, context=context, chunk_size=chunk_size)
         current_tab = self._current_news_tab()
         if current_tab is None:
             return []
@@ -95,12 +146,20 @@ class _MainWindowAnalysisMixin:
         rules: Optional[List[Dict[str, Any]]] = None,
         *,
         dry_run: bool = False,
-    ) -> Dict[str, int]:
+        refresh: bool = True,
+    ) -> Dict[str, Any]:
         normalized_rules = normalize_automation_rules(
             rules if rules is not None else getattr(self, "automation_rules", [])
         )
         aliases = normalize_publisher_aliases(getattr(self, "publisher_aliases", {}))
-        result = {"matched": 0, "tagged": 0, "read": 0, "bookmarked": 0}
+        result: Dict[str, Any] = {
+            "matched": 0,
+            "tagged": 0,
+            "read": 0,
+            "bookmarked": 0,
+            "suppressed": 0,
+            "suppressed_links": [],
+        }
         if not normalized_rules or not items:
             return result
         db = self._require_db()
@@ -118,6 +177,9 @@ class _MainWindowAnalysisMixin:
                 result["read"] += 1
             if actions.mark_bookmark:
                 result["bookmarked"] += 1
+            if actions.suppress_notification:
+                result["suppressed"] += 1
+                result["suppressed_links"].append(link)
             if dry_run:
                 continue
             if actions.add_tags:
@@ -136,7 +198,7 @@ class _MainWindowAnalysisMixin:
             if actions.mark_bookmark:
                 db.update_status(link, "is_bookmarked", 1)
                 item["is_bookmarked"] = 1
-        if not dry_run and result["matched"]:
+        if refresh and not dry_run and result["matched"]:
             self._after_bulk_data_change("automation_rules")
         return result
 
@@ -152,9 +214,13 @@ class _MainWindowAnalysisMixin:
     def show_tag_manager(self: MainApp) -> None:
         if self.should_block_db_action("태그 관리"):
             return
+        scope = self._current_query_scope()
         dialog = TagManagerDialog(
             self._require_db(),
-            scope_items_provider=self._current_scope_items,
+            scope_items_provider=lambda context=None, scope=scope: self._scope_items_for_scope(
+                scope,
+                context=context,
+            ),
             refresh_callback=lambda: self._after_bulk_data_change("tag_manager"),
             parent=self,
         )
@@ -166,6 +232,7 @@ class _MainWindowAnalysisMixin:
         dialog = ArchiveSearchDialog(
             self._require_db(),
             publisher_aliases=getattr(self, "publisher_aliases", {}),
+            refresh_callback=lambda: self._after_bulk_data_change("archive_search"),
             parent=self,
         )
         dialog.exec()
@@ -173,11 +240,13 @@ class _MainWindowAnalysisMixin:
     def show_automation_rules(self: MainApp) -> None:
         if self.should_block_db_action("자동화 규칙"):
             return
+        scope = self._current_query_scope()
         dialog = AutomationRulesDialog(
             getattr(self, "automation_rules", []),
-            self._current_scope_items,
+            lambda context=None, scope=scope: self._scope_items_for_scope(scope, context=context),
             self._apply_automation_rules_to_items,
             self._save_automation_rules,
+            refresh_callback=lambda: self._after_bulk_data_change("automation_rules"),
             parent=self,
         )
         dialog.exec()

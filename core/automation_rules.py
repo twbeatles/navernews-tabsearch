@@ -69,10 +69,11 @@ def normalize_automation_rules(value: Any) -> List[Dict[str, Any]]:
         mark_read = _to_bool(raw_rule.get("mark_read"), False)
         mark_bookmark = _to_bool(raw_rule.get("mark_bookmark"), False)
         exclude = _to_bool(raw_rule.get("exclude"), False)
+        suppress_notification = _to_bool(raw_rule.get("suppress_notification"), False)
 
         if not any([keywords, exclude_words, publishers, query_terms]):
             continue
-        if not any([add_tags, mark_read, mark_bookmark, exclude]):
+        if not any([add_tags, mark_read, mark_bookmark, exclude, suppress_notification]):
             continue
 
         normalized.append(
@@ -87,6 +88,7 @@ def normalize_automation_rules(value: Any) -> List[Dict[str, Any]]:
                 "mark_read": mark_read,
                 "mark_bookmark": mark_bookmark,
                 "exclude": exclude,
+                "suppress_notification": suppress_notification,
             }
         )
         if len(normalized) >= MAX_RULES:
@@ -100,10 +102,11 @@ class AutomationActions:
     add_tags: List[str]
     mark_read: bool = False
     mark_bookmark: bool = False
+    suppress_notification: bool = False
 
     @property
     def has_actions(self) -> bool:
-        return bool(self.add_tags or self.mark_read or self.mark_bookmark)
+        return bool(self.add_tags or self.mark_read or self.mark_bookmark or self.suppress_notification)
 
 
 def _contains_all(text: str, terms: Sequence[str]) -> bool:
@@ -136,6 +139,7 @@ def evaluate_automation_rules(
     tag_seen: Set[str] = set()
     mark_read = False
     mark_bookmark = False
+    suppress_notification = False
 
     for rule in normalized_rules:
         if not bool(rule.get("enabled", True)):
@@ -168,12 +172,15 @@ def evaluate_automation_rules(
                 tag_seen.add(EXCLUDE_TAG.casefold())
                 tag_set.append(EXCLUDE_TAG)
             mark_read = True
+            suppress_notification = True
         mark_read = mark_read or bool(rule.get("mark_read", False))
         mark_bookmark = mark_bookmark or bool(rule.get("mark_bookmark", False))
+        suppress_notification = suppress_notification or bool(rule.get("suppress_notification", False))
 
     return AutomationActions(
         matched_rules=matched_rules,
         add_tags=tag_set,
         mark_read=mark_read,
         mark_bookmark=mark_bookmark,
+        suppress_notification=suppress_notification,
     )
