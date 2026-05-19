@@ -36,31 +36,31 @@ class _DatabaseAnalyticsMixin:
                 ))
             stats = {}
             stats["total"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE 1 = 1" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["unread"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE n.is_read = 0" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE n.is_read = 0 AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["bookmarked"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1 AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["with_notes"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE n.notes IS NOT NULL AND n.notes != ''" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE n.notes IS NOT NULL AND n.notes != '' AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["with_tags"] = active_conn.execute(
                 "SELECT COUNT(DISTINCT n.link) FROM news n "
                 "JOIN news_tags nt ON nt.link = n.link "
-                "WHERE 1 = 1" + visibility_clause,
+                "WHERE COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["duplicates"] = active_conn.execute(
                 "SELECT COUNT(DISTINCT nk.link) FROM news_keywords nk "
                 "JOIN news n ON n.link = nk.link "
-                "WHERE nk.is_duplicate = 1" + visibility_clause,
+                "WHERE nk.is_duplicate = 1 AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             return stats
@@ -96,7 +96,7 @@ class _DatabaseAnalyticsMixin:
                     SELECT n.publisher, COUNT(*) as count
                     FROM news n
                     JOIN news_keywords nk ON nk.link = n.link
-                    WHERE nk.query_key = ?
+                    WHERE nk.query_key = ? AND COALESCE(n.is_deleted, 0) = 0
                 """
                 params.append(query_key)
             elif keyword:
@@ -104,22 +104,22 @@ class _DatabaseAnalyticsMixin:
                     SELECT n.publisher, COUNT(*) as count
                     FROM news n
                     JOIN news_keywords nk ON nk.link = n.link
-                    WHERE nk.keyword = ?
+                    WHERE nk.keyword = ? AND COALESCE(n.is_deleted, 0) = 0
                 """
                 params.append(keyword)
             else:
                 query = """
                     SELECT n.publisher, COUNT(*) as count
                     FROM news n
-                    WHERE 1 = 1
+                    WHERE COALESCE(n.is_deleted, 0) = 0
                 """
 
             if exclude_words:
                 for exclude_word in exclude_words:
                     if not exclude_word:
                         continue
-                    query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
-                    wildcard = f"%{exclude_word}%"
+                    query += " AND NOT (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+                    wildcard = self._like_contains(exclude_word)
                     params.extend([wildcard, wildcard])
 
             append_visibility = getattr(self, "_append_visibility_filter_clause", None)
@@ -170,7 +170,7 @@ class _DatabaseAnalyticsMixin:
                 "SELECT nt.tag, COUNT(DISTINCT nt.link) AS count "
                 "FROM news_tags nt "
                 "JOIN news n ON n.link = nt.link "
-                "WHERE 1 = 1"
+                "WHERE COALESCE(n.is_deleted, 0) = 0"
             )
             append_visibility = getattr(self, "_append_visibility_filter_clause", None)
             if callable(append_visibility):

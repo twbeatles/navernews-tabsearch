@@ -56,7 +56,9 @@ class _NewsMaintenanceMixin:
                 f"""
                 UPDATE news
                 SET is_read = 1, read_updated_at = ?
-                WHERE is_read = 0 AND link IN ({placeholders})
+                WHERE is_read = 0
+                  AND COALESCE(is_deleted, 0) = 0
+                  AND link IN ({placeholders})
                 """,
                 [now_ts, *chunk],
             )
@@ -97,6 +99,14 @@ class _NewsMaintenanceMixin:
                     affected = self._collect_affected_query_key_hashes(
                         conn,
                         f"n.link IN ({placeholders})",
+                        links,
+                    )
+                    cursor = conn.execute(
+                        f"DELETE FROM news_tags WHERE link IN ({placeholders})",
+                        links,
+                    )
+                    conn.execute(
+                        f"DELETE FROM news_tag_state WHERE link IN ({placeholders})",
                         links,
                     )
                     cursor = conn.execute(
@@ -147,14 +157,17 @@ class _NewsMaintenanceMixin:
     ) -> Tuple[str, List[Any]]:
         params: List[Any] = []
         if only_bookmark:
-            scope_query = "SELECT n.link FROM news n WHERE n.is_bookmarked = 1 AND n.is_read = 0"
+            scope_query = (
+                "SELECT n.link FROM news n "
+                "WHERE n.is_bookmarked = 1 AND n.is_read = 0 AND COALESCE(n.is_deleted, 0) = 0"
+            )
         else:
             scope_query = (
                 "SELECT n.link FROM news n "
                 "JOIN news_keywords nk ON nk.link = n.link "
                 "WHERE "
                 + self._append_query_scope_sql(params, keyword, query_key)
-                + " AND n.is_read = 0"
+                + " AND n.is_read = 0 AND COALESCE(n.is_deleted, 0) = 0"
             )
 
         if hide_duplicates:
@@ -180,16 +193,16 @@ class _NewsMaintenanceMixin:
         if callable(append_text_filter):
             scope_query += cast(str, append_text_filter(params, filter_txt))
         elif filter_txt:
-            scope_query += " AND (n.title LIKE ? OR n.description LIKE ?)"
-            wildcard = f"%{filter_txt}%"
+            scope_query += " AND (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+            wildcard = self._like_contains(filter_txt)
             params.extend([wildcard, wildcard])
 
         if exclude_words:
             for exclude_word in exclude_words:
                 if not exclude_word:
                     continue
-                scope_query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
-                wildcard = f"%{exclude_word}%"
+                scope_query += " AND NOT (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+                wildcard = self._like_contains(exclude_word)
                 params.extend([wildcard, wildcard])
 
         if start_date:
@@ -239,7 +252,9 @@ class _NewsMaintenanceMixin:
                         """
                         UPDATE news
                         SET is_read = 1, read_updated_at = ?
-                        WHERE is_bookmarked = 1 AND is_read = 0
+                        WHERE is_bookmarked = 1
+                          AND is_read = 0
+                          AND COALESCE(is_deleted, 0) = 0
                         """,
                         (now_ts,),
                     )
@@ -251,6 +266,7 @@ class _NewsMaintenanceMixin:
                         UPDATE news
                         SET is_read = 1, read_updated_at = ?
                         WHERE is_read = 0
+                          AND COALESCE(is_deleted, 0) = 0
                           AND link IN (
                               SELECT link FROM news_keywords nk
                               WHERE
@@ -298,7 +314,8 @@ class _NewsMaintenanceMixin:
                 query_key=query_key,
             )
             query = (
-                "UPDATE news SET is_read = 1, read_updated_at = ? WHERE is_read = 0 AND link IN ("
+                "UPDATE news SET is_read = 1, read_updated_at = ? "
+                "WHERE is_read = 0 AND COALESCE(is_deleted, 0) = 0 AND link IN ("
                 + scope_query
                 + ")"
             )
@@ -400,7 +417,7 @@ class _NewsMaintenanceMixin:
     ) -> int:
         cutoff = (datetime.now() - timedelta(days=days)).timestamp()
         return self._run_chunked_news_delete(
-            "is_bookmarked = 0 AND ("
+            "is_bookmarked = 0 AND COALESCE(is_deleted, 0) = 0 AND ("
             "(pubDate_ts > 0 AND pubDate_ts < ?) OR "
             "((pubDate_ts IS NULL OR pubDate_ts <= 0) AND COALESCE(created_at, 0) > 0 AND created_at < ?)"
             ")",
@@ -419,7 +436,7 @@ class _NewsMaintenanceMixin:
         operation: str = "delete_all_news_chunked",
     ) -> int:
         return self._run_chunked_news_delete(
-            "is_bookmarked = 0",
+            "is_bookmarked = 0 AND COALESCE(is_deleted, 0) = 0",
             [],
             chunk_size=chunk_size,
             progress_callback=progress_callback,

@@ -499,6 +499,10 @@ class _DatabaseSchemaMixin:
                 ("read_updated_at", "REAL DEFAULT 0"),
                 ("bookmark_updated_at", "REAL DEFAULT 0"),
                 ("notes_updated_at", "REAL DEFAULT 0"),
+                ("is_deleted", "INTEGER DEFAULT 0"),
+                ("delete_updated_at", "REAL DEFAULT 0"),
+                ("delete_machine_id", "TEXT DEFAULT ''"),
+                ("delete_reason", "TEXT DEFAULT ''"),
             ]:
                 self._ensure_news_column(conn, existing_columns, col, dtype)
 
@@ -545,6 +549,8 @@ class _DatabaseSchemaMixin:
                 "CREATE INDEX IF NOT EXISTS idx_read_ts ON news(is_read, pubDate_ts DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_title_hash ON news(title_hash)",
                 "CREATE INDEX IF NOT EXISTS idx_duplicate ON news(is_duplicate)",
+                "CREATE INDEX IF NOT EXISTS idx_deleted ON news(is_deleted)",
+                "CREATE INDEX IF NOT EXISTS idx_deleted_ts ON news(is_deleted, delete_updated_at)",
                 "CREATE INDEX IF NOT EXISTS idx_keyword_read ON news(keyword, is_read)",
                 "CREATE INDEX IF NOT EXISTS idx_keyword_ts ON news(keyword, pubDate_ts DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_keyword_dup ON news(keyword, is_duplicate)",

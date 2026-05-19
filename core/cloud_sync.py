@@ -12,7 +12,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from core.runtime_support.paths import RuntimePaths
 
@@ -23,6 +23,10 @@ SNAPSHOT_SUFFIX = ".zip"
 MANIFEST_NAME = "manifest.json"
 SETTINGS_NAME = "settings.json"
 DB_SNAPSHOT_NAME = "news_database.db"
+MAX_SNAPSHOT_ZIP_BYTES = 512 * 1024 * 1024
+MAX_SNAPSHOT_DB_BYTES = 512 * 1024 * 1024
+MAX_SNAPSHOT_JSON_BYTES = 1 * 1024 * 1024
+INVALID_SNAPSHOT_DIR = ".invalid"
 SANITIZED_APP_SETTING_KEYS = {
     "client_id",
     "client_secret",
@@ -84,6 +88,49 @@ def _atomic_write_json(path: str, payload: Mapping[str, Any]) -> None:
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def _ensure_size_limit(label: str, size_bytes: int, max_bytes: int) -> None:
+    if int(size_bytes or 0) > int(max_bytes):
+        raise CloudSyncError(f"{label} exceeds size limit ({size_bytes} > {max_bytes} bytes)")
+
+
+def _snapshot_member_info(zf: zipfile.ZipFile, member: str) -> zipfile.ZipInfo:
+    try:
+        return zf.getinfo(member)
+    except KeyError as exc:
+        raise CloudSyncError(f"snapshot member is missing: {member}") from exc
+
+
+def _validate_snapshot_zip_size(zip_path: str) -> None:
+    if not os.path.exists(zip_path):
+        raise CloudSyncError(f"snapshot does not exist: {zip_path}")
+    _ensure_size_limit("snapshot zip", os.path.getsize(zip_path), MAX_SNAPSHOT_ZIP_BYTES)
+
+
+def quarantine_invalid_snapshot(zip_path: str, reason: str = "") -> str:
+    source = os.path.abspath(str(zip_path or ""))
+    if not source or not os.path.exists(source):
+        return ""
+    root = os.path.dirname(source) or "."
+    invalid_dir = os.path.join(root, INVALID_SNAPSHOT_DIR)
+    os.makedirs(invalid_dir, exist_ok=True)
+    base_name = os.path.basename(source)
+    token = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = os.path.join(invalid_dir, f"{base_name}.{token}.invalid")
+    counter = 1
+    while os.path.exists(target):
+        target = os.path.join(invalid_dir, f"{base_name}.{token}.{counter}.invalid")
+        counter += 1
+    try:
+        shutil.move(source, target)
+        if reason:
+            with open(target + ".reason.txt", "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(str(reason))
+                handle.write("\n")
+        return target
+    except OSError:
+        return ""
 
 
 def sanitize_config_for_cloud(config: Mapping[str, Any]) -> Dict[str, Any]:
@@ -169,12 +216,18 @@ def create_cloud_snapshot(
         staging_db = os.path.join(staging_dir, DB_SNAPSHOT_NAME)
         _snapshot_sqlite_db(db_file, staging_db)
         _verify_sqlite_db(staging_db)
+        _ensure_size_limit("snapshot database", os.path.getsize(staging_db), MAX_SNAPSHOT_DB_BYTES)
+        manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+        settings_bytes = json.dumps(sanitized_config, ensure_ascii=False, indent=2).encode("utf-8")
+        _ensure_size_limit("snapshot manifest", len(manifest_bytes), MAX_SNAPSHOT_JSON_BYTES)
+        _ensure_size_limit("snapshot settings", len(settings_bytes), MAX_SNAPSHOT_JSON_BYTES)
 
         try:
             with zipfile.ZipFile(temp_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
-                zf.writestr(SETTINGS_NAME, json.dumps(sanitized_config, ensure_ascii=False, indent=2))
+                zf.writestr(MANIFEST_NAME, manifest_bytes)
+                zf.writestr(SETTINGS_NAME, settings_bytes)
                 zf.write(staging_db, DB_SNAPSHOT_NAME)
+            _ensure_size_limit("snapshot zip", os.path.getsize(temp_zip_path), MAX_SNAPSHOT_ZIP_BYTES)
             os.replace(temp_zip_path, target_path)
         except Exception as exc:
             raise CloudSyncError(f"snapshot zip write failed: {exc}") from exc
@@ -202,9 +255,12 @@ def _validate_zip_member_name(name: str) -> None:
 
 def read_snapshot_manifest(zip_path: str) -> Dict[str, Any]:
     try:
+        _validate_snapshot_zip_size(zip_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             if MANIFEST_NAME not in zf.namelist():
                 raise CloudSyncError("snapshot manifest is missing")
+            info = _snapshot_member_info(zf, MANIFEST_NAME)
+            _ensure_size_limit("snapshot manifest", info.file_size, MAX_SNAPSHOT_JSON_BYTES)
             payload = json.loads(zf.read(MANIFEST_NAME).decode("utf-8"))
     except CloudSyncError:
         raise
@@ -241,6 +297,21 @@ def extract_snapshot(zip_path: str, destination_dir: str) -> Dict[str, str]:
                 raise CloudSyncError("snapshot database is missing")
             if settings_member not in names:
                 raise CloudSyncError("snapshot settings are missing")
+            _ensure_size_limit(
+                "snapshot database",
+                _snapshot_member_info(zf, db_member).file_size,
+                MAX_SNAPSHOT_DB_BYTES,
+            )
+            _ensure_size_limit(
+                "snapshot manifest",
+                _snapshot_member_info(zf, MANIFEST_NAME).file_size,
+                MAX_SNAPSHOT_JSON_BYTES,
+            )
+            _ensure_size_limit(
+                "snapshot settings",
+                _snapshot_member_info(zf, settings_member).file_size,
+                MAX_SNAPSHOT_JSON_BYTES,
+            )
             for member, target in (
                 (MANIFEST_NAME, extracted["manifest"]),
                 (db_member, extracted["db"]),
@@ -303,7 +374,11 @@ def select_cloud_snapshots_for_import(
                 continue
             candidates.append((os.path.getmtime(zip_path), zip_path, snapshot_id))
         except Exception as exc:
-            errors.append(_snapshot_import_error(zip_path, exc))
+            message = _snapshot_import_error(zip_path, exc)
+            quarantined = quarantine_invalid_snapshot(zip_path, str(exc))
+            if quarantined:
+                message += f" (quarantined: {os.path.basename(quarantined)})"
+            errors.append(message)
 
     candidates.sort(key=lambda item: (item[0], item[1]))
     limit = max(1, int(max_imports or 20))
@@ -343,6 +418,108 @@ def import_cloud_snapshot(
     result["snapshot_path"] = zip_path
     result["source_machine_id"] = source_machine_id
     return result
+
+
+def preview_cloud_snapshot_import(
+    *,
+    db_manager: Any,
+    zip_path: str,
+    local_machine_id: str,
+) -> Dict[str, Any]:
+    manifest = read_snapshot_manifest(zip_path)
+    snapshot_id = str(manifest.get("snapshot_id", "") or "").strip()
+    source_machine_id = str(manifest.get("machine_id", "") or "").strip()
+    if snapshot_id in db_manager.get_cloud_sync_seen_snapshot_ids():
+        return {
+            "snapshot_id": snapshot_id,
+            "merged": False,
+            "skipped": True,
+            "reason": "already_seen",
+            "snapshot_path": zip_path,
+            "source_machine_id": source_machine_id,
+            "news_added": 0,
+            "memberships_added": 0,
+            "read_changed": 0,
+            "bookmark_changed": 0,
+            "notes_changed": 0,
+            "tags_changed": 0,
+            "deleted": 0,
+            "restored": 0,
+        }
+    with tempfile.TemporaryDirectory(prefix="news_cloud_preview_") as staging_dir:
+        extracted = extract_snapshot(zip_path, staging_dir)
+        result = db_manager.preview_cloud_snapshot_db(
+            extracted["db"],
+            snapshot_id=snapshot_id,
+            source_machine_id=source_machine_id,
+            local_machine_id=local_machine_id,
+        )
+    result["snapshot_path"] = zip_path
+    result["source_machine_id"] = source_machine_id
+    return result
+
+
+def aggregate_cloud_import_preview(previews: Sequence[Mapping[str, Any]]) -> Dict[str, int]:
+    keys = [
+        "news_added",
+        "memberships_added",
+        "read_changed",
+        "bookmark_changed",
+        "notes_changed",
+        "tags_changed",
+        "deleted",
+        "restored",
+    ]
+    totals = {key: 0 for key in keys}
+    totals["merge_candidates"] = 0
+    totals["skipped"] = 0
+    for preview in previews:
+        if bool(preview.get("skipped", False)):
+            totals["skipped"] += 1
+            continue
+        totals["merge_candidates"] += 1
+        for key in keys:
+            totals[key] += int(preview.get(key, 0) or 0)
+    return totals
+
+
+def preview_cloud_snapshots_for_import(
+    *,
+    db_manager: Any,
+    sync_dir: str,
+    local_machine_id: str,
+    max_imports: int = 20,
+) -> Dict[str, Any]:
+    selection = select_cloud_snapshots_for_import(
+        db_manager=db_manager,
+        sync_dir=sync_dir,
+        max_imports=max_imports,
+    )
+    previews: List[Dict[str, Any]] = []
+    errors = list(selection.get("errors", []) or [])
+    invalid_count = len(errors)
+    for zip_path in selection["paths"]:
+        try:
+            previews.append(
+                preview_cloud_snapshot_import(
+                    db_manager=db_manager,
+                    zip_path=zip_path,
+                    local_machine_id=local_machine_id,
+                )
+            )
+        except Exception as exc:
+            errors.append(_snapshot_import_error(zip_path, exc))
+            invalid_count += 1
+            quarantine_invalid_snapshot(zip_path, str(exc))
+    return {
+        "paths": list(selection.get("paths", []) or []),
+        "previews": previews,
+        "totals": aggregate_cloud_import_preview(previews),
+        "errors": errors,
+        "invalid_count": invalid_count,
+        "pending_unseen": selection.get("pending_unseen", 0),
+        "skipped_seen": selection.get("skipped_seen", 0),
+    }
 
 
 def run_cloud_sync_cycle(
@@ -387,11 +564,13 @@ def run_cloud_sync_cycle(
         except Exception as exc:
             errors.append(_snapshot_import_error(zip_path, exc))
             invalid_count += 1
+            quarantine_invalid_snapshot(zip_path, str(exc))
 
     cleanup_old_snapshots(sync_dir, keep=100)
     return {
         "exported": snapshot,
         "imported": imported,
+        "import_totals": aggregate_cloud_import_preview(imported),
         "errors": errors,
         "merged_count": sum(1 for item in imported if bool(item.get("merged", False))),
         "skipped_count": sum(1 for item in imported if bool(item.get("skipped", False))),

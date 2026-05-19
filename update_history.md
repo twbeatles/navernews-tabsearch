@@ -1,6 +1,24 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Functional Risk Extension + Docs/Spec/Gitignore Revalidation (2026-05-19)**:
+  - Added explicit article deletion tombstones through `news.is_deleted`, `delete_updated_at`, `delete_machine_id`, and `delete_reason`. Default fetch/count/archive/stat/export/tray scopes hide deleted rows, and archive search can include deleted rows for restore.
+  - Changed `DatabaseManager.delete_link(link)` to a cloud-aware single-article soft-delete and added `restore_deleted_link(link)`. Old-news cleanup and all-news cleanup remain local hard-delete maintenance operations and do not create tombstones.
+  - Made `update_status(...)` and `set_tags(...)` no-op aware so unchanged values do not refresh conflict timestamps and return `False`.
+  - Extended cloud merge to latest-wins deletion/restore state by `delete_updated_at`. Older active snapshots and API re-collection cannot resurrect a newer tombstone.
+  - Added manual cloud import dry-run preview for new articles, query memberships, state changes, deletes, and restores. Periodic sync still auto-merges but records the same summary counts.
+  - Added snapshot size validation: ZIP/DB members are capped at 512MB, manifest/settings JSON at 1MB, and damaged or oversized snapshots are quarantined into `.invalid/`.
+  - Unified LIKE escaping so `%`, `_`, and `\` are literal user input across fetch/count/archive/mark-read/analytics scopes.
+  - Added `DatabaseManager.apply_automation_actions(...)` so evaluated automation mutations apply in one transaction. Fetch completion now warns when automation DB apply fails while notification suppression still follows the evaluated rule result.
+  - Re-reviewed `news_scraper_pro.spec`; this batch uses existing stdlib/PyQt6/SQLite/runtime paths only and needs no hidden import, data file, or optional dependency exclusion change.
+  - Re-reviewed `.gitignore`; added `.invalid/` for cloud snapshot quarantine and verified build/dist/cache/log/runtime DB/config/snapshot temp artifacts remain ignored.
+  - Added `implementation_functional_risk_review_2026-05-19.md` as the implementation/verification closure note for this batch.
+  - Validation:
+    - `python -m pytest tests/test_cloud_sync.py tests/test_functional_risk_20260511.py tests/test_db_queries.py -q` => `56 passed`
+    - `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
+    - `pyright` => `0 errors, 0 warnings, 0 informations`
+    - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+    - `git diff --check` => pass
 - **P0/P1 Functional Risk Closure + Docs/Spec/Gitignore Revalidation (2026-05-15)**:
   - Disabled the FTS rowid hard prefilter while keeping the `news_fts` schema/backfill path. Text filtering in `fetch_news`, `count_news`, `search_archive`, and `count_archive` now keeps LIKE token-AND as the source of truth before and after FTS backfill.
   - Added `AutomationActions.suppress_notification`. `exclude=true` still applies the `제외` tag and read state, and now also removes the affected links from the current fetch desktop/tray/alert-keyword notification set.

@@ -131,6 +131,14 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   expanded archive/automation/alias dialogs with existing PyQt6 widgets.
 # - The changes use existing stdlib/PyQt6/SQLite/runtime modules only. No new
 #   hidden import, data file, or optional dependency exclusion is required.
+# 2026-05-19 review:
+# - Functional-risk extension added soft-delete tombstones, cloud import preview,
+#   invalid snapshot quarantine, LIKE literal escaping, and transactional
+#   automation action application.
+# - The implementation uses existing stdlib/PyQt6/SQLite/runtime modules only.
+#   Snapshot ZIPs and `.invalid/` quarantine files are runtime data, not bundled
+#   datas. No new hidden import, data file, or optional dependency exclusion is
+#   required.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

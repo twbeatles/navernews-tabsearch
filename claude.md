@@ -154,7 +154,7 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `git diff --check` => pass
@@ -184,6 +184,19 @@ navernews-tabsearch/
 
 ---
 
+## 🚀 2026-05-19 Functional Risk Extension Closure
+
+- Added cloud-aware article deletion tombstones: `news.is_deleted`, `delete_updated_at`, `delete_machine_id`, and `delete_reason`. Default fetch/count/archive/stat/export/tray scopes hide deleted rows, while archive search can include deleted rows for restore.
+- `DatabaseManager.delete_link(link)` is now explicit single-article soft-delete; old-news cleanup and all-news cleanup remain local hard-delete maintenance operations and do not create tombstones. `DatabaseManager.restore_deleted_link(link)` restores soft-deleted rows and publishes a newer restore timestamp.
+- `DatabaseManager.update_status(...)` and `set_tags(...)` skip identical no-op writes and leave conflict timestamps unchanged.
+- Cloud snapshot merge now applies latest-wins deletion/restore state by `delete_updated_at`, so older active snapshots or API re-collection cannot resurrect a newer tombstone.
+- Manual cloud import computes a dry-run preview before applying and asks for confirmation. Periodic sync still auto-merges but records the same summary counts for new articles, memberships, state changes, deletes, and restores.
+- Cloud snapshot ZIP/DB members are capped at 512MB and manifest/settings JSON at 1MB. Invalid snapshots are moved to `.invalid/` to avoid repeated import attempts.
+- LIKE filters now escape `%`, `_`, and `\` as literal user input across fetch/count/archive/mark-read/analytics scopes.
+- Automation rules are evaluated before DB writes, then applied through `DatabaseManager.apply_automation_actions(...)` in a single transaction. If DB apply fails after fetch save, the user sees "새 기사 저장은 완료, 자동화 적용 실패" and notification suppression still uses the evaluated result.
+
+---
+
 ## 🚀 2026-05-15 P0+P1 Functional Risk Closure
 
 - Disabled FTS rowid hard prefilter for text filters. `news_fts` schema/backfill remains in place, but `fetch_news`, `count_news`, `search_archive`, and `count_archive` keep LIKE token-AND as the semantic source of truth so Korean compound/substring results do not change after backfill.
@@ -199,11 +212,11 @@ navernews-tabsearch/
 ## 🚀 2026-05-10 Cloud Snapshot Sync Safety
 
 - Implemented local DB + cloud snapshot ZIP sync instead of direct SQLite access inside OneDrive/Google Drive folders.
-- Added `core.cloud_sync` for `news_scraper_sync_*.zip` creation, manifest/settings/DB validation, import, cycle execution, cleanup, and runtime/cloud path overlap detection.
-- Added `core._db_cloud_sync` and `DatabaseManager.merge_cloud_snapshot_db(...)` for single-transaction snapshot DB merge, rollback backup, same-machine/already-seen snapshot skip, and seen snapshot tracking.
+- Added `core.cloud_sync` for `news_scraper_sync_*.zip` creation, manifest/settings/DB validation, import preview, import, invalid quarantine, cycle execution, cleanup, and runtime/cloud path overlap detection.
+- Added `core._db_cloud_sync` and `DatabaseManager.merge_cloud_snapshot_db(...)` for single-transaction snapshot DB merge, rollback backup, same-machine/already-seen snapshot skip, seen snapshot tracking, and deletion tombstone latest-wins merge.
 - Extended schema with `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, and `news_tag_state(link, tags_updated_at)` for per-field conflict resolution.
 - Snapshot ZIPs contain `manifest.json`, sanitized diagnostic `settings.json`, and a SQLite backup API copy of `news_database.db`; API credentials, local cloud path, automation rules, publisher aliases, WAL/SHM sidecars, and temp files are excluded.
-- Settings data management now includes cloud sync enable/folder/interval controls plus manual export and merge. Cloud snapshot import only merges DB state; user settings are transferred through the explicit settings export/import path. The default periodic interval is 30 minutes.
+- Settings data management now includes cloud sync enable/folder/interval controls plus manual export and merge. The periodic checkbox controls only the timer; manual export/import can run when folder/runtime validation passes. Cloud snapshot import only merges DB state; user settings are transferred through the explicit settings export/import path. The default periodic interval is 30 minutes.
 - Automatic cloud sync is blocked when live runtime data appears to be inside a cloud-synced folder or the selected snapshot folder overlaps `DATA_DIR`.
 - User-facing cloud sync UI strings were kept Korean; internal log keys may remain English.
 - `news_scraper_pro.spec` was re-reviewed; the feature uses stdlib modules and existing PyQt/SQLite runtime paths only.
@@ -555,7 +568,7 @@ navernews-tabsearch/
 }
 ```
 
-Cloud sync snapshots intentionally exclude API credentials, automation rules, publisher aliases, and the local `cloud_sync_dir`; each PC keeps its own DPAPI/local secret state, selected cloud folder, local automation, and alias settings. Snapshot import merges DB state only.
+Cloud sync snapshots intentionally exclude API credentials, automation rules, publisher aliases, and the local `cloud_sync_dir`; each PC keeps its own DPAPI/local secret state, selected cloud folder, local automation, and alias settings. Snapshot import merges DB state only, including explicit article deletion/restore tombstones.
 
 ---
 
@@ -850,10 +863,10 @@ css = AppStyle.HTML_TEMPLATE.format(**colors)
 
 ### 설정 Export/Import 현재 정책
 
-- export 포맷 버전은 `1.2`
+- export 포맷 버전은 `1.3`
 - API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외
-- `settings.auto_start_enabled`는 export/import 대상에 포함
-- import는 `1.1`과 `1.2`를 모두 허용
+- `settings.auto_start_enabled`, `settings.auto_backup_minutes`, `automation_rules`, `publisher_aliases`는 로컬 설정 export/import 대상에 포함
+- import는 `1.1`, `1.2`, `1.3`을 모두 허용
 - 트레이/자동 시작 미지원 환경에서는 `start_minimized`, `auto_start_enabled`를 안전한 값으로 보정
 - 자동 시작 import는 UI 상태만이 아니라 실제 `StartupManager.enable_startup(...)` / `disable_startup()` 호출로 로컬 레지스트리 상태까지 동기화
 

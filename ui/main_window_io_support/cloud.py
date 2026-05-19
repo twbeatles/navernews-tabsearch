@@ -19,10 +19,13 @@ from core.config_store import (
     save_primary_config_file,
 )
 from core.cloud_sync import (
+    aggregate_cloud_import_preview,
     cleanup_old_snapshots,
     cloud_sync_path_conflicts_with_runtime,
     create_cloud_snapshot,
     import_cloud_snapshot,
+    preview_cloud_snapshots_for_import,
+    quarantine_invalid_snapshot,
     run_cloud_sync_cycle,
     runtime_storage_is_probably_cloud,
     select_cloud_snapshots_for_import,
@@ -54,9 +57,10 @@ class _MainWindowCloudSyncMixin:
         require_folder: bool = True,
         sync_dir_override: Optional[str] = None,
         enabled_override: Optional[bool] = None,
+        respect_enabled: bool = True,
     ) -> str:
         enabled = bool(getattr(self, "cloud_sync_enabled", True)) if enabled_override is None else bool(enabled_override)
-        if not enabled:
+        if respect_enabled and not enabled:
             return "클라우드 동기화가 꺼져 있습니다."
         sync_dir = (
             str(getattr(self, "cloud_sync_dir", "") or "").strip()
@@ -101,6 +105,7 @@ class _MainWindowCloudSyncMixin:
             sync_dir_override=sync_dir_override,
             enabled_override=enabled_override,
             interval_override=interval_override,
+            respect_enabled=False,
         )
     def run_cloud_sync_export_now(
         self: MainApp,
@@ -115,6 +120,7 @@ class _MainWindowCloudSyncMixin:
             sync_dir_override=sync_dir_override,
             enabled_override=enabled_override,
             interval_override=interval_override,
+            respect_enabled=False,
         )
     def run_cloud_sync_import_now(
         self: MainApp,
@@ -129,7 +135,32 @@ class _MainWindowCloudSyncMixin:
             sync_dir_override=sync_dir_override,
             enabled_override=enabled_override,
             interval_override=interval_override,
+            respect_enabled=False,
         )
+    def _cloud_import_preview_message(self: MainApp, preview: Dict[str, Any]) -> str:
+        totals = dict(preview.get("totals", {}) or {})
+        lines = [
+            "선택된 클라우드 스냅샷을 병합할까요?",
+            "",
+            f"대상 스냅샷: {int(totals.get('merge_candidates', 0) or 0):,}개",
+            f"새 기사: {int(totals.get('news_added', 0) or 0):,}개",
+            f"검색범위: {int(totals.get('memberships_added', 0) or 0):,}개",
+            (
+                "상태 변경: "
+                f"읽음 {int(totals.get('read_changed', 0) or 0):,}, "
+                f"북마크 {int(totals.get('bookmark_changed', 0) or 0):,}, "
+                f"메모 {int(totals.get('notes_changed', 0) or 0):,}, "
+                f"태그 {int(totals.get('tags_changed', 0) or 0):,}"
+            ),
+            f"삭제/복구: 삭제 {int(totals.get('deleted', 0) or 0):,}, 복구 {int(totals.get('restored', 0) or 0):,}",
+        ]
+        invalid_count = int(preview.get("invalid_count", 0) or 0)
+        pending_unseen = int(preview.get("pending_unseen", 0) or 0)
+        if invalid_count:
+            lines.append(f"격리/무시된 스냅샷: {invalid_count:,}개")
+        if pending_unseen:
+            lines.append(f"이번에 처리하지 않는 대기 스냅샷: {pending_unseen:,}개")
+        return "\n".join(lines)
     def _run_cloud_sync_once(
         self: MainApp,
         *,
@@ -138,6 +169,7 @@ class _MainWindowCloudSyncMixin:
         sync_dir_override: Optional[str] = None,
         enabled_override: Optional[bool] = None,
         interval_override: Optional[int] = None,
+        respect_enabled: bool = True,
     ) -> None:
         mode = str(mode or "full").strip().lower()
         if mode not in {"full", "export", "import"}:
@@ -146,6 +178,7 @@ class _MainWindowCloudSyncMixin:
             require_folder=True,
             sync_dir_override=sync_dir_override,
             enabled_override=enabled_override,
+            respect_enabled=respect_enabled,
         )
         if block_reason:
             self._cloud_sync_last_status = block_reason
@@ -175,6 +208,38 @@ class _MainWindowCloudSyncMixin:
             if interval_override is None
             else int(interval_override or 30)
         )
+
+        if manual and mode == "import":
+            try:
+                preview = preview_cloud_snapshots_for_import(
+                    db_manager=self._require_db(),
+                    sync_dir=sync_dir,
+                    local_machine_id=machine_id,
+                    max_imports=20,
+                )
+            except Exception as exc:
+                message = f"클라우드 병합 미리보기에 실패했습니다.\n\n{exc}"
+                self._cloud_sync_last_status = message
+                self.end_database_maintenance()
+                self.show_warning_toast("클라우드 병합 미리보기 실패")
+                _dialogs_for(self).warning(self, "클라우드 동기화", message)
+                return
+            if not preview.get("paths") and not preview.get("errors"):
+                message = "가져올 새 클라우드 스냅샷이 없습니다."
+                self._cloud_sync_last_status = message
+                self.end_database_maintenance()
+                self.show_toast(message)
+                return
+            confirmed = _dialogs_for(self).ask_yes_no(
+                self,
+                "클라우드 병합 미리보기",
+                self._cloud_import_preview_message(preview),
+            )
+            if not confirmed:
+                self._cloud_sync_last_status = "클라우드 병합을 취소했습니다."
+                self.end_database_maintenance()
+                self.show_warning_toast(self._cloud_sync_last_status)
+                return
 
         def _job(context):
             context.report(current=0, total=0, message="클라우드 동기화 시작")
@@ -212,11 +277,13 @@ class _MainWindowCloudSyncMixin:
                     except Exception as exc:
                         errors.append(f"{os.path.basename(zip_path)}: {exc}")
                         invalid_count += 1
+                        quarantine_invalid_snapshot(zip_path, str(exc))
                 cleanup_old_snapshots(sync_dir, keep=100)
                 return {
                     "mode": mode,
                     "exported": None,
                     "imported": imported,
+                    "import_totals": aggregate_cloud_import_preview(imported),
                     "errors": errors,
                     "invalid_count": invalid_count,
                     "pending_unseen": selection.get("pending_unseen", 0),
@@ -254,11 +321,14 @@ class _MainWindowCloudSyncMixin:
         merged = [item for item in imported if bool(item.get("merged", False))]
         news_added = sum(int(item.get("news_added", 0) or 0) for item in merged)
         memberships_added = sum(int(item.get("memberships_added", 0) or 0) for item in merged)
+        import_totals = aggregate_cloud_import_preview(imported)
         exported = result.get("exported")
         exported_text = "내보냄" if exported else "내보내기 없음"
         status = (
             f"클라우드 동기화 완료: {exported_text}, "
-            f"병합 {len(merged)}개, 기사 +{news_added}, 검색범위 +{memberships_added}"
+            f"병합 {len(merged)}개, 기사 +{news_added}, 검색범위 +{memberships_added}, "
+            f"상태 변경 {int(import_totals.get('read_changed', 0) or 0) + int(import_totals.get('bookmark_changed', 0) or 0) + int(import_totals.get('notes_changed', 0) or 0) + int(import_totals.get('tags_changed', 0) or 0):,}, "
+            f"삭제 {int(import_totals.get('deleted', 0) or 0):,}, 복구 {int(import_totals.get('restored', 0) or 0):,}"
         )
         invalid_count = int(result.get("invalid_count", 0) or 0)
         pending_unseen = int(result.get("pending_unseen", 0) or 0)

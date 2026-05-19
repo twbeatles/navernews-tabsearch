@@ -290,6 +290,22 @@ class _MainWindowFetchWorkerMixin:
                             ]
                     except Exception as exc:
                         logger.warning("Automation rule application failed: %s", exc)
+                        applied = dict(getattr(self, "_last_automation_rule_result", {}) or {})
+                        suppressed_links = {
+                            str(link)
+                            for link in (applied.get("suppressed_links", []) or [])
+                            if str(link or "").strip()
+                        }
+                        if suppressed_links:
+                            notifiable_new_items = [
+                                item
+                                for item in notifiable_new_items
+                                if str(item.get("link") or "") not in suppressed_links
+                            ]
+                        failure_msg = "새 기사 저장은 완료, 자동화 적용 실패"
+                        self._status_bar().showMessage(f"⚠️ {failure_msg}: {exc}", 5000)
+                        if not is_sequential:
+                            self.show_warning_toast(failure_msg)
 
             located_tab = self._find_news_tab(keyword)
             if located_tab is not None:

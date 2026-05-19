@@ -83,7 +83,8 @@
 - 레거시 런타임 파일 마이그레이션은 `core/runtime_support/migration.py`로 분리하고, DB는 SQLite backup API 우선 + fallback integrity 검증, `pending_restore.json`은 `backup_dir` rebasing, `backups/`는 폴더 단위 merge로 강화
 - 클라우드 동기화는 OneDrive/Google Drive 폴더의 live SQLite DB를 직접 열지 않고, 로컬 DB와 검증된 `news_scraper_sync_*.zip` 스냅샷을 교환한다
 - 클라우드 스냅샷은 `manifest.json`, secret 제거 설정 JSON, SQLite backup API로 만든 DB 복사본만 포함하며 API 자격증명, 자동화 규칙, 출처 alias, `-wal`/`-shm` sidecar는 제외한다
-- 스냅샷 병합은 기사/검색범위를 union하고 읽음/북마크/메모/태그는 per-field timestamp 최신값을 반영하며, v1에서는 삭제 전파와 설정 병합을 하지 않는다
+- 스냅샷 병합은 기사/검색범위를 union하고 읽음/북마크/메모/태그/명시 삭제 tombstone은 per-field timestamp 최신값을 반영한다. 수동 병합은 적용 전 preview로 새 기사, 검색범위, 상태 변경, 삭제/복구 예상치를 확인한다
+- 손상/초과 클라우드 스냅샷은 `.invalid/`로 격리해 다음 주기에 반복 import하지 않으며, ZIP/DB는 각각 512MB, manifest/settings JSON은 각각 1MB 상한을 적용한다
 - `MainApp`, `NewsTab`, worker, backup, dialogs, styles, DB mutation 경로는 얇은 facade를 유지하고 실제 책임은 `*_support/` 패키지로 분리해 SOLID 기준의 변경 지점을 더 명확히 했다
 - 저장소 주요 텍스트 자산의 mojibake 문자열을 정리하고, 인코딩 스모크 테스트를 다중 suspicious token/패턴 감시로 강화
 - 백업 메타는 legacy `include_db` 누락을 실제 payload 파일 기준으로 자동 판별하고, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 다시 기록
@@ -109,6 +110,7 @@
 - 탭 리네임 시 fetch key 변경 여부에 따라 페이지네이션 상태를 안전하게 재설정
 - `모두 읽음`을 `현재 표시 결과만`/`탭 전체` 2모드로 확장
 - 통계의 `중복 기사` 집계를 `news_keywords.is_duplicate` 기준으로 보정
+- 기사 단건 삭제는 cloud tombstone을 남기는 soft-delete로 처리하고, 기본 조회/통계/export에서는 숨긴다. 오래된 기사 정리/전체 정리는 tombstone 없이 로컬 hard-delete로 유지한다
 - 기사 단건/일괄 삭제 후 `news_keywords.is_duplicate`를 영향 집합 기준으로 재계산
 - 컨텍스트 메뉴 삭제를 raw SQL에서 `DatabaseManager.delete_link(link)`로 일원화
 - pending restore에서 `restore_db=true`인 경우 DB 백업 파일 누락 시 실패 처리 + pending 유지
@@ -175,16 +177,17 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-05-15)
+## 최신 검증 메모 (2026-05-19)
 
-- `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest tests/test_cloud_sync.py tests/test_functional_risk_20260511.py tests/test_db_queries.py -q` => `56 passed`
+- `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`입니다.
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - 마지막 PyInstaller 검증(2026-05-11): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `git diff --check` => pass
 - 마지막 패키지 스모크(2026-05-11): `QT_QPA_PLATFORM=offscreen` + 새 `NEWS_SCRAPER_DATA_DIR`로 실행형이 15초 이상 정상 시작 상태를 유지함
-- `news_scraper_pro.spec`는 2026-05-15 P0/P1 기능 리스크 클로저 기준으로 재검토했으며, 이번 변경은 표준 라이브러리와 기존 PyQt6/SQLite/runtime 의존성만 사용합니다. Windows onefile 런타임에 쓰지 않는 `urllib3.contrib.emscripten` optional 경로는 계속 수집 제외합니다.
+- `news_scraper_pro.spec`는 2026-05-19 기능 리스크 확장 기준으로 재검토했으며, 이번 변경은 표준 라이브러리와 기존 PyQt6/SQLite/runtime 의존성만 사용합니다. Windows onefile 런타임에 쓰지 않는 `urllib3.contrib.emscripten` optional 경로는 계속 수집 제외합니다.
 
 ## 프로젝트 구조
 
@@ -413,6 +416,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 2026-05-08 기준 `git status --ignored --short`와 `git check-ignore -v build dist .pytest_tmp .pytest_cache __pycache__ dist\NewsScraperPro_Safe.exe build\news_scraper_pro\Analysis-00.toc`로 build/dist/cache/log 산출물이 기존 `.gitignore` 규칙으로 무시되는 것을 확인했습니다.
 - 2026-05-11 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, 기능 리스크 수정과 support-package 리팩토링은 표준 라이브러리와 기존 PyQt/SQLite 경로만 사용하므로 별도 hidden import/exclude/data 변경은 필요하지 않습니다. `.claude/` worktree scratch는 publish 대상 소스가 아니므로 ignore합니다.
 - 2026-05-10 기준 `.gitignore`에는 cloud snapshot 산출물(`news_scraper_sync_*.zip`, `.news_scraper_sync_*.zip.tmp`)을 추가로 무시하도록 보강했습니다.
+- 2026-05-19 기준으로 `.spec`과 `.gitignore`를 다시 재검토했고, soft-delete tombstone, cloud import preview, snapshot 크기 검증/`.invalid/` 격리, LIKE literal escape, 자동화 transaction 적용은 기존 stdlib/PyQt/SQLite 경로만 사용하므로 hidden import/data/exclude 추가가 필요하지 않습니다. `.gitignore`에는 `.invalid/` quarantine 폴더를 추가했습니다.
 - 2026-04-29 문서 정합화에서는 삭제 상태인 `implementation_risk_review_2026-04-27.md`를 되돌리지 않고 현재 작업트리 상태로 유지합니다.
 
 ## 네이버 API 키 설정
@@ -472,7 +476,9 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 클라우드 동기화는 live DB를 로컬 `DATA_DIR`에 두고, OneDrive/Google Drive 같은 폴더에는 `news_scraper_sync_*.zip` 스냅샷만 교환합니다.
 - `DATA_DIR` 또는 `news_database.db`가 클라우드 동기화 폴더 안에 있는 것으로 감지되면 주기 동기화는 차단됩니다.
 - 클라우드 스냅샷 ZIP에는 `manifest.json`, secret 제거 `settings.json`, SQLite backup API로 만든 `news_database.db`만 들어갑니다. API 자격증명, 자동화 규칙, 출처 alias, SQLite `-wal`/`-shm` sidecar는 포함하지 않습니다.
-- 클라우드 동기화는 기사/검색범위를 `link`, `(link, query_key)` 기준으로 union 병합합니다. 읽음/북마크/메모/태그 충돌은 per-field timestamp 최신 변경을 따르며, v1에서는 삭제 전파와 설정 병합을 지원하지 않습니다.
+- 클라우드 동기화는 기사/검색범위를 `link`, `(link, query_key)` 기준으로 union 병합합니다. 읽음/북마크/메모/태그와 명시 단건 삭제/복구 tombstone은 per-field timestamp 최신 변경을 따르며, API 재수집이나 오래된 active snapshot이 더 최신 tombstone을 자동 복구하지 않습니다.
+- 수동 병합은 적용 전 dry-run preview를 보여주고, 주기 동기화는 확인 없이 자동 병합하되 같은 요약 통계를 상태 메시지에 남깁니다. "주기적 클라우드 동기화 사용" 체크박스는 timer만 제어하며 수동 export/import는 폴더/runtime 검증만 통과하면 실행됩니다.
+- 스냅샷 ZIP/DB는 각각 512MB, manifest/settings JSON은 각각 1MB 상한을 적용합니다. 손상되었거나 초과한 스냅샷은 동기화 폴더의 `.invalid/`로 격리됩니다.
 - 백업 복원 예약은 선택한 백업의 `include_db` 메타를 우선 사용하고, legacy 백업처럼 메타가 없으면 실제 DB payload 존재 여부로 복원 범위(`설정만`/`설정+DB`)를 자동 판별합니다.
 - 백업 메타의 `trigger`는 `auto`/`manual` 값을 가지며, 자동 시작 백업은 수동 백업과 별도 보존 정책으로 관리됩니다.
 - 자동 시작 백업은 `설정만` 포함합니다. DB 복원 지점이 필요하면 수동 백업에서 `데이터베이스 포함`을 선택해야 합니다.
@@ -502,7 +508,8 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 공개 API 참고:
 - `DatabaseManager.connection(timeout: float = 10.0)` 컨텍스트 매니저를 제공하며, 권장 DB 접근 패턴입니다.
 - `DatabaseManager.get_total_unread_count(blocked_publishers=None) -> int`를 통해 visibility-aware 전체 미읽음 수를 직접 조회할 수 있습니다.
-- `DatabaseManager.delete_link(link: str) -> bool`가 추가되어 UI 삭제 경로에서 중복 플래그 재계산을 일원화합니다.
+- `DatabaseManager.delete_link(link: str) -> bool`는 명시 단건 삭제를 soft-delete tombstone으로 기록하고, `DatabaseManager.restore_deleted_link(link: str) -> bool`는 아카이브에서 복구할 때 사용합니다.
+- `DatabaseManager.apply_automation_actions(mutations: list[dict]) -> dict`는 평가 완료된 자동화 태그/읽음/북마크 변경을 한 transaction에서 적용합니다.
 - `DatabaseManager.count_news(..., exclude_words: Optional[List[str]] = None)`가 확장되어 미읽음 배지 집계 시 제외어 조건을 반영할 수 있습니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_counts(...)`, `get_unread_count(...)`, `mark_query_as_read(...)`, `get_top_publishers(...)`는 `query_key`가 있으면 대표 keyword 문자열과 무관하게 해당 query scope만 조회합니다.
 - `core.workers.DBWorker`는 `DBQueryScope + include_total + known_total_count` 계약을 사용해 append 시 total count round-trip을 생략하고, full reload에서만 `count_news(...)`를 실행합니다.
@@ -510,7 +517,7 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `core.workers.ApiWorker`는 API 응답의 `originallink`/`link` 중 `http`/`https` URL만 저장 후보로 삼고, 둘 다 유효하지 않으면 해당 item을 건너뜁니다. publisher는 유효한 URL host에서 `www.`를 제거해 산출합니다.
 - `DatabaseManager.iter_news_snapshot_batches(...)`는 현재 탭 필터 전체 결과를 단일 read snapshot 위에서 순회해 CSV export 일관성을 보장합니다.
 - `DatabaseManager.merge_cloud_snapshot_db(...)`는 스냅샷 DB를 단일 transaction에서 병합하고, 실패 시 사전 백업으로 rollback합니다. 이미 가져온 snapshot id와 같은 PC snapshot은 건너뜁니다.
-- `core.cloud_sync.create_cloud_snapshot(...)` / `import_cloud_snapshot(...)` / `run_cloud_sync_cycle(...)`는 클라우드 스냅샷 ZIP의 생성, 검증, 병합, 오래된 스냅샷 정리를 담당합니다.
+- `core.cloud_sync.create_cloud_snapshot(...)` / `preview_cloud_snapshots_for_import(...)` / `import_cloud_snapshot(...)` / `run_cloud_sync_cycle(...)`는 클라우드 스냅샷 ZIP의 생성, 크기/무결성 검증, preview, 병합, invalid 격리, 오래된 스냅샷 정리를 담당합니다.
 - `DatabaseManager.optimize_database(vacuum: bool = False)`는 설정 창의 DB 최적화 작업에서 사용됩니다.
 - `DatabaseManager.get_top_tags(limit=20, ...)`는 통계 다이얼로그의 태그 통계를 제공합니다.
 - `DatabaseManager.fetch_news(...)`, `count_news(...)`, `get_top_publishers(...)`, `iter_news_snapshot_batches(...)`는 `blocked_publishers`, `preferred_publishers`, `only_preferred_publishers`, `tag_filter` scope를 공유하며, 도메인 값은 `example.com`이 `example.com`/`news.example.com`에 매칭되고 `badexample.com`에는 매칭되지 않습니다.
@@ -525,9 +532,9 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - `AutoBackup.delete_corrupt_backups()`는 백업 관리 다이얼로그의 손상 백업 일괄 삭제에서 사용됩니다.
 - `core.database.DatabaseQueryError`는 조회/집계 계열 DB 실패를 빈 결과로 삼키지 않는 표준 예외 계약이며, UI는 기존 캐시를 보존한 채 실패를 노출합니다.
 - `core.database.DatabaseWriteError`는 쓰기/변경 계열 DB 실패를 성공처럼 삼키지 않는 표준 예외 계약이며, `ApiWorker`와 fetch UI는 저장 실패를 성공 완료와 명확히 분리합니다.
-- `DatabaseManager.update_status(link, field, value)`는 대상 row가 없으면 `False`를 반환하고 SQLite 쓰기 실패는 `DatabaseWriteError`로 올립니다.
+- `DatabaseManager.update_status(link, field, value)`는 대상 row가 없거나 동일 값 no-op이면 `False`를 반환하고 SQLite 쓰기 실패는 `DatabaseWriteError`로 올립니다.
 - `DatabaseManager.get_note(link)`는 조회 실패를 `DatabaseQueryError`로 올리며, UI는 이 경우 메모 다이얼로그를 열지 않습니다.
-- `DatabaseManager.delete_link(link)`는 대상 없음(`False`)과 DB 실패(`DatabaseWriteError`)를 구분하고, UI 메시지도 `삭제 대상 없음`과 `삭제 실패`로 나눕니다.
+- `DatabaseManager.delete_link(link)`는 대상 없음/이미 삭제됨(`False`)과 DB 실패(`DatabaseWriteError`)를 구분하고, UI 메시지도 `삭제 대상 없음`과 `삭제 실패`로 나눕니다.
 
 ## 키워드 입력 규칙
 
@@ -538,12 +545,12 @@ pyinstaller --noconfirm --clean news_scraper_pro.spec
 - 대표 키워드(`db_keyword`)는 첫 번째 양(+) 키워드를 사용합니다. 예: `인공지능 AI -광고` → 대표 키워드: `인공지능`
 - 실제 탭 범위/배지/분석/중복 판정/페이지 상태는 `query_key = build_fetch_key(parse_search_query(raw_tab_query))` 기준으로 동작합니다.
 - 기존 DB에서 마이그레이션된 멀티 키워드 탭은 각 탭을 한 번 새로고침한 뒤부터 정확히 분리됩니다.
-- 제목/본문 텍스트 필터에서 공백으로 분리된 여러 단어는 모두 포함되어야 하는 토큰 AND 의미입니다. 예: `AI 삼성`은 순서와 간격이 달라도 두 토큰이 모두 있는 기사를 찾고, `AI` 같은 단일 토큰은 기존 substring 검색처럼 동작합니다.
+- 제목/본문/메모/제외어 텍스트 필터에서 `%`, `_`, `\`는 SQL wildcard가 아니라 literal 문자로 검색됩니다. 공백으로 분리된 여러 일반 단어는 모두 포함되어야 하는 토큰 AND 의미입니다.
 - 이 token-AND 의미는 FTS backfill 완료 전후 동일하게 유지됩니다. 한글 복합어/부분 문자열도 FTS rowid prefilter로 먼저 잘리지 않습니다.
 
 ## 설정 Export/Import
 
-- export 포맷 버전은 `1.3`이며 `export_machine_id`, `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`, `saved_searches`, `tab_refresh_policies`를 포함합니다.
+- export 포맷 버전은 `1.3`이며 `export_machine_id`, `settings`, `tabs`, `keyword_groups`, `search_history`, `pagination_state`, `pagination_totals`, `window_geometry`, `saved_searches`, `tab_refresh_policies`, `automation_rules`, `publisher_aliases`를 포함합니다.
 - API 자격증명(`client_id`, `client_secret`, `client_secret_enc`)은 export/import 대상에서 제외되고, `settings.auto_start_enabled`와 `settings.auto_backup_minutes`는 export/import 대상에 포함됩니다.
 - import 시 `tabs`는 `canonical query` 기준 dedupe, `keyword_groups`는 merge, `search_history`는 `canonical query` 기준 imported-first dedupe 후 최대 10개로 정리합니다.
 - `pagination_state`와 `pagination_totals`는 fetch key별로 병합하며 충돌 시 더 큰 값을 유지합니다.

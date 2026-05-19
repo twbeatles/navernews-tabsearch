@@ -10,7 +10,10 @@ from core.cloud_sync import (
     cloud_sync_path_conflicts_with_runtime,
     create_cloud_snapshot,
     import_cloud_snapshot,
+    preview_cloud_snapshots_for_import,
+    quarantine_invalid_snapshot,
     read_snapshot_manifest,
+    select_cloud_snapshots_for_import,
 )
 from core.constants import get_runtime_paths
 from core.database import DatabaseManager, DatabaseWriteError
@@ -83,6 +86,46 @@ class TestCloudSync(unittest.TestCase):
             bad_zip.write_text("not a zip", encoding="utf-8")
             with self.assertRaises(CloudSyncError):
                 read_snapshot_manifest(str(bad_zip))
+
+    def test_invalid_snapshot_selection_quarantines_repeated_import_failures(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            sync_dir = root / "sync"
+            sync_dir.mkdir()
+            bad_zip = sync_dir / "news_scraper_sync_bad.zip"
+            bad_zip.write_text("not a zip", encoding="utf-8")
+            db = self._db(root / "target.db")
+            try:
+                selection = select_cloud_snapshots_for_import(
+                    db_manager=db,
+                    sync_dir=str(sync_dir),
+                )
+                self.assertEqual(selection["paths"], [])
+                self.assertEqual(len(selection["errors"]), 1)
+                self.assertFalse(bad_zip.exists())
+                invalid_files = list((sync_dir / ".invalid").glob("news_scraper_sync_bad.zip.*.invalid"))
+                self.assertEqual(len(invalid_files), 1)
+
+                second = select_cloud_snapshots_for_import(
+                    db_manager=db,
+                    sync_dir=str(sync_dir),
+                )
+                self.assertEqual(second["paths"], [])
+                self.assertEqual(second["errors"], [])
+            finally:
+                db.close()
+
+    def test_oversized_manifest_snapshot_is_rejected_and_can_be_quarantined(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bad_zip = root / "news_scraper_sync_huge_manifest.zip"
+            with zipfile.ZipFile(bad_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("manifest.json", "{" + '"x":"' + ("a" * (1024 * 1024 + 1)) + '"}')
+            with self.assertRaises(CloudSyncError):
+                read_snapshot_manifest(str(bad_zip))
+            quarantined = quarantine_invalid_snapshot(str(bad_zip), "oversized")
+            self.assertTrue(quarantined)
+            self.assertFalse(bad_zip.exists())
 
     def test_same_machine_and_seen_snapshots_are_skipped(self):
         with tempfile.TemporaryDirectory() as td:
@@ -183,6 +226,103 @@ class TestCloudSync(unittest.TestCase):
                 self.assertEqual(int(shared["is_bookmarked"]), 1)
                 self.assertEqual(shared["notes"], "target note")
                 self.assertEqual(target.get_tags("https://example.com/2"), ["source"])
+            finally:
+                source.close()
+                target.close()
+
+    def test_cloud_delete_tombstone_and_restore_are_latest_wins(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = self._db(root / "source.db")
+            older_active = self._db(root / "older_active.db")
+            target = self._db(root / "target.db")
+            try:
+                item = _item(7, "Delete me")
+                source.upsert_news([item], "AI", query_key="ai|")
+                older_active.upsert_news([item], "AI", query_key="ai|")
+                target.upsert_news([item], "AI", query_key="ai|")
+
+                self.assertTrue(source.delete_link("https://example.com/7"))
+                with source.connection() as conn:
+                    conn.execute(
+                        """
+                        UPDATE news
+                        SET is_deleted=1, delete_updated_at=300, delete_machine_id='machine-a', delete_reason='manual'
+                        WHERE link='https://example.com/7'
+                        """
+                    )
+                    conn.commit()
+                result = target.merge_cloud_snapshot_db(
+                    source.db_file,
+                    snapshot_id="delete-1",
+                    source_machine_id="machine-a",
+                    local_machine_id="machine-b",
+                )
+                self.assertTrue(result["merged"])
+                self.assertEqual(result["deleted"], 1)
+                self.assertEqual(target.fetch_news("AI", query_key="ai|"), [])
+                deleted = target.search_archive(include_deleted=True)
+                self.assertEqual(int(deleted[0]["is_deleted"]), 1)
+
+                stale = target.merge_cloud_snapshot_db(
+                    older_active.db_file,
+                    snapshot_id="stale-active",
+                    source_machine_id="machine-c",
+                    local_machine_id="machine-b",
+                )
+                self.assertTrue(stale["merged"])
+                self.assertEqual(target.fetch_news("AI", query_key="ai|"), [])
+
+                self.assertTrue(source.restore_deleted_link("https://example.com/7"))
+                with source.connection() as conn:
+                    conn.execute(
+                        """
+                        UPDATE news
+                        SET is_deleted=0, delete_updated_at=400, delete_machine_id='machine-a', delete_reason='restore'
+                        WHERE link='https://example.com/7'
+                        """
+                    )
+                    conn.commit()
+                restored = target.merge_cloud_snapshot_db(
+                    source.db_file,
+                    snapshot_id="restore-1",
+                    source_machine_id="machine-a",
+                    local_machine_id="machine-b",
+                )
+                self.assertEqual(restored["restored"], 1)
+                self.assertEqual([row["link"] for row in target.fetch_news("AI", query_key="ai|")], ["https://example.com/7"])
+            finally:
+                source.close()
+                older_active.close()
+                target.close()
+
+    def test_manual_import_preview_reports_merge_counts_before_apply(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            sync_dir = root / "sync"
+            sync_dir.mkdir()
+            source = self._db(root / "source.db")
+            target = self._db(root / "target.db")
+            try:
+                source.upsert_news([_item(8)], "AI", query_key="ai|")
+                source.update_status("https://example.com/8", "is_read", 1)
+                snapshot = create_cloud_snapshot(
+                    sync_dir=str(sync_dir),
+                    config={"app_settings": {}, "tabs": ["AI"]},
+                    db_file=source.db_file,
+                    machine_id="machine-a",
+                    app_version="test",
+                )
+                preview = preview_cloud_snapshots_for_import(
+                    db_manager=target,
+                    sync_dir=str(sync_dir),
+                    local_machine_id="machine-b",
+                )
+                self.assertEqual(preview["paths"], [snapshot.path])
+                self.assertEqual(preview["totals"]["merge_candidates"], 1)
+                self.assertEqual(preview["totals"]["news_added"], 1)
+                self.assertEqual(preview["totals"]["memberships_added"], 1)
+                self.assertEqual(target.count_news("AI", query_key="ai|"), 0)
             finally:
                 source.close()
                 target.close()

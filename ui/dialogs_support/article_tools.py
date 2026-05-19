@@ -314,11 +314,13 @@ class ArchiveSearchDialog(QDialog):
         row = QHBoxLayout()
         self.chk_bookmark = QCheckBox("북마크만")
         self.chk_unread = QCheckBox("미읽음만")
+        self.chk_include_deleted = QCheckBox("삭제 기사 포함")
         self.sort_combo = QComboBox()
         self.sort_combo.addItems(["최신순", "오래된순"])
         self.btn_search = QPushButton("검색")
         row.addWidget(self.chk_bookmark)
         row.addWidget(self.chk_unread)
+        row.addWidget(self.chk_include_deleted)
         row.addWidget(self.sort_combo)
         row.addWidget(self.btn_search)
         layout.addLayout(row)
@@ -353,6 +355,7 @@ class ArchiveSearchDialog(QDialog):
             "tag_filter": self.txt_tag.text().strip(),
             "only_bookmark": self.chk_bookmark.isChecked(),
             "only_unread": self.chk_unread.isChecked(),
+            "include_deleted": self.chk_include_deleted.isChecked(),
             "start_date": self.txt_start.text().strip() or None,
             "end_date": self.txt_end.text().strip() or None,
             "sort_mode": self.sort_combo.currentText(),
@@ -384,8 +387,9 @@ class ArchiveSearchDialog(QDialog):
             publisher = canonical_publisher(row.get("publisher", ""), self.publisher_aliases)
             state = "읽음" if row.get("is_read") else "안읽음"
             bookmark = " ★" if row.get("is_bookmarked") else ""
+            deleted = " [삭제됨]" if int(row.get("is_deleted", 0) or 0) else ""
             item = QListWidgetItem(
-                f"{row.get('pubDate', '')} | {publisher} | {state}{bookmark} | {row.get('title', '')}"
+                f"{row.get('pubDate', '')} | {publisher} | {state}{bookmark}{deleted} | {row.get('title', '')}"
             )
             item.setData(Qt.ItemDataRole.UserRole, dict(row))
             self.result_list.addItem(item)
@@ -495,15 +499,34 @@ class ArchiveSearchDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(self, "아카이브 검색", f"태그 저장에 실패했습니다.\n\n{exc}")
 
+    def restore_deleted(self) -> None:
+        row = self._selected_row()
+        link = self._selected_link()
+        if not row or not link:
+            return
+        if not int(row.get("is_deleted", 0) or 0):
+            return
+        try:
+            restore = getattr(self.db, "restore_deleted_link", None)
+            if not callable(restore) or not restore(link):
+                QMessageBox.warning(self, "아카이브 검색", "복구할 삭제 기사를 찾지 못했습니다.")
+                return
+            self._reload_after_action()
+        except Exception as exc:
+            QMessageBox.warning(self, "아카이브 검색", f"기사 복구에 실패했습니다.\n\n{exc}")
+
     def show_context_menu(self, pos) -> None:
         if self.result_list.itemAt(pos) is None:
             return
+        row = self._selected_row() or {}
+        is_deleted = bool(int(row.get("is_deleted", 0) or 0))
         menu = QMenu(self)
         action_open = menu.addAction("열기")
         action_bookmark = menu.addAction("북마크 토글")
         action_read = menu.addAction("읽음/안읽음")
         action_note = menu.addAction("메모 편집")
         action_tags = menu.addAction("태그 편집")
+        action_restore = menu.addAction("삭제 기사 복구") if is_deleted else None
         selected = menu.exec(self.result_list.mapToGlobal(pos))
         if selected == action_open:
             self.open_selected()
@@ -515,6 +538,8 @@ class ArchiveSearchDialog(QDialog):
             self.edit_note()
         elif selected == action_tags:
             self.edit_tags()
+        elif action_restore is not None and selected == action_restore:
+            self.restore_deleted()
 class AutomationRulesDialog(QDialog):
     def __init__(
         self,

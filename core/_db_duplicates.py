@@ -39,7 +39,9 @@ class _DatabaseDuplicatesMixin:
             SELECT nk.link, COALESCE(n.title_hash, '')
             FROM news_keywords nk
             JOIN news n ON n.link = nk.link
-            WHERE nk.query_key = ? AND n.title_hash IN ({placeholders})
+            WHERE nk.query_key = ?
+              AND n.title_hash IN ({placeholders})
+              AND COALESCE(n.is_deleted, 0) = 0
             """,
             [query_key] + normalized_hashes,
         ).fetchall()
@@ -77,6 +79,7 @@ class _DatabaseDuplicatesMixin:
                 FROM news_keywords nk
                 JOIN news n ON n.link = nk.link
                 WHERE nk.query_key IS NOT NULL AND nk.query_key != ''
+                  AND COALESCE(n.is_deleted, 0) = 0
                 """
             ).fetchall()
 
@@ -123,6 +126,7 @@ class _DatabaseDuplicatesMixin:
             FROM news_keywords nk
             JOIN news n ON n.link = nk.link
             WHERE nk.query_key IS NOT NULL AND nk.query_key != ''
+              AND COALESCE(n.is_deleted, 0) = 0
             {where_sql}
             """,
             list(params or []),

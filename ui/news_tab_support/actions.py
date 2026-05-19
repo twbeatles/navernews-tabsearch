@@ -200,6 +200,8 @@ class _NewsTabActionsMixin:
             return False
 
         new_note = str(note or "")
+        if str(target.get("notes", "") or "") == new_note:
+            return True
         try:
             updated = self.db.save_note(link, new_note)
         except DatabaseWriteError as exc:
@@ -314,7 +316,7 @@ class _NewsTabActionsMixin:
         reply = QMessageBox.question(
             self,
             "삭제",
-            "이 기사를 목록에서 삭제하시겠습니까?\n(DB에서 완전히 삭제됩니다)",
+            "이 기사를 목록에서 삭제하시겠습니까?\n(클라우드 동기화용 삭제 기록을 남기며, 아카이브에서 복구할 수 있습니다)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:

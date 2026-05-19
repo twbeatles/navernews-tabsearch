@@ -7,6 +7,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from typing import Any, cast
+from unittest import mock
 
 from core.automation_rules import EXCLUDE_TAG, evaluate_automation_rules
 from core.cloud_sync import (
@@ -173,6 +174,8 @@ class TestFunctionalRisk20260511(unittest.TestCase):
                 )
                 self.assertGreaterEqual(result["invalid_count"], 1)
                 self.assertEqual(result["merged_count"], 1)
+                self.assertFalse(bad_zip.exists())
+                self.assertTrue((sync_dir / ".invalid").exists())
                 self.assertEqual(
                     {row["link"] for row in target.fetch_news("AI", query_key="ai|")},
                     {"https://example.com/2"},
@@ -264,10 +267,36 @@ class TestFunctionalRisk20260511(unittest.TestCase):
                 self.assertEqual(result["read"], 1)
                 self.assertEqual(result["suppressed"], 1)
                 self.assertEqual(result["suppressed_links"], ["https://example.com/1"])
+                self.assertEqual(result["apply_result"]["read"], 1)
                 updated = db.fetch_news("AI", query_key="ai|")[0]
                 self.assertEqual(int(updated["is_read"]), 1)
                 self.assertIn(EXCLUDE_TAG, db.get_tags("https://example.com/1"))
                 self.assertEqual(dummy.refresh_calls, ["automation_rules"])
+            finally:
+                db.close()
+
+    def test_automation_failure_preserves_evaluated_suppression_for_fetch_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db = _db(root / "news.db")
+            try:
+                db.upsert_news([_item(1, title="AI launch")], "AI", query_key="ai|")
+                rows = db.fetch_news("AI", query_key="ai|")
+                dummy = _DummyAutomationMain(
+                    db,
+                    [{"name": "mute", "keywords": ["AI"], "suppress_notification": True, "mark_read": True}],
+                )
+
+                with mock.patch.object(db, "apply_automation_actions", side_effect=RuntimeError("locked")):
+                    with self.assertRaises(RuntimeError):
+                        dummy.apply_automation_rules_to_items(rows, dry_run=False)
+
+                result = dummy._last_automation_rule_result
+                self.assertTrue(result["apply_failed"])
+                self.assertEqual(result["suppressed_links"], ["https://example.com/1"])
+                updated = db.fetch_news("AI", query_key="ai|")[0]
+                self.assertEqual(int(updated["is_read"]), 0)
+                self.assertEqual(dummy.refresh_calls, [])
             finally:
                 db.close()
 
@@ -341,6 +370,8 @@ class TestFunctionalRisk20260511(unittest.TestCase):
         import_src = inspect.getsource(SettingsDialog.cloud_sync_import_dialog)
         self.assertIn("sync_dir_override", export_src)
         self.assertIn("sync_dir_override", import_src)
+        self.assertNotIn("enabled_override", export_src)
+        self.assertNotIn("enabled_override", import_src)
         self.assertNotIn("parent.cloud_sync_dir =", export_src)
         self.assertNotIn("parent.cloud_sync_dir =", import_src)
 
@@ -350,6 +381,8 @@ class TestFunctionalRisk20260511(unittest.TestCase):
         self.assertIn("itemDoubleClicked", archive_src)
         self.assertIn("toggle_bookmark", archive_src)
         self.assertIn("edit_tags", archive_src)
+        self.assertIn("include_deleted", archive_src)
+        self.assertIn("restore_deleted_link", archive_src)
 
         automation_src = inspect.getsource(AutomationRulesDialog)
         self.assertIn("QFormLayout", automation_src)

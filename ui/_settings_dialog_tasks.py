@@ -502,17 +502,13 @@ class _SettingsDialogTasksMixin:
         if parent is None:
             return
         sync_dir = ""
-        enabled = True
         interval = 30
         if hasattr(self, "txt_cloud_sync_dir"):
             sync_dir = self.txt_cloud_sync_dir.text().strip()
-        if hasattr(self, "chk_cloud_sync_enabled"):
-            enabled = self.chk_cloud_sync_enabled.isChecked()
         if hasattr(self, "cb_cloud_sync_interval"):
             interval = int(self.cb_cloud_sync_interval.currentData() or 30)
         parent.run_cloud_sync_export_now(
             sync_dir_override=sync_dir,
-            enabled_override=enabled,
             interval_override=interval,
         )
 
@@ -521,17 +517,13 @@ class _SettingsDialogTasksMixin:
         if parent is None:
             return
         sync_dir = ""
-        enabled = True
         interval = 30
         if hasattr(self, "txt_cloud_sync_dir"):
             sync_dir = self.txt_cloud_sync_dir.text().strip()
-        if hasattr(self, "chk_cloud_sync_enabled"):
-            enabled = self.chk_cloud_sync_enabled.isChecked()
         if hasattr(self, "cb_cloud_sync_interval"):
             interval = int(self.cb_cloud_sync_interval.currentData() or 30)
         parent.run_cloud_sync_import_now(
             sync_dir_override=sync_dir,
-            enabled_override=enabled,
             interval_override=interval,
         )
 

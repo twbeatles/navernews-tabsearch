@@ -96,7 +96,9 @@ class _NewsUpsertMixin:
                             SELECT n.title_hash, nk.link
                             FROM news n
                             JOIN news_keywords nk ON nk.link = n.link
-                            WHERE nk.query_key = ? AND n.title_hash IN ({hash_placeholders})
+                            WHERE nk.query_key = ?
+                              AND n.title_hash IN ({hash_placeholders})
+                              AND COALESCE(n.is_deleted, 0) = 0
                             """,
                             [scope_query_key] + unique_hashes,
                         ).fetchall()

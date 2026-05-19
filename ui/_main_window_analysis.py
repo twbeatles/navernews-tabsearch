@@ -159,10 +159,13 @@ class _MainWindowAnalysisMixin:
             "bookmarked": 0,
             "suppressed": 0,
             "suppressed_links": [],
+            "mutations": [],
         }
         if not normalized_rules or not items:
             return result
         db = self._require_db()
+        mutations: List[Dict[str, Any]] = []
+        actions_by_link: Dict[str, Any] = {}
         for item in items:
             actions = evaluate_automation_rules(item, normalized_rules, publisher_aliases=aliases)
             if not actions.has_actions:
@@ -182,24 +185,39 @@ class _MainWindowAnalysisMixin:
                 result["suppressed_links"].append(link)
             if dry_run:
                 continue
-            if actions.add_tags:
-                current_tags = db.get_tags(link)
-                next_tags = list(current_tags)
-                seen = {tag.casefold() for tag in next_tags}
-                for tag in actions.add_tags:
-                    if tag.casefold() not in seen:
-                        seen.add(tag.casefold())
-                        next_tags.append(tag)
-                db.set_tags(link, next_tags)
-                item["tags"] = ",".join(next_tags)
-            if actions.mark_read:
-                db.update_status(link, "is_read", 1)
-                item["is_read"] = 1
-            if actions.mark_bookmark:
-                db.update_status(link, "is_bookmarked", 1)
-                item["is_bookmarked"] = 1
+            mutation = {
+                "link": link,
+                "add_tags": list(actions.add_tags),
+                "mark_read": bool(actions.mark_read),
+                "mark_bookmark": bool(actions.mark_bookmark),
+            }
+            mutations.append(mutation)
+            actions_by_link[link] = actions
+        result["mutations"] = mutations
+        if mutations and not dry_run:
+            try:
+                apply_result = db.apply_automation_actions(mutations)
+                result["apply_result"] = apply_result
+            except Exception as exc:
+                result["apply_failed"] = True
+                result["error"] = str(exc)
+                self._last_automation_rule_result = result
+                raise
+            for item in items:
+                link = str(item.get("link", "") or "").strip()
+                actions = actions_by_link.get(link)
+                if actions is None:
+                    continue
+                if actions.add_tags:
+                    current_tags = db.get_tags(link)
+                    item["tags"] = ",".join(current_tags)
+                if actions.mark_read:
+                    item["is_read"] = 1
+                if actions.mark_bookmark:
+                    item["is_bookmarked"] = 1
         if refresh and not dry_run and result["matched"]:
             self._after_bulk_data_change("automation_rules")
+        self._last_automation_rule_result = result
         return result
 
     def _save_automation_rules(self: MainApp, rules: List[Dict[str, Any]]) -> None:

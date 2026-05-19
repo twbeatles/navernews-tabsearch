@@ -108,7 +108,7 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
 - `pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
@@ -116,7 +116,25 @@ navernews-tabsearch/
 - 마지막 PyInstaller 검증(2026-05-11): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - 마지막 패키지 스모크(2026-05-11) => 새 `NEWS_SCRAPER_DATA_DIR`와 `QT_QPA_PLATFORM=offscreen` 기준 성공
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec`는 2026-05-15 P0/P1 기능 리스크 클로저 기준으로 재검토했다. 새 동작은 stdlib/PyQt6/SQLite/runtime 경로만 사용하며, Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 계속 submodule 수집에서 제외한다.
+- `news_scraper_pro.spec`는 2026-05-19 기능 리스크 확장 기준으로 재검토했다. 새 동작은 stdlib/PyQt6/SQLite/runtime 경로만 사용하며, Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 계속 submodule 수집에서 제외한다.
+
+### 2026-05-19 Functional Risk Extension Closure
+
+- `news`에 `is_deleted`, `delete_updated_at`, `delete_machine_id`, `delete_reason`을 추가했다. 기본 조회/count/archive/stat/export/tray scope는 삭제 row를 숨기고, 아카이브 검색의 `include_deleted=True` 경로에서만 복구 대상으로 노출한다.
+- `DatabaseManager.delete_link(link)`는 명시 단건 soft-delete tombstone을 남기며, 오래된 기사 정리/전체 정리는 tombstone 없이 로컬 hard-delete로 유지한다. `restore_deleted_link(link)`가 soft-delete row를 복구한다.
+- `update_status(...)`와 `set_tags(...)`는 동일 값 no-op에서 timestamp를 갱신하지 않고 `False`를 반환한다.
+- Cloud snapshot merge는 읽음/북마크/메모/태그와 함께 삭제/복구 상태를 `delete_updated_at` 최신값으로 병합한다. 오래된 active snapshot이나 API 재수집은 더 최신 tombstone을 자동 복구하지 않는다.
+- 수동 cloud import는 적용 전 dry-run preview로 새 기사, 검색범위, 상태 변경, 삭제/복구 건수를 확인받는다. 주기 동기화는 자동 병합을 유지하되 같은 요약 통계를 상태로 남긴다.
+- Snapshot ZIP/DB는 각각 512MB, manifest/settings JSON은 각각 1MB 상한을 적용한다. 손상/초과 snapshot은 `.invalid/`로 격리한다.
+- `fetch_news`, `count_news`, `search_archive`, `mark_query_as_read`, analytics 경로의 `%`, `_`, `\` 검색은 SQL wildcard가 아니라 literal 문자로 처리한다.
+- 자동화 규칙은 평가 결과를 만든 뒤 `DatabaseManager.apply_automation_actions(...)`에서 단일 transaction으로 적용한다. DB 반영 실패 시 사용자 경고와 fetch 상태를 남기며, 알림 억제는 평가 결과 기준을 유지한다.
+- `.gitignore`는 cloud snapshot ZIP/temp 파일과 새 `.invalid/` quarantine 폴더를 무시한다.
+- 검증:
+  - `python -m pytest tests/test_cloud_sync.py tests/test_functional_risk_20260511.py tests/test_db_queries.py -q` => `56 passed`
+  - `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
+  - `pyright` => `0 errors, 0 warnings, 0 informations`
+  - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
+  - `git diff --check` => pass
 
 ### 2026-05-15 P0/P1 Functional Risk Closure
 
@@ -145,14 +163,14 @@ navernews-tabsearch/
 ### 2026-05-10 Cloud Snapshot Sync Safety
 
 - live SQLite DB를 OneDrive/Google Drive 폴더에서 직접 공유하지 않고, 로컬 DB + `news_scraper_sync_*.zip` 스냅샷 병합 방식으로 동기화한다.
-- `core.cloud_sync`가 snapshot 생성/검증/가져오기/cycle/정리와 cloud/runtime path overlap 감지를 담당한다.
-- `core._db_cloud_sync`와 `DatabaseManager.merge_cloud_snapshot_db(...)`가 단일 transaction 병합, 사전 rollback backup, 같은 PC/이미 가져온 snapshot skip, seen snapshot tracking을 담당한다.
+- `core.cloud_sync`가 snapshot 생성/검증/preview/가져오기/invalid 격리/cycle/정리와 cloud/runtime path overlap 감지를 담당한다.
+- `core._db_cloud_sync`와 `DatabaseManager.merge_cloud_snapshot_db(...)`가 단일 transaction 병합, 사전 rollback backup, 같은 PC/이미 가져온 snapshot skip, seen snapshot tracking, 삭제 tombstone latest-wins 병합을 담당한다.
 - 스키마는 `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, `news_tag_state(link, tags_updated_at)`를 보장해 읽음/북마크/메모/태그 충돌에서 최신 필드 변경만 반영한다.
 - Snapshot ZIP에는 `manifest.json`, secret 제거 `settings.json`, SQLite backup API DB 복사본만 포함한다. API credentials, local cloud folder path, WAL/SHM sidecar는 제외한다.
-- 설정 화면 데이터 관리에는 cloud sync 사용 여부, 폴더 선택, 주기 선택, 즉시 내보내기, 즉시 병합, 최근 상태 표시가 추가됐다. 기본 주기는 30분이다.
+- 설정 화면 데이터 관리에는 cloud sync 사용 여부, 폴더 선택, 주기 선택, 즉시 내보내기, 즉시 병합, 최근 상태 표시가 추가됐다. 주기 체크박스는 timer만 제어하고 수동 내보내기/병합은 폴더/runtime 검증만 통과하면 실행된다. 기본 주기는 30분이다.
 - 자동 동기화는 live runtime data가 cloud-synced folder 안에 있거나 snapshot folder가 `DATA_DIR`와 겹치면 차단된다.
 - `news_scraper_pro.spec`는 표준 라이브러리와 기존 SQLite/PyQt 경로만 사용함을 재확인했다.
-- `.gitignore`는 cloud snapshot ZIP artifacts를 무시한다.
+- `.gitignore`는 cloud snapshot ZIP/temp artifacts와 `.invalid/` quarantine 폴더를 무시한다.
 - 검증:
   - `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`
   - `pyright` => `0 errors, 0 warnings, 0 informations`
@@ -438,24 +456,40 @@ except Exception as e:
 
 ## 📊 데이터베이스 스키마
 
-### articles 테이블
+### news 테이블
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
-| id | INTEGER | Primary Key, Auto-increment |
+| link | TEXT | Primary Key, 원본 기사 링크 |
 | keyword | TEXT | 검색 키워드 |
 | title | TEXT | 기사 제목 |
-| link | TEXT | 원본 링크 |
-| originallink | TEXT | 네이버 뉴스 링크 |
 | description | TEXT | 기사 요약 |
 | pubDate | TEXT | 게시 일시 |
-| pubDate_ts | REAL | 정렬용 타임스탬프 |
 | publisher | TEXT | 언론사 |
-| link_hash | TEXT | 링크 해시 (중복 체크) |
 | is_read | INTEGER | 읽음 상태 (0/1) |
 | is_bookmarked | INTEGER | 북마크 상태 (0/1) |
-| memo | TEXT | 사용자 메모 |
-| created_at | TEXT | 생성 일시 |
+| pubDate_ts | REAL | 정렬용 타임스탬프 |
+| created_at | REAL | 생성 시각 epoch |
+| notes | TEXT | 사용자 메모 |
+| title_hash | TEXT | 제목 기반 중복 판정 해시 |
+| is_duplicate | INTEGER | legacy 호환 컬럼, 실제 중복 진실 원본은 `news_keywords.is_duplicate` |
+| read_updated_at | REAL | 읽음 상태 conflict timestamp |
+| bookmark_updated_at | REAL | 북마크 상태 conflict timestamp |
+| notes_updated_at | REAL | 메모 상태 conflict timestamp |
+| is_deleted | INTEGER | 명시 단건 soft-delete 상태 (0/1) |
+| delete_updated_at | REAL | 삭제/복구 conflict timestamp |
+| delete_machine_id | TEXT | 삭제/복구를 기록한 machine id |
+| delete_reason | TEXT | 삭제 사유 (`user_delete`, `restore`) |
+
+### 보조 테이블
+
+| 테이블 | 설명 |
+|------|------|
+| `news_keywords(link, keyword, query_key, is_duplicate)` | 탭/query scope membership과 query별 중복 상태 |
+| `news_tags(link, tag)` | 기사 자유 태그 |
+| `news_tag_state(link, tags_updated_at)` | 태그 conflict timestamp |
+| `news_fts` / `app_meta` | FTS backfill 상태와 검색 가속용 보조 구조. 사용자 검색 의미의 진실 원본은 LIKE literal/token-AND 경로 |
+| `cloud_sync_seen_snapshots` | 가져온 cloud snapshot id 추적 |
 
 ---
 
@@ -587,6 +621,8 @@ class DatabaseManager:
     def upsert_news(items, keyword, query_key=None) -> Tuple[int, int]  # may raise DatabaseWriteError
     def update_status(link, field, value) -> bool
     def delete_link(link) -> bool
+    def restore_deleted_link(link) -> bool
+    def apply_automation_actions(mutations) -> dict
     def mark_links_as_read(links) -> int
     def mark_query_as_read(keyword, exclude_words=None, only_bookmark=False) -> int
     def get_counts(keyword) -> int

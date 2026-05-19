@@ -53,6 +53,7 @@ news_scraper_pro.lock
 backups/
 news_scraper_sync_*.zip
 .news_scraper_sync_*.zip.tmp
+.invalid/
 *.bak
 *.backup
 *.tmp

@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-15)
+작성일: 2026-03-16 (최근 갱신: 2026-05-19)
 
 ## 분석 범위
 
@@ -17,6 +17,23 @@
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
 
+## 0. 2026-05-19 기능 리스크 전체 확장 구현 / 문서 재검증
+
+이번 재검증에서는 `implementation_functional_risk_review_2026-05-19.md`의 권장 구현 1-5와 추가 후보 중 cloud 삭제 tombstone, 수동 병합 preview를 실제 코드 기준으로 닫았다. 원 구현 계획의 범위는 테스트 검증까지였고, 이후 사용자 요청에 따라 문서/spec/.gitignore 재검증과 publish/build 확인을 별도 진행한다.
+
+- `core._db_schema.py`는 `news.is_deleted`, `delete_updated_at`, `delete_machine_id`, `delete_reason`을 보장하고 삭제 상태 index를 추가한다.
+- `core.db_mutations_support.state_tags.py`는 `delete_link()`를 명시 단건 soft-delete로 바꾸고 `restore_deleted_link()`를 추가했다. `update_status()`/`set_tags()`는 동일 값 no-op이면 timestamp를 갱신하지 않고 `False`를 반환한다.
+- `core.db_mutations_support.maintenance.py`의 오래된 기사 정리/전체 정리는 tombstone을 만들지 않는 로컬 hard-delete로 유지되며, 기본 mark-read scope는 삭제 기사를 제외한다.
+- `core._db_queries.py`, `core._db_analytics.py`, `core._db_duplicates.py`는 기본 조회/count/archive/stat/tag/tray scope에서 `is_deleted=0`만 대상으로 삼는다. 아카이브 검색은 `include_deleted=True`일 때만 삭제 row를 포함한다.
+- `core._db_queries.py`의 LIKE helper는 `%`, `_`, `\`를 literal로 escape하고 fetch/count/archive/mark-read/analytics의 텍스트 조건을 같은 정책으로 맞춘다.
+- `core._db_cloud_sync.py`는 삭제/복구 상태를 `delete_updated_at` 최신값으로 병합한다. 오래된 active snapshot이나 API 재수집은 더 최신 tombstone을 복구하지 못한다.
+- `core.cloud_sync.py`는 snapshot ZIP/DB 512MB, manifest/settings JSON 1MB 상한, `.invalid/` 격리, import preview 집계 helper를 제공한다.
+- `ui.main_window_io_support.cloud.py`는 수동 import 전 dry-run preview 확인을 요구하고, 주기 동기화는 자동 병합하되 같은 요약 통계를 상태로 남긴다. "주기적 클라우드 동기화 사용" 체크박스는 timer만 제어한다.
+- `ui._main_window_analysis.py`와 `DatabaseManager.apply_automation_actions(...)`는 자동화 규칙을 먼저 평가한 뒤 DB 반영을 단일 transaction으로 적용한다. DB 적용 실패 시 fetch 상태/토스트에 실패를 드러내고 알림 억제는 평가 결과 기준으로 유지한다.
+- `ui.dialogs_support.article_tools.ArchiveSearchDialog`는 삭제 기사 포함 조회와 soft-delete 복구 액션을 제공한다.
+- `news_scraper_pro.spec`는 2026-05-19 기준 재검토했다. 이번 변경은 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용하고 snapshot ZIP/`.invalid/`는 런타임 데이터이므로 hidden import/data/exclude 추가가 필요하지 않다.
+- `.gitignore`는 cloud snapshot ZIP/temp 파일과 `.invalid/` quarantine 폴더, build/dist/cache/log/runtime DB/config 산출물을 계속 무시하도록 맞췄다.
+
 ## 0. 2026-05-15 P0/P1 기능 리스크 클로저 / 문서·spec·gitignore 재검증
 
 이번 재검증에서는 2026-05-15 P0/P1 기능 리스크 계획을 실제 코드 기준으로 닫고, 삭제 상태인 `feature_enhancement_analysis_2026-05-10.md`를 publish 범위에 포함한다.
@@ -29,7 +46,7 @@
 - `AutomationRulesDialog`는 목록 + 폼 UI를 기본으로 하고 JSON 편집은 고급 옵션으로 유지한다. `PublisherAliasDialog`는 source/alias 행 기반 편집 UI와 고급 JSON을 함께 제공한다.
 - `news_scraper_pro.spec`는 2026-05-15 기준 다시 검토했다. 이번 변경은 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
 - `.gitignore`는 `git status --ignored --short`와 `git check-ignore -v`로 build/dist/cache/log/runtime 산출물과 `.claude/` scratch가 계속 무시됨을 확인했다. 새 기능 산출물 기준 추가 ignore 규칙은 필요하지 않다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `321 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `git diff --check` 통과다.
+- 문서 기준 현재 검증선은 `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `git diff --check` 통과다.
 
 ## 0. 2026-05-11 기능 리스크 수정 / support-package 리팩토링 / 문서·spec 재검증
 
@@ -57,7 +74,7 @@
 - `core.cloud_sync.py`는 `news_scraper_sync_*.zip` 생성/검증/추출/가져오기/cycle/정리와 cloud/runtime path overlap 감지를 담당한다. ZIP payload는 `manifest.json`, secret 제거 `settings.json`, SQLite backup API로 만든 `news_database.db`만 포함한다.
 - `core._db_cloud_sync.py`는 `DatabaseManager.merge_cloud_snapshot_db(...)`, seen snapshot id 추적, 같은 PC snapshot skip, 사전 rollback backup, 단일 transaction 병합을 제공한다.
 - `core._db_schema.py`는 `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, `news_tag_state(link, tags_updated_at)`를 보장하고, legacy 데이터는 사용자 상태가 실제로 있는 필드만 현재 시각 timestamp로 초기화한다.
-- `core._db_mutations.py`는 읽음/북마크/메모/태그 변경 시 per-field timestamp를 갱신한다. 삭제 전파는 v1에서 의도적으로 제외한다.
+- `core._db_mutations.py`는 읽음/북마크/메모/태그 변경 시 per-field timestamp를 갱신한다. 2026-05-19 이후 명시 단건 삭제/복구는 tombstone timestamp로 클라우드 병합에 포함된다.
 - `ui._settings_dialog_content.py`, `ui._settings_dialog_tasks.py`, `ui._main_window_settings_io.py`, `ui.main_window.py`는 설정 화면의 클라우드 동기화 UI, 수동 내보내기/병합, 30분 기본 주기 timer, 유지보수/fetch 중 skip, 병합 후 열린 탭/북마크/배지 refresh를 연결한다.
 - API 자격증명은 기존 DPAPI 로컬 저장 정책을 유지하고, settings export/import와 cloud snapshot 모두에서 `client_id`, `client_secret`, `client_secret_enc`, `client_secret_storage`를 제외한다.
 - `news_scraper_pro.spec`는 2026-05-10 기준 다시 검토했으며, 이번 변경은 표준 라이브러리와 기존 SQLite/PyQt 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
@@ -582,7 +599,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - ZIP에는 `manifest.json`, sanitized `settings.json`, SQLite backup API로 만든 `news_database.db`가 들어간다.
 - `client_id`, `client_secret`, `client_secret_enc`, `client_secret_storage`, `cloud_sync_dir`는 snapshot settings에서 제거한다.
 - `DATA_DIR` 또는 live DB가 OneDrive/Google Drive 같은 동기화 폴더 안에 있거나 snapshot 폴더가 runtime 경로와 겹치면 자동 동기화는 차단된다.
-- 삭제 전파는 v1에서 하지 않는다. 여러 PC 병합에서 데이터 손실보다 보존을 우선하는 정책이다.
+- 명시 단건 삭제/복구는 `delete_updated_at` tombstone으로 병합한다. 오래된 기사 정리/전체 정리는 tombstone 없이 로컬 hard-delete로 유지한다.
 
 ## 6. 비동기 / 스레드 구조
 

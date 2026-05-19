@@ -808,6 +808,162 @@ class TestDbQueries(unittest.TestCase):
         self.assertTrue(self.mgr.update_status("https://example.com/401", "is_read", 1))
         self.assertEqual(self.mgr.get_total_unread_count(), 1)
 
+    def test_noop_state_and_tag_saves_do_not_update_timestamps(self):
+        link = "https://example.com/noop"
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": "noop state",
+                    "description": "noop",
+                    "link": link,
+                    "pubDate": "2026-01-01T09:00:00",
+                    "publisher": "example.com",
+                }
+            ],
+            "AI",
+        )
+
+        self.assertTrue(self.mgr.update_status(link, "is_read", 1))
+        self.assertTrue(self.mgr.update_status(link, "is_bookmarked", 1))
+        self.assertTrue(self.mgr.save_note(link, "same note"))
+        self.assertTrue(self.mgr.set_tags(link, ["alpha", "beta"]))
+        with self.mgr.connection() as conn:
+            before = conn.execute(
+                """
+                SELECT read_updated_at, bookmark_updated_at, notes_updated_at
+                FROM news
+                WHERE link=?
+                """,
+                (link,),
+            ).fetchone()
+            tag_before = conn.execute(
+                "SELECT tags_updated_at FROM news_tag_state WHERE link=?",
+                (link,),
+            ).fetchone()[0]
+
+        self.assertFalse(self.mgr.update_status(link, "is_read", 1))
+        self.assertFalse(self.mgr.update_status(link, "is_bookmarked", 1))
+        self.assertFalse(self.mgr.save_note(link, "same note"))
+        self.assertFalse(self.mgr.set_tags(link, ["beta", "alpha"]))
+        with self.mgr.connection() as conn:
+            after = conn.execute(
+                """
+                SELECT read_updated_at, bookmark_updated_at, notes_updated_at
+                FROM news
+                WHERE link=?
+                """,
+                (link,),
+            ).fetchone()
+            tag_after = conn.execute(
+                "SELECT tags_updated_at FROM news_tag_state WHERE link=?",
+                (link,),
+            ).fetchone()[0]
+
+        self.assertEqual(before, after)
+        self.assertEqual(tag_before, tag_after)
+
+    def test_explicit_delete_is_soft_hidden_and_restorable_but_cleanup_is_hard_delete(self):
+        same_title = "soft-delete duplicate"
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": same_title,
+                    "description": "first",
+                    "link": "https://example.com/soft-1",
+                    "pubDate": "2026-01-01T09:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": same_title,
+                    "description": "second",
+                    "link": "https://example.com/soft-2",
+                    "pubDate": "2026-01-01T10:00:00",
+                    "publisher": "example.com",
+                },
+            ],
+            "AI",
+        )
+
+        self.assertTrue(self.mgr.delete_link("https://example.com/soft-1"))
+        visible = self.mgr.fetch_news("AI")
+        self.assertEqual([row["link"] for row in visible], ["https://example.com/soft-2"])
+        self.assertEqual(int(visible[0]["is_duplicate"]), 0)
+        self.assertEqual(self.mgr.count_archive(), 1)
+        with_deleted = self.mgr.search_archive(include_deleted=True, limit=10)
+        deleted_rows = [row for row in with_deleted if row["link"] == "https://example.com/soft-1"]
+        self.assertEqual(len(deleted_rows), 1)
+        self.assertEqual(int(deleted_rows[0]["is_deleted"]), 1)
+
+        self.assertTrue(self.mgr.restore_deleted_link("https://example.com/soft-1"))
+        self.assertEqual(self.mgr.count_news("AI"), 2)
+
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": "old cleanup",
+                    "description": "old",
+                    "link": "https://example.com/hard-old",
+                    "pubDate": "2020-01-01T09:00:00",
+                    "publisher": "example.com",
+                }
+            ],
+            "AI",
+        )
+        self.assertEqual(self.mgr.delete_old_news(365), 1)
+        self.assertFalse(
+            any(row["link"] == "https://example.com/hard-old" for row in self.mgr.search_archive(include_deleted=True, limit=20))
+        )
+
+    def test_like_filters_treat_percent_underscore_and_backslash_as_literals(self):
+        q1 = build_fetch_key("AI literals", [])
+        rows = [
+            {
+                "title": r"literal 100%_match \ path",
+                "description": "keep",
+                "link": "https://example.com/literal-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": r"literal 100Xmatch \ path",
+                "description": "wildcard false positive",
+                "link": "https://example.com/literal-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "code_% scope",
+                "description": "literal mark read target",
+                "link": "https://example.com/literal-3",
+                "pubDate": "2026-01-03T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "codeAX scope",
+                "description": "should stay unread",
+                "link": "https://example.com/literal-4",
+                "pubDate": "2026-01-04T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(rows, "AI", query_key=q1)
+        self.assertTrue(self.mgr.save_note("https://example.com/literal-1", r"memo 10_% \ done"))
+        self.assertTrue(self.mgr.save_note("https://example.com/literal-2", "memo 100x done"))
+
+        filtered = self.mgr.fetch_news("AI", query_key=q1, filter_txt=r"100%_match \ path")
+        self.assertEqual([row["link"] for row in filtered], ["https://example.com/literal-1"])
+        excluded = self.mgr.fetch_news("AI", query_key=q1, exclude_words=["100%_match"])
+        self.assertNotIn("https://example.com/literal-1", {row["link"] for row in excluded})
+        self.assertIn("https://example.com/literal-2", {row["link"] for row in excluded})
+        notes = self.mgr.search_archive(notes_txt=r"10_% \ done")
+        self.assertEqual([row["link"] for row in notes], ["https://example.com/literal-1"])
+
+        updated = self.mgr.mark_query_as_read("AI", query_key=q1, filter_txt="code_%")
+        self.assertEqual(updated, 1)
+        states = {row["link"]: int(row["is_read"]) for row in self.mgr.fetch_news("AI", query_key=q1)}
+        self.assertEqual(states["https://example.com/literal-3"], 1)
+        self.assertEqual(states["https://example.com/literal-4"], 0)
+
 
 class TestDbSchemaMigration(unittest.TestCase):
     def test_init_db_migrates_legacy_news_keywords_to_query_key_schema(self):

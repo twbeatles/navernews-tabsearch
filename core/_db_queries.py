@@ -19,6 +19,15 @@ RE_FTS_ACCEL_TOKEN = re.compile(r"[0-9A-Za-z\u3131-\u318E\uAC00-\uD7A3]{2,}")
 
 
 class _DatabaseQueriesMixin:
+    def _active_news_clause(self: DatabaseManager, alias: str = "n") -> str:
+        return f"COALESCE({alias}.is_deleted, 0) = 0"
+
+    def _escape_like(self: DatabaseManager, value: str) -> str:
+        return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def _like_contains(self: DatabaseManager, value: str) -> str:
+        return f"%{self._escape_like(value)}%"
+
     def _filter_tokens(self: DatabaseManager, filter_txt: str) -> List[str]:
         raw = str(filter_txt or "").strip()
         if not raw:
@@ -41,17 +50,17 @@ class _DatabaseQueriesMixin:
         raw = str(filter_txt or "").strip()
         if not raw:
             return ""
-        tokens = self._filter_tokens(raw)
+        tokens = [] if any(char in raw for char in ("%","_","\\")) else self._filter_tokens(raw)
         if len(tokens) >= 2:
             clauses: List[str] = []
             for token in tokens:
-                clauses.append("(n.title LIKE ? OR n.description LIKE ?)")
-                wildcard = f"%{token}%"
+                clauses.append("(n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')")
+                wildcard = self._like_contains(token)
                 params.extend([wildcard, wildcard])
             return " AND " + " AND ".join(clauses)
-        wildcard = f"%{raw}%"
+        wildcard = self._like_contains(raw)
         params.extend([wildcard, wildcard])
-        return " AND (n.title LIKE ? OR n.description LIKE ?)"
+        return " AND (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
 
     def _append_news_scope_clause(
         self: DatabaseManager,
@@ -89,8 +98,8 @@ class _DatabaseQueriesMixin:
         match_clauses: List[str] = []
         for value in values:
             if "." in value:
-                match_clauses.append(f"({publisher_expr} = ? OR {publisher_expr} LIKE ?)")
-                params.extend([value, f"%.{value}"])
+                match_clauses.append(f"({publisher_expr} = ? OR {publisher_expr} LIKE ? ESCAPE '\\')")
+                params.extend([value, f"%.{self._escape_like(value)}"])
             else:
                 match_clauses.append(f"{publisher_expr} = ?")
                 params.append(value)
@@ -195,6 +204,7 @@ class _DatabaseQueriesMixin:
                             END AS is_duplicate
                         FROM news n
                         WHERE n.is_bookmarked = 1
+                          AND COALESCE(n.is_deleted, 0) = 0
                         """
                     )
                 else:
@@ -223,6 +233,7 @@ class _DatabaseQueriesMixin:
                         WHERE
                         """
                         + self._append_news_scope_clause(params, keyword, query_key)
+                        + " AND COALESCE(n.is_deleted, 0) = 0"
                     )
 
                 if fts_match:
@@ -259,8 +270,8 @@ class _DatabaseQueriesMixin:
                     for exclude_word in exclude_words:
                         if not exclude_word:
                             continue
-                        query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
-                        wildcard = f"%{exclude_word}%"
+                        query += " AND NOT (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+                        wildcard = self._like_contains(exclude_word)
                         params.extend([wildcard, wildcard])
 
                 if start_date:
@@ -304,8 +315,9 @@ class _DatabaseQueriesMixin:
 
         return news_items
 
-    def _archive_base_select(self: DatabaseManager) -> str:
-        return """
+    def _archive_base_select(self: DatabaseManager, *, include_deleted: bool = False) -> str:
+        deleted_filter = "1 = 1" if include_deleted else "COALESCE(n.is_deleted, 0) = 0"
+        return f"""
             SELECT
                 n.link,
                 n.title,
@@ -317,6 +329,10 @@ class _DatabaseQueriesMixin:
                 n.pubDate_ts,
                 n.created_at,
                 n.notes,
+                COALESCE(n.is_deleted, 0) AS is_deleted,
+                COALESCE(n.delete_updated_at, 0) AS delete_updated_at,
+                COALESCE(n.delete_machine_id, '') AS delete_machine_id,
+                COALESCE(n.delete_reason, '') AS delete_reason,
                 COALESCE((
                     SELECT GROUP_CONCAT(nt.tag, ',')
                     FROM news_tags nt
@@ -331,7 +347,7 @@ class _DatabaseQueriesMixin:
                     ELSE 0
                 END AS is_duplicate
             FROM news n
-            WHERE 1 = 1
+            WHERE {deleted_filter}
         """
 
     def _append_archive_filters(
@@ -357,8 +373,8 @@ class _DatabaseQueriesMixin:
 
         raw_notes = str(notes_txt or "").strip()
         if raw_notes:
-            query += " AND COALESCE(n.notes, '') LIKE ?"
-            params.append(f"%{raw_notes}%")
+            query += " AND COALESCE(n.notes, '') LIKE ? ESCAPE '\\'"
+            params.append(self._like_contains(raw_notes))
 
         expanded_publishers = expand_publisher_filters(
             [publisher_filter] if str(publisher_filter or "").strip() else [],
@@ -414,6 +430,7 @@ class _DatabaseQueriesMixin:
         sort_mode: str = "최신순",
         limit: int = 50,
         offset: int = 0,
+        include_deleted: bool = False,
         conn: Optional[sqlite3.Connection] = None,
     ) -> List[Dict[str, Any]]:
         owns_connection = conn is None
@@ -424,7 +441,7 @@ class _DatabaseQueriesMixin:
                 active_conn = self.get_connection()
             params: List[Any] = []
             query = self._append_archive_filters(
-                self._archive_base_select(),
+                self._archive_base_select(include_deleted=include_deleted),
                 params,
                 filter_txt=filter_txt,
                 notes_txt=notes_txt,
@@ -466,6 +483,7 @@ class _DatabaseQueriesMixin:
         only_unread: bool = False,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        include_deleted: bool = False,
         conn: Optional[sqlite3.Connection] = None,
     ) -> int:
         owns_connection = conn is None
@@ -474,8 +492,9 @@ class _DatabaseQueriesMixin:
             if active_conn is None:
                 active_conn = self.get_connection()
             params: List[Any] = []
+            deleted_filter = "1 = 1" if include_deleted else "COALESCE(n.is_deleted, 0) = 0"
             query = self._append_archive_filters(
-                "SELECT COUNT(*) FROM news n WHERE 1 = 1",
+                f"SELECT COUNT(*) FROM news n WHERE {deleted_filter}",
                 params,
                 filter_txt=filter_txt,
                 notes_txt=notes_txt,
@@ -526,13 +545,14 @@ class _DatabaseQueriesMixin:
                 params: List[Any] = []
                 fts_match = self._fts_match_expression(filter_txt)
                 if only_bookmark:
-                    query = "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1"
+                    query = "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1 AND COALESCE(n.is_deleted, 0) = 0"
                 else:
                     query = (
                         "SELECT COUNT(*) FROM news n "
                         "JOIN news_keywords nk ON nk.link = n.link "
                         "WHERE "
                         + self._append_news_scope_clause(params, keyword, query_key)
+                        + " AND COALESCE(n.is_deleted, 0) = 0"
                     )
 
                 if fts_match:
@@ -569,8 +589,8 @@ class _DatabaseQueriesMixin:
                     for exclude_word in exclude_words:
                         if not exclude_word:
                             continue
-                        query += " AND NOT (n.title LIKE ? OR n.description LIKE ?)"
-                        wildcard = f"%{exclude_word}%"
+                        query += " AND NOT (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+                        wildcard = self._like_contains(exclude_word)
                         params.extend([wildcard, wildcard])
 
                 if start_date:
@@ -610,12 +630,22 @@ class _DatabaseQueriesMixin:
             with perf_timer("db.get_counts", f"kw={keyword}|query_key={query_key or ''}"):
                 if query_key:
                     row = conn.execute(
-                        "SELECT COUNT(*) FROM news_keywords WHERE query_key = ?",
+                        """
+                        SELECT COUNT(*)
+                        FROM news_keywords nk
+                        JOIN news n ON n.link = nk.link
+                        WHERE nk.query_key = ? AND COALESCE(n.is_deleted, 0) = 0
+                        """,
                         (query_key,),
                     ).fetchone()
                 else:
                     row = conn.execute(
-                        "SELECT COUNT(*) FROM news_keywords WHERE keyword = ?",
+                        """
+                        SELECT COUNT(*)
+                        FROM news_keywords nk
+                        JOIN news n ON n.link = nk.link
+                        WHERE nk.keyword = ? AND COALESCE(n.is_deleted, 0) = 0
+                        """,
                         (keyword,),
                     ).fetchone()
                 return int(row[0]) if row else 0
@@ -643,7 +673,7 @@ class _DatabaseQueriesMixin:
                     "JOIN news_keywords nk ON nk.link = n.link "
                     "WHERE "
                     + self._append_news_scope_clause(params, keyword, query_key)
-                    + " AND n.is_read = 0"
+                    + " AND n.is_read = 0 AND COALESCE(n.is_deleted, 0) = 0"
                 )
                 row = conn.execute(query, params).fetchone()
                 return int(row[0]) if row else 0
@@ -667,7 +697,7 @@ class _DatabaseQueriesMixin:
                 active_conn = self.get_connection()
             with perf_timer("db.get_total_unread_count", "scope=all"):
                 params: List[Any] = []
-                query = "SELECT COUNT(*) FROM news n WHERE n.is_read = 0"
+                query = "SELECT COUNT(*) FROM news n WHERE n.is_read = 0 AND COALESCE(n.is_deleted, 0) = 0"
                 query += self._append_visibility_filter_clause(
                     params,
                     blocked_publishers=blocked_publishers,
@@ -702,7 +732,9 @@ class _DatabaseQueriesMixin:
                     SELECT nk.{column_name}, COUNT(*) AS unread_count
                     FROM news_keywords nk
                     JOIN news n ON n.link = nk.link
-                    WHERE nk.{column_name} IN ({placeholders}) AND n.is_read = 0
+                    WHERE nk.{column_name} IN ({placeholders})
+                      AND n.is_read = 0
+                      AND COALESCE(n.is_deleted, 0) = 0
                     GROUP BY nk.{column_name}
                 """
                 rows = conn.execute(query, cleaned).fetchall()
