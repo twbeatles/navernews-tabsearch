@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-19)
+작성일: 2026-03-16 (최근 갱신: 2026-05-22)
 
 ## 분석 범위
 
@@ -17,9 +17,20 @@
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
 
+## 0. 2026-05-22 전체 대형 모듈 구조 분할 리팩토링
+
+이번 패스는 동작 변경 없이 남아 있던 대형 모듈을 기능별 support package로 더 쪼개고, 기존 공개 import 경로와 테스트가 참조하는 private facade 경로를 유지하는 데 초점을 맞췄다.
+
+- `core._db_queries.py`, `core._db_schema.py`, `core._db_cloud_sync.py`는 compatibility facade로 유지하고, 실제 query/schema/cloud-merge 책임은 각각 `core/db_queries_support/`, `core/db_schema_support/`, `core/db_cloud_sync_support/`로 내려갔다.
+- `core.config_store_support.impl`, `core.cloud_sync`, `core.backup_support.auto_backup`, `core.db_mutations_support.state_tags`, `core.db_mutations_support.maintenance`는 기존 심볼을 재수출하면서 types/secrets/normalization/I/O, snapshot/import/path policy, backup metadata/create/list/restore-delete, state/tag/automation, read/delete/optimize 책임으로 분리됐다.
+- `ui.dialogs_support.article_tools`와 `ui.dialogs_support.backups`는 facade가 되었고, 태그/아카이브/자동화/출처 alias/백업 다이얼로그 구현은 독립 모듈 또는 `backup_dialog/` 하위 mixin으로 분리됐다.
+- `ui.news_tab_support`, `ui.main_window_support`, `ui.main_window_fetch_support`, `ui.main_window_io_support`는 기존 facade mixin을 유지하면서 actions/loading/ui-controls, base/ui-shell, worker-flow, import-stage 세부 support 패키지를 추가했다.
+- 새 의존성은 없고, PyInstaller 관점에서는 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용한다.
+- 검증선은 `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`, `pyright .` => `0 errors, 0 warnings, 0 informations`, 심볼 인벤토리 호환성 + 기존 facade import smoke 통과, `git diff --check` 통과, `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` 성공, 새 `NEWS_SCRAPER_DATA_DIR` + `QT_QPA_PLATFORM=offscreen` 패키지 스모크 성공이다.
+
 ## 0. 2026-05-19 기능 리스크 전체 확장 구현 / 문서 재검증
 
-이번 재검증에서는 `implementation_functional_risk_review_2026-05-19.md`의 권장 구현 1-5와 추가 후보 중 cloud 삭제 tombstone, 수동 병합 preview를 실제 코드 기준으로 닫았다. 원 구현 계획의 범위는 테스트 검증까지였고, 이후 사용자 요청에 따라 문서/spec/.gitignore 재검증과 publish/build 확인을 별도 진행한다.
+이번 재검증에서는 당시 작성된 `implementation_functional_risk_review_2026-05-19.md`의 권장 구현 1-5와 추가 후보 중 cloud 삭제 tombstone, 수동 병합 preview를 실제 코드 기준으로 닫았다. 2026-05-22 대형 모듈 분할과 문서 재검증 이후 해당 일회성 구현 메모는 삭제 상태로 유지하며, 현재 기준 문서화는 `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`가 담당한다.
 
 - `core._db_schema.py`는 `news.is_deleted`, `delete_updated_at`, `delete_machine_id`, `delete_reason`을 보장하고 삭제 상태 index를 추가한다.
 - `core.db_mutations_support.state_tags.py`는 `delete_link()`를 명시 단건 soft-delete로 바꾸고 `restore_deleted_link()`를 추가했다. `update_status()`/`set_tags()`는 동일 값 no-op이면 timestamp를 갱신하지 않고 `False`를 반환한다.
@@ -412,19 +423,19 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 | `core/constants.py` | 앱 경로, 파일명, 버전 상수 |
 | `core/config_store.py` | 기존 import 경로를 유지하는 설정 facade |
 | `core/config_store_impl.py` | 기존 설정 구현 import 경로를 유지하는 facade |
-| `core/config_store_support/` | 설정 TypedDict, 기본값, 로드 정규화, 원자 저장/.backup 회전, import 보정, DPAPI |
+| `core/config_store_support/` | 설정 TypedDict, 기본값, secret storage, 로드/import 정규화, 원자 저장/.backup 회전 |
 | `core/content_filters.py` | 차단/선호 출처 충돌 정규화와 자유 태그 정규화 |
-| `core/cloud_sync.py` | 클라우드 스냅샷 ZIP 생성/검증/가져오기/cycle/정리 |
+| `core/cloud_sync.py` / `core/cloud_sync_support/` | 클라우드 스냅샷 ZIP 생성/검증/가져오기/cycle/정리와 cloud path policy |
 | `core/automation_rules.py` | 자동화 규칙 정규화와 태그/북마크/읽음 action 평가 |
 | `core/publisher_aliases.py` | 출처 alias 정규화, 대표명 표시, alias 필터 확장 |
 | `core/database.py` | `DatabaseManager` facade, 연결 풀 수명 주기 |
-| `core/_db_schema.py` | DB 초기화, 마이그레이션, 무결성 검사, 복구 |
+| `core/_db_schema.py` / `core/db_schema_support/` | DB 초기화, 마이그레이션, 무결성 검사, 복구, backfill |
 | `core/_db_duplicates.py` | 제목 해시, 중복 플래그 계산/복구 |
-| `core/_db_queries.py` | 조회, count, unread 집계 |
+| `core/_db_queries.py` / `core/db_queries_support/` | filter helper, fetch/count, archive, unread 집계 |
 | `core/_db_mutations.py` | DB mutation mixin import 경로를 유지하는 facade |
-| `core/db_mutations_support/` | upsert, 상태/태그 변경, 삭제, mark-read, maintenance |
+| `core/db_mutations_support/` | upsert, state/tag/automation, read/delete/optimize maintenance |
 | `core/_db_analytics.py` | 통계, 언론사별 집계 |
-| `core/_db_cloud_sync.py` | 스냅샷 DB 병합, per-field timestamp 충돌 해결, seen snapshot 추적 |
+| `core/_db_cloud_sync.py` / `core/db_cloud_sync_support/` | 스냅샷 DB 병합, rollback, preview, per-field timestamp 충돌 해결 |
 | `core/http_client.py` | 중앙 HTTP 설정, session factory |
 | `core/workers.py` | worker API import 경로를 유지하는 facade |
 | `core/workers_support/` | lifecycle, HTTP retry/URL policy, `ApiWorker`, `DBWorker`, background job workers, `DBQueryScope` |
@@ -441,9 +452,9 @@ Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
 
 ### 구조적으로 중요한 관찰
 
-- `core.database.py`는 연결 풀 facade로 유지되고, DB schema/query/cloud-sync/mutation 책임은 `core/_db_*`와 `core/db_mutations_support/`로 분리됐다.
+- `core.database.py`는 연결 풀 facade로 유지되고, DB schema/query/cloud-sync/mutation 책임은 `core/_db_*` facade와 `core/*_support/` 하위 패키지로 분리됐다.
 - `core.config_store.py`와 `core.config_store_impl.py`는 호환성 facade이고, 실제 설정 보안/정규화/파일 I/O는 `core/config_store_support/`에 있다.
-- `core.cloud_sync.py`는 live DB를 클라우드 폴더에서 직접 열지 않도록 스냅샷 ZIP만 다루며, `core._db_cloud_sync.py`는 DB 병합 책임만 분리해 가진다.
+- `core.cloud_sync.py`는 live DB를 클라우드 폴더에서 직접 열지 않도록 스냅샷 ZIP facade로 남고, `core.cloud_sync_support/`와 `core.db_cloud_sync_support/`가 snapshot I/O와 DB 병합 책임을 나눠 가진다.
 - 출처/태그처럼 UI, 설정, DB export가 함께 쓰는 normalization은 `core.content_filters.py`에 모아져 있다. 차단/선호 출처는 cross-list 충돌까지 이 helper에서 정리한다.
 - `core.query_parser.py`는 작지만 의미상 매우 중요하다. 탭 의미, API 질의, 페이지네이션 키가 여기 정책에 묶여 있다.
 - `core.backup.py`는 파일 복사 유틸이 아니라, **복원 무결성 보장 모듈**에 가깝다.
@@ -458,9 +469,9 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 | 모듈 | 실제 책임 |
 |---|---|
 | `ui/main_window.py` | `MainApp` facade / compatibility root |
-| `ui/main_window_support/base.py` | `MainApp`의 핵심 상태, 유지보수 경계, 워커/탭 orchestration |
+| `ui/main_window_support/base.py` / `base_support/` | `MainApp` accessors, FTS backfill, hydration, maintenance orchestration |
 | `ui/main_window_support/config.py` | 설정 로드/저장/적용, runtime path 연동, startup sync |
-| `ui/main_window_support/ui_shell.py` | 메인 윈도우 UI 조립, 액션/단축키/상태바/트레이 shell |
+| `ui/main_window_support/ui_shell.py` / `ui_shell_support/` | 메인 윈도우 theme/setup/badge/action/notification shell |
 | `ui/_main_window_tabs.py` | 탭 추가/닫기/리네임/컨텍스트 메뉴/그룹 연결 |
 | `ui/_main_window_fetch.py` | fetch orchestration import 경로를 유지하는 facade |
 | `ui/main_window_fetch_support/` | refresh policy, sequential refresh, fetch worker lifecycle |
@@ -470,17 +481,17 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 | `ui/_main_window_analysis.py` | 통계/언론사 분석 UI |
 | `ui/news_tab.py` | `NewsTab` facade / compatibility root |
 | `ui/news_tab_support/state.py` | 탭 상태, scope signature, 캐시/selection 관리 |
-| `ui/news_tab_support/loading.py` | DB 로드, hydration, mark-all-read, maintenance 연동 |
+| `ui/news_tab_support/loading.py` / `loading_support/` | DB 로드, hydration, cleanup, maintenance 연동 |
 | `ui/news_tab_support/rendering.py` | HTML fragment cache, coalesced flush, 카드 렌더링 |
-| `ui/news_tab_support/ui_controls.py` | 필터/정렬/날짜/페이지네이션 UI control wiring |
-| `ui/news_tab_support/actions.py` | 카드 액션, 링크 핸들링, 북마크/메모/읽음 상태 동기화 |
+| `ui/news_tab_support/ui_controls.py` / `ui_controls_support/` | layout, saved-search, date, filter control wiring |
+| `ui/news_tab_support/actions.py` / `actions_support/` | 카드 액션, 링크 핸들링, mark-read, 상태 동기화 |
 | `ui/dialog_adapters.py` | export/import/backup 경로의 QFileDialog/QMessageBox adapter |
 | `ui/settings_dialog.py` | `SettingsDialog` facade, orchestration, public contract |
 | `ui/_settings_dialog_content.py` | 설정/도움말/단축키 탭 조립 |
 | `ui/_settings_dialog_docs.py` | 도움말 / 단축키 HTML |
 | `ui/_settings_dialog_tasks.py` | API 검증, 데이터 정리, worker lifecycle |
 | `ui/dialogs.py` | 보조 다이얼로그 import 경로를 유지하는 facade |
-| `ui/dialogs_support/` | 태그/아카이브/자동화/출처 alias, 메모/로그, 키워드 그룹, 백업 다이얼로그 |
+| `ui/dialogs_support/` | 태그/아카이브/자동화/출처 alias, 메모/로그, 키워드 그룹, `backup_dialog/` |
 | `ui/widgets.py` | `NewsBrowser`, `NoScrollComboBox` |
 | `ui/styles.py` | 스타일 API import 경로를 유지하는 facade |
 | `ui/styles_support/` | 색상/상수/toast enum, 전체 QSS, HTML 템플릿 |
@@ -490,7 +501,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 ### 구조적으로 중요한 관찰
 
 - `ui.main_window.py`는 facade이고, 실제 책임은 `ui/main_window_support/`, `ui/main_window_fetch_support/`, `ui/main_window_io_support/`로 내려가 있다. 새 메인 윈도우 기능은 facade보다 support module부터 검토하는 편이 맞다.
-- `ui.news_tab.py`는 111줄 수준의 facade이고, 실질적인 탭 동작은 `ui/news_tab_support/` 아래 `state/loading/rendering/ui_controls/actions` 모듈이 나눠 맡는다.
+- `ui.news_tab.py`는 facade이고, 실질적인 탭 동작은 `ui/news_tab_support/` 아래 state/rendering facade와 loading/actions/ui_controls support 패키지가 나눠 맡는다.
 - export/import/backup 경로는 `ui.dialog_adapters.py`를 통해 Qt static dialog 의존성을 분리해 테스트에서는 fake adapter를 주입한다.
 - `ui.settings_dialog.py`는 117줄 수준의 facade로 축소됐다. 설정 항목 확장은 `ui/_settings_dialog_content.py` 쪽이 주 수정 지점이다.
 - `ui/widgets.NewsBrowser`는 `app://...` 내부 URL 스키마를 이용한 액션 전달 구조를 갖고 있어, 카드 액션 확장이 상대적으로 쉽다.
@@ -647,19 +658,17 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 ## 8. 기능 추가 전에 반드시 알아야 할 병목
 
-라인 수 기준으로 큰 파일은 아래와 같다.
+2026-05-22 구조 분할 후에도 라인 수 기준으로 큰 파일은 아래와 같다.
 
 | 파일 | 대략 라인 수 | 해석 |
 |---|---:|---|
-| `core/config_store_support/impl.py` | 833 | 설정 스키마, 보안, 정규화, import/export 보정이 집중됨 |
-| `core/_db_queries.py` | 728 | 탭/아카이브/통계 조회 SQL과 visibility 조건의 중심 |
-| `ui/main_window_io_support/import_stage.py` | 715 | 설정 import stage/reconcile/rollback 책임이 집중됨 |
+| `ui/_main_window_analysis.py` | 663 | 통계/아카이브/자동화/출처 alias 관리 orchestration |
 | `ui/styles_support/app_style.py` | 624 | 전체 QSS/HTML 템플릿의 중심 |
-| `ui/dialogs_support/backups.py` | 611 | 백업 목록/검증/복원 예약 UI 책임이 집중됨 |
-| `ui/news_tab_support/actions.py` | 586 | 카드 액션, 링크 보안, 태그/출처 액션이 집중됨 |
-| `ui/_main_window_analysis.py` | 578 | 통계/아카이브/자동화/출처 alias 관리 orchestration |
-| `core/backup_support/auto_backup.py` | 549 | 백업 생성/보존/검증 정책의 중심 |
-| `core/_db_schema.py` | 537 | schema migration/backfill/인덱스 보장 |
+| `core/config_store_support/normalization.py` | 550 | 설정 load/import 정규화 정책의 중심 |
+| `ui/_settings_dialog_tasks.py` | 490 | 설정창 비동기 작업과 데이터 정리 UI |
+| `ui/_main_window_tabs.py` | 450 | 탭 추가/닫기/리네임/그룹 orchestration |
+| `core/workers_support/api_worker.py` | 422 | API fetch, HTTP policy 적용, DB 저장 성공 기준 |
+| `ui/main_window_io_support/import_stage_support/runtime_state.py` | 422 | 설정 import runtime snapshot/apply/rollback 중심 |
 
 ### 실무적으로 중요한 결론
 
@@ -679,7 +688,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 수정 지점이 거의 항상 같이 움직인다.
 
-1. `core/config_store_support/impl.py` (호환 import는 `core.config_store_impl`)
+1. `core/config_store_support/types.py` / `normalization.py` / `io.py` (호환 import는 `core.config_store_impl`)
 2. `ui/settings_dialog.py`
 3. `ui/main_window_support/config.py`
 4. `README.md`, `claude.md`, `gemini.md`
@@ -698,10 +707,10 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 추천 진입점:
 
-- `ui/news_tab_support/ui_controls.py`
-- `ui/news_tab_support/loading.py`
+- `ui/news_tab_support/ui_controls.py` 또는 `ui/news_tab_support/ui_controls_support/`
+- `ui/news_tab_support/loading.py` 또는 `ui/news_tab_support/loading_support/`
 - `ui/news_tab_support/state.py`
-- `core/_db_queries.py`
+- `core/_db_queries.py` 또는 `core/db_queries_support/`
 - `core/db_mutations_support/` (호환 import는 `core._db_mutations`)
 - 필요 시 `core/query_parser.py`
 
@@ -722,7 +731,7 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 
 추천 진입점:
 
-- `ui/news_tab_support/actions.py`
+- `ui/news_tab_support/actions.py` 또는 `ui/news_tab_support/actions_support/`
 - `ui/news_tab_support/rendering.py`
 - `ui/widgets.py`
 - `core/db_mutations_support/` 또는 새 서비스 모듈
@@ -894,6 +903,20 @@ PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
 - `ui/_main_window_settings_io.py` -> `ui/main_window_io_support/{exports,cloud,data_io,import_stage,settings_dialogs}.py`
 - `ui/dialogs.py` -> `ui/dialogs_support/{article_tools,basic,keyword_groups,backups}.py`
 - `ui/styles.py` -> `ui/styles_support/{tokens,app_style}.py`
+
+### 완료 6. 전체 대형 모듈 세부 support 분리
+
+2026-05-22 구조 리팩토링에서 남아 있던 대형 facade/support 파일을 더 세분화했다.
+
+- `core/_db_queries.py` -> `core/db_queries_support/{filters,fetch,archive,counts}.py`
+- `core/_db_schema.py` -> `core/db_schema_support/{connection,keywords,tables,backfill,init}.py`
+- `core/_db_cloud_sync.py` -> `core/db_cloud_sync_support/{metadata,rollback,merge_rows,preview,apply}.py`
+- `core/config_store_support/impl.py` -> `types.py`, `secrets.py`, `normalization.py`, `io.py`
+- `core/cloud_sync.py` -> `core/cloud_sync_support/{models,snapshot_io,import_flow,path_policy}.py`
+- `core/backup_support/auto_backup.py` -> `core/backup_support/auto_backup_support/`
+- `ui/dialogs_support/article_tools.py` -> 태그/아카이브/자동화/출처 alias 개별 dialog 모듈
+- `ui/dialogs_support/backups.py` -> `ui/dialogs_support/backup_dialog/`
+- `ui/news_tab_support/{actions,loading,ui_controls}.py`, `ui/main_window_support/{base,ui_shell}.py`, `ui/main_window_fetch_support/worker_flow.py`, `ui/main_window_io_support/import_stage.py`는 facade mixin + 세부 support 패키지 구조로 재분리됐다.
 
 ## 12. 변경 시 반드시 같이 확인할 것
 

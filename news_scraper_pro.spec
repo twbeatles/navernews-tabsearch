@@ -139,6 +139,14 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 #   Snapshot ZIPs and `.invalid/` quarantine files are runtime data, not bundled
 #   datas. No new hidden import, data file, or optional dependency exclusion is
 #   required.
+# 2026-05-22 review:
+# - The large-module split only moves existing code into support subpackages
+#   behind compatibility facades: DB query/schema/cloud merge, config store,
+#   cloud snapshot helpers, AutoBackup, DB mutations, dialogs, NewsTab, and
+#   MainApp helper modules.
+# - The split adds no dependency surface and uses no bundled data assets. No
+#   hidden import/data/exclude change is required beyond existing package
+#   discovery and the current urllib3 optional-path exclusion.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

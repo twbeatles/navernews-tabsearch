@@ -47,9 +47,10 @@ navernews-tabsearch/
 │   ├── constants.py             # RuntimePaths facade + 경로/버전 상수 (VERSION = '32.7.3')
 │   ├── config_store.py          # 설정 import 호환 facade
 │   ├── config_store_impl.py     # 설정 구현 호환 facade
-│   ├── config_store_support/    # 설정 스키마/정규화/secret storage/파일 I/O 구현
+│   ├── config_store_support/    # types / secrets / normalization / file I/O
 │   ├── content_filters.py       # 출처/태그 정규화 helper
-│   ├── cloud_sync.py            # 클라우드 스냅샷 생성/검증/병합 cycle helper
+│   ├── cloud_sync.py            # 클라우드 스냅샷 호환 facade
+│   ├── cloud_sync_support/      # snapshot I/O / import flow / cloud path policy
 │   ├── automation_rules.py      # rule-based auto tag/bookmark/read helper
 │   ├── publisher_aliases.py     # publisher alias display/filter helper
 │   ├── database.py              # DatabaseManager facade (연결 풀 수명 주기)
@@ -57,20 +58,23 @@ navernews-tabsearch/
 │   ├── runtime_support/         # runtime path 계산 + 레거시 파일 마이그레이션
 │   │   ├── paths.py
 │   │   └── migration.py
-│   ├── _db_schema.py            # 스키마 초기화 / 무결성 검사 / 복구
+│   ├── _db_schema.py            # DB schema 호환 facade
+│   ├── db_schema_support/       # connection / tables / keyword schema / backfill
 │   ├── _db_duplicates.py        # 제목 해시 / 중복 플래그 재계산
-│   ├── _db_queries.py           # 조회 / 개수 / 미읽음 집계
+│   ├── _db_queries.py           # DB query 호환 facade
+│   ├── db_queries_support/      # filter helpers / fetch / archive / count queries
 │   ├── _db_mutations.py         # DB mutation 호환 facade
-│   ├── db_mutations_support/    # upsert / 상태·태그 변경 / mark-read / maintenance 구현
+│   ├── db_mutations_support/    # upsert / state_tags_support / maintenance_support
 │   ├── _db_analytics.py         # 통계 / 언론사 분석
-│   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 / seen snapshot 추적
+│   ├── _db_cloud_sync.py        # 스냅샷 DB 병합 호환 facade
+│   ├── db_cloud_sync_support/   # metadata / rollback / row merge / preview / apply
 │   ├── protocols.py             # lock/session Protocol 계약
 │   ├── workers.py               # worker API 호환 facade
 │   ├── workers_support/         # lifecycle / HTTP policy / job workers / ApiWorker / DBWorker
 │   ├── worker_registry.py       # WorkerHandle/WorkerRegistry (요청 ID 기반 관리)
 │   ├── query_parser.py          # parse_tab_query/parse_search_query/has_positive_keyword/build_fetch_key
 │   ├── backup.py                # backup/restore API 호환 facade
-│   ├── backup_support/          # 파일 백업 / payload 검증 / pending restore / AutoBackup 구현
+│   ├── backup_support/          # 파일 백업 / payload 검증 / restore / AutoBackup support
 │   ├── backup_guard.py          # 리팩토링 백업 유틸리티
 │   ├── startup.py               # StartupManager/StartupStatus (Windows 자동 시작 상태/레지스트리)
 │   ├── keyword_groups.py        # KeywordGroupManager
@@ -83,22 +87,27 @@ navernews-tabsearch/
 │   ├── main_window.py           # MainApp facade / composition root
 │   ├── main_window_support/     # MainApp 세부 책임 분리
 │   │   ├── base.py
+│   │   ├── base_support/
 │   │   ├── config.py
-│   │   └── ui_shell.py
+│   │   ├── ui_shell.py
+│   │   └── ui_shell_support/
 │   ├── _main_window_tabs.py     # 탭 추가/닫기/리네임/그룹 연결
 │   ├── _main_window_fetch.py    # fetch orchestration 호환 facade
-│   ├── main_window_fetch_support/ # refresh policy / fetch worker lifecycle
+│   ├── main_window_fetch_support/ # refresh policy / fetch worker lifecycle/support
 │   ├── _main_window_settings_io.py # 설정 import/export 호환 facade
-│   ├── main_window_io_support/  # cloud sync / export/import / settings staging
+│   ├── main_window_io_support/  # cloud sync / export/import / settings staging/support
 │   ├── _main_window_tray.py     # 트레이 / 종료 / closeEvent 처리
 │   ├── _main_window_analysis.py # 통계 / 분석 UI
 │   ├── news_tab.py              # NewsTab facade / compatibility root
 │   ├── news_tab_support/        # NewsTab 상태/로딩/렌더링/액션 분리
 │   │   ├── state.py
 │   │   ├── loading.py
+│   │   ├── loading_support/
 │   │   ├── rendering.py
 │   │   ├── ui_controls.py
-│   │   └── actions.py
+│   │   ├── ui_controls_support/
+│   │   ├── actions.py
+│   │   └── actions_support/
 │   ├── dialog_adapters.py       # QFileDialog/QMessageBox adapter
 │   ├── protocols.py             # 메인 윈도우/부모 capability Protocol
 │   ├── settings_dialog.py       # SettingsDialog facade
@@ -106,7 +115,7 @@ navernews-tabsearch/
 │   ├── _settings_dialog_docs.py # 도움말 / 단축키 HTML
 │   ├── _settings_dialog_tasks.py # API 검증 / 데이터 정리 / 워커 정리
 │   ├── dialogs.py               # 보조 다이얼로그 호환 facade
-│   ├── dialogs_support/         # article tools / logs / keyword groups / backups dialogs
+│   ├── dialogs_support/         # article tool dialogs / backup_dialog / logs / keyword groups
 │   ├── styles.py                # 스타일 API 호환 facade
 │   ├── styles_support/          # color tokens / constants / QSS / HTML template
 │   ├── toast.py                 # ToastQueue/ToastMessage
@@ -155,14 +164,28 @@ navernews-tabsearch/
 ## ✅ 현재 검증 기준
 
 - `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
-- `pyright` => `0 errors, 0 warnings, 0 informations`
+- `pyright .` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `git diff --check` => pass
-- Last packaged validation (2026-05-11): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
-- Last packaged smoke (2026-05-11) => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
+- symbol inventory compatibility + existing facade import smoke => pass
+- Last packaged validation (2026-05-22): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- Last packaged smoke (2026-05-22) => process stayed alive for 20s with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec` re-reviewed for the 2026-05-15 P0/P1 functional risk closure; the batch uses existing stdlib/PyQt6/SQLite/runtime paths only, and `urllib3.contrib.emscripten` remains excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path.
+- `news_scraper_pro.spec` re-reviewed for the 2026-05-22 large-module split; the refactor only moves existing stdlib/PyQt6/SQLite/runtime code behind compatibility facades, and `urllib3.contrib.emscripten` remains excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path.
+
+---
+
+## 🚀 2026-05-22 Large Module Split Refactor
+
+- Existing public/private facade import paths are preserved while DB query/schema/cloud merge, config store, cloud snapshot, AutoBackup, DB mutation, dialog, NewsTab, and MainApp helper responsibilities were split into finer support packages.
+- The split adds no new dependency surface and keeps `news_scraper_pro.py`, `core.database.DatabaseManager`, `ui.main_window.MainApp`, `ui.news_tab.NewsTab`, `ui.dialogs`, `core._db_*`, and root compatibility wrappers import-compatible.
+- Validation:
+  - `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
+  - `pyright .` => `0 errors, 0 warnings, 0 informations`
+  - symbol inventory compatibility + existing facade import smoke => pass
+  - `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success
+  - packaged startup smoke => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 
 ---
 

@@ -10,7 +10,9 @@ changing existing imports.
 import os
 from typing import Any, Dict, Mapping, Tuple
 
+from core.config_store_support import io as _io
 from core.config_store_support import impl as _impl
+from core.config_store_support import secrets as _secrets
 from core.config_store_impl import (
     AppConfig,
     AppSettings,
@@ -32,15 +34,33 @@ def _call_with_facade_secret_hooks(func, *args, **kwargs):
     old_is_windows = _impl._is_windows_platform
     old_encrypt = _impl._dpapi_encrypt_text
     old_decrypt = _impl._dpapi_decrypt_text
+    old_secrets_is_windows = _secrets._is_windows_platform
+    old_secrets_encrypt = _secrets._dpapi_encrypt_text
+    old_secrets_decrypt = _secrets._dpapi_decrypt_text
+    old_io_is_windows = _io._is_windows_platform
+    old_io_encode = _io.encode_client_secret_for_storage
+    old_io_resolve = _io.resolve_client_secret_for_runtime
     _impl._is_windows_platform = _is_windows_platform
     _impl._dpapi_encrypt_text = _dpapi_encrypt_text
     _impl._dpapi_decrypt_text = _dpapi_decrypt_text
+    _secrets._is_windows_platform = _is_windows_platform
+    _secrets._dpapi_encrypt_text = _dpapi_encrypt_text
+    _secrets._dpapi_decrypt_text = _dpapi_decrypt_text
+    _io._is_windows_platform = _is_windows_platform
+    _io.encode_client_secret_for_storage = _secrets.encode_client_secret_for_storage
+    _io.resolve_client_secret_for_runtime = _secrets.resolve_client_secret_for_runtime
     try:
         return func(*args, **kwargs)
     finally:
         _impl._is_windows_platform = old_is_windows
         _impl._dpapi_encrypt_text = old_encrypt
         _impl._dpapi_decrypt_text = old_decrypt
+        _secrets._is_windows_platform = old_secrets_is_windows
+        _secrets._dpapi_encrypt_text = old_secrets_encrypt
+        _secrets._dpapi_decrypt_text = old_secrets_decrypt
+        _io._is_windows_platform = old_io_is_windows
+        _io.encode_client_secret_for_storage = old_io_encode
+        _io.resolve_client_secret_for_runtime = old_io_resolve
 
 
 def encode_client_secret_for_storage(client_secret: str) -> Dict[str, str]:

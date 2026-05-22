@@ -1,6 +1,18 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Large Module Split Refactor (2026-05-22)**:
+  - Split remaining large modules into finer support packages while preserving compatibility facades and existing public/private import paths used by tests.
+  - Added DB support packages for query filters/fetch/archive/counts, schema connection/tables/backfill/init, and cloud-merge metadata/rollback/preview/apply responsibilities.
+  - Split config store, cloud snapshot helpers, AutoBackup, state/tag mutations, maintenance mutations, article dialogs, backup dialog, NewsTab actions/loading/UI controls, MainApp base/UI shell, fetch worker flow, and settings import staging into focused modules.
+  - Re-reviewed `news_scraper_pro.spec`; this refactor only moves existing stdlib/PyQt6/SQLite/runtime code and does not require new hidden imports, data files, or dependency exclusions.
+  - Validation:
+    - `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
+    - `pyright .` => `0 errors, 0 warnings, 0 informations`
+    - symbol inventory compatibility + existing facade import smoke => pass
+    - `git diff --check` => pass
+    - `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+    - packaged startup smoke => success with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 - **Functional Risk Extension + Docs/Spec/Gitignore Revalidation (2026-05-19)**:
   - Added explicit article deletion tombstones through `news.is_deleted`, `delete_updated_at`, `delete_machine_id`, and `delete_reason`. Default fetch/count/archive/stat/export/tray scopes hide deleted rows, and archive search can include deleted rows for restore.
   - Changed `DatabaseManager.delete_link(link)` to a cloud-aware single-article soft-delete and added `restore_deleted_link(link)`. Old-news cleanup and all-news cleanup remain local hard-delete maintenance operations and do not create tombstones.
@@ -12,7 +24,7 @@
   - Added `DatabaseManager.apply_automation_actions(...)` so evaluated automation mutations apply in one transaction. Fetch completion now warns when automation DB apply fails while notification suppression still follows the evaluated rule result.
   - Re-reviewed `news_scraper_pro.spec`; this batch uses existing stdlib/PyQt6/SQLite/runtime paths only and needs no hidden import, data file, or optional dependency exclusion change.
   - Re-reviewed `.gitignore`; added `.invalid/` for cloud snapshot quarantine and verified build/dist/cache/log/runtime DB/config/snapshot temp artifacts remain ignored.
-  - Added `implementation_functional_risk_review_2026-05-19.md` as the implementation/verification closure note for this batch.
+  - Added `implementation_functional_risk_review_2026-05-19.md` as the implementation/verification closure note for this batch. As of the 2026-05-22 large-module split and docs reconciliation, that one-off memo is intentionally removed and the durable closure state lives in the main project docs.
   - Validation:
     - `python -m pytest tests/test_cloud_sync.py tests/test_functional_risk_20260511.py tests/test_db_queries.py -q` => `56 passed`
     - `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`

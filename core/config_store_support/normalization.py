@@ -1,0 +1,623 @@
+
+from __future__ import annotations
+
+import copy
+from datetime import datetime
+from typing import Any, Dict, List, Tuple
+
+from core.automation_rules import normalize_automation_rules
+from core.config_store_support.secrets import _normalize_secret_storage
+from core.config_store_support.types import (
+    ALLOWED_AUTO_BACKUP_MINUTES,
+    ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES,
+    DEFAULT_AUTO_BACKUP_MINUTES,
+    DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES,
+    DEFAULT_CONFIG,
+    AppConfig,
+)
+from core.content_filters import normalize_publisher_filter_lists
+from core.publisher_aliases import normalize_publisher_aliases
+from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query
+
+
+def _to_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "f", "no", "n", "off"}:
+            return False
+    return default
+
+
+def _to_int(value: Any, default: int) -> int:
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_auto_backup_minutes(
+    value: Any,
+    default: int = DEFAULT_AUTO_BACKUP_MINUTES,
+) -> int:
+    fallback = int(default) if int(default) in ALLOWED_AUTO_BACKUP_MINUTES else DEFAULT_AUTO_BACKUP_MINUTES
+    parsed = _to_int(value, fallback)
+    if parsed in ALLOWED_AUTO_BACKUP_MINUTES:
+        return parsed
+    return fallback
+
+
+def _normalize_cloud_sync_interval_minutes(
+    value: Any,
+    default: int = DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES,
+) -> int:
+    fallback = (
+        int(default)
+        if int(default) in ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES
+        else DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES
+    )
+    parsed = _to_int(value, fallback)
+    if parsed in ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES:
+        return parsed
+    return fallback
+
+
+def _to_str_list(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, (str, int, float))]
+
+
+def _to_keyword_groups(value: Any) -> Dict[str, List[str]]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, List[str]] = {}
+    for key, raw_keywords in value.items():
+        if not isinstance(key, str):
+            continue
+        group_name = key.strip()
+        if not group_name:
+            continue
+        keywords = []
+        for keyword in _to_str_list(raw_keywords):
+            stripped = keyword.strip()
+            if stripped and stripped not in keywords:
+                keywords.append(stripped)
+        normalized[group_name] = keywords
+    return normalized
+
+
+def _to_pagination_state(value: Any) -> Dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, int] = {}
+    for key, raw_start in value.items():
+        if not isinstance(key, str):
+            continue
+        fetch_key = key.strip()
+        if not fetch_key:
+            continue
+        start_idx = _to_int(raw_start, 0)
+        if start_idx < 1:
+            continue
+        normalized[fetch_key] = max(1, min(1000, start_idx))
+    return normalized
+
+
+def _to_pagination_totals(value: Any) -> Dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, int] = {}
+    for key, raw_total in value.items():
+        if not isinstance(key, str):
+            continue
+        fetch_key = key.strip()
+        if not fetch_key:
+            continue
+        total = _to_int(raw_total, 0)
+        if total < 0:
+            continue
+        normalized[fetch_key] = total
+    return normalized
+
+
+def _canonical_query_key(raw_keyword_or_key: Any) -> str:
+    text = str(raw_keyword_or_key or "").strip()
+    if not text:
+        return ""
+    if "|" in text:
+        return text.lower()
+    search_query, exclude_words = parse_search_query(text)
+    if not search_query:
+        return ""
+    return build_fetch_key(search_query, exclude_words)
+
+
+def _valid_date_string(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return parsed.strftime("%Y-%m-%d")
+
+
+def _normalize_saved_search_dates(start_value: Any, end_value: Any) -> Tuple[str, str]:
+    start_date = _valid_date_string(start_value)
+    end_date = _valid_date_string(end_value)
+    if start_date and end_date and start_date > end_date:
+        return end_date, start_date
+    return start_date, end_date
+
+
+def _to_saved_searches(value: Any) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, Dict[str, Any]] = {}
+    for raw_name, raw_payload in value.items():
+        if not isinstance(raw_name, str) or not isinstance(raw_payload, dict):
+            continue
+        name = raw_name.strip()[:60]
+        if not name:
+            continue
+        payload = dict(raw_payload)
+        keyword = str(payload.get("keyword", "") or "").strip()[:100]
+        if keyword and not has_positive_keyword(keyword):
+            keyword = ""
+        start_date, end_date = _normalize_saved_search_dates(
+            payload.get("start_date", ""),
+            payload.get("end_date", ""),
+        )
+        normalized[name] = {
+            "keyword": keyword,
+            "filter_txt": str(payload.get("filter_txt", "") or "").strip()[:200],
+            "sort_mode": str(payload.get("sort_mode", "최신순") or "최신순"),
+            "only_unread": _to_bool(payload.get("only_unread"), False),
+            "hide_duplicates": _to_bool(payload.get("hide_duplicates"), False),
+            "date_active": _to_bool(payload.get("date_active"), False) and bool(start_date or end_date),
+            "start_date": start_date,
+            "end_date": end_date,
+            "tag_filter": str(payload.get("tag_filter", "") or "").strip()[:30],
+            "only_preferred_publishers": _to_bool(
+                payload.get("only_preferred_publishers"),
+                False,
+            ),
+        }
+        if len(normalized) >= 100:
+            break
+    return normalized
+
+
+def _to_tab_refresh_policies(value: Any) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+
+    allowed = {"inherit", "off", "10", "30", "60", "120", "360"}
+    normalized: Dict[str, str] = {}
+    for raw_keyword, raw_policy in value.items():
+        if not isinstance(raw_keyword, str):
+            continue
+        query_key = _canonical_query_key(raw_keyword)
+        if not query_key:
+            continue
+        policy = str(raw_policy or "inherit").strip().lower()
+        if policy not in allowed:
+            policy = "inherit"
+        normalized[query_key] = policy
+    return normalized
+
+
+def _normalize_alert_keywords(value: Any) -> Tuple[List[str], bool]:
+    changed = False
+    raw_keywords: List[str] = []
+
+    if isinstance(value, str):
+        changed = True
+        raw_keywords = [part.strip() for part in value.split(",")]
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, str):
+                raw_keywords.append(item.strip())
+            elif isinstance(item, (int, float)):
+                raw_keywords.append(str(item).strip())
+                changed = True
+            else:
+                changed = True
+    elif value is None:
+        raw_keywords = []
+    else:
+        changed = True
+        raw_keywords = []
+
+    deduped: List[str] = []
+    for keyword in raw_keywords:
+        if keyword and keyword not in deduped:
+            deduped.append(keyword)
+
+    if len(deduped) > 10:
+        deduped = deduped[:10]
+        changed = True
+
+    if len(deduped) != len(raw_keywords):
+        changed = True
+
+    return deduped, changed
+
+
+def _coerce_bool_for_import(value: Any, fallback: bool) -> Tuple[bool, bool]:
+    if isinstance(value, bool):
+        return value, False
+
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value), True
+
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "t", "yes", "y", "on"}:
+            return True, True
+        if lowered in {"0", "false", "f", "no", "n", "off"}:
+            return False, True
+
+    return fallback, True
+
+
+def _coerce_int_range_for_import(
+    value: Any, fallback: int, minimum: int, maximum: int
+) -> Tuple[int, bool]:
+    if isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+        changed = False
+    else:
+        try:
+            parsed = int(value)
+            changed = True
+        except (TypeError, ValueError):
+            return fallback, True
+
+    clamped = max(minimum, min(maximum, parsed))
+    if clamped != parsed:
+        changed = True
+    return clamped, changed
+
+
+def _coerce_auto_backup_minutes_for_import(value: Any, fallback: int) -> Tuple[int, bool]:
+    fallback = _normalize_auto_backup_minutes(fallback)
+    if isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+        changed = False
+    else:
+        try:
+            parsed = int(value)
+            changed = True
+        except (TypeError, ValueError):
+            return fallback, True
+    if parsed in ALLOWED_AUTO_BACKUP_MINUTES:
+        return parsed, changed
+    return DEFAULT_AUTO_BACKUP_MINUTES, True
+
+
+def normalize_import_settings(
+    raw_settings: Any, fallback_settings: Dict[str, Any]
+) -> Tuple[Dict[str, Any], List[str]]:
+    """가져오기용 설정을 타입/범위 기준으로 정규화하고 보정 경고를 반환한다."""
+    warnings: List[str] = []
+    baseline = copy.deepcopy(DEFAULT_CONFIG["app_settings"])
+
+    if isinstance(fallback_settings, dict):
+        baseline["theme_index"] = _to_int(fallback_settings.get("theme_index"), baseline["theme_index"])
+        baseline["refresh_interval_index"] = _to_int(
+            fallback_settings.get("refresh_interval_index"),
+            baseline["refresh_interval_index"],
+        )
+        baseline["auto_backup_minutes"] = _normalize_auto_backup_minutes(
+            fallback_settings.get("auto_backup_minutes"),
+            baseline["auto_backup_minutes"],
+        )
+        baseline["notification_enabled"] = _to_bool(
+            fallback_settings.get("notification_enabled"),
+            baseline["notification_enabled"],
+        )
+        baseline["alert_keywords"], _ = _normalize_alert_keywords(
+            fallback_settings.get("alert_keywords", baseline["alert_keywords"])
+        )
+        baseline["sound_enabled"] = _to_bool(
+            fallback_settings.get("sound_enabled"), baseline["sound_enabled"]
+        )
+        baseline["minimize_to_tray"] = _to_bool(
+            fallback_settings.get("minimize_to_tray"), baseline["minimize_to_tray"]
+        )
+        baseline["close_to_tray"] = _to_bool(
+            fallback_settings.get("close_to_tray"), baseline["close_to_tray"]
+        )
+        baseline["start_minimized"] = _to_bool(
+            fallback_settings.get("start_minimized"), baseline["start_minimized"]
+        )
+        baseline["auto_start_enabled"] = _to_bool(
+            fallback_settings.get("auto_start_enabled"), baseline["auto_start_enabled"]
+        )
+        baseline["notify_on_refresh"] = _to_bool(
+            fallback_settings.get("notify_on_refresh"), baseline["notify_on_refresh"]
+        )
+        baseline["api_timeout"] = _to_int(
+            fallback_settings.get("api_timeout"), baseline["api_timeout"]
+        )
+        baseline["blocked_publishers"], baseline["preferred_publishers"] = normalize_publisher_filter_lists(
+            fallback_settings.get("blocked_publishers", baseline["blocked_publishers"]),
+            fallback_settings.get("preferred_publishers", baseline["preferred_publishers"]),
+        )
+        baseline["cloud_sync_enabled"] = _to_bool(
+            fallback_settings.get("cloud_sync_enabled"),
+            baseline["cloud_sync_enabled"],
+        )
+        baseline["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+            fallback_settings.get("cloud_sync_interval_minutes"),
+            baseline["cloud_sync_interval_minutes"],
+        )
+
+    normalized = {
+        "theme_index": max(0, min(2, int(baseline["theme_index"]))),
+        "refresh_interval_index": max(0, min(5, int(baseline["refresh_interval_index"]))),
+        "auto_backup_minutes": _normalize_auto_backup_minutes(baseline["auto_backup_minutes"]),
+        "notification_enabled": bool(baseline["notification_enabled"]),
+        "alert_keywords": list(baseline["alert_keywords"]),
+        "sound_enabled": bool(baseline["sound_enabled"]),
+        "minimize_to_tray": bool(baseline["minimize_to_tray"]),
+        "close_to_tray": bool(baseline["close_to_tray"]),
+        "start_minimized": bool(baseline["start_minimized"]),
+        "auto_start_enabled": bool(baseline["auto_start_enabled"]),
+        "notify_on_refresh": bool(baseline["notify_on_refresh"]),
+        "api_timeout": max(5, min(60, int(baseline["api_timeout"]))),
+        "blocked_publishers": list(baseline["blocked_publishers"]),
+        "preferred_publishers": list(baseline["preferred_publishers"]),
+        "cloud_sync_enabled": bool(baseline["cloud_sync_enabled"]),
+        "cloud_sync_interval_minutes": _normalize_cloud_sync_interval_minutes(
+            baseline["cloud_sync_interval_minutes"]
+        ),
+    }
+
+    if not isinstance(raw_settings, dict):
+        warnings.append("settings 형식이 올바르지 않아 기존 설정을 유지했습니다.")
+        return normalized, warnings
+
+    int_fields = {
+        "theme_index": (0, 2),
+        "refresh_interval_index": (0, 5),
+        "api_timeout": (5, 60),
+    }
+    bool_fields = [
+        "notification_enabled",
+        "sound_enabled",
+        "minimize_to_tray",
+        "close_to_tray",
+        "start_minimized",
+        "auto_start_enabled",
+        "notify_on_refresh",
+        "cloud_sync_enabled",
+    ]
+
+    for field, (minimum, maximum) in int_fields.items():
+        coerced, changed = _coerce_int_range_for_import(
+            raw_settings.get(field), normalized[field], minimum, maximum
+        )
+        normalized[field] = coerced
+        if changed and field in raw_settings:
+            warnings.append(
+                f"{field} 값을 {coerced}(으)로 보정했습니다."
+            )
+
+    coerced_backup_minutes, changed_backup_minutes = _coerce_auto_backup_minutes_for_import(
+        raw_settings.get("auto_backup_minutes"),
+        int(normalized["auto_backup_minutes"]),
+    )
+    normalized["auto_backup_minutes"] = coerced_backup_minutes
+    if changed_backup_minutes and "auto_backup_minutes" in raw_settings:
+        warnings.append(
+            f"auto_backup_minutes 값을 {coerced_backup_minutes}(으)로 보정했습니다."
+        )
+
+    if "cloud_sync_interval_minutes" in raw_settings:
+        normalized["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+            raw_settings.get("cloud_sync_interval_minutes"),
+            int(normalized["cloud_sync_interval_minutes"]),
+        )
+
+    for field in bool_fields:
+        coerced, changed = _coerce_bool_for_import(raw_settings.get(field), normalized[field])
+        normalized[field] = coerced
+        if changed and field in raw_settings:
+            warnings.append(
+                f"{field} 값을 {coerced}(으)로 보정했습니다."
+            )
+
+    normalized_alert_keywords, changed_alert = _normalize_alert_keywords(
+        raw_settings.get("alert_keywords", normalized["alert_keywords"])
+    )
+    normalized["alert_keywords"] = normalized_alert_keywords
+    if changed_alert and "alert_keywords" in raw_settings:
+        warnings.append(
+            f"alert_keywords 값을 정규화했습니다. (최대 10개, 중복 제거)"
+        )
+
+    raw_blocked_publishers = raw_settings.get("blocked_publishers", normalized["blocked_publishers"])
+    raw_preferred_publishers = raw_settings.get("preferred_publishers", normalized["preferred_publishers"])
+    normalized_blocked, normalized_preferred = normalize_publisher_filter_lists(
+        raw_blocked_publishers,
+        raw_preferred_publishers,
+    )
+    normalized["blocked_publishers"] = normalized_blocked
+    normalized["preferred_publishers"] = normalized_preferred
+    if "blocked_publishers" in raw_settings and normalized_blocked != raw_blocked_publishers:
+        warnings.append("blocked_publishers 값을 정규화했습니다. (중복/충돌 제거)")
+    if "preferred_publishers" in raw_settings and normalized_preferred != raw_preferred_publishers:
+        warnings.append("preferred_publishers 값을 정규화했습니다. (중복/충돌 제거)")
+
+    return normalized, warnings
+
+
+def default_config() -> AppConfig:
+    return copy.deepcopy(DEFAULT_CONFIG)
+
+
+def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
+    cfg = default_config()
+
+    if "app_settings" in raw and isinstance(raw.get("app_settings"), dict):
+        app_raw = raw["app_settings"]
+        app_cfg = cfg["app_settings"]
+        app_cfg["client_id"] = str(app_raw.get("client_id", app_cfg["client_id"]))
+        app_cfg["client_secret"] = str(app_raw.get("client_secret", app_cfg["client_secret"]))
+        app_cfg["client_secret_enc"] = str(
+            app_raw.get("client_secret_enc", app_cfg["client_secret_enc"])
+        )
+        app_cfg["client_secret_storage"] = _normalize_secret_storage(
+            app_raw.get("client_secret_storage", app_cfg["client_secret_storage"])
+        )
+        app_cfg["theme_index"] = max(0, min(2, _to_int(app_raw.get("theme_index"), app_cfg["theme_index"])))
+        app_cfg["refresh_interval_index"] = max(
+            0,
+            min(
+                5,
+                _to_int(
+                    app_raw.get("refresh_interval_index"), app_cfg["refresh_interval_index"]
+                ),
+            ),
+        )
+        app_cfg["auto_backup_minutes"] = _normalize_auto_backup_minutes(
+            app_raw.get("auto_backup_minutes"),
+            app_cfg["auto_backup_minutes"],
+        )
+        app_cfg["notification_enabled"] = _to_bool(
+            app_raw.get("notification_enabled"), app_cfg["notification_enabled"]
+        )
+        app_cfg["alert_keywords"], _ = _normalize_alert_keywords(app_raw.get("alert_keywords"))
+        app_cfg["sound_enabled"] = _to_bool(app_raw.get("sound_enabled"), app_cfg["sound_enabled"])
+        app_cfg["minimize_to_tray"] = _to_bool(app_raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"])
+        app_cfg["close_to_tray"] = _to_bool(app_raw.get("close_to_tray"), app_cfg["close_to_tray"])
+        app_cfg["start_minimized"] = _to_bool(app_raw.get("start_minimized"), app_cfg["start_minimized"])
+        app_cfg["auto_start_enabled"] = _to_bool(
+            app_raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"]
+        )
+        app_cfg["notify_on_refresh"] = _to_bool(app_raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
+        app_cfg["api_timeout"] = max(5, min(60, _to_int(app_raw.get("api_timeout"), app_cfg["api_timeout"])))
+        app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = normalize_publisher_filter_lists(
+            app_raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
+            app_raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
+        )
+        app_cfg["cloud_sync_enabled"] = _to_bool(
+            app_raw.get("cloud_sync_enabled"),
+            app_cfg["cloud_sync_enabled"],
+        )
+        app_cfg["cloud_sync_dir"] = str(
+            app_raw.get("cloud_sync_dir", app_cfg["cloud_sync_dir"]) or ""
+        ).strip()
+        app_cfg["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+            app_raw.get("cloud_sync_interval_minutes"),
+            app_cfg["cloud_sync_interval_minutes"],
+        )
+
+        geom_raw = app_raw.get("window_geometry")
+        if isinstance(geom_raw, dict):
+            app_cfg["window_geometry"] = {
+                "x": _to_int(geom_raw.get("x"), cfg["app_settings"]["window_geometry"]["x"]),
+                "y": _to_int(geom_raw.get("y"), cfg["app_settings"]["window_geometry"]["y"]),
+                "width": _to_int(geom_raw.get("width"), cfg["app_settings"]["window_geometry"]["width"]),
+                "height": _to_int(geom_raw.get("height"), cfg["app_settings"]["window_geometry"]["height"]),
+            }
+
+        cfg["tabs"] = _to_str_list(raw.get("tabs"))
+        cfg["search_history"] = _to_str_list(raw.get("search_history"))
+        cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
+        cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
+        cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
+        cfg["saved_searches"] = _to_saved_searches(raw.get("saved_searches"))
+        cfg["tab_refresh_policies"] = _to_tab_refresh_policies(raw.get("tab_refresh_policies"))
+        cfg["automation_rules"] = normalize_automation_rules(raw.get("automation_rules"))
+        cfg["publisher_aliases"] = normalize_publisher_aliases(raw.get("publisher_aliases"))
+        return cfg
+
+    # Legacy flat schema
+    app_cfg = cfg["app_settings"]
+    app_cfg["client_id"] = str(raw.get("id", app_cfg["client_id"]))
+    app_cfg["client_secret"] = str(raw.get("secret", app_cfg["client_secret"]))
+    app_cfg["client_secret_enc"] = str(raw.get("client_secret_enc", app_cfg["client_secret_enc"]))
+    app_cfg["client_secret_storage"] = _normalize_secret_storage(
+        raw.get("client_secret_storage", app_cfg["client_secret_storage"])
+    )
+    app_cfg["theme_index"] = max(0, min(2, _to_int(raw.get("theme"), app_cfg["theme_index"])))
+    app_cfg["refresh_interval_index"] = max(
+        0, min(5, _to_int(raw.get("interval"), app_cfg["refresh_interval_index"]))
+    )
+    app_cfg["auto_backup_minutes"] = _normalize_auto_backup_minutes(
+        raw.get("auto_backup_minutes"),
+        app_cfg["auto_backup_minutes"],
+    )
+    app_cfg["notification_enabled"] = _to_bool(
+        raw.get("notification_enabled"), app_cfg["notification_enabled"]
+    )
+    app_cfg["alert_keywords"], _ = _normalize_alert_keywords(raw.get("alert_keywords"))
+    app_cfg["sound_enabled"] = _to_bool(raw.get("sound_enabled"), app_cfg["sound_enabled"])
+    app_cfg["minimize_to_tray"] = _to_bool(raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"])
+    app_cfg["close_to_tray"] = _to_bool(raw.get("close_to_tray"), app_cfg["close_to_tray"])
+    app_cfg["start_minimized"] = _to_bool(raw.get("start_minimized"), app_cfg["start_minimized"])
+    app_cfg["auto_start_enabled"] = _to_bool(raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"])
+    app_cfg["notify_on_refresh"] = _to_bool(raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
+    app_cfg["api_timeout"] = max(5, min(60, _to_int(raw.get("api_timeout"), app_cfg["api_timeout"])))
+    app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = normalize_publisher_filter_lists(
+        raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
+        raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
+    )
+    app_cfg["cloud_sync_enabled"] = _to_bool(
+        raw.get("cloud_sync_enabled"),
+        app_cfg["cloud_sync_enabled"],
+    )
+    app_cfg["cloud_sync_dir"] = str(raw.get("cloud_sync_dir", app_cfg["cloud_sync_dir"]) or "").strip()
+    app_cfg["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
+        raw.get("cloud_sync_interval_minutes"),
+        app_cfg["cloud_sync_interval_minutes"],
+    )
+    cfg["tabs"] = _to_str_list(raw.get("tabs"))
+    cfg["search_history"] = _to_str_list(raw.get("search_history"))
+    cfg["keyword_groups"] = _to_keyword_groups(raw.get("keyword_groups"))
+    cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
+    cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
+    cfg["saved_searches"] = _to_saved_searches(raw.get("saved_searches"))
+    cfg["tab_refresh_policies"] = _to_tab_refresh_policies(raw.get("tab_refresh_policies"))
+    cfg["automation_rules"] = normalize_automation_rules(raw.get("automation_rules"))
+    cfg["publisher_aliases"] = normalize_publisher_aliases(raw.get("publisher_aliases"))
+    return cfg
+
+__all__ = [
+    "_to_bool",
+    "_to_int",
+    "_normalize_auto_backup_minutes",
+    "_normalize_cloud_sync_interval_minutes",
+    "_to_str_list",
+    "_to_keyword_groups",
+    "_to_pagination_state",
+    "_to_pagination_totals",
+    "_canonical_query_key",
+    "_valid_date_string",
+    "_normalize_saved_search_dates",
+    "_to_saved_searches",
+    "_to_tab_refresh_policies",
+    "_normalize_alert_keywords",
+    "_coerce_bool_for_import",
+    "_coerce_int_range_for_import",
+    "_coerce_auto_backup_minutes_for_import",
+    "normalize_import_settings",
+    "default_config",
+    "normalize_loaded_config",
+]
