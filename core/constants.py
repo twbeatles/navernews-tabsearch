@@ -43,7 +43,6 @@ PENDING_RESTORE_FILE = RUNTIME_PATHS.pending_restore_file
 
 __all__ = [
     "APP_DATA_NAME",
-    "APP_DATA_NAME",
     "APP_DIR",
     "APP_NAME",
     "APP_USER_MODEL_ID",

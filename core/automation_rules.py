@@ -96,6 +96,39 @@ def normalize_automation_rules(value: Any) -> List[Dict[str, Any]]:
     return normalized
 
 
+def _automation_rule_identity(rule: Mapping[str, Any]) -> tuple[Any, ...]:
+    normalized = normalize_automation_rules([rule])
+    if not normalized:
+        return ()
+    item = normalized[0]
+    return (
+        item.get("name", ""),
+        bool(item.get("enabled", True)),
+        tuple(item.get("keywords", [])),
+        tuple(item.get("exclude_words", [])),
+        tuple(item.get("publishers", [])),
+        tuple(item.get("queries", [])),
+        tuple(item.get("add_tags", [])),
+        bool(item.get("mark_read", False)),
+        bool(item.get("mark_bookmark", False)),
+        bool(item.get("exclude", False)),
+        bool(item.get("suppress_notification", False)),
+    )
+
+
+def dedupe_automation_rules(value: Any) -> List[Dict[str, Any]]:
+    normalized = normalize_automation_rules(value)
+    deduped: List[Dict[str, Any]] = []
+    seen: Set[tuple[Any, ...]] = set()
+    for rule in normalized:
+        identity = _automation_rule_identity(rule)
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(rule)
+    return deduped
+
+
 @dataclass(frozen=True)
 class AutomationActions:
     matched_rules: List[str]

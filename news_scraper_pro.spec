@@ -147,6 +147,12 @@ for icon_name in ('news_icon.ico', 'news_icon.png'):
 # - The split adds no dependency surface and uses no bundled data assets. No
 #   hidden import/data/exclude change is required beyond existing package
 #   discovery and the current urllib3 optional-path exclusion.
+# 2026-05-28 review:
+# - Cloud sync export-after-import ordering, settings import automation-rule
+#   dedupe, public __all__ cleanup, and pyright suppression reduction use
+#   existing stdlib/PyQt6/SQLite/runtime paths only.
+# - No additional hidden import, data file, or optional dependency exclusion is
+#   required; the urllib3 Emscripten optional-path exclusion remains intentional.
 # Single-instance IPC imports QLocalServer/QLocalSocket from QtNetwork.
 # Keep requests ecosystem explicit so runtime import fallback cannot miss.
 hiddenimports = [

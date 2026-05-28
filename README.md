@@ -9,7 +9,7 @@
 ## 개발/검증 기준
 
 - 개발/정적 분석 기준: Windows, Python 3.14, PyQt6
-- 소스 실행 최소 기준: Python 3.10+
+- 소스 실행 최소 기준: Python 3.14+
 - 기본 검증 명령: `pyright`(`pyrightconfig.json`) + `pytest -q`
 
 ## 주요 기능
@@ -78,10 +78,12 @@
 - 시작 시 북마크와 현재 탭만 즉시 로드하고, 나머지 뉴스 탭은 hydration queue로 순차 로드하며 초기 hydration 취소는 request-id 기반 late cleanup으로 정리
 - 설정 창의 API 키 검증도 `HttpClientConfig` 기반 공용 session과 현재 `api_timeout` 값을 사용하도록 통합
 - 설정 import는 `stage -> persist -> apply-runtime -> startup reconcile` 순서로 처리해 중간 실패 시 부분 적용된 UI/runtime 상태를 남기지 않도록 보강
+- 설정 import는 자동화 규칙을 정규화 identity 기준으로 dedupe해 같은 설정 파일을 반복 가져와도 규칙 목록이 중복 누적되지 않도록 보강
 - `모두 읽음`, 오래된 기사 삭제, 전체 기사 삭제는 chunked `IterativeJobWorker` 경로로 옮겨 유지보수/종료 시 `stop()`이 실제 효력을 갖도록 조정
 - `RuntimePaths`를 도입해 `config/db/log/pending_restore/backups/lock/crash` 경로를 단일 객체로 통합하고, 실행 폴더 대신 `DATA_DIR` 기준으로 런타임 저장 위치를 고정
 - 레거시 런타임 파일 마이그레이션은 `core/runtime_support/migration.py`로 분리하고, DB는 SQLite backup API 우선 + fallback integrity 검증, `pending_restore.json`은 `backup_dir` rebasing, `backups/`는 폴더 단위 merge로 강화
 - 클라우드 동기화는 OneDrive/Google Drive 폴더의 live SQLite DB를 직접 열지 않고, 로컬 DB와 검증된 `news_scraper_sync_*.zip` 스냅샷을 교환한다
+- 전체 클라우드 동기화는 unseen 스냅샷 import를 먼저 적용한 뒤 최신 로컬 DB를 새 ZIP으로 export해 방금 생성된 스냅샷이 병합 후 상태를 대표하도록 보장한다
 - 클라우드 스냅샷은 `manifest.json`, secret 제거 설정 JSON, SQLite backup API로 만든 DB 복사본만 포함하며 API 자격증명, 자동화 규칙, 출처 alias, `-wal`/`-shm` sidecar는 제외한다
 - 스냅샷 병합은 기사/검색범위를 union하고 읽음/북마크/메모/태그/명시 삭제 tombstone은 per-field timestamp 최신값을 반영한다. 수동 병합은 적용 전 preview로 새 기사, 검색범위, 상태 변경, 삭제/복구 예상치를 확인한다
 - 손상/초과 클라우드 스냅샷은 `.invalid/`로 격리해 다음 주기에 반복 import하지 않으며, ZIP/DB는 각각 512MB, manifest/settings JSON은 각각 1MB 상한을 적용한다
@@ -148,6 +150,7 @@
 - 트레이 미읽음 수는 탭 캐시 합산 대신 차단 출처를 제외한 DB 총계(`get_total_unread_count(blocked_publishers=...)`) 기준으로 계산
 - 트레이 미지원 환경에서도 `show_desktop_notification()`이 토스트 fallback + 알림음으로 동작
 - `pyrightconfig.json`을 추가하고 `core.protocols`/`ui.protocols` 기반 타입 계약과 검사 범위를 명시해 정적 분석 대상면을 고정
+- 2026-05-28 기준 production pyright file-level suppression을 전수 제거 시도했고, 동적 믹스인 구조상 필요한 예외는 유지하되 오류 없이 제거 가능한 support 파일 3곳은 suppression 없이 검사되도록 축소
 - UTF-8 인코딩 스모크 테스트를 리포지토리 주요 텍스트 자산 전체로 확장
 - 단건 기사 상태 변경(`읽음/북마크/메모/삭제`) 시 열린 뉴스/북마크 탭 캐시를 `link` 기준으로 즉시 동기화
 - `모두 읽음`/DB 유지보수 완료 후에는 열린 탭과 북마크 탭을 full refresh 경로로 재정렬해 정합성 보장
@@ -177,18 +180,18 @@
 - 백업 생성은 payload 작성 직후 self-verify를 수행하며, 검증 실패한 백업은 삭제하지 않고 목록에서 `복원 불가` 상태로 남긴다
 - 설정 import 뒤 새 탭 즉시 새로고침 프롬프트는 유지보수 중 여부, 순차 새로고침 진행 상태, API 자격증명 유효성을 먼저 통과한 경우에만 노출된다
 
-## 최신 검증 메모 (2026-05-22)
+## 최신 검증 메모 (2026-05-28)
 
-- `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `332 passed, 7 warnings, 5 subtests passed`
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`입니다.
-- `pyright .` => `0 errors, 0 warnings, 0 informations`
+- `python -m pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `git diff --check` => pass
 - 분리 전 대상 파일의 top-level `class`/`def`/`__all__` 심볼 인벤토리와 기존 facade import smoke가 모두 통과했습니다.
-- 마지막 PyInstaller 검증(2026-05-22): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
-- 마지막 패키지 스모크(2026-05-22): `QT_QPA_PLATFORM=offscreen` + 새 `NEWS_SCRAPER_DATA_DIR`로 실행형이 20초 이상 정상 시작 상태를 유지함
-- `news_scraper_pro.spec`는 2026-05-22 대형 모듈 분할 기준으로 재검토했으며, 이번 변경은 표준 라이브러리와 기존 PyQt6/SQLite/runtime 의존성만 사용합니다. Windows onefile 런타임에 쓰지 않는 `urllib3.contrib.emscripten` optional 경로는 계속 수집 제외합니다.
-- `.gitignore`는 변경하지 않았습니다. `git status --ignored --short` 기준 build/dist/cache/log/runtime 산출물과 새 support package `__pycache__/`가 기존 규칙으로 무시됩니다.
+- 마지막 PyInstaller 검증(2026-05-28): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- 마지막 패키지 스모크(2026-05-28): `QT_QPA_PLATFORM=offscreen` + 새 `NEWS_SCRAPER_DATA_DIR`로 실행형이 20초 이상 정상 시작 상태를 유지함
+- `news_scraper_pro.spec`는 2026-05-28 기능 리스크 후속 기준으로 재검토했으며, 이번 변경은 표준 라이브러리와 기존 PyQt6/SQLite/runtime 의존성만 사용합니다. Windows onefile 런타임에 쓰지 않는 `urllib3.contrib.emscripten` optional 경로는 계속 수집 제외합니다.
+- `.gitignore`는 변경하지 않았습니다. `git check-ignore -v` 기준 build/dist/cache/log/runtime DB/config/cloud snapshot/quarantine 산출물과 `.claude/` scratch가 기존 규칙으로 무시됩니다.
 
 ## 프로젝트 구조
 

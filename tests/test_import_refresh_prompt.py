@@ -168,6 +168,8 @@ class _DummyImportMain:
         self.preferred_publishers = []
         self.saved_searches = {}
         self.tab_refresh_policies = {}
+        self.automation_rules = []
+        self.publisher_aliases = {}
         self.search_history = []
         self._fetch_cursor_by_key = {}
         self._fetch_total_by_key = {}
@@ -463,6 +465,46 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertEqual(len(stage["staged_config"]["saved_searches"]), 100)
         self.assertTrue(any("빈 키워드 그룹" in warning for warning in stage["import_warnings"]))
         self.assertTrue(any("저장 검색" in warning for warning in stage["import_warnings"]))
+
+    def test_import_dedupes_automation_rules_across_repeated_imports(self):
+        dialogs = _FakeDialogAdapter()
+        dummy = _DummyImportMain(dialogs)
+        existing_rule = {
+            "name": "mute ads",
+            "enabled": True,
+            "keywords": ["AI"],
+            "exclude_words": ["광고"],
+            "publishers": ["example.com"],
+            "queries": ["AI"],
+            "add_tags": ["자동"],
+            "mark_read": True,
+            "mark_bookmark": False,
+            "exclude": False,
+            "suppress_notification": True,
+        }
+        duplicate_rule = {
+            **existing_rule,
+            "keywords": ["AI", "AI"],
+            "add_tags": ["자동", "자동"],
+        }
+        new_rule = {
+            "name": "bookmark economy",
+            "keywords": ["경제"],
+            "mark_bookmark": True,
+        }
+        payload = {
+            "settings": {},
+            "tabs": [],
+            "automation_rules": [duplicate_rule, new_rule],
+        }
+        dummy.automation_rules = [existing_rule]
+
+        first_stage = dummy._stage_settings_import(payload)
+        dummy.automation_rules = list(first_stage["staged_config"]["automation_rules"])
+        second_stage = dummy._stage_settings_import(payload)
+
+        self.assertEqual(len(first_stage["staged_config"]["automation_rules"]), 2)
+        self.assertEqual(len(second_stage["staged_config"]["automation_rules"]), 2)
 
     def test_import_merges_saved_searches_with_import_wins_and_canonical_policies(self):
         with tempfile.TemporaryDirectory() as td:

@@ -206,21 +206,11 @@ def run_cloud_sync_cycle(
     app_version: str,
     max_imports: int = 20,
 ) -> Dict[str, Any]:
-    snapshot = create_cloud_snapshot(
-        sync_dir=sync_dir,
-        config=config,
-        db_file=db_file,
-        machine_id=machine_id,
-        app_version=app_version,
-    )
-    db_manager.mark_cloud_sync_snapshot_seen(snapshot.snapshot_id)
-
     imported: List[Dict[str, Any]] = []
     errors: List[str] = []
     selection = select_cloud_snapshots_for_import(
         db_manager=db_manager,
         sync_dir=sync_dir,
-        local_snapshot_id=snapshot.snapshot_id,
         max_imports=max_imports,
     )
     errors.extend(selection["errors"])
@@ -239,6 +229,15 @@ def run_cloud_sync_cycle(
             errors.append(_snapshot_import_error(zip_path, exc))
             invalid_count += 1
             quarantine_invalid_snapshot(zip_path, str(exc))
+
+    snapshot = create_cloud_snapshot(
+        sync_dir=sync_dir,
+        config=config,
+        db_file=db_file,
+        machine_id=machine_id,
+        app_version=app_version,
+    )
+    db_manager.mark_cloud_sync_snapshot_seen(snapshot.snapshot_id)
 
     cleanup_old_snapshots(sync_dir, keep=100)
     return {

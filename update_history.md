@@ -1,6 +1,17 @@
 ﻿# Update History
 
 ## v32.7.3 (Unreleased)
+- **Functional Risk Follow-up + Docs/Spec/Gitignore Revalidation (2026-05-28)**:
+  - Changed full cloud sync so unseen snapshots are imported before the local snapshot is exported. The newest exported `news_scraper_sync_*.zip` now represents the post-merge DB state.
+  - Added normalized automation-rule dedupe for settings import, preventing repeated imports from accumulating identical rules.
+  - Removed a duplicate `core.constants.__all__` export and added regression coverage for duplicate public export lists in key facade/support packages.
+  - Rechecked production pyright file-level suppression. Files that now pass without broad suppression keep it removed, while dynamic PyQt/mixin boundaries that still require targeted suppression remain unchanged.
+  - Re-reviewed `news_scraper_pro.spec`; this follow-up uses existing stdlib/PyQt6/SQLite/runtime code and does not require new hidden imports, data files, or dependency exclusions.
+  - Re-reviewed `.gitignore` with `git check-ignore -v`; existing rules cover build/dist/cache/log/runtime DB/config/cloud snapshot/quarantine outputs and `.claude/` scratch, so no ignore rule changed.
+  - Validation:
+    - `python -m pytest -q` => `332 passed, 7 warnings, 5 subtests passed`
+    - `python -m pyright` => `0 errors, 0 warnings, 0 informations`
+    - `git diff --check` => pass
 - **Large Module Split Refactor (2026-05-22)**:
   - Split remaining large modules into finer support packages while preserving compatibility facades and existing public/private import paths used by tests.
   - Added DB support packages for query filters/fetch/archive/counts, schema connection/tables/backfill/init, and cloud-merge metadata/rollback/preview/apply responsibilities.

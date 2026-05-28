@@ -31,7 +31,7 @@ from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
 from core.content_filters import normalize_publisher_filter_lists
 from core.keyword_groups import merge_keyword_groups
 from core.machine_identity import get_machine_identity
-from core.automation_rules import normalize_automation_rules
+from core.automation_rules import dedupe_automation_rules
 from core.publisher_aliases import canonical_publisher, normalize_publisher_aliases
 from core.startup import StartupManager
 from core.workers import DBQueryScope, IterativeJobWorker, delete_qthread_when_finished
@@ -150,7 +150,7 @@ class _ImportStageApplyMixin:
             )
 
         incoming_automation_rules = import_data.get("automation_rules", [])
-        merged_automation_rules = normalize_automation_rules(
+        merged_automation_rules = dedupe_automation_rules(
             list(getattr(self, "automation_rules", []))
             + (incoming_automation_rules if isinstance(incoming_automation_rules, list) else [])
         )

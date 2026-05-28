@@ -13,6 +13,7 @@ from core.cloud_sync import (
     preview_cloud_snapshots_for_import,
     quarantine_invalid_snapshot,
     read_snapshot_manifest,
+    run_cloud_sync_cycle,
     select_cloud_snapshots_for_import,
 )
 from core.constants import get_runtime_paths
@@ -32,6 +33,17 @@ def _item(idx: int, title: str = ""):
 class TestCloudSync(unittest.TestCase):
     def _db(self, path: Path) -> DatabaseManager:
         return DatabaseManager(str(path), max_connections=2)
+
+    def _snapshot_links(self, snapshot_path: str, root: Path) -> set[str]:
+        extract_dir = root / "snapshot_extract"
+        extract_dir.mkdir(exist_ok=True)
+        with zipfile.ZipFile(snapshot_path, "r") as zf:
+            zf.extract("news_database.db", extract_dir)
+        conn = sqlite3.connect(extract_dir / "news_database.db")
+        try:
+            return {str(row[0]) for row in conn.execute("SELECT link FROM news")}
+        finally:
+            conn.close()
 
     def test_snapshot_excludes_api_secrets_and_sqlite_sidecars(self):
         with tempfile.TemporaryDirectory() as td:
@@ -357,6 +369,44 @@ class TestCloudSync(unittest.TestCase):
                 runtime_paths,
             )
         )
+
+    def test_full_sync_exports_snapshot_after_imported_changes_are_merged(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            sync_dir = root / "sync"
+            sync_dir.mkdir()
+            source = self._db(root / "source.db")
+            target = self._db(root / "target.db")
+            try:
+                source.upsert_news([_item(1)], "AI", query_key="ai|")
+                target.upsert_news([_item(2)], "ECON", query_key="econ|")
+                run_cloud_sync_cycle(
+                    db_manager=source,
+                    sync_dir=str(sync_dir),
+                    config={"app_settings": {}, "tabs": ["AI"]},
+                    db_file=source.db_file,
+                    machine_id="machine-a",
+                    app_version="test",
+                )
+
+                result = run_cloud_sync_cycle(
+                    db_manager=target,
+                    sync_dir=str(sync_dir),
+                    config={"app_settings": {}, "tabs": ["ECON"]},
+                    db_file=target.db_file,
+                    machine_id="machine-b",
+                    app_version="test",
+                )
+
+                self.assertEqual(result["merged_count"], 1)
+                self.assertEqual(target.count_news("AI", query_key="ai|"), 1)
+                self.assertEqual(
+                    self._snapshot_links(result["exported"].path, root),
+                    {"https://example.com/1", "https://example.com/2"},
+                )
+            finally:
+                source.close()
+                target.close()
 
 
 if __name__ == "__main__":

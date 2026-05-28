@@ -1,6 +1,6 @@
 # 프로젝트 구조 분석 및 기능 확장 가이드
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-22)
+작성일: 2026-03-16 (최근 갱신: 2026-05-28)
 
 ## 분석 범위
 
@@ -16,6 +16,18 @@
 - `tests/*.py`
 
 문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
+
+## 0. 2026-05-28 기능 리스크 후속 / 문서·spec·gitignore 재검증
+
+이번 패스는 클라우드 스냅샷 동기화 순서, 설정 import의 자동화 규칙 중복 누적, pyright suppression 축소 가능 지점, public `__all__` 중복을 실제 코드와 문서 기준으로 다시 맞췄다.
+
+- `core.cloud_sync_support.import_flow.run_cloud_sync_cycle()`은 unseen snapshot import/merge를 먼저 실행한 뒤 로컬 snapshot을 export한다. 따라서 방금 생성된 `news_scraper_sync_*.zip`은 병합 전 로컬 상태가 아니라 병합 후 DB 상태를 대표한다.
+- `core.automation_rules.dedupe_automation_rules()`는 정규화된 rule identity 기준으로 중복을 제거하고, 설정 import staging은 기존 규칙과 가져온 규칙을 병합할 때 이 경로를 사용한다.
+- `core.constants.__all__` 중복을 제거했고, `tests/test_refactor_compat.py`가 주요 facade/support package의 public export 중복을 감시한다.
+- `ui/dialogs_support/backup_dialog/dialog.py`, `ui/main_window_io_support/exports.py`, `ui/main_window_support/base_support/state.py`는 production file-level pyright suppression 없이도 현재 검사 기준을 통과한다. 동적 PyQt/mixin 경계에서 필요한 다른 suppression은 유지한다.
+- `news_scraper_pro.spec`는 이번 변경이 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용함을 다시 명시했다. 새 hidden import/data/exclude 수정은 필요하지 않고, 기존 `urllib3.contrib.emscripten` optional-path 제외는 유지한다.
+- `.gitignore`는 `git check-ignore -v`로 build/dist/cache/log/runtime DB/config/cloud snapshot/quarantine 산출물과 `.claude/` scratch를 확인했으며, 추가 규칙은 필요하지 않다.
+- 검증선은 `python -m pytest -q` => `332 passed, 7 warnings, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`, `git diff --check` 통과다.
 
 ## 0. 2026-05-22 전체 대형 모듈 구조 분할 리팩토링
 

@@ -8,7 +8,7 @@
 |------|-----|
 | **프로젝트명** | 뉴스 스크래퍼 Pro |
 | **버전** | v32.7.3 |
-| **언어** | Python 3.10+ (개발/검증 기준 3.14) |
+| **언어** | Python 3.14+ |
 | **GUI 프레임워크** | PyQt6 |
 | **주요 기능** | 네이버 뉴스 API 기반 탭 브라우징 뉴스 스크래퍼 |
 | **정적 분석** | Pyright / Pylance |
@@ -117,16 +117,25 @@ navernews-tabsearch/
 
 ### 현재 검증 기준
 
-- `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
-- `pyright .` => `0 errors, 0 warnings, 0 informations`
+- `python -m pytest -q` => `332 passed, 7 warnings, 5 subtests passed`
+- `python -m pyright` => `0 errors, 0 warnings, 0 informations`
 - `tests/test_encoding_smoke.py`가 저장소 주요 텍스트 자산의 UTF-8 decode/replacement-char/깨진 토큰/대표 mojibake 패턴 회귀를 계속 감시한다.
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `git diff --check` => pass
 - 심볼 인벤토리 호환성 + 기존 facade import smoke => pass
-- 마지막 PyInstaller 검증(2026-05-22): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
-- 마지막 패키지 스모크(2026-05-22) => 새 `NEWS_SCRAPER_DATA_DIR`와 `QT_QPA_PLATFORM=offscreen` 기준 20초 이상 정상 시작 상태 유지
+- 마지막 PyInstaller 검증(2026-05-28): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- 마지막 패키지 스모크(2026-05-28) => 새 `NEWS_SCRAPER_DATA_DIR`와 `QT_QPA_PLATFORM=offscreen` 기준 20초 이상 정상 시작 상태 유지
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec`는 2026-05-22 대형 모듈 분할 기준으로 재검토했다. 새 구조는 stdlib/PyQt6/SQLite/runtime 경로만 사용하며, Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 계속 submodule 수집에서 제외한다.
+- `news_scraper_pro.spec`는 2026-05-28 기능 리스크 후속 기준으로 재검토했다. 새 변경은 stdlib/PyQt6/SQLite/runtime 경로만 사용하며, Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 계속 submodule 수집에서 제외한다.
+
+### 2026-05-28 Functional Risk Follow-up
+
+- Full cloud sync imports unseen snapshots before exporting the local snapshot, so the newest `news_scraper_sync_*.zip` represents the post-merge DB state.
+- Settings import dedupes automation rules by normalized rule identity across repeated imports.
+- Minimum source runtime is now Python 3.14+, matching `pyrightconfig.json` and the active validation runtime.
+- Production pyright file-level suppression was rechecked globally. Files that pyright can now analyze without suppression keep it removed; dynamic PyQt/mixin boundaries that still require targeted diagnostic suppression remain unchanged.
+- `.gitignore` was rechecked with `git check-ignore -v`; existing rules cover build/dist/cache/log/runtime DB/config/cloud snapshot/quarantine outputs and `.claude/` scratch.
+- Added regression coverage for post-import cloud export freshness, automation-rule import dedupe, and duplicate `__all__` exports.
 
 ### 2026-05-22 Large Module Split Refactor
 

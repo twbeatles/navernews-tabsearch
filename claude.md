@@ -22,7 +22,7 @@
 ## 🛠️ 기술 스택
 
 ```yaml
-언어: Python 3.10+ (개발/검증 기준 3.14)
+언어: Python 3.14+
 GUI: PyQt6 (Qt 6.x)
 데이터베이스: SQLite3
 HTTP: requests
@@ -163,16 +163,27 @@ navernews-tabsearch/
 
 ## ✅ 현재 검증 기준
 
-- `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`
-- `pyright .` => `0 errors, 0 warnings, 0 informations`
+- `python -m pytest -q` => `332 passed, 7 warnings, 5 subtests passed`
+- `python -m pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`
 - `git diff --check` => pass
 - symbol inventory compatibility + existing facade import smoke => pass
-- Last packaged validation (2026-05-22): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
-- Last packaged smoke (2026-05-22) => process stayed alive for 20s with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
+- Last packaged validation (2026-05-28): `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
+- Last packaged smoke (2026-05-28) => process stayed alive for 20s with fresh `NEWS_SCRAPER_DATA_DIR` and `QT_QPA_PLATFORM=offscreen`
 - `tests/test_encoding_smoke.py`는 저장소 주요 텍스트 자산 전체에 대해 UTF-8 decode 실패, replacement char, 알려진 깨진 토큰, 대표적인 mojibake 패턴을 계속 감시한다.
 - pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-- `news_scraper_pro.spec` re-reviewed for the 2026-05-22 large-module split; the refactor only moves existing stdlib/PyQt6/SQLite/runtime code behind compatibility facades, and `urllib3.contrib.emscripten` remains excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path.
+- `news_scraper_pro.spec` re-reviewed for the 2026-05-28 functional risk follow-up; the changes use existing stdlib/PyQt6/SQLite/runtime code, and `urllib3.contrib.emscripten` remains excluded from urllib3 submodule collection because it is a browser/Emscripten-only optional path.
+
+---
+
+## 🚀 2026-05-28 Functional Risk Follow-up
+
+- Full cloud sync now imports unseen snapshots before exporting the local snapshot, so the newest `news_scraper_sync_*.zip` represents the post-merge DB state.
+- Settings import dedupes automation rules by normalized rule identity across repeated imports.
+- Minimum source runtime is now Python 3.14+, matching `pyrightconfig.json` and the active validation runtime.
+- Production pyright file-level suppression was rechecked globally. Files that pyright can now analyze without suppression keep it removed; dynamic PyQt/mixin boundaries that still require targeted diagnostic suppression remain unchanged.
+- `.gitignore` was rechecked with `git check-ignore -v`; build/dist/cache/log/runtime DB/config/cloud snapshot/quarantine outputs and `.claude/` scratch are covered by existing rules, so no ignore rule changed.
+- Added regression coverage for post-import cloud export freshness, automation-rule import dedupe, and duplicate `__all__` exports.
 
 ---
 

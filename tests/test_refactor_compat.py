@@ -53,6 +53,18 @@ class TestRefactorCompat(unittest.TestCase):
         wrapper = importlib.import_module('database_manager')
         self.assertIs(wrapper.DatabaseManager, core_db.DatabaseManager)
 
+    def test_public_all_exports_are_unique(self):
+        modules = [
+            'core.constants',
+            'core.runtime_support',
+            'core.cloud_sync_support',
+            'core.config_store_support',
+        ]
+        for mod_name in modules:
+            mod = importlib.import_module(mod_name)
+            exports = list(getattr(mod, '__all__', []))
+            self.assertEqual(len(exports), len(set(exports)), mod_name)
+
 
 if __name__ == '__main__':
     unittest.main()

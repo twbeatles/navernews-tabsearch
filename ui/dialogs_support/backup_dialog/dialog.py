@@ -1,4 +1,3 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 import html
 import json
 import logging
