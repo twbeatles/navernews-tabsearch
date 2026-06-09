@@ -1,5 +1,6 @@
 import unittest
 
+from core.database import NewsCountSummary
 from core.query_parser import build_fetch_key
 from core.workers import DBQueryScope, DBWorker
 
@@ -12,6 +13,10 @@ class _FakeDb:
     def count_news(self, **kwargs):
         self.calls.append(("count_news", kwargs))
         return 45 if kwargs.get("only_unread") else 123
+
+    def count_news_states(self, **kwargs):
+        self.calls.append(("count_news_states", kwargs))
+        return NewsCountSummary(total_count=123, unread_count=45)
 
     def fetch_news(self, **kwargs):
         self.calls.append(("fetch_news", kwargs))
@@ -62,12 +67,11 @@ class TestDbWorkerPagination(unittest.TestCase):
 
         self.assertEqual(
             [call[0] for call in db.calls],
-            ["open_read_connection", "count_news", "count_news", "fetch_news", "close_read_connection"],
+            ["open_read_connection", "count_news_states", "fetch_news", "close_read_connection"],
         )
 
         count_kwargs = db.calls[1][1]
-        unread_count_kwargs = db.calls[2][1]
-        fetch_kwargs = db.calls[3][1]
+        fetch_kwargs = db.calls[2][1]
         self.assertEqual(count_kwargs["keyword"], "AI")
         self.assertEqual(count_kwargs["filter_txt"], "launch")
         self.assertEqual(count_kwargs["hide_duplicates"], True)
@@ -75,7 +79,6 @@ class TestDbWorkerPagination(unittest.TestCase):
         self.assertEqual(count_kwargs["end_date"], "2026-01-31")
         self.assertEqual(count_kwargs["query_key"], build_fetch_key("AI finance", ["coin"]))
         self.assertIn("conn", count_kwargs)
-        self.assertEqual(unread_count_kwargs["only_unread"], True)
         self.assertEqual(fetch_kwargs["limit"], 50)
         self.assertEqual(fetch_kwargs["offset"], 100)
         self.assertEqual(worker.last_unread_count, 45)

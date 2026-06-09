@@ -185,6 +185,36 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(unread_all, 1)
         self.assertEqual(unread_excluding_coin, 0)
 
+    def test_count_news_states_matches_total_and_unread_scope(self):
+        q1 = build_fetch_key("AI launch", ["coin"])
+        items = [
+            {
+                "title": "AI launch",
+                "description": "general",
+                "link": "https://example.com/state-1",
+                "pubDate": "2026-01-01T09:00:00",
+                "publisher": "example.com",
+            },
+            {
+                "title": "AI coin outlook",
+                "description": "coin keyword",
+                "link": "https://example.com/state-2",
+                "pubDate": "2026-01-02T09:00:00",
+                "publisher": "example.com",
+            },
+        ]
+        self.mgr.upsert_news(items, "AI", query_key=q1)
+        self.mgr.update_status("https://example.com/state-1", "is_read", 1)
+
+        summary = self.mgr.count_news_states("AI", query_key=q1, exclude_words=["coin"])
+
+        self.assertIsInstance(summary, app.NewsCountSummary)
+        self.assertEqual(summary.total_count, self.mgr.count_news("AI", query_key=q1, exclude_words=["coin"]))
+        self.assertEqual(
+            summary.unread_count,
+            self.mgr.count_news("AI", query_key=q1, exclude_words=["coin"], only_unread=True),
+        )
+
     def test_init_db_creates_idx_nk_keyword_dup_idempotently(self):
         self.mgr.init_db()
         conn = sqlite3.connect(str(self.db_path))
@@ -208,6 +238,86 @@ class TestDbQueries(unittest.TestCase):
                 self.mgr.upsert_news([item], "AI")
 
         self.assertEqual(self.mgr.count_news("AI"), 0)
+
+    def test_upsert_news_detailed_reports_new_links_and_duplicate_memberships_once(self):
+        q1 = build_fetch_key("AI", [])
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": "Same title",
+                    "description": "seed",
+                    "link": "https://example.com/existing",
+                    "pubDate": "2026-01-01T09:00:00",
+                    "publisher": "example.com",
+                }
+            ],
+            "AI",
+            query_key=q1,
+        )
+
+        result = self.mgr.upsert_news_detailed(
+            [
+                {
+                    "title": "Same title",
+                    "description": "updated existing",
+                    "link": "https://example.com/existing",
+                    "pubDate": "2026-01-02T09:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": "Same title",
+                    "description": "new duplicate",
+                    "link": "https://example.com/new-dup",
+                    "pubDate": "2026-01-03T09:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": "temporary title",
+                    "description": "first duplicate batch value",
+                    "link": "https://example.com/new-unique",
+                    "pubDate": "2026-01-04T09:00:00",
+                    "publisher": "example.com",
+                },
+                {
+                    "title": "Final unique title",
+                    "description": "last duplicate batch value wins",
+                    "link": "https://example.com/new-unique",
+                    "pubDate": "2026-01-05T09:00:00",
+                    "publisher": "example.com",
+                },
+            ],
+            "AI",
+            query_key=q1,
+        )
+
+        self.assertIsInstance(result, app.NewsUpsertResult)
+        self.assertEqual(result.added_count, 1)
+        self.assertEqual(result.duplicate_count, 1)
+        self.assertEqual(
+            result.new_links,
+            ("https://example.com/new-dup", "https://example.com/new-unique"),
+        )
+        rows = {row["link"]: row for row in self.mgr.fetch_news("AI", query_key=q1)}
+        self.assertEqual(rows["https://example.com/new-unique"]["title"], "Final unique title")
+        self.assertEqual(rows["https://example.com/new-unique"]["description"], "last duplicate batch value wins")
+
+    def test_repeated_identical_upsert_does_not_recalculate_duplicates(self):
+        q1 = build_fetch_key("AI", [])
+        item = {
+            "title": "Stable title",
+            "description": "same payload",
+            "link": "https://example.com/stable",
+            "pubDate": "2026-01-01T09:00:00",
+            "publisher": "example.com",
+        }
+        self.mgr.upsert_news([item], "AI", query_key=q1)
+
+        with mock.patch.object(self.mgr, "_recalculate_duplicate_flags_for_query_key_hashes") as recalc:
+            result = self.mgr.upsert_news_detailed([dict(item)], "AI", query_key=q1)
+
+        self.assertEqual(result, app.NewsUpsertResult(0, 0, ()))
+        recalc.assert_not_called()
+        self.assertEqual(self.mgr.count_news("AI", query_key=q1), 1)
 
     def test_init_db_backfills_all_missing_fields_beyond_chunk_limits(self):
         self.mgr.close()

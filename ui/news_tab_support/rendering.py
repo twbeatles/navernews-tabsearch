@@ -157,6 +157,10 @@ class _NewsTabRenderingMixin:
         parent = self._main_window()
         if parent is not None:
             try:
+                update_badge_cache = getattr(parent, "update_badge_cache_from_tab_load", None)
+                if callable(update_badge_cache) and not self.is_bookmark_tab:
+                    update_badge_cache(self.keyword, self._unread_count_cache)
+                    return
                 parent.update_tab_badge(self.keyword)
             except Exception:
                 pass

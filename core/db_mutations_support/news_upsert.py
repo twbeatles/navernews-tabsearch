@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple, cast
 
@@ -14,6 +15,14 @@ if TYPE_CHECKING:
     from core.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class NewsUpsertResult:
+    added_count: int
+    duplicate_count: int
+    new_links: Tuple[str, ...] = ()
+
 
 class _NewsUpsertMixin:
     def _resolve_query_key(self: DatabaseManager, keyword: str, query_key: Optional[str]) -> str:
@@ -47,46 +56,65 @@ class _NewsUpsertMixin:
         query_key: Optional[str] = None,
     ) -> Tuple[int, int]:
         """Insert or update rows and maintain query-scoped duplicate flags."""
+        result = self.upsert_news_detailed(items, keyword, query_key=query_key)
+        return result.added_count, result.duplicate_count
+
+    def upsert_news_detailed(
+        self: DatabaseManager,
+        items: List[Dict[str, Any]],
+        keyword: str,
+        query_key: Optional[str] = None,
+    ) -> NewsUpsertResult:
+        """Insert or update rows and return detailed scope-new link metadata."""
         if not items:
-            return 0, 0
+            return NewsUpsertResult(0, 0, ())
 
         scope_query_key = self._resolve_query_key(keyword, query_key)
         conn = self.get_connection()
         added_count = 0
         duplicate_count = 0
+        new_links: List[str] = []
 
         try:
             with perf_timer(
-                "db.upsert_news",
+                "db.upsert_news_detailed",
                 f"kw={keyword}|query_key={scope_query_key}|items={len(items)}",
             ):
-                prepared_items: List[Dict[str, Any]] = []
-                hashes: List[str] = []
+                prepared_by_link: Dict[str, Dict[str, Any]] = {}
+                link_order: List[str] = []
 
                 for item in items:
+                    link = str(item.get("link", "") or "").strip()
+                    if not link:
+                        continue
+                    if link not in prepared_by_link:
+                        link_order.append(link)
                     pub_date = item.get("pubDate", "")
                     title = item.get("title", "")
                     title_hash = self._calculate_title_hash(title)
-                    hashes.append(title_hash)
-                    prepared_items.append(
-                        {
-                            "link": item.get("link", ""),
-                            "keyword": keyword,
-                            "query_key": scope_query_key,
-                            "title": title,
-                            "description": item.get("description", ""),
-                            "pubDate": pub_date,
-                            "publisher": item.get("publisher", ""),
-                            "pubDate_ts": parse_date_to_ts(pub_date),
-                            "title_hash": title_hash,
-                        }
-                    )
+                    prepared_by_link[link] = {
+                        "link": link,
+                        "keyword": keyword,
+                        "query_key": scope_query_key,
+                        "title": title,
+                        "description": item.get("description", ""),
+                        "pubDate": pub_date,
+                        "publisher": item.get("publisher", ""),
+                        "pubDate_ts": parse_date_to_ts(pub_date),
+                        "title_hash": title_hash,
+                    }
+
+                prepared_items = [prepared_by_link[link] for link in link_order]
 
                 with conn:
-                    unique_hashes = sorted({h for h in hashes if h})
-                    incoming_links = sorted(
-                        {item.get("link", "") for item in prepared_items if item.get("link", "")}
+                    unique_hashes = sorted(
+                        {
+                            str(item.get("title_hash", "") or "").strip()
+                            for item in prepared_items
+                            if str(item.get("title_hash", "") or "").strip()
+                        }
                     )
+                    incoming_links = sorted(link_order)
 
                     existing_links_by_hash: Dict[str, Set[str]] = {}
                     if unique_hashes:
@@ -124,7 +152,7 @@ class _NewsUpsertMixin:
 
                     news_insert_data: List[Tuple[Any, ...]] = []
                     scope_insert_data: List[Tuple[Any, ...]] = []
-                    affected_hashes: Set[str] = set(unique_hashes)
+                    affected_hashes: Set[str] = set()
 
                     for item in prepared_items:
                         link = item.get("link", "")
@@ -141,7 +169,10 @@ class _NewsUpsertMixin:
                             is_dup = has_other_link
                             if previous_hash and previous_hash != title_hash:
                                 affected_hashes.add(previous_hash)
+                                affected_hashes.add(title_hash)
                         else:
+                            new_links.append(link)
+                            affected_hashes.add(title_hash)
                             if has_other_link:
                                 duplicate_count += 1
                                 is_dup = True
@@ -168,7 +199,7 @@ class _NewsUpsertMixin:
                         existing_hash_by_link[link] = title_hash
 
                     if not news_insert_data:
-                        return 0, 0
+                        return NewsUpsertResult(0, 0, ())
 
                     conn.executemany(
                         """
@@ -186,9 +217,23 @@ class _NewsUpsertMixin:
                             publisher = excluded.publisher,
                             pubDate_ts = CASE
                                 WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts
-                                ELSE pubDate_ts
+                                ELSE news.pubDate_ts
                             END,
                             title_hash = excluded.title_hash
+                        WHERE
+                            (
+                                (news.keyword IS NULL OR news.keyword = '')
+                                AND COALESCE(excluded.keyword, '') != ''
+                            )
+                            OR COALESCE(news.title, '') != COALESCE(excluded.title, '')
+                            OR COALESCE(news.description, '') != COALESCE(excluded.description, '')
+                            OR COALESCE(news.pubDate, '') != COALESCE(excluded.pubDate, '')
+                            OR COALESCE(news.publisher, '') != COALESCE(excluded.publisher, '')
+                            OR (
+                                excluded.pubDate_ts > 0
+                                AND COALESCE(news.pubDate_ts, 0) != COALESCE(excluded.pubDate_ts, 0)
+                            )
+                            OR COALESCE(news.title_hash, '') != COALESCE(excluded.title_hash, '')
                         """,
                         news_insert_data,
                     )
@@ -200,17 +245,21 @@ class _NewsUpsertMixin:
                         ON CONFLICT(link, query_key) DO UPDATE SET
                             keyword = excluded.keyword,
                             is_duplicate = excluded.is_duplicate
+                        WHERE
+                            COALESCE(news_keywords.keyword, '') != COALESCE(excluded.keyword, '')
+                            OR COALESCE(news_keywords.is_duplicate, 0) != COALESCE(excluded.is_duplicate, 0)
                         """,
                         scope_insert_data,
                     )
 
-                    self._recalculate_duplicate_flags_for_query_key_hashes(
-                        conn,
-                        scope_query_key,
-                        list(affected_hashes),
-                    )
+                    if affected_hashes:
+                        self._recalculate_duplicate_flags_for_query_key_hashes(
+                            conn,
+                            scope_query_key,
+                            list(affected_hashes),
+                        )
 
-            return added_count, duplicate_count
+            return NewsUpsertResult(added_count, duplicate_count, tuple(new_links))
         except sqlite3.Error as e:
             logger.error("DB batch upsert failed: %s", e)
             raise self._new_write_error("upsert_news", e) from e

@@ -341,28 +341,55 @@ class ApiWorker(QObject):
                             return
 
                         try:
-                            existing_links = self.db.get_existing_links_for_query(
-                                [str(item.get("link", "") or "") for item in items],
-                                keyword=self.db_keyword,
-                                query_key=self.query_key,
-                            )
-                            seen_new_links = set()
-                            for item in items:
-                                link = str(item.get("link", "") or "").strip()
-                                if not link or link in existing_links or link in seen_new_links:
-                                    continue
-                                seen_new_links.add(link)
-                                new_items.append(item)
-
-                            with perf_timer(
-                                "api.upsert",
-                                f"kw={self.db_keyword}|query_key={self.query_key}|items={len(items)}",
-                            ):
-                                added_count, dup_count = self.db.upsert_news(
-                                    items,
-                                    self.db_keyword,
+                            upsert_detailed = getattr(self.db, "upsert_news_detailed", None)
+                            if callable(upsert_detailed):
+                                with perf_timer(
+                                    "api.upsert",
+                                    f"kw={self.db_keyword}|query_key={self.query_key}|items={len(items)}|mode=detailed",
+                                ):
+                                    upsert_result = upsert_detailed(
+                                        items,
+                                        self.db_keyword,
+                                        query_key=self.query_key,
+                                    )
+                                added_count = int(getattr(upsert_result, "added_count", 0) or 0)
+                                dup_count = int(getattr(upsert_result, "duplicate_count", 0) or 0)
+                                new_link_order = [
+                                    str(link).strip()
+                                    for link in (getattr(upsert_result, "new_links", ()) or ())
+                                    if str(link or "").strip()
+                                ]
+                                new_link_set = set(new_link_order)
+                                seen_new_links = set()
+                                for item in items:
+                                    link = str(item.get("link", "") or "").strip()
+                                    if not link or link not in new_link_set or link in seen_new_links:
+                                        continue
+                                    seen_new_links.add(link)
+                                    new_items.append(item)
+                            else:
+                                existing_links = self.db.get_existing_links_for_query(
+                                    [str(item.get("link", "") or "") for item in items],
+                                    keyword=self.db_keyword,
                                     query_key=self.query_key,
                                 )
+                                seen_new_links = set()
+                                for item in items:
+                                    link = str(item.get("link", "") or "").strip()
+                                    if not link or link in existing_links or link in seen_new_links:
+                                        continue
+                                    seen_new_links.add(link)
+                                    new_items.append(item)
+
+                                with perf_timer(
+                                    "api.upsert",
+                                    f"kw={self.db_keyword}|query_key={self.query_key}|items={len(items)}|mode=legacy",
+                                ):
+                                    added_count, dup_count = self.db.upsert_news(
+                                        items,
+                                        self.db_keyword,
+                                        query_key=self.query_key,
+                                    )
                         except DatabaseQueryError as e:
                             logger.error("ApiWorker DB read failed: %s - %s", self.display_keyword, e)
                             if not self.is_running:

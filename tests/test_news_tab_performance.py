@@ -17,6 +17,26 @@ class _FakeDb:
         return []
 
 
+class _FakeMainWindow:
+    def __init__(self):
+        self.badge_cache_updates = []
+        self.badge_refresh_requests = []
+        self.load_more_syncs = []
+        self.refresh_hints = []
+
+    def update_badge_cache_from_tab_load(self, keyword, unread_count):
+        self.badge_cache_updates.append((keyword, unread_count))
+
+    def update_tab_badge(self, keyword):
+        self.badge_refresh_requests.append(keyword)
+
+    def sync_tab_load_more_state(self, keyword):
+        self.load_more_syncs.append(keyword)
+
+    def maybe_show_query_refresh_hint(self, keyword):
+        self.refresh_hints.append(keyword)
+
+
 class TestNewsTabPerformance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -192,6 +212,40 @@ class TestNewsTabPerformance(unittest.TestCase):
         self.assertIn("desc-one", initial_body)
         self.assertIn("desc-two", tab._rendered_body_html)
         self.assertTrue(tab._rendered_body_html.startswith(initial_body))
+
+    def test_db_load_updates_badge_cache_from_worker_unread_count(self):
+        tab = self._make_tab()
+        parent = _FakeMainWindow()
+        row = {
+            "title": "one",
+            "description": "desc-one",
+            "link": "https://example.com/1",
+            "pubDate": "2026-01-01T09:00:00",
+            "publisher": "example.com",
+            "is_read": 0,
+            "is_bookmarked": 0,
+            "is_duplicate": 0,
+            "notes": "",
+        }
+
+        with mock.patch.object(tab, "_main_window", return_value=parent):
+            with mock.patch.object(tab, "_schedule_render"):
+                tab.on_data_loaded([row], total_count=11, unread_count=7)
+
+        self.assertEqual(parent.badge_cache_updates, [("AI -coin", 7)])
+        self.assertEqual(parent.badge_refresh_requests, [])
+        self.assertEqual(parent.load_more_syncs, ["AI -coin"])
+
+    def test_local_badge_change_uses_unread_cache_without_scheduling_count_refresh(self):
+        tab = self._make_tab()
+        parent = _FakeMainWindow()
+        tab._unread_count_cache = 3
+
+        with mock.patch.object(tab, "_main_window", return_value=parent):
+            tab._notify_badge_change()
+
+        self.assertEqual(parent.badge_cache_updates, [("AI -coin", 3)])
+        self.assertEqual(parent.badge_refresh_requests, [])
 
 
 if __name__ == "__main__":

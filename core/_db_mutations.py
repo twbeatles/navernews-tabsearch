@@ -1,5 +1,5 @@
 """Compatibility facade for DatabaseManager mutation mixin."""
 
-from core.db_mutations_support.mixin import _DatabaseMutationsMixin
+from core.db_mutations_support import NewsUpsertResult, _DatabaseMutationsMixin
 
-__all__ = ["_DatabaseMutationsMixin"]
+__all__ = ["NewsUpsertResult", "_DatabaseMutationsMixin"]

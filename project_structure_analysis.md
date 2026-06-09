@@ -1,967 +1,113 @@
-# 프로젝트 구조 분석 및 기능 확장 가이드
+# 프로젝트 구조 분석
 
-작성일: 2026-03-16 (최근 갱신: 2026-05-28)
+이 문서는 현재 코드베이스의 구조와 변경 진입점을 요약합니다. 과거 구현 로그는 제거했고, 실제 유지보수에 필요한 현재 상태를 우선합니다.
 
-## 분석 범위
-
-이 문서는 아래 자료를 함께 참고해 정리했다.
-
-- `README.md`
-- `claude.md`
-- `gemini.md`
-- `update_history.md`
-- `news_scraper_pro.py`
-- `core/**/*.py`
-- `ui/**/*.py`
-- `tests/*.py`
-
-문서 기준 설계 의도와 실제 코드 구조를 함께 대조했고, "앞으로 기능을 어디에 어떻게 붙이면 안전한가"에 초점을 맞췄다.
-
-## 0. 2026-05-28 기능 리스크 후속 / 문서·spec·gitignore 재검증
-
-이번 패스는 클라우드 스냅샷 동기화 순서, 설정 import의 자동화 규칙 중복 누적, pyright suppression 축소 가능 지점, public `__all__` 중복을 실제 코드와 문서 기준으로 다시 맞췄다.
-
-- `core.cloud_sync_support.import_flow.run_cloud_sync_cycle()`은 unseen snapshot import/merge를 먼저 실행한 뒤 로컬 snapshot을 export한다. 따라서 방금 생성된 `news_scraper_sync_*.zip`은 병합 전 로컬 상태가 아니라 병합 후 DB 상태를 대표한다.
-- `core.automation_rules.dedupe_automation_rules()`는 정규화된 rule identity 기준으로 중복을 제거하고, 설정 import staging은 기존 규칙과 가져온 규칙을 병합할 때 이 경로를 사용한다.
-- `core.constants.__all__` 중복을 제거했고, `tests/test_refactor_compat.py`가 주요 facade/support package의 public export 중복을 감시한다.
-- `ui/dialogs_support/backup_dialog/dialog.py`, `ui/main_window_io_support/exports.py`, `ui/main_window_support/base_support/state.py`는 production file-level pyright suppression 없이도 현재 검사 기준을 통과한다. 동적 PyQt/mixin 경계에서 필요한 다른 suppression은 유지한다.
-- `news_scraper_pro.spec`는 이번 변경이 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용함을 다시 명시했다. 새 hidden import/data/exclude 수정은 필요하지 않고, 기존 `urllib3.contrib.emscripten` optional-path 제외는 유지한다.
-- `.gitignore`는 `git check-ignore -v`로 build/dist/cache/log/runtime DB/config/cloud snapshot/quarantine 산출물과 `.claude/` scratch를 확인했으며, 추가 규칙은 필요하지 않다.
-- 검증선은 `python -m pytest -q` => `332 passed, 7 warnings, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`, `git diff --check` 통과다.
-
-## 0. 2026-05-22 전체 대형 모듈 구조 분할 리팩토링
-
-이번 패스는 동작 변경 없이 남아 있던 대형 모듈을 기능별 support package로 더 쪼개고, 기존 공개 import 경로와 테스트가 참조하는 private facade 경로를 유지하는 데 초점을 맞췄다.
-
-- `core._db_queries.py`, `core._db_schema.py`, `core._db_cloud_sync.py`는 compatibility facade로 유지하고, 실제 query/schema/cloud-merge 책임은 각각 `core/db_queries_support/`, `core/db_schema_support/`, `core/db_cloud_sync_support/`로 내려갔다.
-- `core.config_store_support.impl`, `core.cloud_sync`, `core.backup_support.auto_backup`, `core.db_mutations_support.state_tags`, `core.db_mutations_support.maintenance`는 기존 심볼을 재수출하면서 types/secrets/normalization/I/O, snapshot/import/path policy, backup metadata/create/list/restore-delete, state/tag/automation, read/delete/optimize 책임으로 분리됐다.
-- `ui.dialogs_support.article_tools`와 `ui.dialogs_support.backups`는 facade가 되었고, 태그/아카이브/자동화/출처 alias/백업 다이얼로그 구현은 독립 모듈 또는 `backup_dialog/` 하위 mixin으로 분리됐다.
-- `ui.news_tab_support`, `ui.main_window_support`, `ui.main_window_fetch_support`, `ui.main_window_io_support`는 기존 facade mixin을 유지하면서 actions/loading/ui-controls, base/ui-shell, worker-flow, import-stage 세부 support 패키지를 추가했다.
-- 새 의존성은 없고, PyInstaller 관점에서는 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용한다.
-- 검증선은 `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`, `pyright .` => `0 errors, 0 warnings, 0 informations`, 심볼 인벤토리 호환성 + 기존 facade import smoke 통과, `git diff --check` 통과, `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` 성공, 새 `NEWS_SCRAPER_DATA_DIR` + `QT_QPA_PLATFORM=offscreen` 패키지 스모크 성공이다.
-
-## 0. 2026-05-19 기능 리스크 전체 확장 구현 / 문서 재검증
-
-이번 재검증에서는 당시 작성된 `implementation_functional_risk_review_2026-05-19.md`의 권장 구현 1-5와 추가 후보 중 cloud 삭제 tombstone, 수동 병합 preview를 실제 코드 기준으로 닫았다. 2026-05-22 대형 모듈 분할과 문서 재검증 이후 해당 일회성 구현 메모는 삭제 상태로 유지하며, 현재 기준 문서화는 `README.md`, `claude.md`, `gemini.md`, `project_structure_analysis.md`, `update_history.md`가 담당한다.
-
-- `core._db_schema.py`는 `news.is_deleted`, `delete_updated_at`, `delete_machine_id`, `delete_reason`을 보장하고 삭제 상태 index를 추가한다.
-- `core.db_mutations_support.state_tags.py`는 `delete_link()`를 명시 단건 soft-delete로 바꾸고 `restore_deleted_link()`를 추가했다. `update_status()`/`set_tags()`는 동일 값 no-op이면 timestamp를 갱신하지 않고 `False`를 반환한다.
-- `core.db_mutations_support.maintenance.py`의 오래된 기사 정리/전체 정리는 tombstone을 만들지 않는 로컬 hard-delete로 유지되며, 기본 mark-read scope는 삭제 기사를 제외한다.
-- `core._db_queries.py`, `core._db_analytics.py`, `core._db_duplicates.py`는 기본 조회/count/archive/stat/tag/tray scope에서 `is_deleted=0`만 대상으로 삼는다. 아카이브 검색은 `include_deleted=True`일 때만 삭제 row를 포함한다.
-- `core._db_queries.py`의 LIKE helper는 `%`, `_`, `\`를 literal로 escape하고 fetch/count/archive/mark-read/analytics의 텍스트 조건을 같은 정책으로 맞춘다.
-- `core._db_cloud_sync.py`는 삭제/복구 상태를 `delete_updated_at` 최신값으로 병합한다. 오래된 active snapshot이나 API 재수집은 더 최신 tombstone을 복구하지 못한다.
-- `core.cloud_sync.py`는 snapshot ZIP/DB 512MB, manifest/settings JSON 1MB 상한, `.invalid/` 격리, import preview 집계 helper를 제공한다.
-- `ui.main_window_io_support.cloud.py`는 수동 import 전 dry-run preview 확인을 요구하고, 주기 동기화는 자동 병합하되 같은 요약 통계를 상태로 남긴다. "주기적 클라우드 동기화 사용" 체크박스는 timer만 제어한다.
-- `ui._main_window_analysis.py`와 `DatabaseManager.apply_automation_actions(...)`는 자동화 규칙을 먼저 평가한 뒤 DB 반영을 단일 transaction으로 적용한다. DB 적용 실패 시 fetch 상태/토스트에 실패를 드러내고 알림 억제는 평가 결과 기준으로 유지한다.
-- `ui.dialogs_support.article_tools.ArchiveSearchDialog`는 삭제 기사 포함 조회와 soft-delete 복구 액션을 제공한다.
-- `news_scraper_pro.spec`는 2026-05-19 기준 재검토했다. 이번 변경은 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용하고 snapshot ZIP/`.invalid/`는 런타임 데이터이므로 hidden import/data/exclude 추가가 필요하지 않다.
-- `.gitignore`는 cloud snapshot ZIP/temp 파일과 `.invalid/` quarantine 폴더, build/dist/cache/log/runtime DB/config 산출물을 계속 무시하도록 맞췄다.
-
-## 0. 2026-05-15 P0/P1 기능 리스크 클로저 / 문서·spec·gitignore 재검증
-
-이번 재검증에서는 2026-05-15 P0/P1 기능 리스크 계획을 실제 코드 기준으로 닫고, 삭제 상태인 `feature_enhancement_analysis_2026-05-10.md`를 publish 범위에 포함한다.
-
-- `core._db_queries.py`는 FTS schema/backfill은 유지하되 FTS rowid hard prefilter를 비활성화했다. `fetch_news`, `count_news`, `search_archive`, `count_archive`의 사용자 검색 의미는 FTS 완료 전후 모두 LIKE token-AND가 진실 원본이다.
-- `core.automation_rules.py`는 `AutomationActions.suppress_notification`을 추가했다. `exclude=true`는 기존 `제외` 태그 + 읽음 처리에 더해 이번 fetch의 데스크톱/트레이/알림 키워드 대상에서 해당 링크를 제외한다.
-- `ui._main_window_analysis.py`는 현재 탭의 `DBQueryScope`를 가져오는 helper와 snapshot rows 조회 helper를 제공한다. 태그 관리자와 자동화 규칙의 "현재 탭 전체 적용"은 로드된 50개 cache가 아니라 DB snapshot 전체 scope를 대상으로 한다.
-- `ui.dialogs_support.article_tools.TagManagerDialog`와 `AutomationRulesDialog`는 전체 scope 작업을 `IterativeJobWorker`와 유지보수 모드로 실행하고, 완료/취소/오류 시 기존 유지보수 완료 refresh 경로로 열린 탭, 배지, 트레이 상태를 갱신한다.
-- `ArchiveSearchDialog`는 result item에 raw row/link payload를 저장하고, 더블클릭 열기 + 읽음 처리, 컨텍스트 메뉴의 열기/북마크/읽음/메모/태그 액션을 지원한다.
-- `AutomationRulesDialog`는 목록 + 폼 UI를 기본으로 하고 JSON 편집은 고급 옵션으로 유지한다. `PublisherAliasDialog`는 source/alias 행 기반 편집 UI와 고급 JSON을 함께 제공한다.
-- `news_scraper_pro.spec`는 2026-05-15 기준 다시 검토했다. 이번 변경은 기존 stdlib/PyQt6/SQLite/runtime 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
-- `.gitignore`는 `git status --ignored --short`와 `git check-ignore -v`로 build/dist/cache/log/runtime 산출물과 `.claude/` scratch가 계속 무시됨을 확인했다. 새 기능 산출물 기준 추가 ignore 규칙은 필요하지 않다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `329 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `git diff --check` 통과다.
-
-## 0. 2026-05-11 기능 리스크 수정 / support-package 리팩토링 / 문서·spec 재검증
-
-이번 재검증에서는 2026-05-11 기능 리스크 리뷰에서 다룬 P1/P2 리스크와 기능 후보를 실제 코드 기준으로 맞췄다. 해당 리뷰 Markdown 파일은 현재 삭제 상태이며, 이번 publish 범위에도 삭제로 포함한다.
-
-- `core._db_mutations.py`, `core.workers.py`, `core.backup.py`, `ui.dialogs.py`, `ui.styles.py`, `ui._main_window_fetch.py`, `ui._main_window_settings_io.py`는 기존 import 경로를 유지하는 facade가 되었고, 실제 구현은 `*_support/` 패키지로 분리됐다.
-- `core.db_mutations_support`는 upsert, 상태/태그 변경, mark-read/maintenance 책임을 분리하고, `core.workers_support`는 lifecycle, HTTP URL/retry policy, job worker, API worker, DB worker를 나눠 가진다.
-- `ui.main_window_fetch_support`는 refresh flow와 fetch worker lifecycle을 나누고, `ui.main_window_io_support`는 cloud sync, export/import, settings staging/dialog 책임을 분리한다.
-- `ui.dialogs_support`는 article tools/basic/keyword-group/backup dialog를 나누고, `ui.styles_support`는 tokens와 QSS/HTML template을 분리한다.
-- `core._db_mutations.py`는 일괄/범위 읽음 처리에서 `is_read=1`과 같은 timestamp로 `read_updated_at`을 갱신한다.
-- `core.cloud_sync.py`는 snapshot별 오류를 격리해 `errors`/`invalid_count`에 기록하고 다음 snapshot을 계속 처리한다. import 후보는 manifest를 먼저 읽어 이미 본 snapshot id를 제외하고 오래된 unseen snapshot부터 최대 20개 처리한다.
-- cloud snapshot의 `settings.json`은 계속 sanitized diagnostic metadata이며, import에서는 설정을 적용하지 않는다. `automation_rules`, `publisher_aliases`, API 자격증명, 로컬 cloud path는 snapshot settings에서 제외한다.
-- `core.automation_rules.py`는 텍스트 키워드, 제외어, 출처, 탭/검색어 조건을 정규화하고 자동 태그/북마크/읽음/`제외` 태그+읽음 action을 계산한다.
-- `core.publisher_aliases.py`는 원본 `publisher` 값을 DB에서 바꾸지 않고 표시/필터/통계/아카이브/Markdown export에서 대표 출처명을 계산한다.
-- `core._db_queries.py`는 `search_archive()` / `count_archive()`를 제공하고, `core._db_analytics.py`는 alias 적용 출처 통계를 지원한다.
-- `ui.dialogs.py`, `ui._main_window_analysis.py`, `ui.news_tab_support.*`, `ui._main_window_settings_io.py`는 태그 관리자, 전체 아카이브 검색, 자동화 규칙 관리자, 출처 alias 관리자, Markdown digest export, 태그/alias 재필터링을 UI에 연결한다.
-- `news_scraper_pro.spec`는 2026-05-11 기준 다시 검토했으며, support-package 리팩토링은 기존 패키지 내부 모듈 분리만 추가한다. Windows onefile 런타임에 필요 없는 `urllib3.contrib.emscripten` optional 경로는 submodule 수집에서 제외해 `js` optional import 경고를 제거했다.
-- `.gitignore`는 build/test/runtime 산출물에 더해 `.claude/` 로컬 worktree scratch를 무시하도록 보강했다.
-- 2026-05-11 당시 검증선은 `python -m pytest -q` => `316 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` 성공, 새 `NEWS_SCRAPER_DATA_DIR` + `QT_QPA_PLATFORM=offscreen` 패키지 스모크 성공이다.
-
-## 0. 2026-05-10 클라우드 스냅샷 동기화 / 문서·spec·gitignore 재검증
-
-이번 재검증에서는 OneDrive/Google Drive 같은 동기화 폴더에서 live SQLite DB를 직접 여는 위험을 피하기 위해 로컬 DB + 클라우드 스냅샷 병합 구조를 추가했다.
-
-- `core.cloud_sync.py`는 `news_scraper_sync_*.zip` 생성/검증/추출/가져오기/cycle/정리와 cloud/runtime path overlap 감지를 담당한다. ZIP payload는 `manifest.json`, secret 제거 `settings.json`, SQLite backup API로 만든 `news_database.db`만 포함한다.
-- `core._db_cloud_sync.py`는 `DatabaseManager.merge_cloud_snapshot_db(...)`, seen snapshot id 추적, 같은 PC snapshot skip, 사전 rollback backup, 단일 transaction 병합을 제공한다.
-- `core._db_schema.py`는 `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`, `news_tag_state(link, tags_updated_at)`를 보장하고, legacy 데이터는 사용자 상태가 실제로 있는 필드만 현재 시각 timestamp로 초기화한다.
-- `core._db_mutations.py`는 읽음/북마크/메모/태그 변경 시 per-field timestamp를 갱신한다. 2026-05-19 이후 명시 단건 삭제/복구는 tombstone timestamp로 클라우드 병합에 포함된다.
-- `ui._settings_dialog_content.py`, `ui._settings_dialog_tasks.py`, `ui._main_window_settings_io.py`, `ui.main_window.py`는 설정 화면의 클라우드 동기화 UI, 수동 내보내기/병합, 30분 기본 주기 timer, 유지보수/fetch 중 skip, 병합 후 열린 탭/북마크/배지 refresh를 연결한다.
-- API 자격증명은 기존 DPAPI 로컬 저장 정책을 유지하고, settings export/import와 cloud snapshot 모두에서 `client_id`, `client_secret`, `client_secret_enc`, `client_secret_storage`를 제외한다.
-- `news_scraper_pro.spec`는 2026-05-10 기준 다시 검토했으며, 이번 변경은 표준 라이브러리와 기존 SQLite/PyQt 경로만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않다.
-- `.gitignore`는 cloud snapshot 산출물(`news_scraper_sync_*.zip`, `.news_scraper_sync_*.zip.tmp`)을 무시하도록 보강했다.
-- 당시 검증선은 `python -m pytest -q` => `310 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`이다.
-
-## 0. 2026-05-08 후속 리뷰 전면 반영 / 문서·spec·gitignore 재검증
-
-이번 재검증에서는 `implementation_followup_review_2026-05-07.md`의 1-10번 후보를 코드와 문서 기준으로 전면 반영했다.
-
-- `core.workers.ApiWorker`와 `ui._settings_dialog_tasks.py`는 API 요청/검증에서 리다이렉트를 차단하고 `3xx`를 오류로 처리한다. API item URL은 `ipaddress` 기반으로 로컬/사설/내부 host를 저장 전 drop하며, Naver news host만 남은 경우 publisher fallback은 `정보 없음`으로 유지한다.
-- `core._db_mutations.py`는 temp-table seen-set 기반 `mark_query_as_read_chunked(...)`, `pubDate_ts <= 0` legacy row 삭제 보정, `DatabaseManager.optimize_database(...)`, `news.is_duplicate` legacy-only 정책을 담는다.
-- `core._db_schema.py`는 `PRAGMA table_info(news)` 기반 컬럼 보장 경로를 사용해 blind `ALTER TABLE`/catch-all 흐름을 줄였다.
-- `ui._main_window_settings_io.py`와 `core.config_store_impl.py`는 `export_version=1.3`, `export_machine_id`, `app_settings.auto_backup_minutes`, `theme_index=2` 시스템 테마, machine-aware auto-start import 차단, raw tab policy drop, 빈 keyword group drop, saved-search 100개 cap을 담당한다.
-- `core.backup.py`는 atomic `backup_info.json` 기록, stale `.applied` cleanup, 복원 예약 전 백업 디렉터리 접근 검증, 손상 백업 일괄 삭제 helper를 제공한다.
-- `core.bootstrap.py`의 단일 인스턴스 server hash는 runtime path와 사용자 identity를 포함하고, window 생성 전 signal을 받으면 현재 프로세스를 종료한다. legacy migration 실패는 window 생성 후 status/toast로 노출된다.
-- `ui.main_window_support.ui_shell.py`, `ui._main_window_analysis.py`, `ui._settings_dialog_content.py`, `ui._settings_dialog_tasks.py`, `ui.dialogs.py`는 정규식 알림, 시스템 테마, DB 최적화, 설정-only 자동 백업, CSV 메모/북마크 import, 태그 통계, 출처 필터 시뮬레이션, 손상 백업 일괄 삭제를 UI에 연결한다.
-- `ui._main_window_tray.py`는 트레이 unread tooltip을 cached value + `InterruptibleReadWorker` 비동기 refresh로 계산한다.
-- `core.logging_setup.py`는 `RotatingFileHandler`를 사용한다. 사용자 표시 문구는 한국어, 내부 PERF/log event key는 영문 허용이라는 문서 기준을 추가했다.
-- 루트 호환 래퍼(`query_parser.py`, `config_store.py`, `backup_manager.py`, `worker_registry.py`, `workers.py`, `database_manager.py`, `styles.py`)는 기존 import 호환성을 유지하되 `DeprecationWarning`을 낸다.
-- 새 회귀 테스트는 `tests/test_followup_20260508.py`에 추가했고, 기존 import/export/validation/worker/settings 테스트를 새 계약에 맞춰 확장했다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `294 passed, 7 warnings, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다. pytest 경고 7개는 루트 호환 래퍼의 의도된 `DeprecationWarning`이다.
-
-## 0. 2026-05-03 구현 리스크 안정화 / 문서·spec·gitignore 재검증
-
-이번 재검증에서는 설정 import 데이터 손실 방지, canonical 정책 key 일관화, saved search 검증, 다중 단어 필터 의미, worker/API edge case를 코드와 문서 기준으로 맞췄다.
-
-- `core.config_store_impl.py`는 `saved_searches`를 이름 기준으로 병합하고 import payload를 우선하며, saved search 날짜/target keyword를 import 단계에서 정규화한다.
-- `ui/_main_window_settings_io.py`, `ui/main_window_support/config.py`, `ui/_main_window_tabs.py`, `ui/_main_window_fetch.py`는 `tab_refresh_policies`를 canonical fetch key 기준으로 저장/조회/병합하고 legacy raw key를 가능한 범위에서 rebasing한다.
-- `core._db_queries.py`는 제목/본문 텍스트 필터의 다중 단어를 토큰 AND 의미로 처리하며, FTS 백필 완료 여부와 무관하게 LIKE fallback과 같은 결과 의미를 유지한다.
-- `ui/news_tab_support/actions.py`는 read/bookmark/note/tag 쓰기 실패에서 `DatabaseWriteError`를 별도 warning 로그로 남기고 UI 캐시를 변경하지 않는다.
-- `ui/_main_window_fetch.py`는 cleanup 성공/실패 경로에서 worker/thread `deleteLater()`를 명시 호출하고 registry/request state를 정리한다.
-- `core.workers.ApiWorker`는 API item의 `http`/`https` 링크만 저장하며 유효 링크가 없으면 skip하고, publisher는 정규화된 URL host 기준으로 산출한다.
-- `news_scraper_pro.spec`는 이번 변경도 표준 라이브러리/기존 번들 의존성만 사용함을 재확인했으며, 추가 hidden import/exclude/data 변경은 필요하지 않다.
-- `.gitignore`는 `git status --ignored --short` 기준으로 `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, `__pycache__/`, runtime DB/config/log/backup/pending restore 잔여물을 모두 무시하고 있어 추가 규칙이 필요하지 않다.
-- 삭제 상태의 `implementation_gap_review_2026-04-29.md`는 이번 푸쉬에 포함할 문서 삭제로 유지한다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `280 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`이다. 2026-05-03 변경에서는 PyInstaller 빌드를 재실행하지 않았다.
-
-## 0. 2026-04-29 구현 갭 클로저 / 문서·gitignore 재검증
-
-이번 재검증에서는 `implementation_gap_review_2026-04-29.md`의 1-11번 계획을 실제 코드에 반영한 뒤, 문서와 `.gitignore` 기준을 다시 맞췄다.
-
-- `core.bootstrap.py`는 단일 인스턴스 lock/기존 인스턴스 notify를 먼저 처리하고, 현재 프로세스가 주 인스턴스임이 확인된 뒤 `MainApp`/DB 생성 전에만 pending restore를 적용한다.
-- `core._db_queries.py`, `core._db_mutations.py`, `core._db_analytics.py`는 `query_key`가 제공된 경로에서 대표 keyword 조건을 붙이지 않고 query scope만 기준으로 조회/읽음/분석을 수행한다.
-- `core.content_filters.py`는 차단/선호 출처 목록의 중복과 충돌을 함께 정규화하고, DB visibility SQL은 `example.com`이 `example.com`과 `news.example.com`에 매칭되되 `badexample.com`에는 매칭되지 않는 suffix 정책을 사용한다.
-- `ui/main_window_support/ui_shell.py`, `ui/_main_window_tray.py`, `ui/_main_window_analysis.py`는 탭 배지, 트레이 총 미읽음, 전체 통계를 차단 출처 제외 기준으로 계산한다. 탭 배지는 각 탭의 `DBQueryScope` 기반 `count_news(..., only_unread=True)`로 표시 scope와 일치시킨다.
-- `ui/news_tab_support/loading.py`는 텍스트 필터만이 아니라 전체 scope signature를 기준으로 조기 return 여부를 판단해 태그 필터 변경이 DB reload 없이 무시되지 않는다.
-- `ui/news_tab_support/ui_controls.py`와 `ui/main_window_support/ui_shell.py`는 저장된 검색 삭제 UI를 추가하고, 저장된 검색 적용 시 저장된 keyword 탭으로 이동/생성한 뒤 payload를 적용한다.
-- `ui/_main_window_settings_io.py`와 `core.config_store_impl.py`는 import stage에서 `saved_searches`/`tab_refresh_policies`를 즉시 정규화하고, 출처 visibility 변경 시 기존 열린 탭을 reload한다.
-- `ui/_main_window_fetch.py`는 자동 새로고침 due timestamp를 due 판정 시점이 아니라 fetch 성공 callback에서만 갱신한다.
-- 새 회귀 테스트는 `tests/test_implementation_plan_20260429.py`에 추가했고, 기존 `test_fetch_cooldown.py`, `test_import_refresh_prompt.py`, `test_risk_fixes.py`를 확장했다.
-- `.gitignore`는 `git status --ignored --short`와 runtime/test/build 산출물 기준으로 다시 확인했다. `.pytest_cache/`, `.pytest_tmp/`, `build/`, `dist/`, 로그, `__pycache__/`, runtime DB/config/backup/pending restore 잔여물은 기존 규칙으로 모두 무시되므로 추가 수정은 필요하지 않았다.
-- 삭제 상태인 `implementation_risk_review_2026-04-27.md`는 현재 작업트리 상태로 유지한다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `272 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `python -m pytest tests/test_encoding_smoke.py -q` => `2 passed`이다. 2026-04-29 변경에서는 PyInstaller 빌드를 재실행하지 않았다.
-
-## 0. 2026-04-27 구현 리스크 계획 반영 / 문서·spec·gitignore 재검증
-
-이번 재검증에서는 2026-04-27 구현 계획의 우선 수정, 중간 우선순위, 기능 후보를 하나의 변경 배치로 실제 코드에 반영하고 문서/패키징 기준을 다시 맞췄다.
-
-- `core._db_mutations.py`의 단건 액션 계약을 정리해 `update_status()`는 대상 row 없음에서 `False`, SQLite 쓰기 실패에서 `DatabaseWriteError`를 반환/발생시키고, `get_note()`는 조회 실패를 `DatabaseQueryError`로 올리며, `delete_link()`는 대상 없음과 DB 실패를 UI 메시지까지 분리한다.
-- `ui/news_tab_support/rendering.py`와 `actions.py`는 카드 동적 문자열 escape와 외부 링크 scheme 제한(`http`/`https`)을 적용한다.
-- `core._db_schema.py`는 `news_tags(link, tag)` 스키마와 index를 보장하고, `core._db_queries.py`/`_db_analytics.py`/CSV export는 출처 차단, 선호 출처, 태그 필터를 같은 scope로 처리한다.
-- `core.config_store.py`는 기존 import 호환 facade가 되었고, 실제 기본값/정규화/secret storage/파일 I/O 구현은 `core/config_store_impl.py`, 출처/태그 정규화는 `core/content_filters.py`로 분리됐다.
-- `ui/news_tab_support/ui_controls.py`, `ui/main_window_support/ui_shell.py`, `ui/_main_window_tabs.py`는 태그 필터, 저장된 검색, 선호 출처 필터, 탭별 자동 새로고침 정책을 UI에 연결한다.
-- `core.backup.py`는 pending restore 성공 후 `.applied` atomic rename 경로를 사용하고, `ui.dialogs.BackupDialog`는 복원 예약 전 dry-run 요약에 설정 변경, DB 포함 여부, 현재/백업 row count, tag row count, 검증 상태를 표시한다.
-- `core.workers.ApiWorker`는 429 `Retry-After`가 30초를 초과하면 worker 내부 sleep 없이 cooldown meta로 즉시 반환한다.
-- `news_scraper_pro.spec`는 새 기능이 기존 PyQt/stdlib 의존성만 사용함을 재검토했고, 추가 hidden import/exclude/data 수정은 필요하지 않았다.
-- `.gitignore`는 적용 성공 후 남을 수 있는 `pending_restore.json.applied`를 무시하도록 보강했다.
-- 기존 삭제 상태인 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지했다. 이후 2026-04-29 작업트리에서는 `implementation_risk_review_2026-04-27.md`도 삭제 상태로 유지한다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `258 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
-
-## 0. 2026-04-22 구조 분할 / 문서·spec·gitignore 정합화
-
-이번 재검증에서는 RuntimePaths 통합, support-package 구조 분할, 문서/spec/ignore 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- `core.constants.py`는 이제 `RuntimePaths` facade 역할만 맡고, 실제 런타임 경로 계산과 레거시 마이그레이션은 `core/runtime_support/paths.py`, `core/runtime_support/migration.py`로 내려갔다.
-- `ui.main_window.py`는 약 266줄의 얇은 facade가 되었고, 실제 `MainApp` 조립 책임은 `ui/main_window_support/base.py`, `config.py`, `ui_shell.py`로 분리됐다.
-- `ui.news_tab.py`는 약 111줄의 facade로 축소됐고, 상태/로딩/렌더링/UI 제어/카드 액션은 `ui/news_tab_support/state.py`, `loading.py`, `rendering.py`, `ui_controls.py`, `actions.py`로 분리됐다.
-- `news_scraper_pro.spec`는 2026-04-22 기준 다시 재검토되었고, 이번 패스의 RuntimePaths 통합, SQLite-safe legacy migration hardening, support-package 분할은 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않았다.
-- `.gitignore`는 portable/legacy 실행 폴더 기준으로 다시 생길 수 있는 `keyword_groups.json`, `news_scraper_pro.lock`까지 명시적으로 무시하도록 보강했다.
-- 2026-04-27 기준 삭제된 `implementation_audit_2026-04-18.md`는 사용자 변경으로 유지했다. 이후 2026-04-29 작업트리에서는 `implementation_risk_review_2026-04-27.md`도 삭제 상태로 유지한다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `251 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
-
-## 0. 2026-04-18 구현 수정 반영 / 문서·spec·gitignore 재검증
-
-이번 재검증에서는 2026-04-18 감사 후속 수정 배치와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- `ui.settings_dialog.SettingsDialog`는 유지보수 작업 완료 결과를 즉시 부모로 흘리지 않고, `end_database_maintenance()` 이후에만 flush하도록 바뀌어 열린 탭 reload, 배지 refresh, tray tooltip sync가 유지보수 가드에 막히지 않는다.
-- 순차 새로고침은 수동 새로고침과 동일한 성공 후처리 경로를 공유하게 되어, 각 탭 완료 시점마다 데스크톱 알림, 트레이 알림, 알림 키워드 검사가 다시 실행된다.
-- fetch 성공 후 "새 기사" 의미는 `new_items` / `new_count`로 통일되었고, 제목 중복이더라도 새 링크인 기사는 알림과 요약 집계에 계속 포함된다.
-- `core.workers.ApiWorker`는 HTTP `429` 응답에서 `Retry-After`의 delta-seconds / HTTP-date 형식을 모두 해석하고, 재시도 대기와 최종 cooldown 메타 계산에 같은 값을 사용한다.
-- `news_scraper_pro.spec`는 2026-04-18 기준 다시 재검토되었고, 이번 패스의 유지보수 완료 sync 순서 고정, 순차 새로고침 즉시 알림, `new_count` 의미 통일, `Retry-After` 지원, 남은 pyright 정리는 기존 번들 의존성/표준 라이브러리만 사용하므로 추가 hidden import/exclude/data 수정이 필요하지 않았다.
-- `.gitignore`는 `git status --ignored --short` 기준으로 다시 확인했으며, `build/`, `dist/`, `__pycache__/`, `.pytest_cache/`, 로컬 DB/설정/로그 산출물을 계속 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `236 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
-
-## 0. 2026-04-16 구현 리스크 후속/문서 정합화 재검증
-
-이번 재검증에서는 2026-04-16 follow-up risk fixes 배치와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- `core.workers.ApiWorker`는 `500/502/503/504` 등 `5xx`를 재시도 경로로 편입하고, 최종 실패 시에도 `last_error_meta(kind=http_error, retryable=True)`를 유지한다.
-- `ui.news_tab.NewsTab`의 초기 hydration은 request-id 취소 + late cleanup 방식으로 강화되었고, 시작 시 북마크/현재 탭만 즉시 로드한 뒤 나머지 뉴스 탭은 순차 hydration queue로 읽어들인다.
-- `ui._main_window_settings_io.py`의 설정 import는 `stage -> persist -> apply-runtime -> startup reconcile` 순서로 재구성되어, 중간 실패 시 부분 적용된 UI/runtime 상태를 남기지 않는다.
-- `core.backup.AutoBackup`은 legacy `include_db` 누락을 tri-state로 읽고 실제 payload 파일로 복원 범위를 자동 판정하며, 수동 검증/복원 직전 검증 결과(`verification_state`, `last_verified_at` 등)를 `backup_info.json`에 저장한다.
-- 통계/언론사 분석은 `AsyncJobWorker`가 아니라 `InterruptibleReadWorker` 기반 비동기 로드로 전환되었고, 다이얼로그 종료 시 SQLite read interruption을 함께 요청한다.
-- startup FTS backfill은 dedicated retry scheduler로 `5초 -> 15초 -> 30초 cap` backoff를 사용하며 유지보수/전체 fetch/순차 refresh/종료 경계에서 pause/resume 된다.
-- `news_scraper_pro.spec`는 2026-04-16 기준 다시 재검토되었고, 이번 패스의 hydration late-cleanup, staged import atomicity, backup metadata compatibility/persistence, interruptible analysis read, FTS retry scheduler는 기존 번들 의존성만 사용하므로 hidden import/exclude/data 추가 수정이 필요하지 않았다.
-- `.gitignore`는 빌드 직후 `git status --ignored` 기준으로 다시 확인했으며, `build/`, `dist/`, `.pytest_tmp/`, 로그/캐시 산출물을 계속 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `228 passed, 5 subtests passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이며, `pyright`는 로컬 환경에서 `PyQt6`/`requests` import source 미해결과 일부 optional/member 타입 이슈 때문에 `74 errors, 5 warnings, 0 informations` 상태다.
-
-## 0. 2026-04-13 구현 리스크 후속 정합화 / 문서 재검증
-
-이번 재검증에서는 2026-04-13 구현 리스크 후속 정합화 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- `core.database.DatabaseWriteError`가 추가되었고 `core._db_mutations.upsert_news(...)`는 더 이상 `sqlite3.Error`를 `(0, 0)`으로 삼키지 않는다.
-- `core.workers.ApiWorker`는 `get_existing_links_for_query(...)` 실패와 `upsert_news(...)` 실패를 각각 DB error 경로로 올리며, 상위 UI는 이를 fetch 성공 완료와 분리해 처리한다.
-- `ui._main_window_fetch.on_fetch_error(...)`는 DB 오류와 API/네트워크 오류를 구분해 다른 제목/안내 문구를 보여준다.
-- `core._db_schema.init_db()`는 `title_hash IS NULL` / `pubDate_ts IS NULL` backfill을 반복 배치 루프로 수행해 대용량 legacy DB에서도 startup migration 잔여분이 남지 않게 한다.
-- `ui._settings_dialog_tasks.py`의 API 키 검증은 이제 `HttpClientConfig` 기반 공용 session과 현재 `spn_api_timeout` 값을 사용하고, timeout/network/http failure를 구분해 반환한다.
-- 저장소에 남아 있던 mojibake UI/테스트 문자열이 정리되었고, `tests/test_encoding_smoke.py`는 단일 토큰이 아니라 다중 suspicious token/정규식 패턴을 감시한다.
-- `news_scraper_pro.spec`는 2026-04-13 기준 다시 재검토되었고, 이번 패스의 DB write failure 승격, 반복 backfill, 설정 검증 HTTP 정책 통합, 인코딩 가드 강화는 기존 번들 의존성만 사용하므로 hidden import/exclude/data 추가 수정이 필요하지 않았다.
-- `.gitignore`는 build/dist/runtime/test 산출물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `209 passed, 5 subtests passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이며, `pyright`는 로컬 환경에서 `PyQt6`/`requests` import source 미해결과 기존 타입 이슈 때문에 `55 errors, 5 warnings, 0 informations` 상태다.
-
-## 0. 2026-04-09 구현 리스크 개선 전면 반영 / 문서 재검증
-
-이번 재검증에서는 2026-04-09 구현 리스크 개선 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- `core.http_client.HttpClientConfig`가 도입되어 `ApiWorker`는 이제 메인 윈도우의 mutable shared session이 아니라 worker-owned `requests.Session`을 중앙 HTTP 설정에서 생성해 사용한다.
-- `ApiWorker.last_error_meta`와 `MainApp` 전역 fetch cooldown이 연결되어 429/quota 성격 오류 후 수동 refresh, 자동 refresh, 순차 refresh, `더 불러오기`가 동일한 차단/재개 규칙을 따른다.
-- CSV export는 `DatabaseManager.iter_news_snapshot_batches(...)`로 한 read snapshot 안에서 `count + paged fetch`를 끝까지 순회하므로 export 중 DB 변화가 있어도 결과가 시작 시점 기준으로 고정된다.
-- `DBWorker`는 일반 pool connection 대신 `open_read_connection(...)`으로 연 dedicated read connection을 사용하고 `stop()` 시 `interrupt_connection(...)`을 요청해 종료/유지보수 시 취소 성공률을 높인다.
-- 통계/언론사 분석은 메인 스레드 동기 DB 조회가 아니라 `AsyncJobWorker` 기반 비동기 로딩으로 전환되었고, 다이얼로그 close/탭 변경 후 stale 결과를 버리는 가드가 추가됐다.
-- `news_fts` FTS5 가상 테이블, 동기화 trigger, `app_meta` 기반 백필 상태 저장, UI 초기화 후 incremental backfill worker가 추가됐다. 검색 의미의 진실 원본은 계속 기존 `LIKE/NOT LIKE` SQL이다. 2026-05-15 이후에는 한글 복합어 false negative 방지를 위해 FTS rowid hard prefilter도 사용하지 않는다.
-- `news_scraper_pro.spec`는 2026-04-09 기준 다시 재검토되었고, 이번 패스의 HTTP 구성 계층/FTS5/backfill/async analysis는 기존 번들 의존성만 사용하므로 hidden import/exclude/data 추가 수정이 필요하지 않았다.
-- `.gitignore`는 build/dist/runtime/test 산출물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `203 passed, 5 subtests passed`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이며, `pyright`는 로컬 환경에서 `PyQt6`/`requests` import source 미해결과 기존 타입 이슈 때문에 `55 errors, 5 warnings, 0 informations` 상태다.
-
-## 0. 2026-04-05 구현 리스크 감사 반영 / 문서 재검증
-
-이번 재검증에서는 2026-04-05 구현 리스크 감사 반영 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- 유지보수 모드는 이제 fetch 계열뿐 아니라 탭 DB 재조회, 필터/정렬/기간 변경 reload, CSV export, 통계/분석, `모두 읽음`, import 직후 선택 refresh까지 DB 작업 전반을 차단한다.
-- `core.database.DatabaseQueryError`가 도입되어 조회/집계 실패가 `[]`/`0`으로 묻히지 않고, `DBWorker -> NewsTab/MainApp` 경로에서 상태바/토스트/명시적 경고로 surfaced된다.
-- 키워드 그룹 저장 실패는 더 이상 `KeywordGroupManager` 내부에서 로그만 남기고 삼키지 않으며, `KeywordGroupDialog`는 실패 시 닫히지 않아 사용자가 수정 내용을 유지한 채 재시도할 수 있다.
-- `AutoBackup.create_backup()`는 payload 기록 직후 self-verify를 수행하고, 실패한 백업도 폴더를 보존한 채 목록에서 `복원 불가` 항목으로 남겨 후속 진단이 가능하다.
-- 설정 import는 새 탭 추가 후 곧바로 묻지 않고, 실제 refresh 가능 여부(유지보수 중 아님, 순차 새로고침 미실행 중, API 자격증명 유효)를 먼저 확인한 뒤에만 선택 새로고침 프롬프트를 띄운다.
-- `news_scraper_pro.spec`는 2026-04-05 기준 다시 재검토되었고, 이번 패스의 유지보수 경계 강화/실패 표면화/self-verify 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `196 passed, 5 subtests passed`, `pyright` => `0 errors, 0 warnings, 0 informations`, `pyinstaller --noconfirm --clean news_scraper_pro.spec` 클린 빌드 성공이다.
-
-## 0. 2026-04-02 구현 감사 전면 반영 / 문서 재검증
-
-이번 재검증에서는 2026-04-02 구현 감사 전면 반영 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- CSV export, 설정 export/import, 백업 create/restore/delete는 이제 `ui.dialog_adapters.QtDialogAdapter`를 통해 Qt static dialog 의존성을 얇게 감싼다.
-- 설정 import는 새로 추가된 탭 목록을 추적하고, 사용자가 동의하면 `refresh_selected_tabs(...)`로 새 탭만 순차 새로고침한다.
-- 백업 생성은 `core.backup.AutoBackup.validate_create_backup_prerequisites(...)` 기준으로 restorable payload 여부를 먼저 검사하며, 설정 파일이 없으면 manual backup은 실패하고 startup auto-backup은 조용히 skip한다.
-- 앱 종료는 `MainApp._perform_real_close()`에서 열린 `NewsTab` cleanup을 먼저 수행하고, `NewsTab.cleanup()`은 timer/DB worker/job worker/request state를 idempotent하게 정리한다.
-- `news_scraper_pro.spec`는 2026-04-02 기준 다시 재검토되었고, dialog adapter, 종료 cleanup, backup preflight, selective refresh 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
-- `.gitignore`는 build/dist/runtime/test 부산물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
-- 문서 기준 현재 검증선은 `python -m pytest -q` => `196 passed, 5 subtests passed`이며, `pyinstaller --noconfirm --clean news_scraper_pro.spec`도 2026-04-02 기준 다시 성공했다.
-
-## 0. 2026-03-27 UI/UX 하드닝/문서 재검증
-
-이번 재검증에서는 2026-03-27 UI/UX 하드닝 패스와 문서/패키징 기준이 실제 저장소 상태와 계속 일치하는지 다시 확인했다.
-
-- `SettingsDialog`는 `help_mode` / `initial_tab`을 지원하고, 도움말은 저장 가능한 설정 창이 아니라 read-only 도움말 다이얼로그로 열린다.
-- `NewsTab`은 기간 필터를 즉시 반영형에서 `적용`/`해제` 흐름으로 바꿨고, 외부 기사 열기 실패 시 읽음 처리하지 않으며, unread 카운트는 현재 로드된 slice가 아니라 현재 DB scope 전체를 기준으로 유지한다.
-- 자동 새로고침 카운트다운은 전용 상태바 라벨로 분리되었고, 자동 새로고침 완료 알림은 트레이 미지원 환경에서도 desktop fallback을 유지한다.
-- `KeywordGroupDialog`는 staged save/cancel 모델로 바뀌었고, `LogViewerDialog`는 debounce 검색을 사용한다.
-- 백업 목록은 quick metadata를 먼저 보여주고, 무거운 SQLite integrity/sidecar 검사는 사용자가 직접 시작하는 on-demand verification으로 전환됐다.
-- `news_scraper_pro.spec`는 2026-03-27 기준 다시 재검토되었고, help/read-only dialog, on-demand backup verification, unread count bookkeeping, tray fallback 알림 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
-- `.gitignore`는 build/dist/runtime/test 부산물을 이미 충분히 무시하고 있어 이번 패스에서도 추가 규칙이 필요하지 않았다.
-- 문서 기준 현재 검증선은 `pytest -q` => `188 passed, 5 subtests passed`이며, `pyinstaller --noconfirm --clean news_scraper_pro.spec`도 2026-03-27 기준 다시 성공했다.
-
-## 0. 2026-03-25 운영 안정화/문서 재검증
-
-이번 재검증에서는 2026-03-25 운영 안정화 패스가 실제 저장소 구조, 문서, 패키징 기준과 계속 일치하는지 다시 확인했다.
-
-- CSV export는 이제 `IterativeJobWorker`를 통해 UI 스레드 밖에서 청크 기반으로 DB를 순회하고, `*.tmp`에 저장한 뒤 atomic rename으로 마무리된다.
-- 백업 목록은 quick metadata 이후 background full verification을 수행하며, config JSON parse, DB payload 존재 여부, SQLite integrity check, sidecar 정책 검사까지 포함한다.
-- 자동 시작은 단순 on/off가 아니라 `StartupManager.get_startup_status()` 기준의 health 상태(`정상/수리 필요/비활성화`)를 가지며, 설정 창에서 repair를 직접 수행할 수 있다.
-- 설정 저장은 main config와 `.backup` 회전을 모두 atomic하게 수행하고, SQLite emergency connection은 상한과 rejection logging을 갖는다.
-- `news_scraper_pro.spec`는 2026-03-25 기준 다시 재검토되었고, `IterativeJobWorker`, backup verification, startup health/repair, config rotation, DB emergency cap 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
-- `.gitignore`는 기존 build/dist/runtime 산출물 외에 로컬 회귀 테스트용 `.pytest_tmp/`를 명시적으로 무시하도록 보강했다.
-- 문서 기준 현재 검증선은 `pytest -q` => `180 passed, 5 subtests passed`이며, `pyinstaller --noconfirm --clean news_scraper_pro.spec`도 2026-03-25 기준 다시 성공했다.
-
-## 0. 2026-03-24 문서/패키징 재검증
-
-이번 재검증에서는 성능 리팩토링 이후 패키징/문서 기준이 실제 저장소 상태와 계속 일치하는지 다시 점검했다.
-
-- `news_scraper_pro.spec`는 2026-03-24 기준 재검토되었고, `DBQueryScope`, append skip-count, fragment cache/coalesced render, 복합 인덱스 추가 이후에도 hidden import/exclude/data 추가 수정은 필요하지 않았다.
-- `.gitignore`는 `build/`, `dist/`, 런타임 DB 파일, 복원 스테이징 잔여물을 이미 무시하고 있어 이번 배치에서도 추가 규칙이 필요하지 않았다.
-- `README.md`, `claude.md`, `gemini.md`, `update_history.md`의 검증 기준/패키징 메모를 다시 대조해 현재 아키텍처 설명과 맞췄다.
-- 2026-03-24 기준 클린 빌드 명령 `pyinstaller --noconfirm --clean news_scraper_pro.spec`가 다시 성공했고, 산출물은 `dist/NewsScraperPro_Safe.exe`다.
-
-## 0. 2026-03-18 실행형 리스크 전면 수정 반영
-
-이번 배치에서는 2026-03-16 기준선을 다시 한 번 확장해, 실행 중 경합과 대용량 탭 동작까지 실제 구현 기준으로 보정했다.
-
-- 로컬 탭 조회는 "전체 적재 후 클라이언트 필터"가 아니라 `DBWorker -> count_news(...) + fetch_news(..., limit, offset)` 기반의 DB 페이지네이션으로 동작한다.
-- append 경로는 `DBQueryScope + known_total_count`를 사용해 `count_news(...)`를 다시 호출하지 않고 `fetch_news(..., limit, offset)`만 수행한다.
-- HTML 내부 `더 보기`는 메모리 slice 확장이 아니라 다음 DB 페이지 append로 동작한다.
-- `filtered_data_cache`는 현재 로드된 slice 의미만 가지며, CSV export와 `현재 표시 결과만` 읽음 처리는 현재 탭 필터 조건 전체 결과를 DB에서 다시 조회하는 별도 경로를 사용한다.
-- `NewsTab.render_html()`은 fragment cache와 event-loop coalesced flush를 사용해 연속 상태 변경/append/빠른 필터 입력에서 `setHtml()` 호출 수를 줄인다.
-- `DatabaseManager.mark_query_as_read(...)`는 단일 SQL update 경로로 바뀌었고, `filter_txt`, `hide_duplicates`, 날짜 범위, bookmark scope, `query_key`를 함께 반영한다.
-- 설정 export/import는 `1.2` 기준이며 API 자격증명은 제외하고 `settings.auto_start_enabled`는 포함한다.
-- 설정 창 데이터 정리 전에는 앱 전역 유지보수 모드가 활성화되며, active fetch 취소와 새 fetch 진입 차단이 함께 적용된다.
-- 백업 목록은 이제 `is_restorable`, `restore_error` 메타를 포함해 UI에서 복원 가능 여부를 사전 표시한다.
-- 당시 검증 기준은 `python -m pytest -q` 기준 `180 passed, 5 subtests passed`, `python -m pyright` 기준 `0 errors, 0 warnings, 0 informations`다.
-
-## 0. 2026-03-16 기능 감사 후속 반영
-
-이번 후속 반영으로 구조적으로 중요한 동작이 몇 가지 더 명확해졌다.
-
-- 기사 단건 상태(`읽음/안읽음`, `북마크`, `메모`, `삭제`)는 현재 탭 로컬 캐시에만 머무르지 않고 열린 뉴스 탭과 북마크 탭 전체에 `link` 기준으로 즉시 동기화된다.
-- `모두 읽음` 같은 bulk 작업은 증분 반영보다 안전성을 우선해 DB 유지보수 완료와 같은 full refresh 경로를 재사용한다.
-- 알림 키워드는 fetch 응답 전체가 아니라 이번 요청에서 새로 추가된 기사(`new_items`)에만 적용된다.
-- 탭 dedupe, 탭 리네임 충돌 판정, 설정 import dedupe, 검색 이력 dedupe는 모두 `canonical query` 기준으로 통일되었다.
-- CSV 내보내기는 2026-03-16 시점의 visible-only 경로를 거쳐, 현재는 "현재 탭 필터 조건 전체 결과"를 DB에서 다시 조회해 저장하는 방식으로 정착되었다.
-- 시작 시 자동 백업은 계속 설정만 저장하며, DB 복원 지점은 수동 백업(DB 포함)으로 만들도록 UI/문서가 맞춰졌다.
-- 당시 검증 기준은 `python -m pytest -q` => `180 passed, 5 subtests passed`, `python -m pyright` => `0 errors, 0 warnings, 0 informations`이다.
-
-## 0. 2026-03-12 리팩토링 반영 상태
-
-초기 분석 이후 실제 분할 리팩토링이 반영됐다.
-
-- `ui.main_window.MainApp`은 facade / composition root로 유지된다.
-- `core.database.DatabaseManager`는 facade로 축소되고, 실제 책임은 `core/_db_*.py`로 분리됐다.
-- `ui.settings_dialog.SettingsDialog`는 facade로 유지되고, UI 조립/문서 HTML/비동기 작업이 `ui/_settings_dialog_*.py`로 분리됐다.
-- 공개 import 경로는 그대로 유지된다.
-
-## 1. 한눈에 보는 현재 구조
-
-이 프로젝트는 **PyQt6 기반 데스크톱 뉴스 수집/관리 앱**이며, 현재 구조는 크게 아래 4층으로 나뉜다.
+## 한눈에 보는 구조
 
 ```text
-사용자 입력 / 시스템 이벤트
-    ↓
-ui.main_window.MainApp
-    ↓
-ui.news_tab.NewsTab / ui.dialogs.* / ui.settings_dialog.SettingsDialog
-    ↓
-core.workers / core.database / core.config_store / core.backup / core.startup
-    ↓
-Naver News API / SQLite / JSON 설정 / Windows 레지스트리 / 파일 백업
+news_scraper_pro.py
+  -> core.bootstrap.main()
+  -> ui.main_window.MainApp
+  -> core.database.DatabaseManager
+  -> core.workers_support.ApiWorker / DBWorker
 ```
 
-핵심 특징은 다음과 같다.
+- `core/`: 런타임 경로, 설정, DB schema/query/mutation, worker, backup, cloud sync, query parser
+- `ui/`: MainApp, NewsTab, dialog, settings, styles, rendering/action/loading support
+- `tests/`: 공개 API 호환성, DB 의미, worker lifecycle, UI 성능, cloud/backup/settings 회귀 테스트
+- root wrappers: `database_manager.py`, `query_parser.py`, `workers.py`, `styles.py` 등 legacy import 유지용
 
-- 루트 파일은 대부분 **호환성 유지용 얇은 래퍼**다.
-- 실제 런타임 로직은 `core/`와 `ui/`에 모여 있다.
-- `MainApp`이 사실상 전체 앱 상태를 조율하는 **오케스트레이터** 역할을 한다.
-- 데이터 저장의 중심은 SQLite이며, 설정/복원/백업은 JSON + 파일 복사 기반이다.
-- 최근 버전(`v32.7.x`)에서 안정화 작업이 크게 진행되어, 단일 인스턴스, 백업 복원, 워커 수명, 타입/인코딩 가드가 강화됐다.
+## 런타임 흐름
 
-## 2. 루트 디렉터리의 의미
+### 시작
 
-### 핵심 루트 파일
+1. `news_scraper_pro.py`가 `core.bootstrap.main()`을 호출합니다.
+2. 단일 인스턴스와 pending restore를 처리합니다.
+3. `RuntimePaths`가 `DATA_DIR`를 정하고 레거시 런타임 파일을 비파괴 마이그레이션합니다.
+4. `MainApp`이 설정, DB, 탭, 트레이, 자동 새로고침을 조립합니다.
 
-| 경로 | 역할 |
+### Fetch
+
+1. `MainApp`이 탭 query를 `parse_search_query(...)`와 `build_fetch_key(...)`로 canonicalize합니다.
+2. `ApiWorker`가 worker-owned `requests.Session`으로 네이버 API를 호출합니다.
+3. `DatabaseManager.upsert_news_detailed(...)`가 기사와 query membership을 저장하고 현재 scope의 신규 link를 반환합니다.
+4. 자동화 규칙과 알림은 이번 fetch에서 새로 감지된 link 집합을 기준으로 동작합니다.
+5. 탭은 DB reload로 화면과 count/badge를 맞춥니다.
+
+### DB Load
+
+1. `NewsTab`은 `DBWorker`에 `DBQueryScope`와 필터를 전달합니다.
+2. full reload는 `count_news_states(...)`로 total/unread를 한 번에 계산합니다.
+3. append reload는 known total을 재사용합니다.
+4. 로드 완료 unread count는 MainApp badge cache와 탭 제목에 즉시 반영됩니다.
+
+### Sync/Backup
+
+- live DB는 로컬 `DATA_DIR`에 둡니다.
+- cloud 폴더에는 `news_scraper_sync_*.zip` 스냅샷만 교환합니다.
+- backup/restore는 pending restore 방식으로 다음 시작 시 안전하게 적용합니다.
+
+## 핵심 모듈
+
+| 영역 | 위치 | 역할 |
+|---|---|---|
+| 부팅 | `core/bootstrap.py` | QApplication, 단일 인스턴스, pending restore |
+| 런타임 경로 | `core/runtime_support/` | DATA_DIR, portable mode, legacy migration |
+| DB facade | `core/database.py` | connection pool과 mixin 조립 |
+| DB schema | `core/db_schema_support/` | table/index/schema migration |
+| DB query | `core/db_queries_support/` | fetch/count/archive/analytics query |
+| DB mutation | `core/db_mutations_support/` | upsert, read/bookmark/note/tag, maintenance |
+| Worker | `core/workers_support/` | ApiWorker, DBWorker, iterative jobs |
+| Main UI | `ui/main_window.py` | MainApp facade |
+| Main support | `ui/main_window_support/` | shell, config, badge, tray, maintenance |
+| Fetch orchestration | `ui/main_window_fetch_support/` | refresh flow and worker cleanup |
+| Import/export/sync UI | `ui/main_window_io_support/` | settings, cloud, data export/import |
+| News tab | `ui/news_tab.py`, `ui/news_tab_support/` | tab state, loading, rendering, actions |
+| Dialogs | `ui/dialogs_support/` | archive, tags, aliases, automation, backup |
+
+## 현재 성능 계약
+
+- Fetch 저장은 `upsert_news_detailed(...)` fast path를 우선 사용합니다.
+- 같은 batch의 동일 link는 DB 쓰기 기준 마지막 항목이 이기고, 신규 link 순서는 최초 등장 순서를 따릅니다.
+- `news`와 `news_keywords` upsert는 값이 동일하면 UPDATE를 피합니다.
+- duplicate flag 재계산은 영향을 받은 title hash로 제한합니다.
+- full reload count는 `count_news_states(...)` 한 번으로 total/unread를 계산합니다.
+- 탭 badge는 이미 확보한 unread cache를 우선 사용합니다.
+- FTS table/backfill은 유지하지만 검색 의미는 LIKE token-AND가 기준입니다.
+
+## 변경 진입점
+
+| 작업 | 우선 확인 위치 |
 |---|---|
-| `news_scraper_pro.py` | 실제 엔트리포인트이자, 과거 import 경로를 유지하기 위한 re-export 레이어 |
-| `news_scraper_pro.spec` | PyInstaller onefile 빌드 설정 |
-| `README.md` | 사용자/개발자 관점의 공식 구조 요약 |
-| `claude.md`, `gemini.md` | AI 작업 지침이지만, 실제로는 아키텍처 메모와 수정 규칙 문서 역할도 겸함 |
-| `update_history.md` | 버전별 변경 이력의 단일 기준 문서 |
-| `pytest.ini` | 테스트 진입점 고정 |
-| `pyrightconfig.json` | 타입 검사 범위 및 Windows/Python 3.14 기준 고정 |
-
-### 호환성 래퍼
-
-루트의 아래 파일들은 새 기능을 직접 구현하는 위치가 아니라, **기존 import 경로를 깨지 않기 위한 compatibility layer**다.
-
-- `query_parser.py`
-- `config_store.py`
-- `database_manager.py`
-- `backup_manager.py`
-- `worker_registry.py`
-- `workers.py`
-- `styles.py`
-
-새 기능은 가능하면 이 래퍼가 아니라 `core/` 또는 `ui/` 쪽 본체에 추가하는 편이 맞다.
-
-## 3. 실제 런타임 흐름
-
-### 3-1. 앱 시작
-
-1. `news_scraper_pro.py`가 HiDPI 환경 변수를 세팅하고 `core.bootstrap.main`으로 진입한다.
-2. `core.bootstrap.main()`이 다음을 수행한다.
-   - 로깅 초기화
-   - 전역 예외 훅 등록
-   - `QLockFile` + `QLocalServer`로 단일 인스턴스 보장
-   - `QApplication` 생성
-   - 단일 인스턴스 lock 획득 후 `pending_restore.json` 기반 복원 적용
-   - `ui.main_window.MainApp` 생성 및 표시
-3. `MainApp.__init__()`이 다음을 초기화한다.
-   - `DatabaseManager`
-   - `HttpClientConfig`
-   - `WorkerRegistry`
-   - `ToastQueue`
-   - `KeywordGroupManager`
-   - `AutoBackup`
-   - 설정 로드, UI 구성, 타이머/트레이 설정, FTS incremental backfill kickoff
-
-### 3-2. 뉴스 가져오기
-
-1. 사용자가 탭을 만들거나 새로고침을 누른다.
-2. `MainApp.fetch_news()`가 탭 쿼리를 파싱한다.
-   - `parse_search_query()` = API 검색용, 양(+) 키워드 전체
-   - `parse_tab_query()` = DB 그룹 키, 첫 번째 양(+) 키워드
-3. `ApiWorker`가 별도 `QThread`에서 worker-owned `requests.Session`으로 Naver API를 호출한다.
-4. 응답 결과는 `core.database.DatabaseManager.upsert_news()`로 저장된다.
-5. `MainApp.on_fetch_done()`이 완료 콜백을 받아 탭 재로딩, 배지 업데이트, 토스트/트레이 알림을 처리한다.
-6. `NewsTab.load_data_from_db()`는 다시 `DBWorker`를 돌려 DB에서 탭 목록을 비동기로 읽는다.
-7. `NewsTab.render_html()`은 실제 flush를 스케줄링하고, `_flush_render()`가 `QTextBrowser` 기반 카드 HTML을 coalesced render로 반영한다.
-
-### 3-3. 설정/백업/복원
-
-- 설정은 `core.config_store`가 스키마 정규화와 원자 저장을 담당한다.
-- 백업은 `core.backup.AutoBackup`이 폴더 단위로 생성한다.
-- 복원은 즉시 덮어쓰기보다 `pending_restore.json`을 먼저 기록하고, 다음 시작 시 적용하는 모델이다.
-- Windows에서 `client_secret`은 DPAPI 암호화 저장을 우선 사용한다.
-
-## 4. 디렉터리별 책임 분석
-
-### `core/`
-
-앱의 비UI 로직이 모여 있는 영역이다.
-
-### 중요한 모듈
-
-| 모듈 | 실제 책임 |
-|---|---|
-| `core/bootstrap.py` | 앱 시작, 단일 인스턴스, 예외 처리, 복원 적용 |
-| `core/constants.py` | 앱 경로, 파일명, 버전 상수 |
-| `core/config_store.py` | 기존 import 경로를 유지하는 설정 facade |
-| `core/config_store_impl.py` | 기존 설정 구현 import 경로를 유지하는 facade |
-| `core/config_store_support/` | 설정 TypedDict, 기본값, secret storage, 로드/import 정규화, 원자 저장/.backup 회전 |
-| `core/content_filters.py` | 차단/선호 출처 충돌 정규화와 자유 태그 정규화 |
-| `core/cloud_sync.py` / `core/cloud_sync_support/` | 클라우드 스냅샷 ZIP 생성/검증/가져오기/cycle/정리와 cloud path policy |
-| `core/automation_rules.py` | 자동화 규칙 정규화와 태그/북마크/읽음 action 평가 |
-| `core/publisher_aliases.py` | 출처 alias 정규화, 대표명 표시, alias 필터 확장 |
-| `core/database.py` | `DatabaseManager` facade, 연결 풀 수명 주기 |
-| `core/_db_schema.py` / `core/db_schema_support/` | DB 초기화, 마이그레이션, 무결성 검사, 복구, backfill |
-| `core/_db_duplicates.py` | 제목 해시, 중복 플래그 계산/복구 |
-| `core/_db_queries.py` / `core/db_queries_support/` | filter helper, fetch/count, archive, unread 집계 |
-| `core/_db_mutations.py` | DB mutation mixin import 경로를 유지하는 facade |
-| `core/db_mutations_support/` | upsert, state/tag/automation, read/delete/optimize maintenance |
-| `core/_db_analytics.py` | 통계, 언론사별 집계 |
-| `core/_db_cloud_sync.py` / `core/db_cloud_sync_support/` | 스냅샷 DB 병합, rollback, preview, per-field timestamp 충돌 해결 |
-| `core/http_client.py` | 중앙 HTTP 설정, session factory |
-| `core/workers.py` | worker API import 경로를 유지하는 facade |
-| `core/workers_support/` | lifecycle, HTTP retry/URL policy, `ApiWorker`, `DBWorker`, background job workers, `DBQueryScope` |
-| `core/worker_registry.py` | 요청 ID 기반 워커 활성 상태 관리 |
-| `core/query_parser.py` | 검색어 파싱 정책의 단일 기준 |
-| `core/backup.py` | backup/restore API import 경로를 유지하는 facade |
-| `core/backup_support/` | 백업 생성, payload 검증, 복원 예약, pending restore staging/rollback |
-| `core/startup.py` | 자동 시작 상태 진단 + Windows 시작프로그램 레지스트리 제어 |
-| `core/keyword_groups.py` | 키워드 그룹 저장/병합/마이그레이션 |
-| `core/text_utils.py` | 날짜 파싱, HTML/강조, LRU 캐시, perf timer |
-| `core/validation.py` | API 키/키워드 입력 검증 |
-| `core/notifications.py` | 플랫폼별 알림 소리 |
-| `core/protocols.py` | 타입 계약용 Protocol |
-
-### 구조적으로 중요한 관찰
-
-- `core.database.py`는 연결 풀 facade로 유지되고, DB schema/query/cloud-sync/mutation 책임은 `core/_db_*` facade와 `core/*_support/` 하위 패키지로 분리됐다.
-- `core.config_store.py`와 `core.config_store_impl.py`는 호환성 facade이고, 실제 설정 보안/정규화/파일 I/O는 `core/config_store_support/`에 있다.
-- `core.cloud_sync.py`는 live DB를 클라우드 폴더에서 직접 열지 않도록 스냅샷 ZIP facade로 남고, `core.cloud_sync_support/`와 `core.db_cloud_sync_support/`가 snapshot I/O와 DB 병합 책임을 나눠 가진다.
-- 출처/태그처럼 UI, 설정, DB export가 함께 쓰는 normalization은 `core.content_filters.py`에 모아져 있다. 차단/선호 출처는 cross-list 충돌까지 이 helper에서 정리한다.
-- `core.query_parser.py`는 작지만 의미상 매우 중요하다. 탭 의미, API 질의, 페이지네이션 키가 여기 정책에 묶여 있다.
-- `core.backup.py`는 파일 복사 유틸이 아니라, **복원 무결성 보장 모듈**에 가깝다.
-- `core.workers.DBWorker`는 탭 raw keyword를 다시 파싱하지 않고, `NewsTab`이 계산한 `DBQueryScope`를 그대로 소비한다.
-
-### `ui/`
-
-PyQt 위젯과 사용자 상호작용의 대부분이 여기에 있다.
-
-### 중요한 모듈
-
-| 모듈 | 실제 책임 |
-|---|---|
-| `ui/main_window.py` | `MainApp` facade / compatibility root |
-| `ui/main_window_support/base.py` / `base_support/` | `MainApp` accessors, FTS backfill, hydration, maintenance orchestration |
-| `ui/main_window_support/config.py` | 설정 로드/저장/적용, runtime path 연동, startup sync |
-| `ui/main_window_support/ui_shell.py` / `ui_shell_support/` | 메인 윈도우 theme/setup/badge/action/notification shell |
-| `ui/_main_window_tabs.py` | 탭 추가/닫기/리네임/컨텍스트 메뉴/그룹 연결 |
-| `ui/_main_window_fetch.py` | fetch orchestration import 경로를 유지하는 facade |
-| `ui/main_window_fetch_support/` | refresh policy, sequential refresh, fetch worker lifecycle |
-| `ui/_main_window_settings_io.py` | 설정 import/export import 경로를 유지하는 facade |
-| `ui/main_window_io_support/` | cloud sync, CSV/Markdown export, settings import staging, 설정/도움말 다이얼로그 연결 |
-| `ui/_main_window_tray.py` | 시스템 트레이, close/minimize, 실제 종료 처리 |
-| `ui/_main_window_analysis.py` | 통계/언론사 분석 UI |
-| `ui/news_tab.py` | `NewsTab` facade / compatibility root |
-| `ui/news_tab_support/state.py` | 탭 상태, scope signature, 캐시/selection 관리 |
-| `ui/news_tab_support/loading.py` / `loading_support/` | DB 로드, hydration, cleanup, maintenance 연동 |
-| `ui/news_tab_support/rendering.py` | HTML fragment cache, coalesced flush, 카드 렌더링 |
-| `ui/news_tab_support/ui_controls.py` / `ui_controls_support/` | layout, saved-search, date, filter control wiring |
-| `ui/news_tab_support/actions.py` / `actions_support/` | 카드 액션, 링크 핸들링, mark-read, 상태 동기화 |
-| `ui/dialog_adapters.py` | export/import/backup 경로의 QFileDialog/QMessageBox adapter |
-| `ui/settings_dialog.py` | `SettingsDialog` facade, orchestration, public contract |
-| `ui/_settings_dialog_content.py` | 설정/도움말/단축키 탭 조립 |
-| `ui/_settings_dialog_docs.py` | 도움말 / 단축키 HTML |
-| `ui/_settings_dialog_tasks.py` | API 검증, 데이터 정리, worker lifecycle |
-| `ui/dialogs.py` | 보조 다이얼로그 import 경로를 유지하는 facade |
-| `ui/dialogs_support/` | 태그/아카이브/자동화/출처 alias, 메모/로그, 키워드 그룹, `backup_dialog/` |
-| `ui/widgets.py` | `NewsBrowser`, `NoScrollComboBox` |
-| `ui/styles.py` | 스타일 API import 경로를 유지하는 facade |
-| `ui/styles_support/` | 색상/상수/toast enum, 전체 QSS, HTML 템플릿 |
-| `ui/toast.py` | 토스트 메시지 큐 |
-| `ui/protocols.py` | UI 간 capability contract |
-
-### 구조적으로 중요한 관찰
-
-- `ui.main_window.py`는 facade이고, 실제 책임은 `ui/main_window_support/`, `ui/main_window_fetch_support/`, `ui/main_window_io_support/`로 내려가 있다. 새 메인 윈도우 기능은 facade보다 support module부터 검토하는 편이 맞다.
-- `ui.news_tab.py`는 facade이고, 실질적인 탭 동작은 `ui/news_tab_support/` 아래 state/rendering facade와 loading/actions/ui_controls support 패키지가 나눠 맡는다.
-- export/import/backup 경로는 `ui.dialog_adapters.py`를 통해 Qt static dialog 의존성을 분리해 테스트에서는 fake adapter를 주입한다.
-- `ui.settings_dialog.py`는 117줄 수준의 facade로 축소됐다. 설정 항목 확장은 `ui/_settings_dialog_content.py` 쪽이 주 수정 지점이다.
-- `ui/widgets.NewsBrowser`는 `app://...` 내부 URL 스키마를 이용한 액션 전달 구조를 갖고 있어, 카드 액션 확장이 상대적으로 쉽다.
-
-### `tests/`
-
-테스트는 단순 유닛 테스트라기보다 **회귀 방지용 계약 테스트 세트**에 가깝다.
-일부는 실제 동작 검증이고, 일부는 AST/source-string 기반 가드 테스트다.
-
-대략 아래 범주로 나뉜다.
-
-- 엔트리포인트/호환성: `test_entrypoint_bootstrap.py`, `test_symbol_resolution.py`, `test_refactor_compat.py`
-- 설정/정규화: `test_settings_roundtrip.py`, `test_import_settings_*`, `test_config_secret_storage.py`
-- 검색/페이지네이션: `test_query_parser_search_policy.py`, `test_pagination_state_persistence.py`, `test_load_more_total_guard.py`
-- 단일 인스턴스/시작: `test_single_instance_guard.py`, `test_start_minimized_guard.py`, `test_startup_registry_command.py`
-- 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`, `test_stabilization_round1.py`
-- 클라우드 동기화: `test_cloud_sync.py`
-- 워커/수명/안정성: `test_worker_cancellation.py`, `test_news_tab_ext_read_policy.py`, `test_news_tab_performance.py`, `test_settings_dialog_maintenance.py`, `test_stabilization_round1.py`
-- 2026-04-27 기능 배치: `test_implementation_batch_20260427.py`
-- 2026-04-29 구현 갭 클로저: `test_implementation_plan_20260429.py`
-- 문서/버전/인코딩 가드: `test_version_history_guard.py`, `test_encoding_smoke.py`
-
-즉, 새 기능 추가 시 테스트를 처음부터 새로 짜는 것보다, **기존 계약을 안 깨뜨리는 테스트를 같이 확장**하는 방식이 맞다.
-
-## 5. 상태 저장 구조
-
-### Runtime 저장소
-
-기본 저장 위치는 실행 폴더가 아니라 사용자 런타임 디렉터리(`DATA_DIR`)다.
-
-- Windows: `%LOCALAPPDATA%\NaverNewsScraperPro`
-- macOS: `~/Library/Application Support/NaverNewsScraperPro`
-- Linux: `$XDG_DATA_HOME/NaverNewsScraperPro` 또는 `~/.local/share/NaverNewsScraperPro`
-- `NEWS_SCRAPER_DATA_DIR`로 강제 지정 가능
-- `NEWS_SCRAPER_PORTABLE=1`이면 `APP_DIR` 사용
-
-시작 시 실행 폴더에 남아 있는 레거시 런타임 파일은 `RuntimePaths` 기준으로 `DATA_DIR`에 보수적으로 복사 마이그레이션된다. DB는 SQLite backup API 우선, 실패 시 raw copy fallback + integrity 검증을 사용하고, `pending_restore.json`은 가능하면 새 `backups/` 경로로 rebasing 된다.
-
-### 설정 파일
-
-`news_scraper_config.json`
-
-주요 필드:
-
-- `app_settings`
-- `tabs`
-- `search_history`
-- `keyword_groups`
-- `pagination_state`
-- `pagination_totals`
-- `saved_searches`
-- `tab_refresh_policies`
-- `cloud_sync_enabled`
-- `cloud_sync_dir`
-- `cloud_sync_interval_minutes`
-
-특징:
-
-- 로드 시 정규화된다.
-- 저장 시 원자적으로 교체된다.
-- `search_history`는 `canonical query` 기준으로 dedupe된다.
-- `app_settings.blocked_publishers` / `preferred_publishers`는 trim, 빈 값 제거, case-insensitive dedupe와 양쪽 충돌 제거를 거친다.
-- `saved_searches`는 검색어, 탭 필터/정렬/기간/태그/선호 출처 조건을 이름별 payload로 저장하고, 적용 시 저장된 검색어 탭으로 이동/생성한다.
-- `tab_refresh_policies`는 탭별 자동 새로고침 override이며 기본값은 전역 설정 상속이다.
-- `cloud_sync_*` 설정은 로컬 PC의 스냅샷 폴더와 주기만 관리한다. API 자격증명과 live DB 경로는 cloud snapshot payload에 포함하지 않는다.
-- 손상 시 `.backup` fallback 복구가 있다.
-- Windows에서는 `client_secret_enc` + `client_secret_storage=dpapi` 경로를 지원한다.
-
-### 데이터베이스
-
-핵심 테이블은 4개다.
-
-- `news`
-- `news_keywords`
-- `news_tags`
-- `news_tag_state`
-
-설계 의도는 다음과 같다.
-
-- `news`는 기사 자체의 단일 원본 저장소
-- `news_keywords`는 "어떤 탭 의미(키워드 그룹)에 이 기사가 속하는가"를 표현하는 매핑
-- 중복 여부는 기사 전체가 아니라 **키워드 맥락별**로 계산할 수 있게 `news_keywords.is_duplicate`에 반영
-- `news_tags`는 기사별 자유 태그 매핑이며, `news_tag_state`는 태그 변경 timestamp를 저장해 클라우드 스냅샷 병합 충돌 해결에 사용한다.
-- `news.read_updated_at`, `bookmark_updated_at`, `notes_updated_at`은 여러 PC에서 같은 기사의 상태가 달라졌을 때 최신 필드 변경만 반영하기 위한 timestamp다.
-
-즉, 앞으로 "커스텀 분류", "보관함", "소스 차단 규칙" 같은 기능을 넣을 때도 이 매핑 구조를 확장하는 방향이 자연스럽다. 다만 태그는 이미 `news_tags`로 분리되어 있으므로 새 태그성 기능은 이 테이블/API와 먼저 맞춰야 한다.
-
-### 백업/복원
-
-백업 폴더:
-
-- `DATA_DIR/backups/backup_YYYYMMDD_HHMMSS_microseconds/`
-
-중요 특징:
-
-- 설정만 또는 설정+DB 백업 지원
-- 자동 백업과 수동 백업 보존 정책 분리
-- 복원은 즉시 강행하지 않고 pending restore로 예약
-- 적용 중 실패하면 rollback
-- 메타 손상 백업도 목록에서 완전히 숨기지 않고 `손상됨` 상태로 노출
-
-### 클라우드 스냅샷 동기화
-
-클라우드 동기화는 `DATA_DIR/news_database.db`를 직접 공유하지 않고, 사용자가 선택한 동기화 폴더에 `news_scraper_sync_*.zip`만 둔다.
-
-- ZIP에는 `manifest.json`, sanitized `settings.json`, SQLite backup API로 만든 `news_database.db`가 들어간다.
-- `client_id`, `client_secret`, `client_secret_enc`, `client_secret_storage`, `cloud_sync_dir`는 snapshot settings에서 제거한다.
-- `DATA_DIR` 또는 live DB가 OneDrive/Google Drive 같은 동기화 폴더 안에 있거나 snapshot 폴더가 runtime 경로와 겹치면 자동 동기화는 차단된다.
-- 명시 단건 삭제/복구는 `delete_updated_at` tombstone으로 병합한다. 오래된 기사 정리/전체 정리는 tombstone 없이 로컬 hard-delete로 유지한다.
-
-## 6. 비동기 / 스레드 구조
-
-현재 앱은 PyQt 메인 스레드 블로킹을 줄이기 위해 역할별 워커를 나눴다.
-
-| 구성요소 | 역할 |
-|---|---|
-| `ApiWorker(QObject)` | 외부 API 호출 + DB 저장 |
-| `DBWorker(QThread)` | DB 조회 전용 |
-| `AsyncJobWorker(QThread)` | 가벼운 단발성 작업(API 검증 등) |
-| `IterativeJobWorker(QThread)` | 취소 가능한 반복형 장시간 작업(CSV export, 탭 전체 읽음, DB 유지보수 등) |
-| `InterruptibleReadWorker(QThread)` | SQLite read interruption을 지원하는 분석/집계 전용 워커 |
-| `WorkerRegistry` | 탭별 활성 요청 추적, stale callback 차단 |
-| `DatabaseManager` | WAL + 연결 풀 + busy timeout |
-
-이 구조의 장점은 분명하다.
-
-- UI 프리징을 줄인다.
-- stale callback 문제를 많이 줄였다.
-- 설정창 종료 후 늦게 도착하는 콜백 문제를 방어하고 있다.
-
-하지만 확장 시 반드시 주의해야 할 점도 있다.
-
-- 워커 추가 시 `MainApp.cleanup_worker()` 같은 정리 루틴과 함께 설계해야 한다.
-- DB 업데이트 성공 전에는 UI 캐시를 먼저 바꾸지 않는 현재 원칙을 유지해야 한다.
-- 장시간 작업을 UI에서 직접 실행하면 지금까지 쌓아둔 안정화 이점을 잃는다.
-
-## 7. 현재 구조의 강점
-
-### 강점 1. 문서와 테스트가 생각보다 잘 맞물려 있다
-
-`README.md`, `claude.md`, `gemini.md`, `update_history.md`가 최근 변경사항을 꽤 충실히 반영하고 있다. 또 `test_version_history_guard.py`, `test_encoding_smoke.py` 같은 문서/자산 가드도 존재한다.
-
-### 강점 2. 설정/복원/백업의 안정성에 신경을 많이 썼다
-
-단순 CRUD 앱이 아니라, 사용자 데이터가 실제로 쌓이는 앱이라는 전제에서 **복원 실패 시 보존**, **손상 백업 표시**, **설정 자동 복구**까지 고려돼 있다.
-
-### 강점 3. 검색 의미를 분리해 둔 점이 좋다
-
-`parse_search_query()`와 `parse_tab_query()`를 분리한 덕분에, "검색어 전체"와 "DB 그룹 키"가 서로 다른 의미를 가질 수 있다. 앞으로 탭 기능이 복잡해져도 이 분리는 계속 중요하다.
-
-### 강점 4. Windows 중심 사용자 시나리오가 명확하다
-
-트레이, 자동 시작, DPAPI, PyInstaller, 단일 인스턴스 IPC까지 Windows 사용 시나리오가 분명하게 잡혀 있다.
-
-## 8. 기능 추가 전에 반드시 알아야 할 병목
-
-2026-05-22 구조 분할 후에도 라인 수 기준으로 큰 파일은 아래와 같다.
-
-| 파일 | 대략 라인 수 | 해석 |
-|---|---:|---|
-| `ui/_main_window_analysis.py` | 663 | 통계/아카이브/자동화/출처 alias 관리 orchestration |
-| `ui/styles_support/app_style.py` | 624 | 전체 QSS/HTML 템플릿의 중심 |
-| `core/config_store_support/normalization.py` | 550 | 설정 load/import 정규화 정책의 중심 |
-| `ui/_settings_dialog_tasks.py` | 490 | 설정창 비동기 작업과 데이터 정리 UI |
-| `ui/_main_window_tabs.py` | 450 | 탭 추가/닫기/리네임/그룹 orchestration |
-| `core/workers_support/api_worker.py` | 422 | API fetch, HTTP policy 적용, DB 저장 성공 기준 |
-| `ui/main_window_io_support/import_stage_support/runtime_state.py` | 422 | 설정 import runtime snapshot/apply/rollback 중심 |
-
-### 실무적으로 중요한 결론
-
-앞으로 기능을 계속 추가할 예정이라면, 가장 먼저 경계해야 할 것은 **facade 파일(`ui/main_window.py`, `core/database.py`, `ui/settings_dialog.py`)에 다시 구현을 되돌려 얹는 것**이다.
-
-특히 아래 성격의 기능은 분리 모듈을 먼저 만드는 편이 낫다.
-
-- 분석/대시보드
-- 고급 필터/검색 조건 저장
-- 새 외부 연동
-- 대량 데이터 유지보수
-- 추가 설정 탭
-
-## 9. 기능 유형별 추천 진입점
-
-### A. 새 설정 항목 추가
-
-수정 지점이 거의 항상 같이 움직인다.
-
-1. `core/config_store_support/types.py` / `normalization.py` / `io.py` (호환 import는 `core.config_store_impl`)
-2. `ui/settings_dialog.py`
-3. `ui/main_window_support/config.py`
-4. `README.md`, `claude.md`, `gemini.md`
-5. 관련 테스트
-
-체크 포인트:
-
-- TypedDict 스키마 추가
-- load/save 정규화 추가
-- SettingsDialog 위젯 추가
-- `get_data()` 반환값 추가
-- `MainApp.load_config()`, `save_config()`, `open_settings()` 반영
-- import/export JSON 반영
-
-### B. 탭별 필터/목록 기능 추가
-
-추천 진입점:
-
-- `ui/news_tab_support/ui_controls.py` 또는 `ui/news_tab_support/ui_controls_support/`
-- `ui/news_tab_support/loading.py` 또는 `ui/news_tab_support/loading_support/`
-- `ui/news_tab_support/state.py`
-- `core/_db_queries.py` 또는 `core/db_queries_support/`
-- `core/db_mutations_support/` (호환 import는 `core._db_mutations`)
-- 필요 시 `core/query_parser.py`
-
-예:
-
-- 출처 필터
-- 날짜 프리셋
-- 읽음/북마크 조합 필터
-- 태그 필터
-- 저장된 검색 조건
-
-주의:
-
-- `NewsTab`은 일부 필터를 DB 조회 단계에서, 일부 필터를 메모리 단계에서 처리한다.
-- 새 필터가 데이터량에 민감하면 메모리 후처리보다 SQL로 넣는 편이 낫다.
-
-### C. 새 카드 액션 추가
-
-추천 진입점:
-
-- `ui/news_tab_support/actions.py` 또는 `ui/news_tab_support/actions_support/`
-- `ui/news_tab_support/rendering.py`
-- `ui/widgets.py`
-- `core/db_mutations_support/` 또는 새 서비스 모듈
-
-현재 액션 전달 방식:
-
-- HTML 링크: `app://open/...`, `app://note/...`, `app://bm/...`
-- 우클릭 메뉴: `NewsBrowser.contextMenuEvent()`
-- 실제 처리: `NewsTab.on_link_clicked()` / `on_browser_action()`
-
-즉, 기사 카드에 "태그", "공유 템플릿", "출처 차단", "나중에 보기" 같은 기능을 넣기 쉽다.
-
-### D. 새 통계/분석 기능 추가
-
-추천 진입점:
-
-- `ui/_main_window_analysis.py`
-- `core/_db_analytics.py`
-
-하지만 이 영역은 이미 `MainApp` 비대화가 진행된 상태라, 새 분석이 많아질 경우 아래처럼 분리하는 편이 좋다.
-
-- `core/analytics.py`
-- `ui/analysis_dialog.py`
-
-### E. 새로운 백그라운드 작업 추가
-
-추천 진입점:
-
-- 단발성: `AsyncJobWorker` (가벼운 검증/단건 job)
-- 장시간 반복형: `IterativeJobWorker`
-- 조회 전용 + close/cancel 친화: `InterruptibleReadWorker`
-- API/네트워크성: `ApiWorker` 패턴 복제 또는 분리
-- 조회 전용: `DBWorker`
-
-주의:
-
-- 워커 시작과 정리 루틴을 세트로 작성해야 한다.
-- UI가 닫힌 뒤 콜백이 늦게 오는 상황을 반드시 고려해야 한다.
-
-### F. DB 스키마를 바꾸는 기능 추가
-
-추천 진입점:
-
-- `core/_db_schema.py:init_db()`
-- 관련 CRUD 메서드
-- export/import/backups/tests
-
-주의:
-
-- 이 프로젝트는 별도 마이그레이션 툴 없이 `init_db()` 내부 `ALTER TABLE` 패턴으로 진화해 왔다.
-- 새 컬럼/테이블을 추가하면 인덱스, 복원, 삭제, 통계 경로를 함께 검토해야 한다.
-- 기사 삭제 시 중복 플래그 재계산 규칙에 영향이 없는지 확인해야 한다.
-
-## 10. 지금 구조에서 특히 잘 맞는 추가 기능 후보
-
-아래 기능들은 현재 구조를 크게 깨지 않고 넣기 좋다.
-
-### 1. 기사 태그/라벨 기능
-
-상태:
-
-- 기본 자유 태그, 카드 배지, 태그 필터, CSV 태그 컬럼은 구현 완료.
-
-확장 여지:
-
-- 태그 색상/고정 태그/태그별 대시보드처럼 `news_tags` 위에 얹는 기능은 현재 구조와 잘 맞음
-
-영향 파일 예상:
-
-- `core/database.py`
-- `ui/news_tab_support/actions.py`
-- `ui/news_tab_support/rendering.py`
-- `ui/dialogs_support/` 또는 새 태그 다이얼로그
-- CSV export 경로
-
-### 2. 출처 차단 / 선호 언론사 필터
-
-상태:
-
-- 차단/선호 출처 목록, 선호 출처만 필터, 도메인 suffix match, 목록/count/배지/트레이/분석/CSV visibility 반영은 구현 완료.
-
-확장 여지:
-
-- 언론사 alias 관리, wildcard UI, 충돌 표시 UI는 아직 별도 후보로 남아 있다.
-
-### 3. 탭별 개별 자동 새로고침 정책
-
-상태:
-
-- `tab_refresh_policies` 기반 상속/끔/개별 간격 override는 구현 완료.
-
-확장 여지:
-
-- 실패 backoff를 탭별로 세분화하거나, 최근 활동 기준으로 interval을 동적으로 바꾸는 정책은 추가 후보다.
-
-### 4. 사용자 정의 저장 검색
-
-상태:
-
-- 검색어/필터/정렬/기간/태그/선호 출처 조건 저장, 적용, 삭제 UI는 구현 완료.
-- 적용 시 저장된 keyword 탭으로 이동하거나 새 탭을 만든 뒤 payload를 적용한다.
-
-확장 여지:
-
-- 이름 변경 UI, 폴더/그룹화, 저장 검색 export preview는 추가 후보다.
-
-### 5. 분석 대시보드 확장
-
-예:
-
-- 시간대별 기사 수
-- 키워드별 증가량
-- 중복률 추이
-- 북마크 전환율
-
-이 기능은 유용하지만, 추가 구현 전 `MainApp`에서 UI 일부를 분리하는 것이 좋다.
-
-## 11. 기능 추가 전 다음 정리 우선순위
-
-큰 기능을 여러 개 붙일 계획이라면, 선행 정리를 권장한다.
-
-### 완료 1. `ui/main_window.py` 분리
-
-현재 분리 상태:
-
-- 탭 관리
-- fetch/worker 관리
-- 설정 import/export
-- 트레이/종료 처리
-- 통계/분석 UI
-
-### 완료 2. `core/database.py` 분리
-
-현재 분리 상태:
-
-- 조회/검색
-- 쓰기/상태 변경
-- 통계/분석
-- 백필/중복 복구
-- 스키마 초기화
-
-### 완료 3. `ui/settings_dialog.py` 분리
-
-현재 분리 상태:
-
-- 일반 설정
-- 도움말/단축키
-- 데이터 관리
-- 비동기 워커 관리 헬퍼
-
-### 완료 4. `ui/news_tab.py` 분리
-
-현재 분리 상태:
-
-- 상태/캐시: `ui/news_tab_support/state.py`
-- DB 로드/hydration/유지보수: `ui/news_tab_support/loading.py`
-- HTML fragment cache/coalesced render: `ui/news_tab_support/rendering.py`
-- 필터/정렬/페이지네이션 UI: `ui/news_tab_support/ui_controls.py`
-- 카드 액션/상태 동기화: `ui/news_tab_support/actions.py`
-
-### 완료 5. support-package 추가 분리
-
-2026-05-11 구조 리팩토링에서 아래 facade와 support package 경계를 추가했다.
-
-- `core/workers.py` -> `core/workers_support/{lifecycle,http_policy,jobs,query_scope,api_worker,db_worker}.py`
-- `core/backup.py` -> `core/backup_support/{fs,validation,restore,auto_backup}.py`
-- `core/_db_mutations.py` -> `core/db_mutations_support/{news_upsert,state_tags,maintenance}.py`
-- `ui/_main_window_fetch.py` -> `ui/main_window_fetch_support/{refresh_flow,worker_flow}.py`
-- `ui/_main_window_settings_io.py` -> `ui/main_window_io_support/{exports,cloud,data_io,import_stage,settings_dialogs}.py`
-- `ui/dialogs.py` -> `ui/dialogs_support/{article_tools,basic,keyword_groups,backups}.py`
-- `ui/styles.py` -> `ui/styles_support/{tokens,app_style}.py`
-
-### 완료 6. 전체 대형 모듈 세부 support 분리
-
-2026-05-22 구조 리팩토링에서 남아 있던 대형 facade/support 파일을 더 세분화했다.
-
-- `core/_db_queries.py` -> `core/db_queries_support/{filters,fetch,archive,counts}.py`
-- `core/_db_schema.py` -> `core/db_schema_support/{connection,keywords,tables,backfill,init}.py`
-- `core/_db_cloud_sync.py` -> `core/db_cloud_sync_support/{metadata,rollback,merge_rows,preview,apply}.py`
-- `core/config_store_support/impl.py` -> `types.py`, `secrets.py`, `normalization.py`, `io.py`
-- `core/cloud_sync.py` -> `core/cloud_sync_support/{models,snapshot_io,import_flow,path_policy}.py`
-- `core/backup_support/auto_backup.py` -> `core/backup_support/auto_backup_support/`
-- `ui/dialogs_support/article_tools.py` -> 태그/아카이브/자동화/출처 alias 개별 dialog 모듈
-- `ui/dialogs_support/backups.py` -> `ui/dialogs_support/backup_dialog/`
-- `ui/news_tab_support/{actions,loading,ui_controls}.py`, `ui/main_window_support/{base,ui_shell}.py`, `ui/main_window_fetch_support/worker_flow.py`, `ui/main_window_io_support/import_stage.py`는 facade mixin + 세부 support 패키지 구조로 재분리됐다.
-
-## 12. 변경 시 반드시 같이 확인할 것
-
-### 문서 동기화 규칙
-
-이 저장소는 최근 변경에서 문서 동기화를 중요하게 보고 있다.
-
-- 버전 변경 시 `core/constants.py`와 `update_history.md`를 같이 수정
-- 구조/기능 변경 시 `README.md`, `claude.md`, `gemini.md` 반영 검토
-- 텍스트 자산은 UTF-8 유지
-
-### 테스트/검증 기본 세트
-
-최소 권장:
+| 새 DB field/index | `core/db_schema_support/`, `tests/test_db_queries.py` |
+| fetch 저장 의미 변경 | `core/db_mutations_support/news_upsert.py`, `core/workers_support/api_worker.py` |
+| 목록/count/filter 변경 | `core/db_queries_support/fetch.py`, `ui/news_tab_support/loading_support/` |
+| 탭 렌더링/액션 | `ui/news_tab_support/rendering.py`, `ui/news_tab_support/actions_support/` |
+| MainApp badge/tray | `ui/main_window_support/ui_shell_support/` |
+| 설정 import/export | `ui/main_window_io_support/import_stage_support/`, `core/config_store_support/` |
+| cloud snapshot | `core/cloud_sync_support/`, `core/db_cloud_sync_support/` |
+| backup/restore | `core/backup_support/`, `ui/dialogs_support/backup_dialog/` |
+| 패키징 | `news_scraper_pro.spec`, `tests/test_spec_runtime_tmpdir.py` |
+
+## 유지보수 규칙
+
+- 공개 facade와 root compatibility wrapper를 깨지 않습니다.
+- 사용자-visible 검색 의미와 필터 의미를 바꿀 때는 DB query, badge, tray, export, archive까지 같이 확인합니다.
+- DB write 실패는 성공처럼 삼키지 않고 `DatabaseWriteError`로 드러냅니다.
+- DB query 실패는 빈 결과로 숨기지 않고 `DatabaseQueryError`로 드러냅니다.
+- PyQt worker는 cancel/cleanup 경로와 thread affinity를 함께 검증합니다.
+- `.md`, `.spec`, `.json`, `.ini`, `.yml`, `.yaml`, `.py`는 UTF-8로 유지합니다.
+
+## 검증 세트
 
 ```bash
-pytest -q
-pyright
+python -m pytest -q
+python -m pyright
+python -m pytest tests/test_encoding_smoke.py tests/test_version_history_guard.py tests/test_spec_runtime_tmpdir.py -q
 ```
 
-변경 유형별로 특히 봐야 할 테스트:
+패키징 변경이나 릴리스 전에는 아래도 실행합니다.
 
-- 설정: `test_settings_roundtrip.py`, `test_import_settings_*`
-- 백업/복원: `test_backup_*`, `test_pending_restore_strict.py`
-- 검색 정책: `test_query_parser_search_policy.py`
-- 워커/취소: `test_worker_cancellation.py`
-- 시작/트레이: `test_single_instance_guard.py`, `test_start_minimized_guard.py`
-- 문서/버전: `test_version_history_guard.py`, `test_encoding_smoke.py`
-
-## 최종 결론
-
-현재 프로젝트는 이미 단순 스크립트 수준을 넘어, **Windows 데스크톱 앱으로서 꽤 안정화된 구조**를 갖추고 있다. 다만 구조의 중심이 `MainApp`, `DatabaseManager`, `NewsTab`에 강하게 몰려 있기 때문에, 앞으로 다양한 기능을 붙이려면 "기능을 추가하는 일"과 "책임을 분리하는 일"을 같이 가져가는 것이 좋다.
-
-안전한 확장 전략은 아래 한 줄로 정리할 수 있다.
-
-> 새 기능은 `core/`와 `ui/`의 새 모듈로 추가하고, 루트 래퍼와 대형 파일에는 연결 지점만 최소한으로 남기는 방향이 가장 유지보수성이 좋다.
+```bash
+python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
+```

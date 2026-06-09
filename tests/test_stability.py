@@ -240,7 +240,7 @@ class TestPerformanceRegressionGuards(unittest.TestCase):
         block = src[start:]
         self.assertIn('open_read_connection(timeout=1.5)', block)
         self.assertIn('if self.include_total:', block)
-        self.assertIn('self.db.count_news(conn=conn, **self.scope.count_kwargs())', block)
+        self.assertIn('count_news_states = getattr(self.db, "count_news_states", None)', block)
         self.assertIn('total_count = int(self.known_total_count or 0)', block)
         self.assertIn('limit=self.limit', block)
         self.assertIn('offset=self.offset', block)

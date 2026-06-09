@@ -6,7 +6,7 @@ from unittest import mock
 
 import requests
 
-from core.database import DatabaseWriteError
+from core.database import DatabaseWriteError, NewsUpsertResult
 from core.workers import ApiWorker, _parse_retry_after_seconds
 
 
@@ -81,6 +81,25 @@ class _ExistingLinkDB(_FakeDB):
 
     def get_existing_links_for_query(self, links, keyword="", query_key=None):
         return self.existing_links.intersection(set(links))
+
+
+class _DetailedUpsertDB(_FakeDB):
+    def __init__(self, new_links):
+        super().__init__()
+        self.new_links = tuple(new_links)
+        self.existing_lookup_calls = 0
+
+    def get_existing_links_for_query(self, links, keyword="", query_key=None):
+        self.existing_lookup_calls += 1
+        raise AssertionError("detailed upsert path should not pre-query existing links")
+
+    def upsert_news_detailed(self, items, keyword, query_key=None):
+        self.upsert_calls += 1
+        return NewsUpsertResult(
+            added_count=len(self.new_links),
+            duplicate_count=0,
+            new_links=self.new_links,
+        )
 
 
 class _FailingWriteDB(_FakeDB):
@@ -212,6 +231,65 @@ class TestWorkerCancellation(unittest.TestCase):
             ["https://news.naver.com/new"],
         )
         self.assertEqual(finished[0]["new_count"], 1)
+
+    def test_detailed_upsert_path_skips_existing_link_prequery(self):
+        payload = {
+            "total": 3,
+            "items": [
+                {
+                    "title": "Existing AI update",
+                    "description": "desc",
+                    "link": "https://news.naver.com/existing",
+                    "originallink": "https://example.com/existing",
+                    "pubDate": "2026-02-27T10:00:00",
+                },
+                {
+                    "title": "Fresh AI update",
+                    "description": "desc",
+                    "link": "https://news.naver.com/new",
+                    "originallink": "https://example.com/new",
+                    "pubDate": "2026-02-27T11:00:00",
+                },
+                {
+                    "title": "Duplicate-title AI update",
+                    "description": "desc",
+                    "link": "https://news.naver.com/new-dup",
+                    "originallink": "https://example.com/new-dup",
+                    "pubDate": "2026-02-27T12:00:00",
+                },
+            ],
+        }
+        db = _DetailedUpsertDB(
+            (
+                "https://news.naver.com/new",
+                "https://news.naver.com/new-dup",
+            )
+        )
+        worker = ApiWorker(
+            client_id="id",
+            client_secret="secret",
+            search_query="AI",
+            db_keyword="AI",
+            exclude_words=[],
+            db_manager=db,
+            start_idx=1,
+            max_retries=1,
+            timeout=1,
+            session=_StaticSession(_FakeResponse(200, payload)),
+        )
+
+        finished = []
+        worker.finished.connect(lambda result: finished.append(result))
+
+        worker.run()
+
+        self.assertEqual(db.existing_lookup_calls, 0)
+        self.assertEqual(db.upsert_calls, 1)
+        self.assertEqual(
+            [item["link"] for item in finished[0]["new_items"]],
+            ["https://news.naver.com/new", "https://news.naver.com/new-dup"],
+        )
+        self.assertEqual(finished[0]["new_count"], 2)
 
     def test_db_write_failure_emits_error_instead_of_finished(self):
         payload = {

@@ -100,9 +100,22 @@ class _MainWindowBadgeShellMixin:
                 cached = self._badge_unread_cache.get(keyword)
                 if cached is not None:
                     self._set_tab_badge_text(tab_index, keyword, int(cached))
+                    return
             self._schedule_badge_refresh()
         except Exception as exc:
             logger.warning("탭 배지 업데이트 오류 (%s): %s", keyword, exc)
+
+    def update_badge_cache_from_tab_load(self, keyword: str, unread_count: int):
+        """Update badge cache from a DBWorker result without scheduling another count."""
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword:
+            return
+        count = max(0, int(unread_count or 0))
+        self._badge_unread_cache[normalized_keyword] = count
+        located_tab = self._find_news_tab(normalized_keyword)
+        if located_tab is not None:
+            tab_index, _widget = located_tab
+            self._set_tab_badge_text(tab_index, normalized_keyword, count)
 
     def sync_tab_load_more_state(self, keyword: str):
         """Re-apply persisted load-more state after a tab reloads from DB."""

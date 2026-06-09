@@ -6,6 +6,18 @@ warnings.warn(
     stacklevel=2,
 )
 
-from core.database import DatabaseManager, DatabaseQueryError, DatabaseWriteError
+from core.database import (
+    DatabaseManager,
+    DatabaseQueryError,
+    DatabaseWriteError,
+    NewsCountSummary,
+    NewsUpsertResult,
+)
 
-__all__ = ['DatabaseManager', 'DatabaseQueryError', 'DatabaseWriteError']
+__all__ = [
+    'DatabaseManager',
+    'DatabaseQueryError',
+    'DatabaseWriteError',
+    'NewsCountSummary',
+    'NewsUpsertResult',
+]

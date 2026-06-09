@@ -228,6 +228,10 @@ class _NewsTabDbLoadingMixin:
 
             parent = self._main_window()
             if parent is not None:
+                if not self.is_bookmark_tab:
+                    update_badge_cache = getattr(parent, "update_badge_cache_from_tab_load", None)
+                    if callable(update_badge_cache):
+                        update_badge_cache(self.keyword, self._unread_count_cache)
                 parent.sync_tab_load_more_state(self.keyword)
                 if not self.news_data_cache and not self.is_bookmark_tab:
                     parent.maybe_show_query_refresh_hint(self.keyword)

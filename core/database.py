@@ -12,6 +12,8 @@ from core._db_duplicates import _DatabaseDuplicatesMixin
 from core._db_mutations import _DatabaseMutationsMixin
 from core._db_queries import _DatabaseQueriesMixin
 from core._db_schema import _DatabaseSchemaMixin
+from core.db_mutations_support import NewsUpsertResult
+from core.db_queries_support import NewsCountSummary
 from core.logging_setup import configure_logging
 
 
