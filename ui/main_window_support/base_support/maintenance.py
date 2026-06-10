@@ -54,6 +54,8 @@ class _MainWindowMaintenanceMixin:
             self.btn_save.setEnabled(enabled)
         if hasattr(self, "btn_stats"):
             self.btn_stats.setEnabled(enabled)
+        if hasattr(self, "action_stats"):
+            self.action_stats.setEnabled(enabled)
 
         for _index, tab in self._iter_news_tabs():
             set_maintenance_mode = getattr(tab, "set_maintenance_mode", None)

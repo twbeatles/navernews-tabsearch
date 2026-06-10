@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
     QApplication,
+    QMenu,
     QProgressBar,
     QPushButton,
     QSystemTrayIcon,
@@ -68,20 +69,21 @@ class _MainWindowSetupShellMixin:
         toolbar.addWidget(self.btn_refresh)
         toolbar.addWidget(self.btn_save)
 
-        self.btn_stats = QPushButton("📊 통계")
-        self.btn_stats.setToolTip("전체 뉴스 통계 및 언론사별 분석 보기")
-
         self.btn_archive = QPushButton("🔎 아카이브")
         self.btn_archive.setToolTip("저장된 전체 뉴스에서 검색합니다")
 
-        self.btn_tags = QPushButton("🏷 태그")
-        self.btn_tags.setToolTip("태그 이름 변경, 병합, 삭제 및 현재 탭 일괄 태그 작업")
-
-        self.btn_rules = QPushButton("🤖 규칙")
-        self.btn_rules.setToolTip("자동 태그/북마크/읽음 규칙을 관리합니다")
-
-        self.btn_aliases = QPushButton("📰 Alias")
-        self.btn_aliases.setToolTip("출처 alias 표시/필터 매핑을 관리합니다")
+        self.btn_manage = QPushButton("🧰 관리")
+        self.btn_manage.setToolTip("태그, 자동화 규칙, 출처 Alias, 통계를 관리합니다")
+        self.manage_menu = QMenu(self.btn_manage)
+        self.action_stats = self._add_menu_action(self.manage_menu, "📊 통계")
+        self.action_stats.setToolTip("전체 뉴스 통계 및 언론사별 분석 보기")
+        self.action_tags = self._add_menu_action(self.manage_menu, "🏷 태그")
+        self.action_tags.setToolTip("태그 이름 변경, 병합, 삭제 및 현재 탭 일괄 태그 작업")
+        self.action_rules = self._add_menu_action(self.manage_menu, "🤖 규칙")
+        self.action_rules.setToolTip("자동 태그/북마크/읽음 규칙을 관리합니다")
+        self.action_aliases = self._add_menu_action(self.manage_menu, "📰 Alias")
+        self.action_aliases.setToolTip("출처 alias 표시/필터 매핑을 관리합니다")
+        self.btn_manage.setMenu(self.manage_menu)
 
         self.btn_setting = QPushButton("⚙ 설정")
         self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
@@ -92,11 +94,8 @@ class _MainWindowSetupShellMixin:
         self.btn_help = QPushButton("❓ 도움말")
         self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
 
-        toolbar.addWidget(self.btn_stats)
         toolbar.addWidget(self.btn_archive)
-        toolbar.addWidget(self.btn_tags)
-        toolbar.addWidget(self.btn_rules)
-        toolbar.addWidget(self.btn_aliases)
+        toolbar.addWidget(self.btn_manage)
         toolbar.addWidget(self.btn_setting)
         toolbar.addWidget(self.btn_backup)
         toolbar.addWidget(self.btn_help)
@@ -132,11 +131,11 @@ class _MainWindowSetupShellMixin:
 
         self.btn_refresh.clicked.connect(self.refresh_all)
         self.btn_setting.clicked.connect(self.open_settings)
-        self.btn_stats.clicked.connect(self.show_stats_analysis)
         self.btn_archive.clicked.connect(self.show_archive_search)
-        self.btn_tags.clicked.connect(self.show_tag_manager)
-        self.btn_rules.clicked.connect(self.show_automation_rules)
-        self.btn_aliases.clicked.connect(self.show_publisher_aliases)
+        self.action_stats.triggered.connect(self.show_stats_analysis)
+        self.action_tags.triggered.connect(self.show_tag_manager)
+        self.action_rules.triggered.connect(self.show_automation_rules)
+        self.action_aliases.triggered.connect(self.show_publisher_aliases)
         self.btn_help.clicked.connect(self.show_help)
         self.btn_backup.clicked.connect(self.show_backup_dialog)
         self.btn_add.clicked.connect(self.add_tab_dialog)

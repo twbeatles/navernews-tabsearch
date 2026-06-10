@@ -2,7 +2,7 @@
 
 이 파일은 현재 릴리스에서 유지해야 할 변경 요약만 기록합니다. 과거 날짜별 누적 로그는 문서 본문에서 제거했으며, 필요하면 Git history와 이전 태그를 기준으로 확인합니다.
 
-## v32.7.3 (Unreleased)
+## v32.7.3 (2026-06-10)
 
 ### Current State
 
@@ -10,6 +10,11 @@
 - `news_scraper_pro.py`는 실행 진입점과 legacy re-export를 유지합니다.
 - `core.database.DatabaseManager`, `core.workers`, `ui.main_window.MainApp`, `ui.news_tab.NewsTab` facade 경로는 호환성을 위해 유지합니다.
 - 내부 구현은 `core/*_support`와 `ui/*_support` 패키지로 분리되어 있습니다.
+
+### UI
+
+- 메인 툴바의 `통계`, `태그`, `규칙`, `Alias` 버튼을 `관리` 드롭다운 메뉴로 통합했습니다.
+- 좁은 창에서도 상단 툴바가 과도하게 길어지지 않도록 보조 관리 기능을 별도 메뉴로 분류했습니다.
 
 ### Fetch/DB Performance
 
@@ -33,7 +38,7 @@
 
 - `python -m pytest tests/test_worker_cancellation.py tests/test_dbworker_pagination.py tests/test_db_queries.py tests/test_news_tab_performance.py -q` => `60 passed`
 - `python -m pytest tests/test_encoding_smoke.py tests/test_version_history_guard.py tests/test_spec_runtime_tmpdir.py -q` => `4 passed`
-- `python -m pytest -q` => `338 passed, 7 warnings, 5 subtests passed`
+- `python -m pytest -q` => `339 passed, 7 warnings, 5 subtests passed`
 - `python -m pyright` => `0 errors, 0 warnings, 0 informations`
 - `python -m PyInstaller --noconfirm --clean news_scraper_pro.spec` => success (`dist/NewsScraperPro_Safe.exe`)
 - Temp DB benchmark: initial detailed upsert `833.44ms`, repeated identical detailed upsert `169.46ms`, `count_news_states` `6.44ms`, first page fetch `9.99ms`, offset-1000 fetch `17.66ms`
