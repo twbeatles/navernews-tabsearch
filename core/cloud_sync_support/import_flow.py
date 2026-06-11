@@ -6,6 +6,7 @@ import tempfile
 from typing import Any, Dict, List, Mapping, Sequence
 
 from core.cloud_sync_support.models import CloudSyncError
+from core.cloud_sync_support.path_policy import resolve_cloud_sync_dir
 from core.cloud_sync_support.snapshot_io import (
     cleanup_old_snapshots,
     create_cloud_snapshot,
@@ -206,6 +207,7 @@ def run_cloud_sync_cycle(
     app_version: str,
     max_imports: int = 20,
 ) -> Dict[str, Any]:
+    sync_dir = resolve_cloud_sync_dir(sync_dir)
     imported: List[Dict[str, Any]] = []
     errors: List[str] = []
     selection = select_cloud_snapshots_for_import(

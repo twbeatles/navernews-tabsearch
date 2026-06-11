@@ -87,6 +87,8 @@ class _DummyFetchMain:
         self._last_auto_refresh_by_keyword = {}
         self._worker_registry = WorkerRegistry()
         self.workers = {}
+        self.client_id = "valid-client-id"
+        self.client_secret = "valid-client-secret"
 
     def is_maintenance_mode_active(self):
         return False
@@ -330,6 +332,27 @@ class TestFetchCooldown(unittest.TestCase):
         self.assertTrue(dummy.warning_messages)
         self.assertIn("API 대기 시간", dummy.warning_messages[0])
         self.assertTrue(dummy.status_bar.messages)
+
+    def test_fetch_news_blocks_single_tab_when_api_credentials_are_invalid(self):
+        dummy = _DummyFetchDoneMain()
+        dummy.client_id = ""
+        dummy.client_secret = ""
+
+        with mock.patch("ui.main_window_fetch_support.worker_flow.ApiWorker", side_effect=AssertionError("worker should not start")):
+            dummy.fetch_news("AI launch", is_more=False, is_sequential=False)
+
+        self.assertTrue(dummy.warning_messages)
+        self.assertIn("API 인증 정보", dummy.warning_messages[0])
+        self.assertEqual(dummy._last_fetch_request_ts, {})
+
+    def test_sequential_fetch_advances_when_api_credentials_are_invalid(self):
+        dummy = _DummyFetchDoneMain()
+        dummy.client_id = ""
+        dummy.client_secret = ""
+
+        dummy.fetch_news("AI launch", is_sequential=True)
+
+        self.assertEqual(dummy._sequential_refresh_done_keywords, ["AI launch"])
 
     def test_cooldown_message_clears_after_expiry(self):
         dummy = _DummyFetchMain()

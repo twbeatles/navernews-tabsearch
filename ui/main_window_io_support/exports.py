@@ -27,7 +27,7 @@ from core.cloud_sync import (
     select_cloud_snapshots_for_import,
 )
 from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
-from core.content_filters import normalize_publisher_filter_lists
+from core.content_filters import normalize_publisher_filter_lists, truncate_note
 from core.keyword_groups import merge_keyword_groups
 from core.machine_identity import get_machine_identity
 from core.automation_rules import normalize_automation_rules
@@ -331,11 +331,12 @@ def import_bookmarks_notes_from_csv(
     processed = 0
     updated_rows = 0
     missing_rows = 0
+    truncated_notes = 0
     safe_chunk_size = max(1, int(chunk_size or 200))
     with open(input_path, "r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         if not reader.fieldnames:
-            return {"processed": 0, "updated": 0, "missing": 0}
+            return {"processed": 0, "updated": 0, "missing": 0, "truncated_notes": 0}
         for row in reader:
             context.check_cancelled()
             processed += 1
@@ -348,7 +349,11 @@ def import_bookmarks_notes_from_csv(
                 bookmark_value = row.get("북마크", row.get("bookmark", row.get("Bookmark", "")))
                 changed = bool(db.update_status(link, "is_bookmarked", 1 if _csv_truthy(bookmark_value) else 0)) or changed
             if any(key in row for key in ("메모", "notes", "Notes")):
-                note_value = str(row.get("메모", row.get("notes", row.get("Notes", ""))) or "")
+                note_value, note_truncated = truncate_note(
+                    row.get("메모", row.get("notes", row.get("Notes", "")))
+                )
+                if note_truncated:
+                    truncated_notes += 1
                 changed = bool(db.save_note(link, note_value)) or changed
             if changed:
                 updated_rows += 1
@@ -361,4 +366,9 @@ def import_bookmarks_notes_from_csv(
                     message=f"CSV 가져오는 중... ({processed}행 처리)",
                 )
     context.report(current=processed, total=processed, message="CSV 가져오기 완료")
-    return {"processed": processed, "updated": updated_rows, "missing": missing_rows}
+    return {
+        "processed": processed,
+        "updated": updated_rows,
+        "missing": missing_rows,
+        "truncated_notes": truncated_notes,
+    }

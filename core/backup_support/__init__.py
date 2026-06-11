@@ -5,6 +5,7 @@ from core.backup_support.fs import (
     _retry_remove_readonly,
     _rollback_files_from_snapshot,
     _rmtree_force,
+    _safe_backup_child_dir,
     _snapshot_files_for_rollback,
     _write_json_atomic,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "_retry_remove_readonly",
     "_rollback_files_from_snapshot",
     "_rmtree_force",
+    "_safe_backup_child_dir",
     "_snapshot_files_for_rollback",
     "_validate_config_backup_payload",
     "_validate_restore_sources",

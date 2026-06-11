@@ -10,6 +10,7 @@ from core.backup_support.fs import (
     _atomic_copy_replace,
     _cleanup_restore_stage_dir,
     _rollback_files_from_snapshot,
+    _safe_backup_child_dir,
     _snapshot_files_for_rollback,
 )
 from core.backup_support.validation import verify_backup_payload
@@ -146,25 +147,25 @@ def apply_pending_restore_if_any(
 
     backup_name = str(payload.get("backup_name", "") or "").strip()
     restore_db = bool(payload.get("restore_db", True))
-    requested_backup_dir = str(payload.get("backup_dir", "") or "").strip()
     runtime_backup_dir = os.path.join(
         os.path.dirname(os.path.abspath(config_file)), DEFAULT_BACKUP_DIR
     )
 
     backup_path = ""
-    candidate_dirs = []
-    if requested_backup_dir:
-        candidate_dirs.append(requested_backup_dir)
-    if runtime_backup_dir not in candidate_dirs:
-        candidate_dirs.append(runtime_backup_dir)
+    if not backup_name:
+        logger.error("pending restore validation failed: backup path is invalid (file is kept)")
+        return False
 
-    for backup_dir in candidate_dirs:
-        candidate_path = os.path.join(str(backup_dir), backup_name)
+    valid, candidate_path, reason = _safe_backup_child_dir(runtime_backup_dir, backup_name)
+    if not valid:
+        logger.error("pending restore validation failed: %s (file is kept)", reason)
+        return False
+    for candidate_path in [candidate_path]:
         if os.path.isdir(candidate_path):
             backup_path = candidate_path
             break
 
-    if not backup_name or not backup_path:
+    if not backup_path:
         logger.error("pending restore validation failed: backup path is invalid (file is kept)")
         return False
 

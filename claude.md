@@ -19,6 +19,10 @@
 - 사용자-visible 필터 의미를 바꿀 때는 fetch, count, badge, tray, export, archive를 같이 확인합니다.
 - FTS hard prefilter는 false negative 방지를 위해 다시 켜지 않습니다.
 - DB write/query 실패는 각각 `DatabaseWriteError`, `DatabaseQueryError`로 드러내는 방향을 유지합니다.
+- 단일 탭 fetch, 더 불러오기, 순차 fetch는 모두 `fetch_news()`의 API 자격증명 guard를 통과해야 합니다.
+- 탭 닫기/이름 변경은 active worker cleanup 실패 시 상태 변경을 진행하지 않습니다.
+- 메모는 저장 전 10,000자로 제한하고, import/export 문서 계약과 테스트를 같이 유지합니다.
+- destructive backup 경로는 backup root 아래의 단일 이름만 허용합니다.
 - 문서는 현재 코드 상태를 우선하고, 오래된 변경 누적 로그를 다시 붙이지 않습니다.
 
 ## 현재 구조
@@ -59,6 +63,12 @@ tests/
 | settings import/export | `ui/main_window_io_support/` |
 | cloud sync | `core/cloud_sync_support/`, `core/db_cloud_sync_support/` |
 | packaging | `news_scraper_pro.spec` |
+
+## 경로/데이터 정책
+
+- cloud sync folder는 core API에서 빈 값을 거부하고, 상대 경로는 절대 경로로 resolve한 뒤 사용합니다.
+- CSV/Markdown export 기본 파일명은 `ValidationUtils.safe_filename_component(...)`로 정규화합니다.
+- backup delete/restore/schedule/pending restore는 `core.backup_support.fs._safe_backup_child_dir(...)`를 통해 root containment를 확인합니다.
 
 ## 현재 성능 계약
 

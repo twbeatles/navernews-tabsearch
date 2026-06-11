@@ -11,7 +11,7 @@ import traceback
 from typing import Any, Dict, List, Optional
 
 from core.backup_support.constants import DEFAULT_BACKUP_DIR, PENDING_RESTORE_FILENAME
-from core.backup_support.fs import _rmtree_force, _write_json_atomic
+from core.backup_support.fs import _rmtree_force, _safe_backup_child_dir, _write_json_atomic
 from core.backup_support.restore import _apply_restore_from_backup
 from core.backup_support.validation import verify_backup_payload
 
@@ -27,8 +27,12 @@ class _AutoBackupRestoreDeleteMixin:
     ) -> bool:
         try:
             target_pending_file = pending_file or self.pending_restore_file
-            backup_path = os.path.join(self.backup_dir, str(backup_name or ""))
-            if not backup_name or not os.path.isdir(backup_path):
+            backup_name = str(backup_name or "").strip()
+            valid, backup_path, reason = _safe_backup_child_dir(self.backup_dir, backup_name)
+            if not valid:
+                logger.error("복원 예약 실패: %s", reason)
+                return False
+            if not os.path.isdir(backup_path):
                 logger.error("복원 예약 실패: 백업 디렉터리를 찾을 수 없습니다 (%s)", backup_path)
                 return False
             try:
@@ -69,7 +73,9 @@ class _AutoBackupRestoreDeleteMixin:
         if not backup_name:
             return False, "백업 이름이 비어 있습니다."
 
-        backup_path = os.path.join(self.backup_dir, backup_name)
+        valid, backup_path, reason = _safe_backup_child_dir(self.backup_dir, backup_name)
+        if not valid:
+            return False, reason
         if not os.path.exists(backup_path):
             return False, "삭제할 백업 경로가 존재하지 않습니다."
 
@@ -85,7 +91,11 @@ class _AutoBackupRestoreDeleteMixin:
     def restore_backup(self, backup_name: str, restore_db: bool = True) -> bool:
         """오프라인 복원용 즉시 복원 API (UI에서는 schedule_restore 사용 권장)."""
         try:
-            backup_path = os.path.join(self.backup_dir, backup_name)
+            backup_name = str(backup_name or "").strip()
+            valid, backup_path, reason = _safe_backup_child_dir(self.backup_dir, backup_name)
+            if not valid:
+                logger.error("백업 복원 실패: %s", reason)
+                return False
             if not os.path.exists(backup_path):
                 logger.error(f"백업을 찾을 수 없음: {backup_name}")
                 return False

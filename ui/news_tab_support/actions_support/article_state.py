@@ -9,7 +9,7 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
 from core.database import DatabaseWriteError
-from core.content_filters import normalize_tags, tags_to_csv
+from core.content_filters import normalize_tags, tags_to_csv, truncate_note
 from core.workers import IterativeJobWorker, _normalized_http_url, delete_qthread_when_finished
 from ui.dialogs import NoteDialog
 from ui.protocols import MainWindowProtocol
@@ -155,7 +155,7 @@ class _NewsTabArticleActionsMixin:
         if _NewsTabArticleActionsMixin._should_block_local_db_action(self, "note save"):
             return False
 
-        new_note = str(note or "")
+        new_note, note_truncated = truncate_note(note)
         if str(target.get("notes", "") or "") == new_note:
             return True
         try:
@@ -177,6 +177,8 @@ class _NewsTabArticleActionsMixin:
         if parent is not None:
             if hasattr(parent, "sync_link_state_across_tabs"):
                 parent.sync_link_state_across_tabs(self, link, notes=new_note)
+            if note_truncated and hasattr(parent, "show_warning_toast"):
+                parent.show_warning_toast("메모가 10,000자로 잘려 저장되었습니다.")
             if success_message:
                 parent.show_toast(success_message)
         return True

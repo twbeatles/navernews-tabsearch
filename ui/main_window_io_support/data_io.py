@@ -29,6 +29,7 @@ from core.cloud_sync import (
 )
 from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
 from core.content_filters import normalize_publisher_filter_lists
+from core.validation import ValidationUtils
 from core.keyword_groups import merge_keyword_groups
 from core.machine_identity import get_machine_identity
 from core.automation_rules import normalize_automation_rules
@@ -112,7 +113,8 @@ class _MainWindowDataIOMixin:
             return
 
         keyword = cur_widget.keyword
-        default_name = f"{keyword}_뉴스_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        safe_keyword = ValidationUtils.safe_filename_component(keyword, fallback="news")
+        default_name = f"{safe_keyword}_뉴스_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         fname, _ = dialogs.get_save_file_name(
             self,
             "데이터 내보내기",
@@ -321,14 +323,17 @@ class _MainWindowDataIOMixin:
         processed = int(result.get("processed", 0) or 0)
         updated = int(result.get("updated", 0) or 0)
         missing = int(result.get("missing", 0) or 0)
+        truncated_notes = int(result.get("truncated_notes", 0) or 0)
         self._finish_csv_import_ui()
-        self._status_bar().showMessage(f"CSV 가져오기 완료: 갱신 {updated}개 / 건너뜀 {missing}개", 5000)
+        suffix = f" / 긴 메모 잘림 {truncated_notes}개" if truncated_notes else ""
+        self._status_bar().showMessage(f"CSV 가져오기 완료: 갱신 {updated}개 / 건너뜀 {missing}개{suffix}", 5000)
         self.show_success_toast(f"CSV 가져오기 완료: {updated}개 기사 갱신")
         self.on_database_maintenance_completed("csv_import", updated)
         _dialogs_for(self).information(
             self,
             "CSV 가져오기 완료",
-            f"처리 행: {processed:,}개\n기존 기사 갱신: {updated:,}개\n건너뜀: {missing:,}개",
+            f"처리 행: {processed:,}개\n기존 기사 갱신: {updated:,}개\n건너뜀: {missing:,}개"
+            + (f"\n10,000자를 넘겨 잘린 메모: {truncated_notes:,}개" if truncated_notes else ""),
         )
     def _on_csv_import_error(self: MainApp, error_msg: str) -> None:
         self._finish_csv_import_ui()

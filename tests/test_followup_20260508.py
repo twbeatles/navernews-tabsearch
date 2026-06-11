@@ -6,6 +6,7 @@ from typing import Any, Optional, cast
 from unittest import mock
 
 from core.backup import AutoBackup, cleanup_applied_pending_restore_files
+from core.content_filters import MAX_NOTE_LENGTH
 from core.database import DatabaseManager
 from core.workers import (
     ApiWorker,
@@ -224,7 +225,7 @@ class TestFollowup20260508(unittest.TestCase):
                 with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
                     writer = csv.writer(f)
                     writer.writerow(["링크", "북마크", "메모"])
-                    writer.writerow(["https://example.com/existing", "북마크", "note"])
+                    writer.writerow(["https://example.com/existing", "북마크", "n" * (MAX_NOTE_LENGTH + 3)])
                     writer.writerow(["https://example.com/new", "북마크", "new note"])
 
                 result = import_bookmarks_notes_from_csv(_Context(), db, str(csv_path), chunk_size=1)
@@ -232,9 +233,10 @@ class TestFollowup20260508(unittest.TestCase):
                 rows = db.fetch_news("AI", query_key="ai|")
                 self.assertEqual(result["processed"], 2)
                 self.assertEqual(result["updated"], 1)
+                self.assertEqual(result["truncated_notes"], 1)
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(rows[0]["is_bookmarked"], 1)
-                self.assertEqual(rows[0]["notes"], "note")
+                self.assertEqual(rows[0]["notes"], "n" * MAX_NOTE_LENGTH)
             finally:
                 db.close()
 

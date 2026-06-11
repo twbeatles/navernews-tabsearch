@@ -123,6 +123,21 @@ class _MainWindowTabsMixin:
         self._fetch_total_by_key.pop(fetch_key, None)
         self._last_fetch_request_ts.pop(fetch_key, None)
 
+    def _notify_tab_worker_cleanup_blocked(
+        self: MainApp,
+        keyword: str,
+        action_label: str,
+    ) -> None:
+        message = f"'{keyword}' 이전 새로고침이 아직 종료 중이라 {action_label}을(를) 잠시 후 다시 시도해 주세요."
+        logger.warning("Tab action blocked while worker is stopping: action=%s, keyword=%s", action_label, keyword)
+        try:
+            self._status_bar().showMessage(message, 4000)
+        except Exception:
+            pass
+        show_warning_toast = getattr(self, "show_warning_toast", None)
+        if callable(show_warning_toast):
+            show_warning_toast(message)
+
     def add_news_tab(self: MainApp, keyword: str, *, defer_initial_load: bool = True):
         """뉴스 탭 추가"""
         normalized_keyword = self._normalize_tab_keyword(keyword)
@@ -268,11 +283,13 @@ class _MainWindowTabsMixin:
             removed_keyword = widget.keyword
             active_request_id = self._worker_registry.get_active_request_id(removed_keyword)
             if active_request_id is not None:
-                self.cleanup_worker(
+                if not self.cleanup_worker(
                     keyword=removed_keyword,
                     request_id=active_request_id,
                     only_if_active=False,
-                )
+                ):
+                    self._notify_tab_worker_cleanup_blocked(removed_keyword, "탭 닫기")
+                    return
             try:
                 widget.cleanup()
             except Exception as e:
@@ -309,13 +326,6 @@ class _MainWindowTabsMixin:
 
         if ok and text.strip():
             old_keyword = w.keyword
-            active_request_id = self._worker_registry.get_active_request_id(old_keyword)
-            if active_request_id is not None:
-                self.cleanup_worker(
-                    keyword=old_keyword,
-                    request_id=active_request_id,
-                    only_if_active=False,
-                )
             new_keyword = self._normalize_tab_keyword(text)
             if not new_keyword:
                 QMessageBox.warning(
@@ -337,6 +347,16 @@ class _MainWindowTabsMixin:
                 )
                 self.tabs.setCurrentIndex(duplicate_tab[0])
                 return
+
+            active_request_id = self._worker_registry.get_active_request_id(old_keyword)
+            if active_request_id is not None:
+                if not self.cleanup_worker(
+                    keyword=old_keyword,
+                    request_id=active_request_id,
+                    only_if_active=False,
+                ):
+                    self._notify_tab_worker_cleanup_blocked(old_keyword, "탭 이름 변경")
+                    return
 
             w.keyword = new_keyword
             self._remove_tab_hydration(old_keyword)

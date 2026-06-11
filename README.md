@@ -116,6 +116,8 @@ python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
 - `ApiWorker.finished` payload shape는 `items`, `new_items`, `new_count`, `total`, `filtered`, `added_count`, `dup_count`를 유지합니다.
 - `DBWorker` full reload는 가능하면 `count_news_states(...)`를 사용하고, append는 known total을 재사용합니다.
 - 탭 배지는 DB load의 unread count와 NewsTab 로컬 unread cache를 우선 사용해 불필요한 count refresh를 줄입니다.
+- 단일 탭 새로고침, 더 불러오기, 순차 새로고침은 모두 `fetch_news()`에서 API 자격증명을 중앙 검증한 뒤 worker를 생성합니다.
+- 탭 닫기/이름 변경은 기존 fetch worker 정리가 timeout되면 탭 상태 변경을 보류합니다.
 
 ## 설정 Export/Import
 
@@ -124,12 +126,20 @@ python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
 - `automation_rules`와 `publisher_aliases`는 일반 설정 export/import에는 포함되고 cloud snapshot settings에서는 제외됩니다.
 - `tabs`, `search_history`, `pagination_state`, `pagination_totals`, `saved_searches`, `tab_refresh_policies`는 canonical query/fetch key 기준으로 정규화됩니다.
 - 다른 PC의 export에서 들어온 자동 시작 설정은 로컬 오등록 방지를 위해 안전하게 보정됩니다.
+- 메모는 저장 경로와 CSV 가져오기에서 최대 10,000자로 정규화됩니다. 초과분은 잘리고 UI/import 결과에 표시됩니다.
+- CSV/Markdown 내보내기 dialog의 기본 파일명은 검색어 원문이 아니라 OS-safe filename component를 사용합니다.
 
 ## 클라우드 동기화
 
 클라우드 폴더에는 live SQLite DB를 직접 두지 않고 `news_scraper_sync_*.zip` 스냅샷만 교환합니다. 스냅샷에는 manifest, secret 제거 settings, SQLite backup API로 만든 DB 복사본이 들어갑니다.
 
 동기화 병합은 기사 link와 `(link, query_key)` membership을 union하고, 읽음/북마크/메모/태그/삭제 tombstone은 timestamp 최신값을 따릅니다. 손상되었거나 크기 제한을 넘는 스냅샷은 `.invalid/`로 격리됩니다.
+
+빈 cloud sync folder는 core API에서도 거부됩니다. 상대 경로는 현재 작업 디렉터리 기준 절대 경로로 해석한 뒤 snapshot 경로로 사용합니다.
+
+## 백업/복원 안전 정책
+
+백업 삭제, 즉시 복원, pending restore 예약/적용은 backup name을 단일 디렉터리 이름으로만 허용합니다. 절대 경로, 드라이브 포함 경로, `..`, `/`, `\`가 포함된 이름은 backup root 밖을 가리킬 수 있으므로 거부됩니다.
 
 ## 단축키
 

@@ -370,6 +370,40 @@ class TestCloudSync(unittest.TestCase):
             )
         )
 
+    def test_create_cloud_snapshot_rejects_empty_sync_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db_path = root / "news.db"
+            db = self._db(db_path)
+            try:
+                with self.assertRaises(CloudSyncError):
+                    create_cloud_snapshot(
+                        sync_dir="",
+                        config={"app_settings": {}},
+                        db_file=db.db_file,
+                        machine_id="machine-a",
+                        app_version="test",
+                    )
+            finally:
+                db.close()
+
+    def test_run_cloud_sync_cycle_rejects_empty_sync_dir_before_export(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db = self._db(root / "target.db")
+            try:
+                with self.assertRaises(CloudSyncError):
+                    run_cloud_sync_cycle(
+                        db_manager=db,
+                        sync_dir="   ",
+                        config={"app_settings": {}},
+                        db_file=db.db_file,
+                        machine_id="machine-a",
+                        app_version="test",
+                    )
+            finally:
+                db.close()
+
     def test_full_sync_exports_snapshot_after_imported_changes_are_merged(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

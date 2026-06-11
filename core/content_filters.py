@@ -5,6 +5,7 @@ from typing import Any, Iterable, List
 
 MAX_TAGS_PER_ARTICLE = 20
 MAX_TAG_LENGTH = 30
+MAX_NOTE_LENGTH = 10_000
 
 
 def normalize_name_list(value: Any, *, max_items: int = 200) -> List[str]:
@@ -85,3 +86,20 @@ def normalize_tags(value: Any) -> List[str]:
 
 def tags_to_csv(tags: Any) -> str:
     return ", ".join(normalize_tags(tags))
+
+
+def normalize_note(value: Any, *, max_length: int = MAX_NOTE_LENGTH) -> str:
+    """Normalize user notes before storing them in SQLite."""
+    if value is None:
+        return ""
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    return text[: max(0, int(max_length or 0))]
+
+
+def truncate_note(value: Any, *, max_length: int = MAX_NOTE_LENGTH) -> tuple[str, bool]:
+    if value is None:
+        return "", False
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    limit = max(0, int(max_length or 0))
+    normalized = text[:limit]
+    return normalized, len(text) > limit

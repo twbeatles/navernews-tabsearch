@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 import tempfile
+import ntpath
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,29 @@ def _write_json_atomic(path: str, payload: Dict[str, Any]) -> None:
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def _safe_backup_child_dir(root_dir: str, backup_name: str) -> tuple[bool, str, str]:
+    root_abs = os.path.abspath(str(root_dir or ""))
+    name = str(backup_name or "").strip()
+    if not name:
+        return False, "", "백업 이름이 비어 있습니다."
+    if name in {".", ".."}:
+        return False, "", "백업 이름이 안전하지 않습니다."
+    if os.path.isabs(name) or ntpath.isabs(name) or ntpath.splitdrive(name)[0]:
+        return False, "", "백업 이름은 상대 이름만 허용됩니다."
+    if any(separator in name for separator in ("/", "\\")) or ":" in name:
+        return False, "", "백업 이름에는 경로 구분자를 사용할 수 없습니다."
+
+    target_abs = os.path.abspath(os.path.join(root_abs, name))
+    try:
+        if os.path.commonpath([root_abs, target_abs]) != root_abs:
+            return False, "", "백업 경로가 백업 폴더 밖을 가리킵니다."
+    except ValueError:
+        return False, "", "백업 경로가 백업 폴더 밖을 가리킵니다."
+    return True, target_abs, ""
+
+
 def _atomic_copy_replace(src_path: str, dst_path: str) -> None:
     directory = os.path.dirname(os.path.abspath(dst_path)) or "."
     os.makedirs(directory, exist_ok=True)

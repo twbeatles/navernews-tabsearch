@@ -77,6 +77,24 @@ class TestBackupCollisionAndRestore(unittest.TestCase):
             self.assertTrue(deleted, error)
             self.assertFalse(backup_dir.exists())
 
+    def test_delete_backup_rejects_path_traversal_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "db.sqlite"
+            cfg.write_text("{}", encoding="utf-8")
+            db.write_text("db", encoding="utf-8")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "marker.txt").write_text("keep", encoding="utf-8")
+            backup = AutoBackup(config_file=str(cfg), db_file=str(db))
+
+            deleted, error = backup.delete_backup("../outside")
+
+            self.assertFalse(deleted)
+            self.assertIn("경로", error)
+            self.assertTrue((outside / "marker.txt").exists())
+
     def test_restore_backup_fails_when_db_backup_missing(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

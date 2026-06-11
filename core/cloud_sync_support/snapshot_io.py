@@ -29,6 +29,7 @@ from core.cloud_sync_support.models import (
     CloudSnapshot,
     CloudSyncError,
 )
+from core.cloud_sync_support.path_policy import resolve_cloud_sync_dir
 
 
 def _utc_now_iso() -> str:
@@ -156,9 +157,7 @@ def create_cloud_snapshot(
     machine_id: str,
     app_version: str,
 ) -> CloudSnapshot:
-    target_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(str(sync_dir or ""))))
-    if not target_dir:
-        raise CloudSyncError("sync directory is empty")
+    target_dir = resolve_cloud_sync_dir(sync_dir)
     os.makedirs(target_dir, exist_ok=True)
 
     created_at = _utc_now_iso()
@@ -297,7 +296,7 @@ def extract_snapshot(zip_path: str, destination_dir: str) -> Dict[str, str]:
 
 
 def list_cloud_snapshots(sync_dir: str) -> List[str]:
-    root = os.path.abspath(os.path.expanduser(os.path.expandvars(str(sync_dir or ""))))
+    root = resolve_cloud_sync_dir(sync_dir, allow_empty=True)
     if not root or not os.path.isdir(root):
         return []
     paths = []

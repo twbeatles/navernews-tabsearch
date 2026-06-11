@@ -131,14 +131,20 @@ class TestMainWindowRiskFixes(unittest.TestCase):
     def test_rename_tab_cleans_active_worker_and_uses_common_title_formatter(self):
         block = inspect.getsource(MainApp.rename_tab)
         self.assertIn("self._worker_registry.get_active_request_id(old_keyword)", block)
-        self.assertIn("self.cleanup_worker(", block)
+        self.assertIn("if not self.cleanup_worker(", block)
+        self.assertLess(
+            block.index("new_keyword = self._normalize_tab_keyword(text)"),
+            block.index("self._worker_registry.get_active_request_id(old_keyword)"),
+        )
+        self.assertIn("self._notify_tab_worker_cleanup_blocked(old_keyword, \"탭 이름 변경\")", block)
         self.assertIn("self._format_tab_title(new_keyword, unread_count=0)", block)
 
     def test_close_tab_cleans_active_worker_before_widget_cleanup(self):
         block = inspect.getsource(MainApp.close_tab)
         self.assertIn("self._worker_registry.get_active_request_id(removed_keyword)", block)
-        self.assertIn("self.cleanup_worker(", block)
-        self.assertLess(block.index("self.cleanup_worker("), block.index("widget.cleanup()"))
+        self.assertIn("if not self.cleanup_worker(", block)
+        self.assertIn("self._notify_tab_worker_cleanup_blocked(removed_keyword, \"탭 닫기\")", block)
+        self.assertLess(block.index("if not self.cleanup_worker("), block.index("widget.cleanup()"))
 
 
 class TestStyleRiskFixes(unittest.TestCase):

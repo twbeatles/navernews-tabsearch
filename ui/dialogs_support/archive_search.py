@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 
 from core.backup import AutoBackup
 from core.automation_rules import normalize_automation_rules
-from core.content_filters import normalize_tags, tags_to_csv
+from core.content_filters import normalize_tags, tags_to_csv, truncate_note
 from core.keyword_groups import KeywordGroupManager
 from core.logging_setup import configure_logging
 from core.constants import LOG_FILE
@@ -232,13 +232,16 @@ class ArchiveSearchDialog(QDialog):
         text, ok = QInputDialog.getMultiLineText(self, "메모 편집", "메모:", current)
         if not ok:
             return
+        note_value, note_truncated = truncate_note(text)
         try:
             save_note = getattr(self.db, "save_note", None)
             if callable(save_note):
-                save_note(link, text)
+                save_note(link, note_value)
             else:
-                self.db.update_status(link, "notes", text)
+                self.db.update_status(link, "notes", note_value)
             self._reload_after_action()
+            if note_truncated:
+                QMessageBox.information(self, "메모 편집", "메모가 10,000자로 잘려 저장되었습니다.")
         except Exception as exc:
             QMessageBox.warning(self, "아카이브 검색", f"메모 저장에 실패했습니다.\n\n{exc}")
 

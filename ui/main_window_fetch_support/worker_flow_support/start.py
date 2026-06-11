@@ -57,6 +57,25 @@ class _FetchWorkerStartMixin:
             db_keyword = search_keyword
         fetch_key = build_fetch_key(search_keyword, exclude_words)
         query_key = fetch_key
+        validate_credentials = getattr(self, "_validate_api_credentials", None)
+        if callable(validate_credentials):
+            valid, msg = validate_credentials()
+        else:
+            valid, msg = ValidationUtils.validate_api_credentials(
+                str(getattr(self, "client_id", "") or ""),
+                str(getattr(self, "client_secret", "") or ""),
+            )
+        if not valid:
+            action = "더 불러오기" if is_more else "새로고침"
+            block_msg = f"API 인증 정보가 준비되지 않아 {action}을(를) 실행할 수 없습니다. {msg}"
+            logger.info("Fetch blocked by invalid API credentials: kw=%s, action=%s", keyword, action)
+            self._status_bar().showMessage(block_msg, 3000)
+            if is_sequential:
+                self._on_sequential_fetch_done(keyword)
+            else:
+                self.show_warning_toast(block_msg)
+            return
+
         cooldown_msg = self._fetch_cooldown_message("더 불러오기" if is_more else "새로고침")
         if cooldown_msg:
             logger.info("Fetch blocked by cooldown: kw=%s", keyword)

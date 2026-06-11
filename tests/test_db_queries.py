@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 import news_scraper_pro as app
+from core.content_filters import MAX_NOTE_LENGTH
 from core.query_parser import build_fetch_key
 
 
@@ -971,6 +972,27 @@ class TestDbQueries(unittest.TestCase):
 
         self.assertEqual(before, after)
         self.assertEqual(tag_before, tag_after)
+
+    def test_save_note_truncates_long_notes_before_storage(self):
+        link = "https://example.com/long-note"
+        self.mgr.upsert_news(
+            [
+                {
+                    "title": "long note",
+                    "description": "note",
+                    "link": link,
+                    "pubDate": "2026-01-01T09:00:00",
+                    "publisher": "example.com",
+                }
+            ],
+            "AI",
+        )
+
+        self.assertTrue(self.mgr.save_note(link, "x" * (MAX_NOTE_LENGTH + 5)))
+
+        stored = self.mgr.get_note(link)
+        self.assertEqual(len(stored), MAX_NOTE_LENGTH)
+        self.assertEqual(stored, "x" * MAX_NOTE_LENGTH)
 
     def test_explicit_delete_is_soft_hidden_and_restorable_but_cleanup_is_hard_delete(self):
         same_title = "soft-delete duplicate"

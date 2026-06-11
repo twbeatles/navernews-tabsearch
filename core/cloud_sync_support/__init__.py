@@ -27,6 +27,7 @@ from core.cloud_sync_support.path_policy import (
     _path_parts,
     cloud_sync_path_conflicts_with_runtime,
     is_probable_cloud_storage_path,
+    resolve_cloud_sync_dir,
     runtime_storage_is_probably_cloud,
 )
 from core.cloud_sync_support.snapshot_io import (

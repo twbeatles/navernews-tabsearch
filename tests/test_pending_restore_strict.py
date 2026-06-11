@@ -133,6 +133,47 @@ class TestPendingRestoreStrictPolicy(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_pending_restore_rejects_traversal_backup_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "config.json"
+            db = root / "db.sqlite"
+            pending = root / "pending_restore.json"
+            outside = root / "outside"
+            outside.mkdir()
+            cfg.write_text(
+                json.dumps({"app_settings": {"x": 1}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            conn = sqlite3.connect(str(db))
+            try:
+                conn.execute("CREATE TABLE IF NOT EXISTS t (v INTEGER)")
+                conn.execute("INSERT INTO t(v) VALUES (1)")
+                conn.commit()
+            finally:
+                conn.close()
+            pending.write_text(
+                json.dumps(
+                    {
+                        "backup_name": "../outside",
+                        "backup_dir": str(root / "backups"),
+                        "restore_db": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            ok = apply_pending_restore_if_any(
+                pending_file=str(pending),
+                config_file=str(cfg),
+                db_file=str(db),
+            )
+
+            self.assertFalse(ok)
+            self.assertTrue(pending.exists())
+            self.assertEqual(json.loads(cfg.read_text(encoding="utf-8"))["app_settings"]["x"], 1)
+
     def test_archive_failure_does_not_apply_pending_restore(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

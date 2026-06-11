@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from core.content_filters import normalize_tags
+from core.content_filters import normalize_note, normalize_tags
 from core.machine_identity import get_machine_identity
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ class _NewsArticleStateMixin:
         try:
             with conn:
                 if field == "notes":
-                    normalized_value = "" if value is None else str(value)
+                    normalized_value = normalize_note(value)
                     current = conn.execute(
                         "SELECT COALESCE(notes, '') FROM news WHERE link = ?",
                         (link,),

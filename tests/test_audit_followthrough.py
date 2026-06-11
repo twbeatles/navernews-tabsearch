@@ -369,6 +369,30 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
         self.assertEqual(len(dialogs.info_calls), 1)
         self.assertEqual(dummy.toast_messages, [])
 
+    def test_export_data_sanitizes_keyword_in_default_filename(self):
+        item = {
+            "title": "one",
+            "link": "https://example.com/1",
+            "pubDate": "2026-01-01",
+            "publisher": "example.com",
+            "description": "visible",
+            "is_read": 0,
+            "is_bookmarked": 0,
+            "notes": "",
+            "is_duplicate": 0,
+        }
+        dialogs = _FakeDialogAdapter(save_result=("", ""))
+        dummy = _DummyExportMain(_DummyExportTab("AI:/bad*name?", [item], [item]), dialog_adapter=dialogs)
+
+        dummy.export_data()
+
+        default_name = dialogs.save_calls[0][2]
+        self.assertIn("AI_bad_name_뉴스_", default_name)
+        self.assertNotIn(":", default_name)
+        self.assertNotIn("/", default_name)
+        self.assertNotIn("*", default_name)
+        self.assertNotIn("?", default_name)
+
 
 class TestLinkStateSync(unittest.TestCase):
     def test_sync_link_state_reloads_bookmark_and_unread_only_tabs_when_needed(self):
