@@ -10,6 +10,7 @@ from PyQt6.QtCore import QTimer
 from core.publisher_aliases import canonical_publisher
 from core.text_utils import TextUtils, parse_date_string, perf_timer
 from ui.styles import AppStyle, Colors
+from ui.styles_support import DARK_PALETTE, LIGHT_PALETTE
 
 
 class _NewsTabRenderingMixin:
@@ -58,12 +59,18 @@ class _NewsTabRenderingMixin:
 
     def _empty_state_html(self) -> str:
         if self.is_bookmark_tab:
-            msg = "<div class='empty-state-title'>⭐ 북마크</div>북마크된 기사가 없습니다.<br><br>기사 카드의 [북마크] 버튼을 눌러<br>중요한 기사를 저장하세요."
+            title = "⭐ 북마크"
+            body = "아직 북마크한 기사가 없습니다.<br>기사 카드의 <b>북마크</b> 버튼으로<br>중요한 기사를 모아 보세요."
         elif self.chk_unread.isChecked():
-            msg = "<div class='empty-state-title'>✓ 완료!</div>모든 기사를 읽었습니다."
+            title = "🎉 모두 확인했어요"
+            body = "안 읽은 기사가 없습니다.<br>새 소식이 도착하면 여기에 표시됩니다."
+        elif self._has_active_filters():
+            title = "🔍 결과 없음"
+            body = "현재 필터 조건에 맞는 기사가 없습니다.<br>필터를 조정하거나 초기화해 보세요."
         else:
-            msg = "<div class='empty-state-title'>📰 뉴스</div>표시할 기사가 없습니다.<br><br>새로고침 버튼을 눌러 최신 뉴스를 가져오세요."
-        return f"<div class='empty-state'>{msg}</div>"
+            title = "📰 아직 비어 있어요"
+            body = "위의 <b>새로고침</b>을 눌러 최신 뉴스를 가져오세요."
+        return f"<div class='empty-state'><div class='empty-state-title'>{title}</div>{body}</div>"
 
     def _item_render_cache_key(self, item: Dict[str, Any], filter_word: str) -> Tuple[Any, ...]:
         return (
@@ -216,8 +223,9 @@ class _NewsTabRenderingMixin:
             title = html.escape(item_title)
             desc = html.escape(item_desc)
 
+        palette = DARK_PALETTE if self.theme == 1 else LIGHT_PALETTE
         bk_txt = "북마크 해제" if item.get("is_bookmarked", 0) else "북마크"
-        bk_col = "#DC3545" if item.get("is_bookmarked", 0) else "#17A2B8"
+        bk_col = palette.danger if item.get("is_bookmarked", 0) else palette.primary
 
         date_str = item.get("_date_fmt") or parse_date_string(item.get("pubDate", ""))
         item["_date_fmt"] = date_str
@@ -276,12 +284,13 @@ class _NewsTabRenderingMixin:
 
     def _get_load_more_html(self, remaining: int) -> str:
         """더 보기 버튼 HTML"""
+        palette = DARK_PALETTE if self.theme == 1 else LIGHT_PALETTE
         return f"""
         <div class="load-more-container" style="text-align: center; padding: 20px;">
             <a href="app://load_more" style="
                 display: inline-block;
                 padding: 12px 30px;
-                background: linear-gradient(135deg, #007AFF, #00C7BE);
+                background: linear-gradient(135deg, {palette.primary}, {palette.primary_grad_end});
                 color: white;
                 text-decoration: none;
                 border-radius: 25px;
