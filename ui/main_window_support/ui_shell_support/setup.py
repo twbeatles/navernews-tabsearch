@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QResizeEvent, QShortcut
 from PyQt6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -59,15 +60,13 @@ class _MainWindowSetupShellMixin:
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
 
+        # --- 주 액션 (라벨 버튼) ---
         self.btn_refresh = QPushButton("🔄 새로고침")
         self.btn_refresh.setToolTip("모든 탭의 뉴스를 새로고침합니다 (Ctrl+R, F5)")
         self.btn_refresh.setObjectName("RefreshBtn")
 
-        self.btn_save = QPushButton("💾 내보내기")
+        self.btn_save = QPushButton("📥 내보내기")
         self.btn_save.setToolTip("현재 탭의 표시 결과를 CSV로 내보냅니다 (Ctrl+S)")
-
-        toolbar.addWidget(self.btn_refresh)
-        toolbar.addWidget(self.btn_save)
 
         self.btn_archive = QPushButton("🔎 아카이브")
         self.btn_archive.setToolTip("저장된 전체 뉴스에서 검색합니다")
@@ -85,23 +84,37 @@ class _MainWindowSetupShellMixin:
         self.action_aliases.setToolTip("출처 alias 표시/필터 매핑을 관리합니다")
         self.btn_manage.setMenu(self.manage_menu)
 
-        self.btn_setting = QPushButton("⚙ 설정")
-        self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
-
-        self.btn_backup = QPushButton("🗂 백업")
-        self.btn_backup.setToolTip("설정 백업 및 복원")
-
-        self.btn_help = QPushButton("❓ 도움말")
-        self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
-
+        toolbar.addWidget(self.btn_refresh)
+        toolbar.addWidget(self.btn_save)
         toolbar.addWidget(self.btn_archive)
         toolbar.addWidget(self.btn_manage)
+
+        toolbar.addStretch()
+
+        # --- 보조 액션 (아이콘 전용 묶음) ---
+        self.btn_setting = QPushButton("⚙")
+        self.btn_setting.setObjectName("IconButton")
+        self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
+
+        self.btn_backup = QPushButton("🗂")
+        self.btn_backup.setObjectName("IconButton")
+        self.btn_backup.setToolTip("설정 백업 및 복원")
+
+        self.btn_help = QPushButton("❓")
+        self.btn_help.setObjectName("IconButton")
+        self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
+
         toolbar.addWidget(self.btn_setting)
         toolbar.addWidget(self.btn_backup)
         toolbar.addWidget(self.btn_help)
 
-        toolbar.addStretch()
+        toolbar_sep = QFrame()
+        toolbar_sep.setFrameShape(QFrame.Shape.VLine)
+        toolbar_sep.setFrameShadow(QFrame.Shadow.Plain)
+        toolbar_sep.setFixedHeight(28)
+        toolbar.addWidget(toolbar_sep)
 
+        # --- 주 CTA ---
         self.btn_add = QPushButton("➕ 새 탭")
         self.btn_add.setToolTip("새로운 키워드 탭 추가 (Ctrl+T)")
         self.btn_add.setObjectName("AddTab")

@@ -157,6 +157,11 @@ class _NewsTabSavedSearchControlsMixin:
             self.date_end.setDate(start_date)
         self._date_filter_active = date_active
         self._refresh_date_filter_controls()
+        # 복원된 고급 필터가 활성화되면 접힌 영역을 펼쳐 가시성을 확보
+        if (self.chk_preferred_publishers.isChecked() or bool(tag_filter) or date_active):
+            btn_advanced = getattr(self, "btn_advanced", None)
+            if btn_advanced is not None and not btn_advanced.isChecked():
+                btn_advanced.setChecked(True)
         self._request_db_reload("저장 검색 적용")
 
     def _delete_saved_search(self):

@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ui.styles import Colors
+from ui.styles_support import DARK_PALETTE, LIGHT_PALETTE
 from ui.widgets import NewsBrowser, NoScrollComboBox
 
 
@@ -43,29 +43,19 @@ class _NewsTabDateFilterControlsMixin:
             self.update_status_label()
 
     def _update_date_toggle_style(self, checked: bool):
-        """날짜 토글 버튼 스타일 업데이트"""
+        """날짜 토글 버튼 스타일 업데이트 - 시맨틱 팔레트 기반"""
         is_dark = self.theme == 1
+        p = DARK_PALETTE if is_dark else LIGHT_PALETTE
 
-        if is_dark:
-            btn_active_bg = Colors.DARK_PRIMARY_LIGHT
-            btn_active_border = Colors.DARK_PRIMARY
-            btn_active_text = Colors.DARK_TEXT
-            btn_inactive_border = Colors.DARK_BORDER
-            btn_inactive_text = Colors.DARK_TEXT_MUTED
-            date_bg = "#334155" if checked else "#1E293B"
-            date_text = Colors.DARK_TEXT
-            date_border = Colors.DARK_PRIMARY if checked else Colors.DARK_BORDER
-            tilde_text = Colors.DARK_TEXT_MUTED
-        else:
-            btn_active_bg = Colors.LIGHT_PRIMARY_LIGHT
-            btn_active_border = Colors.LIGHT_PRIMARY
-            btn_active_text = "#4338ca"
-            btn_inactive_border = Colors.LIGHT_BORDER
-            btn_inactive_text = Colors.LIGHT_TEXT_MUTED
-            date_bg = "#EEF2FF" if checked else "#FFFFFF"
-            date_text = Colors.LIGHT_TEXT
-            date_border = Colors.LIGHT_PRIMARY if checked else Colors.LIGHT_BORDER
-            tilde_text = Colors.LIGHT_TEXT_MUTED
+        btn_active_bg = p.primary_soft
+        btn_active_border = p.primary
+        btn_active_text = p.text if is_dark else p.primary_hover
+        btn_inactive_border = p.border
+        btn_inactive_text = p.text_muted
+        date_bg = p.btn_hover_start if checked else p.surface
+        date_text = p.text
+        date_border = p.primary if checked else p.border
+        tilde_text = p.text_muted
 
         if checked:
             btn_style = (

@@ -1,480 +1,296 @@
-from ui.styles_support.tokens import Colors
+from ui.styles_support.tokens import (
+    DARK_PALETTE,
+    LIGHT_PALETTE,
+    Palette,
+    Typography,
+)
+
+_FONT = Typography.FONT_FAMILY
+
+
+def _build_stylesheet(p: Palette) -> str:
+    """단일 템플릿에서 테마별 Qt 스타일시트를 생성한다.
+
+    라이트/다크의 차이는 전부 ``Palette`` 슬롯으로 흡수되어, 동일한 구조의
+    QSS를 두 팔레트로 렌더링한다. (이전의 중복된 LIGHT/DARK f-string 대체)
+    """
+    return f"""
+        QMainWindow, QDialog {{ background-color: {p.bg}; }}
+        QGroupBox {{
+            font-family: {_FONT};
+            color: {p.text};
+            font-size: 11pt;
+            font-weight: 600;
+            margin-top: 16px;
+            padding: 20px 16px 16px 16px;
+            border: {p.groupbox_border_css};
+            border-radius: 12px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {p.surface}, stop:1 {p.bg});
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 16px;
+            top: 4px;
+            padding: 4px 12px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {p.primary}, stop:1 {p.primary_grad_end});
+            color: white;
+            border-radius: 8px;
+        }}
+        QLabel, QDialog QLabel {{
+            font-family: {_FONT};
+            font-size: 10pt;
+            color: {p.text};
+        }}
+        QPushButton {{
+            font-family: {_FONT};
+            font-size: 10pt;
+            font-weight: 500;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {p.surface}, stop:1 {p.bg});
+            color: {p.text};
+            padding: 10px 18px;
+            border-radius: 10px;
+            border: 1px solid {p.border};
+            min-width: 70px;
+            margin: 0 4px;
+        }}
+        QPushButton:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {p.btn_hover_start}, stop:1 {p.surface});
+            border-color: {p.primary};
+            color: {p.primary};
+        }}
+        QPushButton:pressed {{
+            background: {p.btn_pressed_bg};
+            border-color: {p.primary};
+        }}
+        QPushButton:disabled {{
+            background-color: {p.bg};
+            color: {p.text_muted};
+            border-color: {p.border};
+        }}
+        QPushButton#IconButton {{
+            min-width: 0;
+            padding: 9px 11px;
+            font-size: 12pt;
+            margin: 0 2px;
+        }}
+        QToolButton#Disclosure {{
+            font-family: {_FONT};
+            font-size: 10pt;
+            font-weight: 600;
+            color: {p.text_muted};
+            background: transparent;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 8px;
+        }}
+        QToolButton#Disclosure:hover {{
+            color: {p.primary};
+            background-color: {p.primary_soft};
+        }}
+        QToolButton#Disclosure:checked {{ color: {p.primary}; }}
+        QPushButton#AddTab {{
+            font-weight: bold;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {p.primary}, stop:1 {p.primary_grad_end});
+            color: white;
+            border: none;
+            padding: 12px 24px;
+        }}
+        QPushButton#AddTab:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {p.primary_hover}, stop:1 {p.primary_grad_end_hover});
+        }}
+        QPushButton#RefreshBtn {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {p.success}, stop:1 {p.success_grad_end});
+            color: {p.refresh_text};
+            border: none;
+        }}
+        QPushButton#RefreshBtn:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {p.success_hover_start}, stop:1 {p.success_hover_end});
+        }}
+        QComboBox {{
+            font-family: {_FONT};
+            font-size: 10pt;
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid {p.border};
+            background-color: {p.surface};
+            color: {p.text};
+            min-width: 90px;
+        }}
+        QComboBox:hover {{ border-color: {p.primary}; }}
+        QComboBox::drop-down {{ border: none; width: 24px; }}
+        QComboBox::down-arrow {{
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid {p.text_muted};
+        }}
+        QComboBox QAbstractItemView {{
+            background-color: {p.surface};
+            color: {p.text};
+            selection-background-color: {p.primary};
+            selection-color: white;
+            border: 1px solid {p.border};
+            border-radius: 8px;
+            padding: 4px;
+        }}
+        QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
+        QComboBox QAbstractItemView::item:hover {{
+            background-color: {p.btn_hover_start};
+            color: {p.text};
+        }}
+        QComboBox QAbstractItemView::item:selected {{
+            background-color: {p.primary};
+            color: white;
+        }}
+        QTextBrowser, QTextEdit, QListWidget {{
+            font-family: {_FONT};
+            background-color: {p.surface};
+            border: 1px solid {p.border};
+            border-radius: 12px;
+            color: {p.text};
+            padding: 12px;
+        }}
+        QListWidget::item:selected {{
+            background-color: {p.primary};
+            color: white;
+            border-radius: 6px;
+        }}
+        QTabWidget::pane {{
+            border: 1px solid {p.border};
+            border-radius: 12px;
+            background-color: {p.surface};
+            margin-top: -1px;
+        }}
+        QTabBar::tab {{
+            font-family: {_FONT};
+            font-size: 10pt;
+            color: {p.text_muted};
+            padding: 12px 20px;
+            min-height: 30px;
+            border: 1px solid transparent;
+            border-bottom: none;
+            background-color: transparent;
+            margin-right: 4px;
+        }}
+        QTabBar::tab:selected {{
+            background-color: {p.surface};
+            border-color: {p.border};
+            border-bottom: 3px solid {p.primary};
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            color: {p.primary};
+            font-weight: 600;
+        }}
+        QTabBar::tab:!selected {{ color: {p.text_muted}; }}
+        QTabBar::tab:!selected:hover {{
+            color: {p.text};
+            background-color: {p.primary_soft};
+            border-bottom: 2px solid {p.tab_hover_underline};
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+        }}
+        QLineEdit {{
+            font-family: {_FONT};
+            font-size: 10pt;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid {p.border};
+            background-color: {p.surface};
+            color: {p.text};
+        }}
+        QLineEdit:focus {{
+            border: 2px solid {p.primary};
+            padding: 9px 13px;
+            background-color: {p.input_focus_bg};
+        }}
+        QLineEdit#FilterActive {{
+            border: 2px solid {p.primary};
+            background-color: {p.primary_soft};
+        }}
+        QLineEdit::placeholder {{ color: {p.text_muted}; }}
+        QProgressBar {{
+            border: none;
+            border-radius: 6px;
+            text-align: center;
+            background-color: {p.border};
+            color: {p.text};
+            height: 8px;
+        }}
+        QProgressBar::chunk {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {p.primary}, stop:1 {p.info});
+            border-radius: 6px;
+        }}
+        QCheckBox {{
+            font-family: {_FONT};
+            font-size: 10pt;
+            color: {p.text};
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{ width: 22px; height: 22px; }}
+        QCheckBox::indicator:unchecked {{
+            border: 2px solid {p.border};
+            background-color: {p.checkbox_bg};
+            border-radius: 6px;
+        }}
+        QCheckBox::indicator:checked {{
+            border: none;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 {p.primary}, stop:1 {p.primary_grad_end});
+            border-radius: 6px;
+        }}
+        QCheckBox::indicator:checked:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 {p.primary_hover}, stop:1 {p.primary_grad_end_hover});
+        }}
+        QStatusBar {{
+            background-color: {p.surface};
+            border-top: 1px solid {p.border};
+            color: {p.text};
+            padding: 4px;
+        }}
+        QScrollBar:vertical {{
+            background: {p.bg};
+            width: 10px;
+            border-radius: 5px;
+            margin: 2px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {p.border};
+            border-radius: 5px;
+            min-height: 30px;
+        }}
+        QScrollBar::handle:vertical:hover {{ background: {p.text_muted}; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+    """
+
+
+def card_qss(p: Palette, object_name: str = "FilterCard") -> str:
+    """카드형 QFrame 컨테이너의 테마별 스타일 - 토큰 기반."""
+    return f"""
+        QFrame#{object_name} {{
+            background-color: {p.surface};
+            border: 1px solid {p.border};
+            border-radius: 12px;
+            padding: 8px;
+        }}
+    """
+
 
 class AppStyle:
     """애플리케이션 전체 스타일시트 및 HTML 템플릿"""
 
-    LIGHT = f"""
-        QMainWindow, QDialog {{ background-color: {Colors.LIGHT_BG}; }}
-        QGroupBox {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 11pt;
-            font-weight: 600;
-            margin-top: 16px;
-            padding: 20px 16px 16px 16px;
-            border: 1px solid {Colors.LIGHT_BORDER};
-            border-radius: 12px;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {Colors.LIGHT_CARD_BG}, stop:1 {Colors.LIGHT_BG});
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: 16px;
-            top: 4px;
-            padding: 4px 12px;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
-            color: white;
-            border-radius: 8px;
-        }}
-        QLabel, QDialog QLabel {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            color: {Colors.LIGHT_TEXT};
-        }}
-        QPushButton {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            font-weight: 500;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 #FFFFFF, stop:1 {Colors.LIGHT_BG});
-            color: {Colors.LIGHT_TEXT};
-            padding: 10px 18px;
-            border-radius: 10px;
-            border: 1px solid {Colors.LIGHT_BORDER};
-            min-width: 70px;
-            margin: 0 4px;
-        }}
-        QPushButton:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {Colors.LIGHT_PRIMARY_LIGHT}, stop:1 #FFFFFF);
-            border-color: {Colors.LIGHT_PRIMARY};
-            color: {Colors.LIGHT_PRIMARY};
-        }}
-        QPushButton:pressed {{
-            background: {Colors.LIGHT_PRIMARY_LIGHT};
-            border-color: {Colors.LIGHT_PRIMARY};
-        }}
-        QPushButton:disabled {{
-            background-color: {Colors.LIGHT_BG};
-            color: {Colors.LIGHT_TEXT_MUTED};
-            border-color: {Colors.LIGHT_BORDER};
-        }}
-        QPushButton#AddTab {{
-            font-weight: bold;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-        }}
-        QPushButton#AddTab:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #7C3AED);
-        }}
-        QPushButton#RefreshBtn {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.LIGHT_SUCCESS}, stop:1 #34D399);
-            color: white;
-            border: none;
-        }}
-        QPushButton#RefreshBtn:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #059669, stop:1 #10B981);
-        }}
-        QComboBox {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            padding: 8px 12px;
-            border-radius: 10px;
-            border: 1px solid {Colors.LIGHT_BORDER};
-            background-color: {Colors.LIGHT_CARD_BG};
-            color: {Colors.LIGHT_TEXT};
-            min-width: 90px;
-        }}
-        QComboBox:hover {{ border-color: {Colors.LIGHT_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 24px; }}
-        QComboBox::down-arrow {{
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid {Colors.LIGHT_TEXT_MUTED};
-        }}
-        QComboBox QAbstractItemView {{
-            background-color: {Colors.LIGHT_CARD_BG};
-            color: {Colors.LIGHT_TEXT};
-            selection-background-color: {Colors.LIGHT_PRIMARY};
-            selection-color: white;
-            border: 1px solid {Colors.LIGHT_BORDER};
-            border-radius: 8px;
-            padding: 4px;
-        }}
-        QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{
-            background-color: {Colors.LIGHT_PRIMARY_LIGHT};
-            color: {Colors.LIGHT_TEXT};
-        }}
-        QComboBox QAbstractItemView::item:selected {{
-            background-color: {Colors.LIGHT_PRIMARY};
-            color: white;
-        }}
-        QTextBrowser, QTextEdit, QListWidget {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            background-color: {Colors.LIGHT_CARD_BG};
-            border: 1px solid {Colors.LIGHT_BORDER};
-            border-radius: 12px;
-            color: {Colors.LIGHT_TEXT};
-            padding: 12px;
-        }}
-        QListWidget::item:selected {{
-            background-color: {Colors.LIGHT_PRIMARY};
-            color: white;
-            border-radius: 6px;
-        }}
-        QTabWidget::pane {{
-            border: 1px solid {Colors.LIGHT_BORDER};
-            border-radius: 12px;
-            background-color: {Colors.LIGHT_CARD_BG};
-            margin-top: -1px;
-        }}
-        QTabBar::tab {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            color: {Colors.LIGHT_TEXT_MUTED};
-            padding: 12px 20px;
-            min-height: 30px;
-            border: 1px solid transparent;
-            border-bottom: none;
-            background-color: transparent;
-            margin-right: 4px;
-        }}
-        QTabBar::tab:selected {{
-            background-color: {Colors.LIGHT_CARD_BG};
-            border-color: {Colors.LIGHT_BORDER};
-            border-bottom: 3px solid {Colors.LIGHT_PRIMARY};
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
-            color: {Colors.LIGHT_PRIMARY};
-            font-weight: 600;
-        }}
-        QTabBar::tab:!selected {{ color: {Colors.LIGHT_TEXT_MUTED}; }}
-        QTabBar::tab:!selected:hover {{
-            color: {Colors.LIGHT_TEXT};
-            background-color: {Colors.LIGHT_PRIMARY_LIGHT};
-            border-bottom: 2px solid rgba(99, 102, 241, 0.4);
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
-        }}
-        QLineEdit {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            padding: 10px 14px;
-            border-radius: 10px;
-            border: 1px solid {Colors.LIGHT_BORDER};
-            background-color: {Colors.LIGHT_CARD_BG};
-            color: {Colors.LIGHT_TEXT};
-        }}
-        QLineEdit:focus {{
-            border: 2px solid {Colors.LIGHT_PRIMARY};
-            padding: 9px 13px;
-            background-color: #FEFFFE;
-        }}
-        QLineEdit#FilterActive {{
-            border: 2px solid {Colors.LIGHT_PRIMARY};
-            background-color: {Colors.LIGHT_PRIMARY_LIGHT};
-        }}
-        QLineEdit::placeholder {{ color: {Colors.LIGHT_TEXT_MUTED}; }}
-        QProgressBar {{
-            border: none;
-            border-radius: 6px;
-            text-align: center;
-            background-color: {Colors.LIGHT_BORDER};
-            color: {Colors.LIGHT_TEXT};
-            height: 8px;
-        }}
-        QProgressBar::chunk {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 {Colors.LIGHT_INFO});
-            border-radius: 6px;
-        }}
-        QCheckBox {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            color: {Colors.LIGHT_TEXT};
-            spacing: 8px;
-        }}
-        QCheckBox::indicator {{ width: 22px; height: 22px; }}
-        QCheckBox::indicator:unchecked {{
-            border: 2px solid {Colors.LIGHT_BORDER};
-            background-color: {Colors.LIGHT_CARD_BG};
-            border-radius: 6px;
-        }}
-        QCheckBox::indicator:checked {{
-            border: none;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 {Colors.LIGHT_PRIMARY}, stop:1 #8B5CF6);
-            border-radius: 6px;
-        }}
-        QCheckBox::indicator:checked:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 {Colors.LIGHT_PRIMARY_HOVER}, stop:1 #7C3AED);
-        }}
-        QStatusBar {{
-            background-color: {Colors.LIGHT_CARD_BG};
-            border-top: 1px solid {Colors.LIGHT_BORDER};
-            padding: 4px;
-        }}
-        QScrollBar:vertical {{
-            background: {Colors.LIGHT_BG};
-            width: 10px;
-            border-radius: 5px;
-            margin: 2px;
-        }}
-        QScrollBar::handle:vertical {{
-            background: {Colors.LIGHT_BORDER};
-            border-radius: 5px;
-            min-height: 30px;
-        }}
-        QScrollBar::handle:vertical:hover {{ background: {Colors.LIGHT_TEXT_MUTED}; }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-    """
+    LIGHT = _build_stylesheet(LIGHT_PALETTE)
 
-
-    DARK = f"""
-        QMainWindow, QDialog {{ background-color: {Colors.DARK_BG}; }}
-        QGroupBox {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            color: {Colors.DARK_TEXT};
-            font-size: 11pt;
-            font-weight: 600;
-            margin-top: 16px;
-            padding: 20px 16px 16px 16px;
-            border: none;
-            border-radius: 12px;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {Colors.DARK_CARD_BG}, stop:1 {Colors.DARK_BG});
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: 16px;
-            top: 4px;
-            padding: 4px 12px;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
-            color: white;
-            border-radius: 8px;
-        }}
-        QLabel, QDialog QLabel {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            color: {Colors.DARK_TEXT};
-        }}
-        QPushButton {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            font-weight: 500;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {Colors.DARK_CARD_BG}, stop:1 {Colors.DARK_BG});
-            color: {Colors.DARK_TEXT};
-            padding: 10px 18px;
-            border-radius: 10px;
-            border: 1px solid {Colors.DARK_BORDER};
-            min-width: 70px;
-            margin: 0 4px;
-        }}
-        QPushButton:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {Colors.DARK_BORDER}, stop:1 {Colors.DARK_CARD_BG});
-            border-color: {Colors.DARK_PRIMARY};
-            color: {Colors.DARK_PRIMARY};
-        }}
-        QPushButton:pressed {{
-            background: {Colors.DARK_BORDER};
-            border-color: {Colors.DARK_PRIMARY};
-        }}
-        QPushButton:disabled {{
-            background-color: {Colors.DARK_BG};
-            color: {Colors.DARK_TEXT_MUTED};
-            border-color: {Colors.DARK_BORDER};
-        }}
-        QPushButton#AddTab {{
-            font-weight: bold;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-        }}
-        QPushButton#AddTab:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #C4B5FD);
-        }}
-        QPushButton#RefreshBtn {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.DARK_SUCCESS}, stop:1 #6EE7B7);
-            color: #064E3B;
-            border: none;
-        }}
-        QPushButton#RefreshBtn:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #6EE7B7, stop:1 {Colors.DARK_SUCCESS});
-        }}
-        QComboBox {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            padding: 8px 12px;
-            border-radius: 10px;
-            border: 1px solid {Colors.DARK_BORDER};
-            background-color: {Colors.DARK_CARD_BG};
-            color: {Colors.DARK_TEXT};
-            min-width: 90px;
-        }}
-        QComboBox:hover {{ border-color: {Colors.DARK_PRIMARY}; }}
-        QComboBox::drop-down {{ border: none; width: 24px; }}
-        QComboBox::down-arrow {{
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid {Colors.DARK_TEXT_MUTED};
-        }}
-        QComboBox QAbstractItemView {{
-            background-color: {Colors.DARK_CARD_BG};
-            color: {Colors.DARK_TEXT};
-            selection-background-color: {Colors.DARK_PRIMARY};
-            selection-color: white;
-            border: 1px solid {Colors.DARK_BORDER};
-            border-radius: 8px;
-            padding: 4px;
-        }}
-        QComboBox QAbstractItemView::item {{ padding: 8px; border-radius: 6px; }}
-        QComboBox QAbstractItemView::item:hover {{
-            background-color: {Colors.DARK_BORDER};
-            color: {Colors.DARK_TEXT};
-        }}
-        QComboBox QAbstractItemView::item:selected {{
-            background-color: {Colors.DARK_PRIMARY};
-            color: white;
-        }}
-        QTextBrowser, QTextEdit, QListWidget {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            background-color: {Colors.DARK_CARD_BG};
-            border: 1px solid {Colors.DARK_BORDER};
-            border-radius: 12px;
-            color: {Colors.DARK_TEXT};
-            padding: 12px;
-        }}
-        QListWidget::item:selected {{
-            background-color: {Colors.DARK_PRIMARY};
-            color: white;
-            border-radius: 6px;
-        }}
-        QTabWidget::pane {{
-            border: 1px solid {Colors.DARK_BORDER};
-            border-radius: 12px;
-            background-color: {Colors.DARK_CARD_BG};
-            margin-top: -1px;
-        }}
-        QTabBar::tab {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            color: {Colors.DARK_TEXT_MUTED};
-            padding: 12px 20px;
-            min-height: 30px;
-            border: 1px solid transparent;
-            border-bottom: none;
-            background-color: transparent;
-            margin-right: 4px;
-        }}
-        QTabBar::tab:selected {{
-            background-color: {Colors.DARK_CARD_BG};
-            border-color: {Colors.DARK_BORDER};
-            border-bottom: 3px solid {Colors.DARK_PRIMARY};
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
-            color: {Colors.DARK_PRIMARY};
-            font-weight: 600;
-        }}
-        QTabBar::tab:!selected {{ color: {Colors.DARK_TEXT_MUTED}; }}
-        QTabBar::tab:!selected:hover {{
-            color: {Colors.DARK_TEXT};
-            background-color: {Colors.DARK_PRIMARY_LIGHT};
-            border-bottom: 2px solid rgba(129, 140, 248, 0.4);
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
-        }}
-        QLineEdit {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            padding: 10px 14px;
-            border-radius: 10px;
-            border: 1px solid {Colors.DARK_BORDER};
-            background-color: {Colors.DARK_CARD_BG};
-            color: {Colors.DARK_TEXT};
-        }}
-        QLineEdit:focus {{
-            border: 2px solid {Colors.DARK_PRIMARY};
-            padding: 9px 13px;
-            background-color: {Colors.DARK_BORDER};
-        }}
-        QLineEdit#FilterActive {{
-            border: 2px solid {Colors.DARK_PRIMARY};
-            background-color: {Colors.DARK_PRIMARY_LIGHT};
-        }}
-        QLineEdit::placeholder {{ color: {Colors.DARK_TEXT_MUTED}; }}
-        QProgressBar {{
-            border: none;
-            border-radius: 6px;
-            text-align: center;
-            background-color: {Colors.DARK_BORDER};
-            color: {Colors.DARK_TEXT};
-            height: 8px;
-        }}
-        QProgressBar::chunk {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 {Colors.DARK_INFO});
-            border-radius: 6px;
-        }}
-        QCheckBox {{
-            font-family: '맑은 고딕', -apple-system, sans-serif;
-            font-size: 10pt;
-            color: {Colors.DARK_TEXT};
-            spacing: 8px;
-        }}
-        QCheckBox::indicator {{ width: 22px; height: 22px; }}
-        QCheckBox::indicator:unchecked {{
-            border: 2px solid {Colors.DARK_BORDER};
-            background-color: {Colors.DARK_BG};
-            border-radius: 6px;
-        }}
-        QCheckBox::indicator:checked {{
-            border: none;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 {Colors.DARK_PRIMARY}, stop:1 #A78BFA);
-            border-radius: 6px;
-        }}
-        QCheckBox::indicator:checked:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 {Colors.DARK_PRIMARY_HOVER}, stop:1 #C4B5FD);
-        }}
-        QStatusBar {{
-            background-color: {Colors.DARK_CARD_BG};
-            border-top: 1px solid {Colors.DARK_BORDER};
-            color: {Colors.DARK_TEXT};
-            padding: 4px;
-        }}
-        QScrollBar:vertical {{
-            background: {Colors.DARK_BG};
-            width: 10px;
-            border-radius: 5px;
-            margin: 2px;
-        }}
-        QScrollBar::handle:vertical {{
-            background: {Colors.DARK_BORDER};
-            border-radius: 5px;
-            min-height: 30px;
-        }}
-        QScrollBar::handle:vertical:hover {{ background: {Colors.DARK_TEXT_MUTED}; }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-    """
+    DARK = _build_stylesheet(DARK_PALETTE)
 
 
     HTML_TEMPLATE = """

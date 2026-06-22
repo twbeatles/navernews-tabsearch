@@ -5,6 +5,7 @@ from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QWidget
 
 from ui.styles import ToastType, UIConstants
+from ui.styles_support import Typography
 
 class ToastQueue:
     """토스트 메시지 큐 관리 - 유형별 스타일 지원"""
@@ -96,7 +97,7 @@ class ToastMessage(QLabel):
             {base_style}
             padding: 14px 28px;
             border-radius: 24px;
-            font-family: '맑은 고딕';
+            font-family: {Typography.FONT_FAMILY};
             font-size: 14px;
             font-weight: bold;
         """)
