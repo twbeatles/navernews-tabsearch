@@ -8,6 +8,7 @@ from PyQt6.QtCore import QMutex
 from core.query_parser import build_fetch_key, parse_search_query
 from core.worker_registry import WorkerHandle, WorkerRegistry
 from ui._main_window_fetch import _MainWindowFetchMixin
+from ui.main_window_fetch_support.worker_flow_support.completion import _FetchWorkerCompletionMixin
 
 
 class _DummyStatusBar:
@@ -48,13 +49,17 @@ class _DummyFetchMain:
     def _tab_refresh_interval_minutes(self, keyword):
         return cast(Any, _MainWindowFetchMixin)._tab_refresh_interval_minutes(cast(Any, self), keyword)
 
-    def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False, wait_ms=1000):
-        return cast(Any, _MainWindowFetchMixin).cleanup_worker(
-            cast(Any, self),
+    def _detach_worker_handle(self, *args, **kwargs):
+        return cast(Any, _FetchWorkerCompletionMixin)._detach_worker_handle(self, *args, **kwargs)
+
+    def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False, wait_ms=1000, force=False):
+        return cast(Any, _FetchWorkerCompletionMixin).cleanup_worker(
+            self,
             keyword=keyword,
             request_id=request_id,
             only_if_active=only_if_active,
             wait_ms=wait_ms,
+            force=force,
         )
 
     def on_fetch_error(self, error_msg: str, keyword: str, is_sequential: bool = False, request_id=None, error_meta=None):
@@ -86,7 +91,7 @@ class _DummyFetchMain:
         self.tab_refresh_policies = {}
         self._last_auto_refresh_by_keyword = {}
         self._worker_registry = WorkerRegistry()
-        self.workers = {}
+        self._worker_cleanup_timeout_count = 0
         self.client_id = "valid-client-id"
         self.client_secret = "valid-client-secret"
 
@@ -403,13 +408,11 @@ class TestFetchCooldown(unittest.TestCase):
             thread=cast(Any, thread),
         )
         dummy._worker_registry.register(handle)
-        dummy.workers["AI"] = (worker, thread)
         dummy._request_start_index[7] = 1
 
         self.assertTrue(dummy.cleanup_worker(keyword="AI", request_id=7))
 
         self.assertIsNone(dummy._worker_registry.get_by_request_id(7))
-        self.assertNotIn("AI", dummy.workers)
         self.assertNotIn(7, dummy._request_start_index)
         self.assertEqual(worker.stop_calls, 1)
         self.assertEqual(worker.delete_later_calls, 1)
@@ -430,14 +433,34 @@ class TestFetchCooldown(unittest.TestCase):
             thread=cast(Any, thread),
         )
         dummy._worker_registry.register(handle)
-        dummy.workers["AI"] = (worker, thread)
         dummy._request_start_index[8] = 1
 
         self.assertFalse(dummy.cleanup_worker(keyword="AI", request_id=8, wait_ms=10))
 
         self.assertIsNotNone(dummy._worker_registry.get_by_request_id(8))
-        self.assertIn("AI", dummy.workers)
-        self.assertIn(8, dummy._request_start_index)
+        self.assertEqual(dummy._worker_cleanup_timeout_count, 1)
+
+    def test_cleanup_worker_force_detach_clears_registry_after_timeout(self):
+        dummy = _DummyFetchMain()
+        worker = _FakeWorker()
+        thread = _FakeThread(wait_result=False)
+        handle = WorkerHandle(
+            request_id=9,
+            tab_keyword="AI",
+            search_keyword="AI",
+            db_keyword="AI",
+            exclude_words=[],
+            worker=cast(Any, worker),
+            thread=cast(Any, thread),
+        )
+        dummy._worker_registry.register(handle)
+        dummy._request_start_index[9] = 1
+
+        self.assertTrue(dummy.cleanup_worker(keyword="AI", request_id=9, wait_ms=10, force=True))
+
+        self.assertIsNone(dummy._worker_registry.get_by_request_id(9))
+        self.assertNotIn(9, dummy._request_start_index)
+        self.assertEqual(dummy._worker_cleanup_timeout_count, 1)
         self.assertEqual(worker.delete_later_calls, 0)
         self.assertEqual(thread.delete_later_calls, 0)
 
@@ -455,12 +478,11 @@ class TestFetchCooldown(unittest.TestCase):
             thread=cast(Any, thread),
         )
         dummy._worker_registry.register(handle)
-        dummy.workers["AI launch"] = (worker, thread)
 
         with mock.patch("ui.main_window_fetch_support.worker_flow.ApiWorker", side_effect=AssertionError("new worker should not start")):
             dummy.fetch_news("AI launch")
 
-        self.assertIn("AI launch", dummy.workers)
+        self.assertIsNotNone(dummy._worker_registry.get_active_handle("AI launch"))
         self.assertIn("아직 종료 중", dummy.status_bar.messages[-1])
         self.assertTrue(dummy.btn_refresh.enabled)
 

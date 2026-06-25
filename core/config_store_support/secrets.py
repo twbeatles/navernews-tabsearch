@@ -155,6 +155,25 @@ def encode_client_secret_for_storage(client_secret: str) -> Dict[str, str]:
     }
 
 
+def client_secret_uses_plain_storage(settings: Mapping[str, Any]) -> bool:
+    storage = _normalize_secret_storage(settings.get("client_secret_storage", "plain"))
+    if storage != "plain":
+        return False
+    plain = str(settings.get("client_secret", "") or "").strip()
+    encrypted = str(settings.get("client_secret_enc", "") or "").strip()
+    return bool(plain or encrypted)
+
+
+def should_warn_plain_client_secret_storage(settings: Mapping[str, Any]) -> bool:
+    if _is_windows_platform():
+        return False
+    if not client_secret_uses_plain_storage(settings):
+        return False
+    plain = str(settings.get("client_secret", "") or "").strip()
+    encrypted = str(settings.get("client_secret_enc", "") or "").strip()
+    return bool(plain or encrypted)
+
+
 def resolve_client_secret_for_runtime(settings: Mapping[str, Any]) -> Tuple[str, bool]:
     plain = str(settings.get("client_secret", "") or "")
     encrypted = str(settings.get("client_secret_enc", "") or "")
@@ -187,6 +206,8 @@ __all__ = [
     "_normalize_secret_storage",
     "_dpapi_encrypt_text",
     "_dpapi_decrypt_text",
+    "client_secret_uses_plain_storage",
     "encode_client_secret_for_storage",
     "resolve_client_secret_for_runtime",
+    "should_warn_plain_client_secret_storage",
 ]

@@ -2,6 +2,21 @@
 
 이 파일은 현재 릴리스에서 유지해야 할 변경 요약만 기록합니다. 과거 날짜별 누적 로그는 문서 본문에서 제거했으며, 필요하면 Git history와 이전 태그를 기준으로 확인합니다.
 
+## v32.7.4 (2026-06-25)
+
+### Audit Follow-up (PROJECT_AUDIT.md)
+
+- Worker cleanup timeout 시 `force` detach로 탭 닫기/이름 변경/유지보수가 막히지 않도록 복구 경로를 추가했습니다.
+- `DatabaseConnectionError`와 `db_pool_exhausted` 오류 종류로 DB 연결 풀 고갈을 사용자에게 명확히 표시합니다.
+- DB 시작 시 integrity unreadable 상태에 대해 짧은 재시도(backoff)와 시작 안내 토스트를 추가했습니다.
+- 비-Windows 환경에서 API secret 평문 저장 시 경고를 표시합니다.
+- `request_id=None` fetch 콜백은 stale로 거부하고, 레거시 `self.workers` dict를 `WorkerRegistry` 단일 추적으로 정리했습니다.
+
+### Validation
+
+- `python -m pytest -q` => `360 passed`, 7 warnings, 5 subtests passed
+- `python -m pyright` => `0 errors`
+
 ## v32.7.3 (2026-06-10)
 
 ### Current State

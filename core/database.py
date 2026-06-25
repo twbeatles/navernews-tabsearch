@@ -100,6 +100,21 @@ class DatabaseWriteError(RuntimeError):
         super().__init__(f"{self.operation} failed: {message}")
 
 
+class DatabaseConnectionError(RuntimeError):
+    """Raised when a pooled DB connection cannot be acquired."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pool_exhausted: bool = False,
+        cause: Optional[BaseException] = None,
+    ):
+        self.pool_exhausted = bool(pool_exhausted)
+        self.cause = cause
+        super().__init__(message)
+
+
 class DatabaseManager(
     _DatabaseSchemaMixin,
     _DatabaseDuplicatesMixin,
@@ -126,9 +141,11 @@ class DatabaseManager(
         self._emergency_connections = set()
         self._emergency_connection_uses = 0
         self._emergency_connection_rejections = 0
+        self.startup_integrity_state = "ok"
+        self.startup_integrity_detail = ""
 
         if os.path.exists(self.db_file):
-            integrity_result = self._check_integrity()
+            integrity_result = self._check_integrity_with_retry()
             if integrity_result.state == "corrupt":
                 logger.error(
                     "데이터베이스 손상 확정. 복구를 시도합니다. detail=%s",
@@ -136,6 +153,8 @@ class DatabaseManager(
                 )
                 self._recover_database()
             elif integrity_result.state == "unreadable":
+                self.startup_integrity_state = "unreadable"
+                self.startup_integrity_detail = integrity_result.detail
                 logger.error(
                     "데이터베이스 무결성 검사를 수행하지 못했습니다. 자동 복구는 건너뜁니다. detail=%s",
                     integrity_result.detail,
@@ -150,7 +169,7 @@ class DatabaseManager(
     def get_connection(self, timeout: float = 10.0):
         """연결 풀에서 연결 가져오기"""
         if self._closed:
-            raise RuntimeError("DatabaseManager is closed")
+            raise DatabaseConnectionError("DatabaseManager is closed")
         try:
             conn = self.connection_pool.get(timeout=timeout)
             with self._lock:
@@ -169,7 +188,11 @@ class DatabaseManager(
                         self.max_emergency_connections,
                         self._emergency_connection_rejections,
                     )
-                    raise RuntimeError("Database connection pool exhausted") from e
+                    raise DatabaseConnectionError(
+                        "Database connection pool exhausted",
+                        pool_exhausted=True,
+                        cause=e,
+                    ) from e
             conn = self._create_connection()
             with self._lock:
                 self._emergency_connections.add(id(conn))

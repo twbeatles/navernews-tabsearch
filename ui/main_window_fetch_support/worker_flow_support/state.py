@@ -34,7 +34,11 @@ class _FetchWorkerStateMixin:
         request_id: Optional[int],
     ) -> bool:
         if request_id is None:
-            return True
+            logger.warning(
+                "Worker callback missing request_id; treating as stale: kw=%s",
+                keyword,
+            )
+            return False
         return self._worker_registry.is_active(keyword, request_id)
 
     def _compute_load_more_state(

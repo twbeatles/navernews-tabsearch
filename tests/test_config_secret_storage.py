@@ -20,6 +20,19 @@ class TestConfigSecretStorage(unittest.TestCase):
         self.assertIn("client_secret_enc", app_settings)
         self.assertIn("client_secret_storage", app_settings)
 
+    def test_should_warn_plain_client_secret_storage_on_non_windows(self):
+        from core.config_store_support.secrets import should_warn_plain_client_secret_storage
+
+        settings = {
+            "client_secret": "plain-secret",
+            "client_secret_enc": "",
+            "client_secret_storage": "plain",
+        }
+        with mock.patch("core.config_store_support.secrets._is_windows_platform", return_value=False):
+            self.assertTrue(should_warn_plain_client_secret_storage(settings))
+        with mock.patch("core.config_store_support.secrets._is_windows_platform", return_value=True):
+            self.assertFalse(should_warn_plain_client_secret_storage(settings))
+
     def test_encode_client_secret_plain_off_windows(self):
         with mock.patch("core.config_store._is_windows_platform", return_value=False):
             payload = encode_client_secret_for_storage("plain-secret")

@@ -61,7 +61,7 @@ class _DummyMain:
     begin_database_maintenance = MainApp.begin_database_maintenance
     end_database_maintenance = MainApp.end_database_maintenance
 
-    def __init__(self, cleanup_results):
+    def __init__(self, cleanup_results, *, force_cleanup_results=None):
         self._maintenance_mode = False
         self._maintenance_reason = ""
         self._sequential_refresh_active = False
@@ -79,10 +79,18 @@ class _DummyMain:
         self.hydration_delays = []
         self.fts_pause_delays = []
         self.fts_resume_delays = []
-        self.cleanup_results = dict(cleanup_results)
+        self.cleanup_results = {
+            key: value
+            for key, value in cleanup_results.items()
+            if isinstance(key, tuple) and len(key) == 2 and isinstance(key[0], int)
+        }
+        self.force_cleanup_results = dict(force_cleanup_results or {})
         self.cleanup_calls = []
         self._worker_registry = _DummyRegistry(
-            [SimpleNamespace(tab_keyword=keyword, request_id=request_id) for request_id, keyword in cleanup_results]
+            [
+                SimpleNamespace(tab_keyword=keyword, request_id=request_id)
+                for (request_id, keyword) in self.cleanup_results
+            ]
         )
 
     def _iter_news_tabs(self, start_index=0):
@@ -92,9 +100,12 @@ class _DummyMain:
     def _status_bar(self):
         return self._status
 
-    def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False, wait_ms=1000):
-        self.cleanup_calls.append((keyword, request_id, only_if_active, wait_ms))
-        return bool(self.cleanup_results.get((request_id, keyword), False))
+    def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False, wait_ms=1000, force=False):
+        self.cleanup_calls.append((keyword, request_id, only_if_active, wait_ms, force))
+        key = (request_id, keyword)
+        if force:
+            return bool(self.force_cleanup_results.get(key, True))
+        return bool(self.cleanup_results.get(key, False))
 
     def sync_tab_load_more_state(self, keyword):
         for tab in self._tabs:
@@ -228,8 +239,18 @@ class TestMaintenanceMode(unittest.TestCase):
         self.assertEqual(dummy.hydration_delays, [50])
         self.assertEqual(dummy.fts_resume_delays, [250])
 
-    def test_begin_database_maintenance_fails_when_worker_cleanup_times_out(self):
+    def test_begin_database_maintenance_force_detaches_worker_after_cleanup_timeout(self):
         dummy = _DummyMain({(1, "AI"): False})
+
+        started, reason = dummy.begin_database_maintenance("delete_old_news")
+
+        self.assertTrue(started)
+        self.assertEqual(reason, "")
+        self.assertTrue(dummy.is_maintenance_mode_active())
+        self.assertTrue(any(call[4] for call in dummy.cleanup_calls))
+
+    def test_begin_database_maintenance_fails_when_force_detach_is_disabled(self):
+        dummy = _DummyMain({(1, "AI"): False}, force_cleanup_results={(1, "AI"): False})
 
         started, reason = dummy.begin_database_maintenance("delete_old_news")
 

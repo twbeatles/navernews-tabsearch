@@ -179,7 +179,6 @@ class _FetchWorkerStartMixin:
         )
         self._request_start_index[request_id] = start_idx
         self._worker_registry.register(handle)
-        self.workers[keyword] = (worker, thread)
 
         worker.finished.connect(
             lambda res, rid=request_id: self.on_fetch_done(res, keyword, is_more, is_sequential, rid)

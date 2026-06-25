@@ -131,9 +131,9 @@ class MainApp(
 
             self.http_client_config = HttpClientConfig()
 
-            self.workers = {}
             self._worker_registry = WorkerRegistry()
             self._worker_request_seq = 0
+            self._worker_cleanup_timeout_count = 0
             self.toast_queue = ToastQueue(self)
 
             self._refresh_in_progress = False
@@ -235,6 +235,7 @@ class MainApp(
             self._badge_refresh_timer.timeout.connect(self.update_all_tab_badges)
 
             QTimer.singleShot(500, self._check_first_run)
+            QTimer.singleShot(600, self._show_startup_health_notices)
 
             if os.path.exists(self.runtime_paths.config_file):
                 QTimer.singleShot(

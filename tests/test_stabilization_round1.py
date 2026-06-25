@@ -279,7 +279,9 @@ class TestDatabaseEmergencyCap(unittest.TestCase):
             db = DatabaseManager(str(db_path), max_connections=1, max_emergency_connections=0)
             conn = db.get_connection(timeout=0.01)
             try:
-                with self.assertRaises(RuntimeError):
+                from core.database import DatabaseConnectionError
+
+                with self.assertRaises(DatabaseConnectionError):
                     db.get_connection(timeout=0.01)
                 self.assertEqual(db._emergency_connection_rejections, 1)
             finally:

@@ -132,8 +132,8 @@ class _MainWindowTabsMixin:
         logger.warning("Tab action blocked while worker is stopping: action=%s, keyword=%s", action_label, keyword)
         try:
             self._status_bar().showMessage(message, 4000)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Status bar message failed during worker cleanup block: %s", exc)
         show_warning_toast = getattr(self, "show_warning_toast", None)
         if callable(show_warning_toast):
             show_warning_toast(message)
@@ -282,14 +282,12 @@ class _MainWindowTabsMixin:
         if widget is not None:
             removed_keyword = widget.keyword
             active_request_id = self._worker_registry.get_active_request_id(removed_keyword)
-            if active_request_id is not None:
-                if not self.cleanup_worker(
-                    keyword=removed_keyword,
-                    request_id=active_request_id,
-                    only_if_active=False,
-                ):
-                    self._notify_tab_worker_cleanup_blocked(removed_keyword, "탭 닫기")
-                    return
+            if not self._ensure_tab_worker_stopped(
+                removed_keyword,
+                active_request_id,
+                "탭 닫기",
+            ):
+                return
             try:
                 widget.cleanup()
             except Exception as e:
@@ -349,14 +347,12 @@ class _MainWindowTabsMixin:
                 return
 
             active_request_id = self._worker_registry.get_active_request_id(old_keyword)
-            if active_request_id is not None:
-                if not self.cleanup_worker(
-                    keyword=old_keyword,
-                    request_id=active_request_id,
-                    only_if_active=False,
-                ):
-                    self._notify_tab_worker_cleanup_blocked(old_keyword, "탭 이름 변경")
-                    return
+            if not self._ensure_tab_worker_stopped(
+                old_keyword,
+                active_request_id,
+                "탭 이름 변경",
+            ):
+                return
 
             w.keyword = new_keyword
             self._remove_tab_hydration(old_keyword)

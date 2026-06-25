@@ -84,6 +84,15 @@ class _MainWindowConfigMixin:
 
         settings = loaded_cfg.get("app_settings", {})
         resolved_client_secret, _ = resolve_client_secret_for_runtime(settings)
+        try:
+            from core.config_store_support.secrets import should_warn_plain_client_secret_storage
+
+            self._pending_plain_secret_warning = (
+                bool(resolved_client_secret)
+                and should_warn_plain_client_secret_storage(settings)
+            )
+        except Exception:
+            self._pending_plain_secret_warning = False
         self.config = {
             "client_id": settings.get("client_id", ""),
             "client_secret": resolved_client_secret,
@@ -170,6 +179,9 @@ class _MainWindowConfigMixin:
             for fetch_key, total in (raw_pagination_totals.items() if isinstance(raw_pagination_totals, dict) else [])
             if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
         }
+        if not hasattr(self, "_pending_plain_secret_warning"):
+            self._pending_plain_secret_warning = False
+
         if StartupManager.is_available():
             startup_status = StartupManager.get_startup_status(start_minimized=self.start_minimized)
             self.auto_start_enabled = bool(startup_status.get("is_healthy", False))
@@ -243,9 +255,37 @@ class _MainWindowConfigMixin:
 
         try:
             save_primary_config_file(self._config_path_for_persistence(), data)
+            try:
+                from core.config_store_support.secrets import should_warn_plain_client_secret_storage
+
+                if should_warn_plain_client_secret_storage(data.get("app_settings", {})):
+                    self.show_warning_toast(
+                        "API Client Secret이 평문으로 저장되었습니다. config 파일 접근 권한을 확인해주세요."
+                    )
+            except Exception as exc:
+                logger.debug("Plain secret save warning skipped: %s", exc)
         except Exception as exc:
             logger.error("설정 저장 오류 (Config Save Error): %s", exc)
             QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(exc)}")
+
+    def _show_startup_health_notices(self) -> None:
+        db = getattr(self, "db", None)
+        if db is not None and getattr(db, "startup_integrity_state", "ok") == "unreadable":
+            detail = str(getattr(db, "startup_integrity_detail", "") or "").strip()
+            message = (
+                "데이터베이스 파일에 접근하지 못했습니다. "
+                "다른 프로그램이 DB를 사용 중이거나 일시적으로 잠겨 있을 수 있습니다."
+            )
+            if detail:
+                message = f"{message} ({detail})"
+            self.show_warning_toast(message)
+            self._status_bar().showMessage(f"⚠ {message}", 8000)
+
+        if getattr(self, "_pending_plain_secret_warning", False):
+            self.show_warning_toast(
+                "API Client Secret이 평문으로 저장되어 있습니다. config 파일 보호에 주의하세요."
+            )
+            self._pending_plain_secret_warning = False
 
     def _run_auto_backup_once(self) -> None:
         try:

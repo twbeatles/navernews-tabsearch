@@ -7,6 +7,7 @@ warnings.warn(
 )
 
 from core.database import (
+    DatabaseConnectionError,
     DatabaseManager,
     DatabaseQueryError,
     DatabaseWriteError,
@@ -15,6 +16,7 @@ from core.database import (
 )
 
 __all__ = [
+    'DatabaseConnectionError',
     'DatabaseManager',
     'DatabaseQueryError',
     'DatabaseWriteError',

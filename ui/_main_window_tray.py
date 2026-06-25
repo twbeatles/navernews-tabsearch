@@ -306,12 +306,17 @@ class _MainWindowTrayMixin:
                             keyword=handle.tab_keyword,
                             request_id=handle.request_id,
                             only_if_active=False,
+                        ) and not self.cleanup_worker(
+                            keyword=handle.tab_keyword,
+                            request_id=handle.request_id,
+                            only_if_active=False,
+                            wait_ms=0,
+                            force=True,
                         ):
                             defer_db_close = True
                     except Exception as e:
                         logger.error(f"워커 종료 오류 ({handle.tab_keyword}, rid={handle.request_id}): {e}")
 
-            self.workers.clear()
             logger.info("워커 정리 완료")
 
             export_worker = getattr(self, "_export_worker", None)

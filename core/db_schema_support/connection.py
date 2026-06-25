@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -46,6 +47,23 @@ class _DatabaseConnectionSchemaMixin:
         conn.execute(f"ALTER TABLE news ADD COLUMN {column_name} {column_type}")
         existing_columns.add(column_name)
         logger.info("Added news.%s column", column_name)
+
+    def _check_integrity_with_retry(
+        self: DatabaseManager,
+        *,
+        attempts: int = 3,
+        base_delay_sec: float = 0.2,
+    ) -> IntegrityCheckResult:
+        """Retry unreadable integrity checks before giving up."""
+        safe_attempts = max(1, int(attempts))
+        last_result = IntegrityCheckResult("unreadable", "")
+        for attempt in range(safe_attempts):
+            last_result = self._check_integrity()
+            if last_result.state != "unreadable":
+                return last_result
+            if attempt < safe_attempts - 1:
+                time.sleep(base_delay_sec * (attempt + 1))
+        return last_result
 
     def _check_integrity(self: DatabaseManager) -> IntegrityCheckResult:
         """Run PRAGMA integrity_check before using an existing DB."""

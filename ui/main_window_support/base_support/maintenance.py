@@ -106,6 +106,14 @@ class _MainWindowMaintenanceMixin:
                 wait_ms=remaining_ms,
             )
             if not finished:
+                finished = self.cleanup_worker(
+                    keyword=handle.tab_keyword,
+                    request_id=handle.request_id,
+                    only_if_active=False,
+                    wait_ms=0,
+                    force=True,
+                )
+            if not finished:
                 unfinished_keywords.append(handle.tab_keyword)
 
         export_worker = getattr(self, "_export_worker", None)

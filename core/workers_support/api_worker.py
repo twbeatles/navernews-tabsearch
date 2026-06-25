@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, cast
 import requests
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from core.database import DatabaseQueryError, DatabaseWriteError
+from core.database import DatabaseConnectionError, DatabaseQueryError, DatabaseWriteError
 from core.protocols import ClosableProtocol, RequestGetProtocol
 from core.query_parser import build_fetch_key
 from core.workers_support.http_policy import (
@@ -26,6 +26,19 @@ from core.workers_support.http_policy import (
 from core.workers_support.jobs import perf_timer
 
 logger = logging.getLogger(__name__)
+
+
+def _is_db_pool_exhausted_error(error: BaseException) -> bool:
+    cause = getattr(error, "cause", None)
+    if isinstance(cause, DatabaseConnectionError) and cause.pool_exhausted:
+        return True
+    message = str(error).lower()
+    return "connection pool exhausted" in message or "pool exhausted" in message
+
+
+def _db_pool_exhausted_message() -> str:
+    return "데이터베이스 연결이 포화 상태입니다. 잠시 후 다시 시도해주세요."
+
 
 class ApiErrorMeta(TypedDict):
     kind: str
@@ -395,9 +408,16 @@ class ApiWorker(QObject):
                             if not self.is_running:
                                 logger.info(f"ApiWorker cancelled on DB read error: {self.display_keyword}")
                                 return
+                            error_kind = (
+                                "db_pool_exhausted"
+                                if _is_db_pool_exhausted_error(e)
+                                else "db_query_error"
+                            )
                             self._emit_error(
-                                f"데이터베이스 조회 실패: {e}",
-                                kind="db_query_error",
+                                _db_pool_exhausted_message()
+                                if error_kind == "db_pool_exhausted"
+                                else f"데이터베이스 조회 실패: {e}",
+                                kind=error_kind,
                             )
                             return
                         except DatabaseWriteError as e:
@@ -405,9 +425,29 @@ class ApiWorker(QObject):
                             if not self.is_running:
                                 logger.info(f"ApiWorker cancelled on DB write error: {self.display_keyword}")
                                 return
+                            error_kind = (
+                                "db_pool_exhausted"
+                                if _is_db_pool_exhausted_error(e)
+                                else "db_write_error"
+                            )
                             self._emit_error(
-                                f"데이터베이스 저장 실패: {e}",
-                                kind="db_write_error",
+                                _db_pool_exhausted_message()
+                                if error_kind == "db_pool_exhausted"
+                                else f"데이터베이스 저장 실패: {e}",
+                                kind=error_kind,
+                            )
+                            return
+                        except DatabaseConnectionError as e:
+                            logger.error("ApiWorker DB connection failed: %s - %s", self.display_keyword, e)
+                            if not self.is_running:
+                                logger.info(f"ApiWorker cancelled on DB connection error: {self.display_keyword}")
+                                return
+                            error_kind = "db_pool_exhausted" if e.pool_exhausted else "db_query_error"
+                            self._emit_error(
+                                _db_pool_exhausted_message()
+                                if error_kind == "db_pool_exhausted"
+                                else f"데이터베이스 연결 실패: {e}",
+                                kind=error_kind,
                             )
                             return
 

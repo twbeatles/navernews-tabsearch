@@ -24,6 +24,7 @@ from core.config_store import (
     save_config_file_atomic,
 )
 from core.database import (
+    DatabaseConnectionError,
     DatabaseManager,
     DatabaseQueryError,
     DatabaseWriteError,
@@ -90,6 +91,7 @@ __all__ = [
     'parse_search_query',
     'has_positive_keyword',
     'build_fetch_key',
+    'DatabaseConnectionError',
     'DatabaseManager',
     'DatabaseQueryError',
     'DatabaseWriteError',

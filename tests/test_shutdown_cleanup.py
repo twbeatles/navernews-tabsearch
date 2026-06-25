@@ -148,7 +148,6 @@ class _DummyCloseMain:
         self._tab_badge_timer = _FakeTimer(self.call_log, "badge")
         self._tabs = [_FakeTab("AI", self.call_log), _FakeTab("경제", self.call_log)]
         self._worker_registry = _FakeRegistry([_FakeHandle("AI", 7)])
-        self.workers = {"AI": object()}
         self._export_worker = _FakeExportWorker(self.call_log)
         self.db = _FakeCloser(self.call_log, "db")
         self.session = _FakeCloser(self.call_log, "session")

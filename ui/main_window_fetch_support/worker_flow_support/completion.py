@@ -218,7 +218,13 @@ class _FetchWorkerCompletionMixin:
             self.btn_refresh.setEnabled(True)
 
             error_kind = str(normalized_error_meta.get("kind", "") or "").strip()
-            if error_kind in {"db_query_error", "db_write_error", "db_error"}:
+            if error_kind == "db_pool_exhausted":
+                dialog_title = "데이터베이스 과부하"
+                detail_hint = (
+                    "동시에 처리 중인 데이터베이스 작업이 많습니다.\n\n"
+                    "잠시 후 다시 시도하거나, 진행 중인 새로고침이 끝날 때까지 기다려주세요."
+                )
+            elif error_kind in {"db_query_error", "db_write_error", "db_error"}:
                 dialog_title = "데이터베이스 오류"
                 detail_hint = "로컬 데이터베이스 처리 중 오류가 발생했습니다.\n\n프로그램을 다시 시도하거나 로그를 확인해주세요."
             elif error_kind in {"network_error", "timeout"}:
@@ -255,12 +261,60 @@ class _FetchWorkerCompletionMixin:
             self._network_error_count = 0
         self._schedule_tab_hydration(50)
 
+    def _detach_worker_handle(
+        self: MainApp,
+        handle: WorkerHandle,
+        request_id: int,
+        *,
+        reason: str,
+    ) -> None:
+        self._worker_registry.pop_by_request_id(request_id)
+        self._request_start_index.pop(request_id, None)
+        logger.warning(
+            "Worker registry detached after %s: %s (rid=%s)",
+            reason,
+            handle.tab_keyword,
+            request_id,
+        )
+
+    def _ensure_tab_worker_stopped(
+        self: MainApp,
+        keyword: str,
+        request_id: Optional[int],
+        action_label: str,
+        *,
+        wait_ms: int = 1000,
+    ) -> bool:
+        if request_id is None:
+            return True
+        if self.cleanup_worker(
+            keyword=keyword,
+            request_id=request_id,
+            only_if_active=False,
+            wait_ms=wait_ms,
+        ):
+            return True
+        if self.cleanup_worker(
+            keyword=keyword,
+            request_id=request_id,
+            only_if_active=False,
+            wait_ms=0,
+            force=True,
+        ):
+            self.show_warning_toast(
+                f"'{keyword}' 백그라운드 새로고침이 아직 종료 중입니다. {action_label}은(는) 계속합니다."
+            )
+            return True
+        self._notify_tab_worker_cleanup_blocked(keyword, action_label)
+        return False
+
     def cleanup_worker(
         self: MainApp,
         keyword: Optional[str] = None,
         request_id: Optional[int] = None,
         only_if_active: bool = False,
         wait_ms: int = 1000,
+        force: bool = False,
     ) -> bool:
         """Dispose a worker/thread pair by request id."""
         try:
@@ -309,12 +363,22 @@ class _FetchWorkerCompletionMixin:
                 pass
 
             if not finished:
-                logger.warning("Worker cleanup timed out: %s (rid=%s)", handle.tab_keyword, request_id)
+                timeout_count = int(getattr(self, "_worker_cleanup_timeout_count", 0) or 0) + 1
+                self._worker_cleanup_timeout_count = timeout_count
+                logger.warning(
+                    "Worker cleanup timed out: %s (rid=%s, count=%s, force=%s)",
+                    handle.tab_keyword,
+                    request_id,
+                    timeout_count,
+                    force,
+                )
                 retain_qthread_until_finished(thread, worker)
+                if force:
+                    self._detach_worker_handle(handle, request_id, reason="cleanup timeout")
+                    return True
                 return False
 
             self._worker_registry.pop_by_request_id(request_id)
-            self.workers.pop(handle.tab_keyword, None)
             self._request_start_index.pop(request_id, None)
             try:
                 worker.deleteLater()

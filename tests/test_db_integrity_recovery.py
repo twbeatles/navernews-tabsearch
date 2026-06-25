@@ -44,6 +44,16 @@ class TestDatabaseIntegrityRecovery(unittest.TestCase):
         self.assertEqual(result.state, "corrupt")
         self.assertIn("broken page", result.detail)
 
+    def test_check_integrity_with_retry_recovers_after_transient_unreadable(self):
+        harness = _SchemaHarness("dummy.db")
+        unreadable = IntegrityCheckResult("unreadable", "database is locked")
+        ok = IntegrityCheckResult("ok", "")
+        with mock.patch.object(harness, "_check_integrity", side_effect=[unreadable, ok]):
+            with mock.patch("core.db_schema_support.connection.time.sleep") as sleep_mock:
+                result = cast(Any, harness)._check_integrity_with_retry(attempts=2, base_delay_sec=0.1)
+        self.assertEqual(result.state, "ok")
+        sleep_mock.assert_called_once()
+
     def test_check_integrity_distinguishes_unreadable_exception(self):
         harness = _SchemaHarness("dummy.db")
         with mock.patch("core._db_schema.sqlite3.connect", side_effect=sqlite3.OperationalError("database is locked")):
@@ -56,14 +66,14 @@ class TestDatabaseIntegrityRecovery(unittest.TestCase):
             db_path = Path(td) / "news.db"
             db_path.write_text("placeholder", encoding="utf-8")
 
-            with mock.patch.object(DatabaseManager, "_check_integrity", return_value=IntegrityCheckResult("unreadable", "locked")):
+            with mock.patch.object(DatabaseManager, "_check_integrity_with_retry", return_value=IntegrityCheckResult("unreadable", "locked")):
                 with mock.patch.object(DatabaseManager, "_recover_database") as recover_mock:
                     with mock.patch.object(DatabaseManager, "init_db"):
                         manager = DatabaseManager(str(db_path), max_connections=0)
                         manager.close()
             recover_mock.assert_not_called()
 
-            with mock.patch.object(DatabaseManager, "_check_integrity", return_value=IntegrityCheckResult("corrupt", "bad page")):
+            with mock.patch.object(DatabaseManager, "_check_integrity_with_retry", return_value=IntegrityCheckResult("corrupt", "bad page")):
                 with mock.patch.object(DatabaseManager, "_recover_database") as recover_mock:
                     with mock.patch.object(DatabaseManager, "init_db"):
                         manager = DatabaseManager(str(db_path), max_connections=0)

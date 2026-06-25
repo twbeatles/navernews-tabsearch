@@ -70,12 +70,13 @@ class _NewsUpsertMixin:
             return NewsUpsertResult(0, 0, ())
 
         scope_query_key = self._resolve_query_key(keyword, query_key)
-        conn = self.get_connection()
         added_count = 0
         duplicate_count = 0
         new_links: List[str] = []
+        conn = None
 
         try:
+            conn = self.get_connection()
             with perf_timer(
                 "db.upsert_news_detailed",
                 f"kw={keyword}|query_key={scope_query_key}|items={len(items)}",
@@ -263,5 +264,9 @@ class _NewsUpsertMixin:
         except sqlite3.Error as e:
             logger.error("DB batch upsert failed: %s", e)
             raise self._new_write_error("upsert_news", e) from e
+        except Exception as e:
+            logger.error("DB batch upsert connection failed: %s", e)
+            raise self._new_write_error("upsert_news", e) from e
         finally:
-            self.return_connection(conn)
+            if conn is not None:
+                self.return_connection(conn)
