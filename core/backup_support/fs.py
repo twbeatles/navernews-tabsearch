@@ -56,6 +56,19 @@ def _safe_backup_child_dir(root_dir: str, backup_name: str) -> tuple[bool, str, 
             return False, "", "백업 경로가 백업 폴더 밖을 가리킵니다."
     except ValueError:
         return False, "", "백업 경로가 백업 폴더 밖을 가리킵니다."
+
+    # Defence in depth: abspath does not resolve symlinks or Windows
+    # junctions/directory reparse points, and shutil.rmtree follows a junction
+    # into its target. Re-check containment on the fully resolved paths so a
+    # reparse point planted under the backup root cannot redirect a destructive
+    # operation outside it.
+    try:
+        root_real = os.path.realpath(root_abs)
+        target_real = os.path.realpath(target_abs)
+        if target_real != root_real and os.path.commonpath([root_real, target_real]) != root_real:
+            return False, "", "백업 경로가 백업 폴더 밖을 가리킵니다."
+    except (ValueError, OSError):
+        return False, "", "백업 경로를 확인할 수 없습니다."
     return True, target_abs, ""
 
 

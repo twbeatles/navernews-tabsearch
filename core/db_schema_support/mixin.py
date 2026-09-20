@@ -21,5 +21,20 @@ class _DatabaseSchemaMixin(
     TITLE_HASH_BACKFILL_CHUNK_SIZE = 1000
     PUBDATE_TS_BACKFILL_CHUNK_SIZE = 5000
 
+    # Bumped whenever init_db must re-run the O(archive) repair pass (keyword
+    # membership backfill + whole-database duplicate recalculation). While the
+    # stored revision matches, startup skips that pass entirely instead of
+    # rewriting every news_keywords row on every launch.
+    SCHEMA_REPAIR_REVISION = "1"
+    SCHEMA_REPAIR_REVISION_KEY = "schema.repair_revision"
+
+    # Set to "open" while the app holds the database and back to "clean" on an
+    # orderly close. A startup that finds anything other than "clean" (crash,
+    # power loss, kill) escalates from PRAGMA quick_check to the much slower
+    # full PRAGMA integrity_check.
+    SHUTDOWN_STATE_KEY = "db.shutdown_state"
+    SHUTDOWN_STATE_CLEAN = "clean"
+    SHUTDOWN_STATE_OPEN = "open"
+
 
 __all__ = ["IntegrityCheckResult", "_DatabaseSchemaMixin"]

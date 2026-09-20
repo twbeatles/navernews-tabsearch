@@ -23,7 +23,10 @@
 - 단일 탭 fetch, 더 불러오기, 순차 fetch는 모두 `fetch_news()`의 API 자격증명 guard를 통과해야 합니다.
 - 탭 닫기/이름 변경은 active worker cleanup 실패 시 상태 변경을 진행하지 않습니다.
 - 메모는 저장 전 10,000자로 제한하고, import/export 문서 계약과 테스트를 같이 유지합니다.
-- destructive backup 경로는 backup root 아래의 단일 이름만 허용합니다.
+- destructive backup 경로는 backup root 아래의 단일 이름만 허용하고, `realpath`로 reparse point까지 확인합니다.
+- **중복 플래그 재계산은 스코프 한정이 기본입니다.** per-article·startup 경로에서 `_recalculate_duplicate_flags_for_entire_database(...)`를 부르지 않습니다. 전체 재계산은 수동 복구·클라우드 병합·스키마 마이그레이션 전용입니다.
+- soft-delete(tombstone)는 클라우드 삭제 전파용이며, 보존 기간이 지난 것만 정리 작업에서 회수합니다. 보존 기간 `0`은 "영구 보존"입니다.
+- `news_fts`는 어떤 질의도 사용하지 않습니다. backfill은 기본 꺼짐이며 `NEWS_SCRAPER_ENABLE_FTS_BACKFILL=1`로만 켭니다.
 - 문서는 현재 코드 상태를 우선하고, 오래된 변경 누적 로그를 다시 붙이지 않습니다.
 - **네이버 API 호출 URL/헤더는 `core/naver_api.py`에만 둡니다.** `ApiWorker`와 설정 검증이 동일 헬퍼를 사용해야 합니다.
 - 레거시 Developers Center (`openapi.naver.com`, `X-Naver-Client-*`) 엔드포인트로 되돌리지 않습니다.
@@ -69,6 +72,9 @@ tests/
 | badge/tray | `ui/main_window_support/ui_shell_support/` |
 | settings import/export | `ui/main_window_io_support/` |
 | cloud sync | `core/cloud_sync_support/`, `core/db_cloud_sync_support/` |
+| 중복 플래그 재계산 | `core/_db_duplicates.py` |
+| tombstone 회수/보존 | `core/db_mutations_support/maintenance_support/deletion.py` |
+| 저장소 지표 | `core/_db_analytics.py` (`get_storage_metrics`) |
 | packaging | `news_scraper_pro.spec` |
 
 ## NAVER API HUB 계약
@@ -95,6 +101,10 @@ tests/
 - `ApiWorker.finished` payload shape는 유지합니다.
 - `DBWorker` append는 known total을 재사용합니다.
 - 탭 badge는 DB load unread count와 local unread cache를 우선 사용합니다.
+- `delete_link` / `restore_deleted_link`는 `_collect_affected_query_key_hashes(..., include_deleted=True)` + `_recalculate_duplicates_for_affected(...)` 조합을 씁니다. 두 경로 모두 대상 행이 soft-delete 상태일 수 있어 `include_deleted`가 필수입니다.
+- `_recalculate_duplicate_flags_for_query_key_hashes`의 `CROSS JOIN`은 join **순서** 힌트입니다. `JOIN`으로 바꾸면 `idx_title_hash` 대신 scope 전체를 스캔합니다.
+- `init_db`의 O(아카이브) 복구 패스는 `SCHEMA_REPAIR_REVISION` 변경 또는 스키마 변경 시에만 실행합니다.
+- 시작 시 무결성 검사는 `SHUTDOWN_STATE_KEY` 마커를 보고 `quick_check`/`integrity_check`를 고릅니다.
 
 ## 검증
 
@@ -116,6 +126,14 @@ API HUB 연동:
 ```bash
 python -m pytest tests/test_naver_api_hub.py tests/test_settings_validation_http_policy.py -q
 ```
+
+감사 후속 회귀(삭제 비용·시작 비용·tombstone 회수):
+
+```bash
+python -m pytest tests/test_audit_remediation_20260920.py -q
+```
+
+> PyQt6/cryptography가 없는 환경에서는 해당 모듈이 **skip** 되고 요약에 이유가 표시됩니다(collection 중단 아님).
 
 패키징:
 

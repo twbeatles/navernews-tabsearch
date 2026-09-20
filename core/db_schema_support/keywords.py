@@ -118,7 +118,8 @@ class _NewsKeywordSchemaMixin:
         conn.execute("DROP TABLE news_keywords")
         conn.execute("ALTER TABLE news_keywords_new RENAME TO news_keywords")
 
-    def _ensure_news_keywords_schema(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+    def _ensure_news_keywords_schema(self: DatabaseManager, conn: sqlite3.Connection) -> bool:
+        """Create or rebuild news_keywords; True when the table changed shape."""
         has_table = bool(
             conn.execute(
                 """
@@ -130,7 +131,9 @@ class _NewsKeywordSchemaMixin:
         )
         if not has_table:
             self._create_news_keywords_table(conn)
-            return
+            return True
 
         if self._news_keywords_needs_rebuild(conn):
             self._rebuild_news_keywords_table(conn)
+            return True
+        return False

@@ -43,7 +43,7 @@ class _DatabaseInitSchemaMixin:
                 )
                 """
             )
-            self._ensure_news_keywords_schema(conn)
+            news_keywords_changed = self._ensure_news_keywords_schema(conn)
             self._ensure_news_tags_schema(conn)
             self._ensure_news_tag_state_schema(conn)
             self._ensure_app_meta_table(conn)
@@ -69,6 +69,8 @@ class _DatabaseInitSchemaMixin:
                 ("delete_reason", "TEXT DEFAULT ''"),
             ]:
                 self._ensure_news_column(conn, existing_columns, col, dtype)
+
+            columns_added = existing_columns != columns_before_migration
 
             state_timestamp_added = any(
                 column not in columns_before_migration
@@ -141,24 +143,44 @@ class _DatabaseInitSchemaMixin:
             self._backfill_missing_title_hashes(conn)
             self._backfill_missing_pubdate_ts(conn)
 
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO news_keywords (link, keyword, query_key, is_duplicate)
-                SELECT
-                    link,
-                    TRIM(keyword),
-                    LOWER(TRIM(keyword)) || '|',
-                    COALESCE(is_duplicate, 0)
-                FROM news
-                WHERE keyword IS NOT NULL AND TRIM(keyword) != ''
-                """
-            )
             self._set_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, self._get_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "0"))
             self._set_app_meta(
                 conn,
                 self.FTS_BACKFILL_CURSOR_KEY,
                 self._get_app_meta(conn, self.FTS_BACKFILL_CURSOR_KEY, "0"),
             )
-            self._recalculate_duplicate_flags_with_conn(conn)
+
+            # The keyword-membership backfill and the whole-database duplicate
+            # recalculation are both O(size of the archive) and rewrite every
+            # news_keywords row. They only produce new results when the schema
+            # actually changed, so they run once per repair revision instead of
+            # on every launch.
+            stored_revision = self._get_app_meta(conn, self.SCHEMA_REPAIR_REVISION_KEY, "")
+            schema_changed = bool(news_keywords_changed or columns_added)
+            if stored_revision != self.SCHEMA_REPAIR_REVISION or schema_changed:
+                logger.info(
+                    "Running schema repair pass (stored_revision=%r, current=%r, schema_changed=%s)",
+                    stored_revision,
+                    self.SCHEMA_REPAIR_REVISION,
+                    schema_changed,
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO news_keywords (link, keyword, query_key, is_duplicate)
+                    SELECT
+                        link,
+                        TRIM(keyword),
+                        LOWER(TRIM(keyword)) || '|',
+                        COALESCE(is_duplicate, 0)
+                    FROM news
+                    WHERE keyword IS NOT NULL AND TRIM(keyword) != ''
+                    """
+                )
+                self._recalculate_duplicate_flags_for_entire_database(conn)
+                self._set_app_meta(
+                    conn,
+                    self.SCHEMA_REPAIR_REVISION_KEY,
+                    self.SCHEMA_REPAIR_REVISION,
+                )
 
         conn.close()

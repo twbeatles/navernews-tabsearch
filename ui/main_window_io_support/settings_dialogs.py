@@ -17,6 +17,7 @@ from core.config_store import (
     normalize_import_settings,
     normalize_loaded_config,
     save_primary_config_file,
+    _write_text_atomic,
 )
 from core.cloud_sync import (
     cleanup_old_snapshots,
@@ -69,6 +70,7 @@ class _MainWindowSettingsDialogsMixin:
             "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
             "cloud_sync_dir": str(getattr(self, "cloud_sync_dir", "") or ""),
             "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
+            "tombstone_retention_days": int(getattr(self, "tombstone_retention_days", 90) or 0),
             "cloud_sync_last_status": str(getattr(self, "_cloud_sync_last_status", "") or ""),
         }
     def refresh_bookmark_tab(self: MainApp):
@@ -136,6 +138,7 @@ class _MainWindowSettingsDialogsMixin:
                 "preferred_publishers": getattr(self, "preferred_publishers", []),
                 "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
                 "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
+                "tombstone_retention_days": int(getattr(self, "tombstone_retention_days", 90) or 0),
             },
             "tabs": [tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)],
             "keyword_groups": self.keyword_group_manager.groups,
@@ -155,8 +158,13 @@ class _MainWindowSettingsDialogsMixin:
         }
 
         try:
-            with open(fname, "w", encoding="utf-8") as f:
-                json.dump(export_data, f, indent=4, ensure_ascii=False)
+            # Same atomic pattern as every other file write in the app: a
+            # partial write must never leave a truncated JSON file that looks
+            # valid until the user tries to import it.
+            _write_text_atomic(
+                fname,
+                json.dumps(export_data, indent=4, ensure_ascii=False),
+            )
             self.show_success_toast("설정을 내보냈습니다.")
             dialogs.information(
                 self,
@@ -329,6 +337,7 @@ class _MainWindowSettingsDialogsMixin:
         self.cloud_sync_enabled = bool(data.get("cloud_sync_enabled", True))
         self.cloud_sync_dir = str(data.get("cloud_sync_dir", "") or "")
         self.cloud_sync_interval_minutes = int(data.get("cloud_sync_interval_minutes", 30) or 30)
+        self.tombstone_retention_days = int(data.get("tombstone_retention_days", 90) or 0)
         self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
             data.get("blocked_publishers", []),
             data.get("preferred_publishers", []),

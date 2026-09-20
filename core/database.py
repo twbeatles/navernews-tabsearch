@@ -139,13 +139,24 @@ class DatabaseManager(
         self._active_connections = 0
         self._closed = False
         self._emergency_connections = set()
+        self._pending_emergency_connections = 0
         self._emergency_connection_uses = 0
         self._emergency_connection_rejections = 0
         self.startup_integrity_state = "ok"
         self.startup_integrity_detail = ""
 
         if os.path.exists(self.db_file):
-            integrity_result = self._check_integrity_with_retry()
+            # A clean previous shutdown only needs the cheap page-level check;
+            # a crash (or an unknown/older database) escalates to the full
+            # integrity_check, which scales with the whole archive.
+            quick_ok = self._last_shutdown_was_clean()
+            integrity_result = self._check_integrity_with_retry(quick=quick_ok)
+            if quick_ok and integrity_result.state != "ok":
+                logger.warning(
+                    "Quick integrity check was not ok (%s); escalating to full integrity_check.",
+                    integrity_result.state,
+                )
+                integrity_result = self._check_integrity_with_retry(quick=False)
             if integrity_result.state == "corrupt":
                 logger.error(
                     "데이터베이스 손상 확정. 복구를 시도합니다. detail=%s",
@@ -161,6 +172,10 @@ class DatabaseManager(
                 )
 
         self.init_db()
+        # app_meta exists from here on, so the marker can be flipped to "open".
+        # It stays "open" if this process dies, which is exactly the signal the
+        # next launch needs to run the full integrity check.
+        self._mark_shutdown_state(self.SHUTDOWN_STATE_OPEN)
 
         for _ in range(max_connections):
             conn = self._create_connection()
@@ -178,8 +193,12 @@ class DatabaseManager(
         except Exception as e:
             logger.warning(f"DB 연결 획득 실패 (timeout={timeout}s): {e}")
             logger.warning(f"활성 연결 수: {self._active_connections}/{self.max_connections}")
+            # Reserve the slot under the lock BEFORE creating the connection.
+            # Checking the cap, releasing the lock to connect, and only then
+            # registering would let concurrent callers all pass the check and
+            # overshoot the cap.
             with self._lock:
-                active_emergency = len(self._emergency_connections)
+                active_emergency = len(self._emergency_connections) + self._pending_emergency_connections
                 if active_emergency >= self.max_emergency_connections:
                     self._emergency_connection_rejections += 1
                     logger.error(
@@ -193,8 +212,19 @@ class DatabaseManager(
                         pool_exhausted=True,
                         cause=e,
                     ) from e
-            conn = self._create_connection()
+                self._pending_emergency_connections += 1
+            try:
+                conn = self._create_connection()
+            except Exception:
+                with self._lock:
+                    self._pending_emergency_connections = max(
+                        0, self._pending_emergency_connections - 1
+                    )
+                raise
             with self._lock:
+                self._pending_emergency_connections = max(
+                    0, self._pending_emergency_connections - 1
+                )
                 self._emergency_connections.add(id(conn))
                 self._emergency_connection_uses += 1
                 emergency_use_no = self._emergency_connection_uses
@@ -255,6 +285,7 @@ class DatabaseManager(
 
     def close(self):
         """모든 연결 종료"""
+        self._mark_shutdown_state(self.SHUTDOWN_STATE_CLEAN)
         self._closed = True
         closed_count = 0
 
@@ -281,6 +312,32 @@ class DatabaseManager(
             logger.info(f"DB 연결 {closed_count}개 정상 종료")
         except Exception as e:
             logger.error(f"DB 종료 중 오류: {e}")
+
+    def _mark_shutdown_state(self, state: str) -> None:
+        """Record whether the database is currently held open or closed cleanly.
+
+        Best-effort: a failure here only costs a slower integrity check on the
+        next launch, so it must never break open or close.
+        """
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_file, timeout=2.0)
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO app_meta(key, value) VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """,
+                    (self.SHUTDOWN_STATE_KEY, str(state)),
+                )
+        except Exception as e:
+            logger.debug("Shutdown state marker (%s) could not be written: %s", state, e)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _new_query_error(
         self,

@@ -235,4 +235,5 @@ class SettingsDialog(
             "cloud_sync_enabled": self.chk_cloud_sync_enabled.isChecked(),
             "cloud_sync_dir": self.txt_cloud_sync_dir.text().strip(),
             "cloud_sync_interval_minutes": int(self.cb_cloud_sync_interval.currentData() or 30),
+            "tombstone_retention_days": int(self.cb_tombstone_retention.currentData() or 0),
         }

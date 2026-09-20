@@ -12,9 +12,10 @@ from typing import Callable, Optional
 os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
 os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
 
-from PyQt6.QtCore import QLockFile, QTimer
+from PyQt6.QtCore import QLockFile, Qt, QTimer
+from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from core.backup import apply_pending_restore_if_any, cleanup_applied_pending_restore_files
 from core.constants import (
@@ -116,6 +117,29 @@ def _setup_instance_server(
 
     server.newConnection.connect(on_new_connection)
     return server
+
+
+def _show_startup_splash(app: QApplication):
+    """Show a minimal splash while the database is opened.
+
+    Best-effort: a splash failure must never stop the app from starting, so any
+    error here is logged and swallowed.
+    """
+    try:
+        pixmap = QPixmap(420, 120)
+        pixmap.fill(QColor(32, 34, 40))
+        splash = QSplashScreen(pixmap)
+        splash.showMessage(
+            f"{APP_NAME} v{VERSION}\n데이터베이스를 준비하는 중입니다...",
+            Qt.AlignmentFlag.AlignCenter,
+            QColor(235, 237, 240),
+        )
+        splash.show()
+        app.processEvents()
+        return splash
+    except Exception as e:
+        logger.debug("시작 스플래시를 표시하지 못했습니다: %s", e)
+        return None
 
 
 def _resolve_single_instance_conflict(
@@ -302,7 +326,16 @@ def main():
         font.setFamily("맑은 고딕")
         app.setFont(font)
         
-        window = MainApp(runtime_paths=RUNTIME_PATHS)
+        # MainApp.__init__ opens the database, which verifies and migrates an
+        # archive that grows without bound. That work is short for a normal
+        # archive but scales with it, so show something instead of an
+        # unresponsive blank screen while it runs.
+        splash = _show_startup_splash(app)
+        try:
+            window = MainApp(runtime_paths=RUNTIME_PATHS)
+        finally:
+            if splash is not None:
+                splash.close()
         instance_server = _setup_instance_server(
             app,
             lambda: window.show_window() if window else None,

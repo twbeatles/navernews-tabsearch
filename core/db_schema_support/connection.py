@@ -48,30 +48,61 @@ class _DatabaseConnectionSchemaMixin:
         existing_columns.add(column_name)
         logger.info("Added news.%s column", column_name)
 
+    def _last_shutdown_was_clean(self: DatabaseManager) -> bool:
+        """True when the previous session closed the database in an orderly way.
+
+        A missing app_meta table (first run, or a database written by an older
+        version) counts as not clean, so the safer full check runs.
+        """
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_file, timeout=5.0)
+            row = conn.execute(
+                "SELECT value FROM app_meta WHERE key = ?",
+                (self.SHUTDOWN_STATE_KEY,),
+            ).fetchone()
+            return bool(row) and str(row[0]) == self.SHUTDOWN_STATE_CLEAN
+        except Exception:
+            return False
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
     def _check_integrity_with_retry(
         self: DatabaseManager,
         *,
         attempts: int = 3,
         base_delay_sec: float = 0.2,
+        quick: bool = False,
     ) -> IntegrityCheckResult:
         """Retry unreadable integrity checks before giving up."""
         safe_attempts = max(1, int(attempts))
         last_result = IntegrityCheckResult("unreadable", "")
         for attempt in range(safe_attempts):
-            last_result = self._check_integrity()
+            last_result = self._check_integrity(quick=quick)
             if last_result.state != "unreadable":
                 return last_result
             if attempt < safe_attempts - 1:
                 time.sleep(base_delay_sec * (attempt + 1))
         return last_result
 
-    def _check_integrity(self: DatabaseManager) -> IntegrityCheckResult:
-        """Run PRAGMA integrity_check before using an existing DB."""
+    def _check_integrity(self: DatabaseManager, *, quick: bool = False) -> IntegrityCheckResult:
+        """Verify an existing DB before use.
+
+        ``quick=True`` runs PRAGMA quick_check, which still detects page-level
+        corruption but skips the index cross-checks that make integrity_check
+        scale with the whole archive. It is used after a clean shutdown; a
+        crash escalates back to the full check.
+        """
+        pragma = "quick_check" if quick else "integrity_check"
         conn = None
         try:
             conn = sqlite3.connect(self.db_file, timeout=5.0)
             cursor = conn.cursor()
-            cursor.execute("PRAGMA integrity_check")
+            cursor.execute(f"PRAGMA {pragma}")
             result = cursor.fetchone()
             if result and str(result[0]).lower() == "ok":
                 return IntegrityCheckResult("ok", "")

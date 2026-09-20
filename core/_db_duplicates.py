@@ -34,16 +34,21 @@ class _DatabaseDuplicatesMixin:
             return 0
 
         placeholders = ",".join(["?"] * len(normalized_hashes))
+        # CROSS JOIN is a join-ORDER hint here, not a cartesian product: the ON
+        # clause still applies. It forces SQLite to start from the highly
+        # selective idx_title_hash instead of scanning every membership row in
+        # the scope via idx_nk_query_key_link, which is the difference between
+        # ~62ms and ~0.01ms on a 120k-row archive. Do not "simplify" to JOIN.
         rows = conn.execute(
             f"""
             SELECT nk.link, COALESCE(n.title_hash, '')
-            FROM news_keywords nk
-            JOIN news n ON n.link = nk.link
-            WHERE nk.query_key = ?
-              AND n.title_hash IN ({placeholders})
+            FROM news n
+            CROSS JOIN news_keywords nk ON nk.link = n.link
+            WHERE n.title_hash IN ({placeholders})
+              AND nk.query_key = ?
               AND COALESCE(n.is_deleted, 0) = 0
             """,
-            [query_key] + normalized_hashes,
+            normalized_hashes + [query_key],
         ).fetchall()
         if not rows:
             return 0
@@ -67,11 +72,20 @@ class _DatabaseDuplicatesMixin:
         )
         return len(updates)
 
-    def _recalculate_duplicate_flags_with_conn(
+    def _recalculate_duplicate_flags_for_entire_database(
         self: DatabaseManager,
         conn: sqlite3.Connection,
     ) -> int:
-        """Recalculate all query-scoped duplicate flags."""
+        """Recalculate duplicate flags for EVERY row in news_keywords.
+
+        Cost is O(size of the whole archive) and every membership row is
+        rewritten even when its value does not change, so this must not be
+        called from per-article actions or from startup. Scoped callers use
+        ``_recalculate_duplicates_for_affected`` or
+        ``_recalculate_duplicate_flags_for_query_key_hashes`` instead; this
+        entrypoint is reserved for whole-database repair (manual maintenance,
+        cloud merge, schema migration).
+        """
         with perf_timer("db.recalculate_duplicate_flags", "scope=all"):
             rows = conn.execute(
                 """
@@ -113,20 +127,29 @@ class _DatabaseDuplicatesMixin:
         conn: sqlite3.Connection,
         news_where_clause: str = "",
         params: Optional[List[Any]] = None,
+        *,
+        include_deleted: bool = False,
     ) -> Dict[str, Set[str]]:
-        """Collect duplicate groups (query_key + title_hash) affected by deletion."""
+        """Collect duplicate groups (query_key + title_hash) affected by a change.
+
+        ``include_deleted=True`` is required when the target row is (or is about
+        to be) soft-deleted: the caller still needs the groups that row belongs
+        to so they can be recomputed. Group membership itself always ignores
+        soft-deleted rows, so the recalculation stays correct either way.
+        """
         where_sql = (
             " AND (" + news_where_clause + ")"
             if isinstance(news_where_clause, str) and news_where_clause.strip()
             else ""
         )
+        deleted_sql = "" if include_deleted else " AND COALESCE(n.is_deleted, 0) = 0"
         rows = conn.execute(
             f"""
             SELECT nk.query_key, COALESCE(n.title_hash, '')
             FROM news_keywords nk
             JOIN news n ON n.link = nk.link
             WHERE nk.query_key IS NOT NULL AND nk.query_key != ''
-              AND COALESCE(n.is_deleted, 0) = 0
+            {deleted_sql}
             {where_sql}
             """,
             list(params or []),
@@ -152,7 +175,7 @@ class _DatabaseDuplicatesMixin:
 
         for hashes in affected.values():
             if any(not hash_value for hash_value in hashes):
-                return self._recalculate_duplicate_flags_with_conn(conn)
+                return self._recalculate_duplicate_flags_for_entire_database(conn)
 
         updated = 0
         for query_key, hashes in affected.items():
@@ -164,11 +187,11 @@ class _DatabaseDuplicatesMixin:
         return updated
 
     def recalculate_duplicate_flags(self: DatabaseManager) -> int:
-        """Public duplicate-recalculation entrypoint."""
+        """Public whole-database duplicate-recalculation entrypoint (manual repair)."""
         conn = self.get_connection()
         try:
             with conn:
-                return self._recalculate_duplicate_flags_with_conn(conn)
+                return self._recalculate_duplicate_flags_for_entire_database(conn)
         finally:
             self.return_connection(conn)
 

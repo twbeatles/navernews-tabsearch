@@ -10,8 +10,10 @@ from core.config_store_support.secrets import _normalize_secret_storage
 from core.config_store_support.types import (
     ALLOWED_AUTO_BACKUP_MINUTES,
     ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES,
+    ALLOWED_TOMBSTONE_RETENTION_DAYS,
     DEFAULT_AUTO_BACKUP_MINUTES,
     DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES,
+    DEFAULT_TOMBSTONE_RETENTION_DAYS,
     DEFAULT_CONFIG,
     AppConfig,
 )
@@ -65,6 +67,21 @@ def _normalize_cloud_sync_interval_minutes(
     )
     parsed = _to_int(value, fallback)
     if parsed in ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES:
+        return parsed
+    return fallback
+
+
+def _normalize_tombstone_retention_days(
+    value: Any,
+    default: int = DEFAULT_TOMBSTONE_RETENTION_DAYS,
+) -> int:
+    fallback = (
+        int(default)
+        if int(default) in ALLOWED_TOMBSTONE_RETENTION_DAYS
+        else DEFAULT_TOMBSTONE_RETENTION_DAYS
+    )
+    parsed = _to_int(value, fallback)
+    if parsed in ALLOWED_TOMBSTONE_RETENTION_DAYS:
         return parsed
     return fallback
 
@@ -366,6 +383,10 @@ def normalize_import_settings(
             fallback_settings.get("cloud_sync_interval_minutes"),
             baseline["cloud_sync_interval_minutes"],
         )
+        baseline["tombstone_retention_days"] = _normalize_tombstone_retention_days(
+            fallback_settings.get("tombstone_retention_days"),
+            baseline["tombstone_retention_days"],
+        )
 
     normalized = {
         "theme_index": max(0, min(2, int(baseline["theme_index"]))),
@@ -385,6 +406,9 @@ def normalize_import_settings(
         "cloud_sync_enabled": bool(baseline["cloud_sync_enabled"]),
         "cloud_sync_interval_minutes": _normalize_cloud_sync_interval_minutes(
             baseline["cloud_sync_interval_minutes"]
+        ),
+        "tombstone_retention_days": _normalize_tombstone_retention_days(
+            baseline["tombstone_retention_days"]
         ),
     }
 
@@ -433,6 +457,22 @@ def normalize_import_settings(
             raw_settings.get("cloud_sync_interval_minutes"),
             int(normalized["cloud_sync_interval_minutes"]),
         )
+
+    if "tombstone_retention_days" in raw_settings:
+        requested_retention = raw_settings.get("tombstone_retention_days")
+        coerced_retention = _normalize_tombstone_retention_days(
+            requested_retention,
+            int(normalized["tombstone_retention_days"]),
+        )
+        normalized["tombstone_retention_days"] = coerced_retention
+        if not (
+            isinstance(requested_retention, int)
+            and not isinstance(requested_retention, bool)
+            and requested_retention == coerced_retention
+        ):
+            warnings.append(
+                f"tombstone_retention_days 값을 {coerced_retention}(으)로 보정했습니다."
+            )
 
     for field in bool_fields:
         coerced, changed = _coerce_bool_for_import(raw_settings.get(field), normalized[field])
@@ -499,6 +539,10 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
             app_raw.get("auto_backup_minutes"),
             app_cfg["auto_backup_minutes"],
         )
+        app_cfg["tombstone_retention_days"] = _normalize_tombstone_retention_days(
+            app_raw.get("tombstone_retention_days"),
+            app_cfg["tombstone_retention_days"],
+        )
         app_cfg["notification_enabled"] = _to_bool(
             app_raw.get("notification_enabled"), app_cfg["notification_enabled"]
         )
@@ -564,6 +608,10 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         raw.get("auto_backup_minutes"),
         app_cfg["auto_backup_minutes"],
     )
+    app_cfg["tombstone_retention_days"] = _normalize_tombstone_retention_days(
+        raw.get("tombstone_retention_days"),
+        app_cfg["tombstone_retention_days"],
+    )
     app_cfg["notification_enabled"] = _to_bool(
         raw.get("notification_enabled"), app_cfg["notification_enabled"]
     )
@@ -603,6 +651,7 @@ __all__ = [
     "_to_bool",
     "_to_int",
     "_normalize_auto_backup_minutes",
+    "_normalize_tombstone_retention_days",
     "_normalize_cloud_sync_interval_minutes",
     "_to_str_list",
     "_to_keyword_groups",

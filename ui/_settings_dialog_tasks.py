@@ -1,6 +1,7 @@
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
@@ -34,6 +35,8 @@ from core.workers import (
 
 if TYPE_CHECKING:
     from ui.settings_dialog import SettingsDialog
+
+logger = logging.getLogger(__name__)
 
 
 class _SettingsDialogTasksMixin:
@@ -271,16 +274,52 @@ class _SettingsDialogTasksMixin:
         self.btn_validate.setText("✓ API 키 검증")
         self._api_validate_worker = None
 
+    def _selected_tombstone_retention_days(self: SettingsDialog) -> int:
+        combo = getattr(self, "cb_tombstone_retention", None)
+        if combo is None:
+            return int(self.config.get("tombstone_retention_days", 90) or 0)
+        return int(combo.currentData() or 0)
+
+    def _tombstone_cleanup_notice(self: SettingsDialog) -> str:
+        """Explain what happens to soft-deleted articles in this cleanup run."""
+        retention_days = self._selected_tombstone_retention_days()
+        try:
+            db = DatabaseManager(self._runtime_paths().db_file)
+            try:
+                reclaimable, total = db.count_reclaimable_tombstones(retention_days)
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning("Failed to count reclaimable tombstones: %s", exc)
+            return ""
+
+        if not total:
+            return ""
+        if retention_days <= 0:
+            return (
+                f"\n\n삭제 기록 {total:,}건은 '영구 보존' 설정이라 그대로 남습니다."
+            )
+        kept = max(0, total - reclaimable)
+        lines = [f"\n\n삭제 기록 {total:,}건 중 {reclaimable:,}건을 함께 정리합니다."]
+        if kept:
+            lines.append(
+                f"({retention_days}일이 지나지 않은 {kept:,}건은 다른 PC로 삭제를 전파하기 위해 유지됩니다)"
+            )
+        return "\n".join(lines)
+
     def clean_data(self: SettingsDialog):
         reply = QMessageBox.question(
             self,
             "데이터 정리",
-            "30일 이전의 기사를 삭제하시겠습니까?\n\n(북마크된 기사는 삭제되지 않습니다)",
+            "30일 이전의 기사를 삭제하시겠습니까?\n\n(북마크된 기사는 삭제되지 않습니다)"
+            + self._tombstone_cleanup_notice(),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
+
+        retention_days = self._selected_tombstone_retention_days()
 
         def job_func(context) -> int:
             db = DatabaseManager(self._runtime_paths().db_file)
@@ -289,6 +328,7 @@ class _SettingsDialogTasksMixin:
                     db.delete_old_news_chunked(
                         30,
                         chunk_size=200,
+                        tombstone_retention_days=retention_days,
                         progress_callback=lambda current, total: context.report(
                             current=current,
                             total=total,
@@ -308,12 +348,15 @@ class _SettingsDialogTasksMixin:
             "⚠ 경고",
             "정말 모든 기사를 삭제하시겠습니까?\n\n"
             "이 작업은 취소할 수 없습니다.\n"
-            "(북마크된 기사는 삭제되지 않습니다)",
+            "(북마크된 기사는 삭제되지 않습니다)"
+            + self._tombstone_cleanup_notice(),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
+
+        retention_days = self._selected_tombstone_retention_days()
 
         def job_func(context) -> int:
             db = DatabaseManager(self._runtime_paths().db_file)
@@ -321,6 +364,7 @@ class _SettingsDialogTasksMixin:
                 return int(
                     db.delete_all_news_chunked(
                         chunk_size=200,
+                        tombstone_retention_days=retention_days,
                         progress_callback=lambda current, total: context.report(
                             current=current,
                             total=total,

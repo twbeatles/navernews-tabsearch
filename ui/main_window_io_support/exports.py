@@ -67,6 +67,25 @@ def _export_row(item: Dict[str, Any]) -> List[str]:
 def _markdown_escape(value: Any) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     return text.replace("|", "\\|")
+
+
+def _markdown_link_text(value: Any) -> str:
+    """Escape text used inside a [...] link label.
+
+    An article title containing brackets would otherwise terminate the label
+    early and break the rendered link.
+    """
+    return _markdown_escape(value).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _markdown_link_target(value: Any) -> str:
+    """Wrap a URL for use inside (...) so parentheses cannot terminate it."""
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    # Angle brackets are the Markdown-sanctioned way to quote a URL containing
+    # parentheses; strip any that are already present so they cannot escape.
+    return "<" + url.replace("<", "%3C").replace(">", "%3E") + ">"
 def _export_item_markdown(item: Dict[str, Any], aliases: Optional[Dict[str, str]] = None) -> str:
     title = str(item.get("title", "") or "(제목 없음)").strip()
     link = str(item.get("link", "") or "").strip()
@@ -80,7 +99,11 @@ def _export_item_markdown(item: Dict[str, Any], aliases: Optional[Dict[str, str]
         state.append("북마크")
     if item.get("is_duplicate"):
         state.append("중복")
-    title_line = f"### [{title}]({link})" if link else f"### {title}"
+    title_line = (
+        f"### [{_markdown_link_text(title)}]({_markdown_link_target(link)})"
+        if link
+        else f"### {_markdown_escape(title)}"
+    )
     lines = [
         title_line,
         f"- 날짜: {_markdown_escape(date)}",

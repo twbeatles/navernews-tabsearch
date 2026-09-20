@@ -274,6 +274,33 @@ class _SettingsDialogContentMixin:
         group = QGroupBox("🗂 데이터 관리")
         layout = QVBoxLayout()
 
+        retention_layout = QHBoxLayout()
+        retention_layout.addWidget(QLabel("삭제 기록 보존:"))
+        self.cb_tombstone_retention = NoScrollComboBox()
+        for label, days in [
+            ("영구 보존", 0),
+            ("7일", 7),
+            ("30일", 30),
+            ("90일 (권장)", 90),
+            ("180일", 180),
+            ("365일", 365),
+        ]:
+            self.cb_tombstone_retention.addItem(label, days)
+        configured_retention = int(self.config.get("tombstone_retention_days", 90) or 0)
+        retention_values = [0, 7, 30, 90, 180, 365]
+        self.cb_tombstone_retention.setCurrentIndex(
+            retention_values.index(configured_retention)
+            if configured_retention in retention_values
+            else 3
+        )
+        self.cb_tombstone_retention.setToolTip(
+            "목록에서 삭제한 기사는 다른 PC로 삭제를 전파하기 위해 '삭제 기록'으로 남습니다.\n"
+            "이 기간이 지난 삭제 기록은 아래 정리 작업에서 실제로 제거되어 저장공간이 회수됩니다.\n"
+            "'영구 보존'을 고르면 삭제 기록은 회수되지 않습니다."
+        )
+        retention_layout.addWidget(self.cb_tombstone_retention, 1)
+        layout.addLayout(retention_layout)
+
         self.btn_clean = QPushButton("🧹 오래된 데이터 정리 (30일 이전)")
         self.btn_clean.clicked.connect(self.clean_data)
         layout.addWidget(self.btn_clean)

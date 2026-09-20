@@ -66,6 +66,7 @@ class _FakeFtsDb:
 
 
 class _DummyFtsMain:
+    _fts_backfill_enabled = MainApp._fts_backfill_enabled
     _is_fts_backfill_paused = MainApp._is_fts_backfill_paused
     _next_fts_backfill_retry_delay_ms = MainApp._next_fts_backfill_retry_delay_ms
     _schedule_fts_backfill_retry = MainApp._schedule_fts_backfill_retry
@@ -77,6 +78,9 @@ class _DummyFtsMain:
     _on_fts_backfill_cancelled = MainApp._on_fts_backfill_cancelled
 
     def __init__(self):
+        # The backfill worker is off by default (news_fts is not consulted by
+        # any query yet); these tests cover the worker mechanics, so they opt in.
+        self._fts_backfill_force_enabled = True
         self._shutdown_in_progress = False
         self._maintenance_mode = False
         self._refresh_in_progress = False

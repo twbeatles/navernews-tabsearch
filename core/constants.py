@@ -38,7 +38,7 @@ ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
 APP_USER_MODEL_ID = "Twbeatles.NaverNewsScraperPro"
-VERSION = "32.8.0"
+VERSION = "32.9.0"
 PENDING_RESTORE_FILE = RUNTIME_PATHS.pending_restore_file
 
 # GitHub release update channel.  The private half of this Ed25519 key is kept
@@ -51,6 +51,18 @@ UPDATE_PUBLIC_KEY_B64 = os.environ.get(
     "NEWS_SCRAPER_UPDATE_PUBLIC_KEY_B64",
     "5wksVeeIHiXbyvv1DNVQZafIJZ/h8Nu9AZ8d3xrAdxE=",
 )
+# The news_fts FTS5 index is kept in the schema for future ranking work, but no
+# query path consults it today: _fts_match_expression() returns "" on purpose so
+# that an FTS MATCH prefilter cannot drop Korean compound-word results. Running
+# the backfill worker therefore costs CPU, disk and database size for no search
+# benefit, so it is off unless explicitly enabled.
+FTS_BACKFILL_ENABLED = os.environ.get("NEWS_SCRAPER_ENABLE_FTS_BACKFILL", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
 UPDATE_RELEASES_URL = "https://github.com/twbeatles/navernews-tabsearch/releases/latest"
 UPDATE_MANIFEST_MAX_BYTES = 256 * 1024
 UPDATE_ARTIFACT_MAX_BYTES = 500 * 1024 * 1024
@@ -92,6 +104,7 @@ __all__ = [
     "UPDATE_MANIFEST_URL",
     "UPDATE_PUBLIC_KEY_B64",
     "UPDATE_RELEASES_URL",
+    "FTS_BACKFILL_ENABLED",
     "UPDATE_REQUEST_TIMEOUT_SECONDS",
     "get_app_dir",
     "get_data_dir",

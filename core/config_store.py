@@ -23,6 +23,7 @@ from core.config_store_impl import (
     normalize_loaded_config,
     save_config_file_atomic,
     save_primary_config_file,
+    _write_text_atomic,
 )
 
 _is_windows_platform = _impl._is_windows_platform
@@ -87,6 +88,7 @@ __all__ = [
     "resolve_client_secret_for_runtime",
     "save_config_file_atomic",
     "save_primary_config_file",
+    "_write_text_atomic",
     "_is_windows_platform",
     "_dpapi_encrypt_text",
     "_dpapi_decrypt_text",

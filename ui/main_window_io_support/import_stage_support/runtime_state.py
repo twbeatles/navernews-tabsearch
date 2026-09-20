@@ -213,6 +213,13 @@ class _ImportStageRuntimeStateMixin:
                     )
                     or 30
                 ),
+                "tombstone_retention_days": int(
+                    app_settings_overrides.get(
+                        "tombstone_retention_days",
+                        getattr(self, "tombstone_retention_days", 90),
+                    )
+                    or 0
+                ),
                 "window_geometry": {
                     "x": int(geometry["x"]),
                     "y": int(geometry["y"]),
@@ -257,6 +264,7 @@ class _ImportStageRuntimeStateMixin:
             "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
             "cloud_sync_dir": str(getattr(self, "cloud_sync_dir", "") or ""),
             "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
+            "tombstone_retention_days": int(getattr(self, "tombstone_retention_days", 90) or 0),
             "saved_searches": dict(getattr(self, "saved_searches", {})),
             "tab_refresh_policies": dict(getattr(self, "tab_refresh_policies", {})),
             "automation_rules": list(getattr(self, "automation_rules", [])),
@@ -333,6 +341,7 @@ class _ImportStageRuntimeStateMixin:
         self.cloud_sync_enabled = bool(runtime_snapshot.get("cloud_sync_enabled", True))
         self.cloud_sync_dir = str(runtime_snapshot.get("cloud_sync_dir", "") or "")
         self.cloud_sync_interval_minutes = int(runtime_snapshot.get("cloud_sync_interval_minutes", 30) or 30)
+        self.tombstone_retention_days = int(runtime_snapshot.get("tombstone_retention_days", 90) or 0)
         self.saved_searches = dict(runtime_snapshot["saved_searches"])
         self.tab_refresh_policies = dict(runtime_snapshot["tab_refresh_policies"])
         self.automation_rules = normalize_automation_rules(runtime_snapshot.get("automation_rules", []))
@@ -382,6 +391,7 @@ class _ImportStageRuntimeStateMixin:
         self.api_timeout = normalized_settings["api_timeout"]
         self.cloud_sync_enabled = bool(normalized_settings.get("cloud_sync_enabled", True))
         self.cloud_sync_interval_minutes = int(normalized_settings.get("cloud_sync_interval_minutes", 30) or 30)
+        self.tombstone_retention_days = int(normalized_settings.get("tombstone_retention_days", 90) or 0)
         self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
             normalized_settings["blocked_publishers"],
             normalized_settings["preferred_publishers"],

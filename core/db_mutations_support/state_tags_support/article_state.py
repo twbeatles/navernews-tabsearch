@@ -124,6 +124,15 @@ class _NewsArticleStateMixin:
         conn = self.get_connection()
         try:
             with conn:
+                # Collect the duplicate groups this article belongs to BEFORE the
+                # flag flips; afterwards only these groups need recomputing, so
+                # the cost stays proportional to the group and not to the archive.
+                affected = self._collect_affected_query_key_hashes(
+                    conn,
+                    "n.link = ?",
+                    [link],
+                    include_deleted=True,
+                )
                 cursor = conn.execute(
                     """
                     UPDATE news
@@ -138,7 +147,7 @@ class _NewsArticleStateMixin:
                 changed = int(cursor.rowcount or 0)
                 if changed <= 0:
                     return False
-                self._recalculate_duplicate_flags_with_conn(conn)
+                self._recalculate_duplicates_for_affected(conn, affected)
             return True
         except sqlite3.Error as e:
             logger.error("delete_link failed: %s", e)
@@ -157,7 +166,16 @@ class _NewsArticleStateMixin:
         conn = self.get_connection()
         try:
             with conn:
-                affected = self._collect_affected_query_key_hashes(conn, "n.link = ?", [link])
+                # The row is still soft-deleted here, so its groups are only
+                # visible with include_deleted=True. Without it the collection
+                # came back empty and the restored article left stale duplicate
+                # flags on its peers.
+                affected = self._collect_affected_query_key_hashes(
+                    conn,
+                    "n.link = ?",
+                    [link],
+                    include_deleted=True,
+                )
                 cursor = conn.execute(
                     """
                     UPDATE news

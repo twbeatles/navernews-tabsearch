@@ -104,7 +104,7 @@ class _CloudSyncApplyMixin:
                 self._merge_cloud_news_rows(conn, source_news_columns)
                 self._merge_cloud_keyword_rows(conn, source_keyword_columns)
                 self._merge_cloud_tag_rows(conn, source_news_columns, has_tag_state)
-                self._recalculate_duplicate_flags_with_conn(conn)
+                self._recalculate_duplicate_flags_for_entire_database(conn)
                 if normalized_snapshot_id:
                     raw_seen = self._get_app_meta(conn, self.CLOUD_SYNC_SEEN_META_KEY, "[]")
                     try:

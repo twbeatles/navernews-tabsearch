@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 
@@ -70,6 +71,55 @@ class _DatabaseAnalyticsMixin:
         finally:
             if owns_connection and active_conn is not None:
                 self.return_connection(active_conn)
+
+    def get_storage_metrics(self: DatabaseManager) -> Dict[str, int]:
+        """Return the storage figures that explain how the archive is growing.
+
+        Surfaced in the statistics dialog so a user can see why startup and
+        cleanup get slower over time instead of having to guess.
+        """
+        conn = self.get_connection()
+        try:
+            metrics: Dict[str, int] = {}
+            metrics["db_bytes"] = self._database_file_bytes()
+            metrics["articles"] = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM news WHERE COALESCE(is_deleted, 0) = 0"
+                ).fetchone()[0]
+                or 0
+            )
+            metrics["tombstones"] = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM news WHERE COALESCE(is_deleted, 0) = 1"
+                ).fetchone()[0]
+                or 0
+            )
+            metrics["memberships"] = int(
+                conn.execute("SELECT COUNT(*) FROM news_keywords").fetchone()[0] or 0
+            )
+            metrics["query_scopes"] = int(
+                conn.execute(
+                    "SELECT COUNT(DISTINCT query_key) FROM news_keywords "
+                    "WHERE query_key IS NOT NULL AND query_key != ''"
+                ).fetchone()[0]
+                or 0
+            )
+            return metrics
+        except Exception as e:
+            logger.error("get_storage_metrics failed: %s", e)
+            raise self._new_query_error("get_storage_metrics", e) from e
+        finally:
+            self.return_connection(conn)
+
+    def _database_file_bytes(self: DatabaseManager) -> int:
+        """Total on-disk size of the database, including its WAL/SHM sidecars."""
+        total = 0
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                total += os.path.getsize(f"{self.db_file}{suffix}")
+            except OSError:
+                continue
+        return total
 
     def get_top_publishers(
         self: DatabaseManager,

@@ -1,6 +1,7 @@
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 from PyQt6.QtCore import Qt
@@ -30,6 +31,56 @@ from ui.dialogs import ArchiveSearchDialog, AutomationRulesDialog, PublisherAlia
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp
+
+logger = logging.getLogger(__name__)
+
+
+def _format_bytes(num_bytes: int) -> str:
+    size = float(max(0, int(num_bytes or 0)))
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:,.0f} {unit}" if unit == "B" else f"{size:,.1f} {unit}"
+        size /= 1024
+    return f"{size:,.1f} GB"
+
+
+def _build_storage_group(stats: Dict[str, int], theme_idx: int):
+    """Storage panel that makes archive growth visible.
+
+    Returns None when the metrics could not be collected, so the rest of the
+    statistics dialog still renders.
+    """
+    if "storage_db_bytes" not in stats:
+        return None
+
+    tombstones = int(stats.get("storage_tombstones", 0) or 0)
+    items = [
+        ("데이터베이스 크기:", _format_bytes(int(stats.get("storage_db_bytes", 0) or 0))),
+        ("보관 기사:", f"{int(stats.get('storage_articles', 0) or 0):,}개"),
+        ("삭제 기록:", f"{tombstones:,}개"),
+        ("검색 범위 행:", f"{int(stats.get('storage_memberships', 0) or 0):,}개"),
+        ("검색 범위 수:", f"{int(stats.get('storage_query_scopes', 0) or 0):,}개"),
+    ]
+
+    group = QGroupBox("💾 저장소")
+    grid = QGridLayout()
+    for i, (label, value) in enumerate(items):
+        lbl = QLabel(label)
+        lbl.setStyleSheet("font-weight: bold;")
+        val = QLabel(value)
+        val.setStyleSheet("color: #007AFF;" if theme_idx == 0 else "color: #0A84FF;")
+        grid.addWidget(lbl, i, 0, Qt.AlignmentFlag.AlignRight)
+        grid.addWidget(val, i, 1, Qt.AlignmentFlag.AlignLeft)
+
+    hint = QLabel(
+        "‘삭제 기록’은 목록에서 삭제한 기사이며, 설정의 보존 기간이 지나면 데이터 정리에서 회수됩니다.\n"
+        "‘검색 범위 행’이 많을수록 시작과 정리 작업이 느려집니다. 닫은 탭의 범위도 계속 남습니다."
+    )
+    hint.setWordWrap(True)
+    hint.setStyleSheet("color: gray; font-size: 11px;")
+    grid.addWidget(hint, len(items), 0, 1, 2)
+    group.setLayout(grid)
+    return group
 
 
 class _MainWindowAnalysisMixin:
@@ -456,13 +507,19 @@ class _MainWindowAnalysisMixin:
                 state[key] = None
 
         def load_stats(conn) -> Dict[str, int]:
-            return self._require_db().get_statistics(
+            stats = self._require_db().get_statistics(
                 blocked_publishers=expand_publisher_filters(
                     list(getattr(self, "blocked_publishers", [])),
                     getattr(self, "publisher_aliases", {}),
                 ),
                 conn=conn,
             )
+            try:
+                storage = self._require_db().get_storage_metrics()
+            except Exception as exc:
+                logger.warning("Storage metrics unavailable: %s", exc)
+                storage = {}
+            return {**stats, **{f"storage_{k}": v for k, v in storage.items()}}
 
         def render_stats(stats: Dict[str, int]) -> None:
             if not dialog.isVisible():
@@ -494,6 +551,10 @@ class _MainWindowAnalysisMixin:
                 grid.addWidget(val, i, 1, Qt.AlignmentFlag.AlignLeft)
             group.setLayout(grid)
             stats_layout.insertWidget(0, group)
+
+            storage_group = _build_storage_group(stats, self.theme_idx)
+            if storage_group is not None:
+                stats_layout.insertWidget(1, storage_group)
 
         def render_publishers(publishers: List[tuple[str, int]], request_id: int) -> None:
             if not dialog.isVisible() or request_id != state["publisher_request_id"]:

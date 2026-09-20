@@ -32,6 +32,7 @@ class AppSettings(TypedDict):
     cloud_sync_enabled: bool
     cloud_sync_dir: str
     cloud_sync_interval_minutes: int
+    tombstone_retention_days: int
     window_geometry: WindowGeometry
 
 
@@ -71,6 +72,7 @@ DEFAULT_CONFIG: AppConfig = {
         "cloud_sync_enabled": True,
         "cloud_sync_dir": "",
         "cloud_sync_interval_minutes": 30,
+        "tombstone_retention_days": 90,
         "window_geometry": {
             "x": 100,
             "y": 100,
@@ -93,8 +95,13 @@ ALLOWED_AUTO_BACKUP_MINUTES = {0, 30, 60, 180, 360}
 DEFAULT_AUTO_BACKUP_MINUTES = 60
 ALLOWED_CLOUD_SYNC_INTERVAL_MINUTES = {10, 30, 60, 120, 360}
 DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES = 30
+# 0 disables reclamation entirely (tombstones are kept forever).
+ALLOWED_TOMBSTONE_RETENTION_DAYS = {0, 7, 30, 90, 180, 365}
+DEFAULT_TOMBSTONE_RETENTION_DAYS = 90
 
 __all__ = [
+    "ALLOWED_TOMBSTONE_RETENTION_DAYS",
+    "DEFAULT_TOMBSTONE_RETENTION_DAYS",
     "WindowGeometry",
     "AppSettings",
     "AppConfig",

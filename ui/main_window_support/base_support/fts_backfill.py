@@ -11,6 +11,7 @@ from PyQt6.QtCore import QMutexLocker, QTimer
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QApplication, QMenu, QStatusBar, QStyle, QTabBar, QWidget
 
+from core.constants import FTS_BACKFILL_ENABLED
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
 from core.workers import IterativeJobWorker
@@ -24,8 +25,20 @@ from ui.main_window_support.base_support.state import TabFetchState
 
 
 class _MainWindowFtsBackfillMixin:
+    def _fts_backfill_enabled(self) -> bool:
+        """Whether the FTS index should be maintained in the background.
+
+        Off by default: no query path consults news_fts today (see
+        core.constants.FTS_BACKFILL_ENABLED), so the worker would burn CPU and
+        disk for nothing. Set NEWS_SCRAPER_ENABLE_FTS_BACKFILL=1 to turn it back
+        on when a search path starts using the index.
+        """
+        return bool(getattr(self, "_fts_backfill_force_enabled", FTS_BACKFILL_ENABLED))
+
     def _start_fts_backfill(self) -> None:
         if self._shutdown_in_progress:
+            return
+        if not self._fts_backfill_enabled():
             return
         worker = getattr(self, "_fts_backfill_worker", None)
         if worker is not None and worker.isRunning():
@@ -104,6 +117,8 @@ class _MainWindowFtsBackfillMixin:
     def _schedule_fts_backfill_retry(self, delay_ms: int, *, force: bool = False) -> None:
         if self._shutdown_in_progress:
             return
+        if not self._fts_backfill_enabled():
+            return
         if self._require_db().is_news_fts_backfill_complete():
             return
         timer = getattr(self, "_fts_backfill_retry_timer", None)
@@ -119,6 +134,8 @@ class _MainWindowFtsBackfillMixin:
 
     def _request_fts_backfill_resume(self, *, delay_ms: int = 250) -> None:
         if self._shutdown_in_progress:
+            return
+        if not self._fts_backfill_enabled():
             return
         if self._require_db().is_news_fts_backfill_complete():
             return
