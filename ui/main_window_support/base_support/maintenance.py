@@ -177,6 +177,7 @@ class _MainWindowMaintenanceMixin:
             "csv_import": "CSV 가져오기",
             "tag_scope_update": "현재 탭 전체 태그 적용",
             "automation_rules": "자동화 규칙 적용",
+            "scope_cleanup": "사용하지 않는 범위 정리",
         }.get(str(operation or "").strip(), "데이터 정리")
         if str(operation or "").strip() == "cloud_sync":
             operation_label = "클라우드 동기화"

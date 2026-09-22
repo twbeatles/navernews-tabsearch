@@ -107,15 +107,51 @@ def prepare_staged_update(manifest: ReleaseManifest, *, staging_root: str | Path
         raise
 
 
-def _wait_for_parent(pid: int) -> None:
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
+def _wait_for_parent(pid: int, timeout: float = 30.0) -> None:
+    """Return once the parent process exits; raise TimeoutError on expiry.
+
+    Windows note: ``os.kill(pid, 0)`` still succeeds for a recently exited PID,
+    so the old poll loop never observed the shutdown and always hit the
+    timeout. The helper then recorded ``failed`` and the updated program was
+    never relaunched. A process-handle wait is used on Windows instead.
+    """
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        SYNCHRONIZE = 0x00100000
+        WAIT_OBJECT_0 = 0x00000000
+        WAIT_TIMEOUT = 0x00000102
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, int(pid))
+        if not handle:
+            return  # PID is already gone.
         try:
-            os.kill(pid, 0)
-        except OSError:
-            return
-        time.sleep(0.2)
-    raise TimeoutError("기존 프로그램이 종료되지 않았습니다.")
+            remaining_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
+            result = kernel32.WaitForSingleObject(handle, remaining_ms)
+            if result == WAIT_OBJECT_0:
+                return
+            if result == WAIT_TIMEOUT:
+                raise TimeoutError("기존 프로그램이 종료되지 않았습니다.")
+            raise OSError(f"부모 프로세스 종료 대기에 실패했습니다: {result:#x}")
+        finally:
+            kernel32.CloseHandle(handle)
+    else:
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return
+            time.sleep(0.2)
+        raise TimeoutError("기존 프로그램이 종료되지 않았습니다.")
 
 
 def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sha256: str, expected_size: int) -> None:

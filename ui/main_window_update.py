@@ -11,7 +11,7 @@ from typing import Any, cast
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtCore import QUrl
-from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
+from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
 
 from core.constants import (
     UPDATE_ARTIFACT_MAX_BYTES,
@@ -36,6 +36,17 @@ logger = logging.getLogger(__name__)
 class _UpdateBridge(QObject):
     checked = pyqtSignal(object, object, bool)
     downloaded = pyqtSignal(object, object)
+
+
+def _fit_dialog_buttons(dialog: QMessageBox, horizontal_slack: int = 28) -> None:
+    """업데이트 팝업 버튼의 텍스트가 잘리지 않도록 최소 너비를 보장한다.
+
+    QMessageBox 버튼 박스는 가장 넓은 버튼 기준으로 너비를 맞추는데, 폰트·DPI
+    차이가 있는 환경에서는 끝 글자가 잘려 "글자가 안 보인다"는 민원으로
+    이어진다. sizeHint 기준으로 여유를 더해 잘림을 방지한다.
+    """
+    for button in dialog.findChildren(QPushButton):
+        button.setMinimumWidth(max(button.minimumWidth(), button.sizeHint().width() + horizontal_slack))
 
 
 class _MainWindowUpdateMixin:
@@ -103,6 +114,7 @@ class _MainWindowUpdateMixin:
         install = dialog.addButton("다운로드 및 설치", QMessageBox.ButtonRole.AcceptRole)
         release = dialog.addButton("릴리스 페이지 보기", QMessageBox.ButtonRole.ActionRole)
         dialog.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
+        _fit_dialog_buttons(dialog)
         dialog.exec()
         if dialog.clickedButton() is release:
             QDesktopServices.openUrl(QUrl(UPDATE_RELEASES_URL))
@@ -171,6 +183,7 @@ class _MainWindowUpdateMixin:
         dialog.setText(f"자동 업데이트를 완료하지 못했습니다.\n\n오류: {detail}")
         release = dialog.addButton("릴리스 페이지 열기", QMessageBox.ButtonRole.ActionRole)
         dialog.addButton("닫기", QMessageBox.ButtonRole.RejectRole)
+        _fit_dialog_buttons(dialog)
         dialog.exec()
         if dialog.clickedButton() is release:
             QDesktopServices.openUrl(QUrl(UPDATE_RELEASES_URL))

@@ -1,9 +1,12 @@
 from core.db_mutations_support.maintenance import _NewsMaintenanceMixin
 from core.db_mutations_support.news_upsert import _NewsUpsertMixin
+from core.db_mutations_support.scope_cleanup import _NewsScopeCleanupMixin
 from core.db_mutations_support.state_tags import _NewsStateTagsMixin
 
 
-class _DatabaseMutationsMixin(_NewsUpsertMixin, _NewsStateTagsMixin, _NewsMaintenanceMixin):
+class _DatabaseMutationsMixin(
+    _NewsUpsertMixin, _NewsStateTagsMixin, _NewsMaintenanceMixin, _NewsScopeCleanupMixin
+):
     """Composes DatabaseManager write, tag, mark-read, and maintenance mutations."""
 
     # How long a soft-deleted article is kept so cloud sync can propagate the

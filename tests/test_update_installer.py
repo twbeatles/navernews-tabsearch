@@ -114,3 +114,53 @@ def test_update_button_click_always_requests_interactive_feedback():
     dummy.on_update_button_clicked(False)
 
     assert dummy.calls == [True]
+
+
+def test_wait_for_parent_returns_after_process_exits():
+    import subprocess
+    import sys
+    import time
+
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        proc.kill()
+        proc.wait()
+        started = time.monotonic()
+        update_installer._wait_for_parent(proc.pid, timeout=10)
+        assert time.monotonic() - started < 10
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
+def test_wait_for_parent_times_out_while_process_is_alive():
+    import subprocess
+    import sys
+
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        with pytest.raises(TimeoutError, match="종료되지 않았습니다"):
+            update_installer._wait_for_parent(proc.pid, timeout=1)
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_fit_dialog_buttons_reserves_text_slack():
+    from PyQt6.QtGui import QFontMetrics
+    from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+
+    from ui.main_window_update import _fit_dialog_buttons
+
+    app = QApplication.instance() or QApplication([])
+    dialog = QMessageBox()
+    dialog.addButton("다운로드 및 설치", QMessageBox.ButtonRole.AcceptRole)
+    dialog.addButton("릴리스 페이지 보기", QMessageBox.ButtonRole.ActionRole)
+    dialog.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
+    _fit_dialog_buttons(dialog)
+    buttons = dialog.findChildren(QPushButton)
+    assert len(buttons) == 3
+    for button in buttons:
+        assert button.minimumWidth() >= button.sizeHint().width() + 28
+        assert QFontMetrics(button.font()).horizontalAdvance(button.text()) <= button.minimumWidth()

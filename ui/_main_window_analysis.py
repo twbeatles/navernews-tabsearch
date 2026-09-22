@@ -54,6 +54,7 @@ def _build_storage_group(stats: Dict[str, int], theme_idx: int):
         return None
 
     tombstones = int(stats.get("storage_tombstones", 0) or 0)
+    unused_scopes = stats.get("storage_unused_scopes", None)
     items = [
         ("데이터베이스 크기:", _format_bytes(int(stats.get("storage_db_bytes", 0) or 0))),
         ("보관 기사:", f"{int(stats.get('storage_articles', 0) or 0):,}개"),
@@ -61,6 +62,8 @@ def _build_storage_group(stats: Dict[str, int], theme_idx: int):
         ("검색 범위 행:", f"{int(stats.get('storage_memberships', 0) or 0):,}개"),
         ("검색 범위 수:", f"{int(stats.get('storage_query_scopes', 0) or 0):,}개"),
     ]
+    if unused_scopes is not None:
+        items.append(("사용하지 않는 범위:", f"{int(unused_scopes or 0):,}개"))
 
     group = QGroupBox("💾 저장소")
     grid = QGridLayout()
@@ -74,13 +77,30 @@ def _build_storage_group(stats: Dict[str, int], theme_idx: int):
 
     hint = QLabel(
         "‘삭제 기록’은 목록에서 삭제한 기사이며, 설정의 보존 기간이 지나면 데이터 정리에서 회수됩니다.\n"
-        "‘검색 범위 행’이 많을수록 시작과 정리 작업이 느려집니다. 닫은 탭의 범위도 계속 남습니다."
+        "‘검색 범위 행’이 많을수록 시작과 정리 작업이 느려집니다. 아래 버튼으로 닫은 탭이 남긴 범위를 정리할 수 있습니다 (기사 본문은 유지)."
     )
     hint.setWordWrap(True)
     hint.setStyleSheet("color: gray; font-size: 11px;")
     grid.addWidget(hint, len(items), 0, 1, 2)
     group.setLayout(grid)
     return group
+
+
+def _open_tab_query_keys(owner) -> List[str]:
+    """Return the canonical fetch keys of the currently open keyword tabs."""
+    keys: List[str] = []
+    canonical = getattr(owner, "_canonical_fetch_key_for_keyword", None)
+    for _index, widget in owner._iter_news_tabs(start_index=1):
+        keyword = str(getattr(widget, "keyword", "") or "").strip()
+        if not keyword or not callable(canonical):
+            continue
+        try:
+            fetch_key = canonical(keyword)
+        except Exception:
+            continue
+        if fetch_key and fetch_key not in keys:
+            keys.append(fetch_key)
+    return keys
 
 
 class _MainWindowAnalysisMixin:
@@ -404,6 +424,70 @@ class _MainWindowAnalysisMixin:
         worker.start()
         dialog.exec()
 
+    def _open_tab_query_keys(self: MainApp) -> List[str]:
+        return _open_tab_query_keys(self)
+
+    def _run_scope_cleanup(self: MainApp, dialog, reload_stats) -> None:
+        """Preview, confirm, and execute unused-scope cleanup with guards."""
+        keep = self._open_tab_query_keys()
+        if not keep:
+            QMessageBox.information(
+                dialog,
+                "사용하지 않는 범위 정리",
+                "열려 있는 키워드 탭이 없어 정리할 수 없습니다.\n"
+                "보관 탭만 있는 상태에서는 전체 범위가 정리 대상이 되므로 보호됩니다.",
+            )
+            return
+        try:
+            preview = self._require_db().preview_scope_cleanup(keep)
+        except Exception as exc:
+            logger.warning("Scope cleanup preview failed: %s", exc)
+            QMessageBox.warning(
+                dialog, "사용하지 않는 범위 정리", f"미리보기를 불러오지 못했습니다.\n\n{exc}"
+            )
+            return
+        if not preview.dead_scopes:
+            QMessageBox.information(dialog, "사용하지 않는 범위 정리", "사용하지 않는 검색 범위가 없습니다.")
+            return
+        shown = preview.dead_scopes[:20]
+        lines = "\n".join(f"• {scope.keyword_label} — {scope.membership_count:,}개" for scope in shown)
+        if len(preview.dead_scopes) > len(shown):
+            lines += f"\n… 외 {len(preview.dead_scopes) - len(shown)}개 범위"
+        confirm = QMessageBox.question(
+            dialog,
+            "범위 정리 확인",
+            f"다음 {len(preview.dead_scopes)}개 범위의 소속 정보 {preview.removable_memberships:,}건을 삭제합니다.\n\n"
+            f"{lines}\n\n"
+            f"소속이 없어지는 기사 {preview.orphaned_articles:,}건은 보관함에 유지됩니다.\n"
+            "계속하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        ok, reason = self.begin_database_maintenance("scope_cleanup")
+        if not ok:
+            QMessageBox.warning(dialog, "사용하지 않는 범위 정리", reason)
+            return
+        try:
+            result = self._require_db().cleanup_unused_scopes(keep)
+        except Exception as exc:
+            logger.warning("Scope cleanup failed: %s", exc)
+            self.end_database_maintenance()
+            QMessageBox.warning(
+                dialog, "사용하지 않는 범위 정리", f"정리 중 오류가 발생했습니다.\n\n{exc}"
+            )
+            return
+        self.end_database_maintenance()
+        QMessageBox.information(
+            dialog,
+            "범위 정리 완료",
+            f"삭제된 소속: {result.removed_memberships:,}건\n"
+            f"남은 검색 범위: {result.remaining_scopes:,}개\n"
+            f"소속 없는 기사: {result.orphaned_articles:,}건 (보관함에 유지됨)",
+        )
+        reload_stats()
+
     def show_stats_analysis(self: MainApp):
         """통계 및 분석 통합 다이얼로그"""
         if self.should_block_db_action("통계/분석 보기"):
@@ -519,12 +603,31 @@ class _MainWindowAnalysisMixin:
             except Exception as exc:
                 logger.warning("Storage metrics unavailable: %s", exc)
                 storage = {}
-            return {**stats, **{f"storage_{k}": v for k, v in storage.items()}}
+            merged = {**stats, **{f"storage_{k}": v for k, v in storage.items()}}
+            # The keep set is derived on the UI thread (see reload_stats) because
+            # tab widgets must not be touched from this worker.
+            keep_keys = list(state.get("scope_keep_keys", []) or [])
+            if keep_keys:
+                try:
+                    preview = self._require_db().preview_scope_cleanup(keep_keys)
+                    merged["storage_unused_scopes"] = len(preview.dead_scopes)
+                except Exception as exc:
+                    logger.warning("Unused scope preview unavailable: %s", exc)
+            return merged
 
         def render_stats(stats: Dict[str, int]) -> None:
             if not dialog.isVisible():
                 return
-            stats_loading.deleteLater()
+            for old_widget in state.pop("stats_widgets", []):
+                try:
+                    stats_layout.removeWidget(old_widget)
+                    old_widget.deleteLater()
+                except Exception:
+                    pass
+            if not state.get("stats_loaded"):
+                stats_loading.deleteLater()
+                state["stats_loaded"] = True
+            state["stats_widgets"] = []
             if stats["total"] > 0:
                 read_percent = ((stats["total"] - stats["unread"]) / stats["total"]) * 100
             else:
@@ -550,11 +653,26 @@ class _MainWindowAnalysisMixin:
                 grid.addWidget(lbl, i, 0, Qt.AlignmentFlag.AlignRight)
                 grid.addWidget(val, i, 1, Qt.AlignmentFlag.AlignLeft)
             group.setLayout(grid)
+            state["stats_widgets"].append(group)
             stats_layout.insertWidget(0, group)
 
             storage_group = _build_storage_group(stats, self.theme_idx)
             if storage_group is not None:
                 stats_layout.insertWidget(1, storage_group)
+                state["stats_widgets"].append(storage_group)
+                btn_scope_cleanup = QPushButton("사용하지 않는 범위 정리")
+                btn_scope_cleanup.setToolTip(
+                    "닫은 탭이 남긴 검색 범위의 소속 정보를 정리합니다 (기사 본문은 유지)"
+                )
+                if not self._open_tab_query_keys():
+                    btn_scope_cleanup.setEnabled(False)
+                    btn_scope_cleanup.setToolTip("열려 있는 키워드 탭이 없어 정리할 수 없습니다")
+                else:
+                    btn_scope_cleanup.clicked.connect(
+                        lambda: self._run_scope_cleanup(dialog, reload_stats)
+                    )
+                stats_layout.insertWidget(2, btn_scope_cleanup)
+                state["stats_widgets"].append(btn_scope_cleanup)
 
         def render_publishers(publishers: List[tuple[str, int]], request_id: int) -> None:
             if not dialog.isVisible() or request_id != state["publisher_request_id"]:
@@ -744,20 +862,26 @@ class _MainWindowAnalysisMixin:
             worker.cancelled.connect(lambda *_args, worker_ref=worker: clear_worker_state("sim_worker", worker_ref))
             worker.start()
 
-        stats_worker = InterruptibleReadWorker(self._require_db(), load_stats, parent=dialog)
-        state["stats_worker"] = stats_worker
-        stats_worker.finished.connect(render_stats)
-        stats_worker.error.connect(
-            lambda error_msg: dialog.isVisible()
-            and QMessageBox.warning(
-                dialog,
-                "분석 오류",
-                f"통계 및 분석 정보를 불러오지 못했습니다.\n\n{error_msg}",
+        def reload_stats() -> None:
+            state["scope_keep_keys"] = self._open_tab_query_keys()
+            self._cleanup_analysis_worker(state.get("stats_worker"))
+            stats_worker = InterruptibleReadWorker(self._require_db(), load_stats, parent=dialog)
+            state["stats_worker"] = stats_worker
+            stats_worker.finished.connect(render_stats)
+            stats_worker.error.connect(
+                lambda error_msg: dialog.isVisible()
+                and QMessageBox.warning(
+                    dialog,
+                    "분석 오류",
+                    f"통계 및 분석 정보를 불러오지 못했습니다.\n\n{error_msg}",
+                )
             )
-        )
-        stats_worker.finished.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
-        stats_worker.error.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
-        stats_worker.cancelled.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
+            stats_worker.finished.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
+            stats_worker.error.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
+            stats_worker.cancelled.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
+            stats_worker.start()
+
+        reload_stats()
 
         def cleanup_workers(_result: int) -> None:
             self._cleanup_analysis_worker(state.get("stats_worker"))
@@ -774,7 +898,6 @@ class _MainWindowAnalysisMixin:
         btn_simulate.clicked.connect(update_simulation)
         sim_tab_combo.currentIndexChanged.connect(lambda _index: update_simulation())
 
-        stats_worker.start()
         update_analysis()
         update_tags()
         dialog.exec()

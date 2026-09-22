@@ -33,7 +33,7 @@
 | GAP-005 Markdown 링크 이스케이프 | **Fixed** | 제목 `[]` 이스케이프, URL `<>` 래핑 |
 | GAP-006 reparse point 미해소 | **Fixed** | `realpath` 재검증. 실제 junction으로 차단 확인 |
 | GAP-007 저장소 가시성 없음 | **Fixed** | 통계 화면 `💾 저장소` 패널 |
-| GAP-008 닫은 탭 스코프 잔존 | **Partially addressed** | 설계는 유지하되 `검색 범위 수`를 지표로 노출. 자동 정리는 미도입 |
+| GAP-008 닫은 탭 스코프 잔존 | **Fixed** | 설계는 유지하되 `검색 범위 수`를 지표로 노출. 미리보기·확정형 수동 정리로 해소 (v32.10.0). 고아 기사 행 유지, tombstone 제외, 스코프 한정 중복 재계산 |
 | MISMATCH-001 README FTS 문구 | **Fixed** | 실제 동작(토큰 AND 부분일치)으로 정정 |
 | MISMATCH-002 LICENSE 누락 | **Fixed** | MIT `LICENSE` 추가 |
 | 항목 11 전체 재계산 API 오용 방지 | **Fixed** | `_recalculate_duplicate_flags_for_entire_database`로 개명 + docstring 경고 |
@@ -41,6 +41,7 @@
 ### 검증
 
 - **437 passed, 1 skipped, 0 failed, 10 subtests passed** (신규 회귀 21건 포함) — 릴리즈 전 재검증(2026-09-20, Python 3.14/Windows). `python -m pyright`는 0 errors.
+- **450 passed, 1 skipped, 0 failed, 10 subtests passed** (scope cleanup 10건 포함) — v32.10.0 릴리즈 전 재검증(2026-09-22, Python 3.14/Windows). `python -m pyright`는 0 errors.
 - `python -m pytest -q`가 더 이상 중단되지 않는다: 이전 `44 errors during collection` → **238 passed, 21 skipped**
 - 비용 회귀 테스트는 원래 버그를 재도입해 실제로 잡히는지 확인했다(`401 not less than 100`, `0 != 1`)
 - 감사 당시 부재했던 PyQt6가 이후 설치되어, UI·워커 테스트를 이번에는 실제로 실행했다. `cryptography`는 Windows ARM64 휠이 없어 여전히 부재하며 해당 2개 모듈만 미실행이다.
