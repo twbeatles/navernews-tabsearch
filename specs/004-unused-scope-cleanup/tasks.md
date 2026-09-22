@@ -42,11 +42,11 @@
 
 ## Phase 6: Validation and release prep
 
-- [ ] T016 Run focused pytest suites and pyright
-- [ ] T017 Run the full pytest suite and document environment-only failures honestly
-- [ ] T018 Bump `core.constants.VERSION` and add matching `update_history.md` entry
-- [ ] T019 Update `PROJECT_AUDIT.md` GAP-008 status to Fixed with evidence
-- [ ] T020 Re-check every completed task and leave no unchecked implementation item without an explicit reason
+- [x] T016 Run focused pytest suites and pyright
+- [x] T017 Run the full pytest suite and document environment-only failures honestly
+- [x] T018 Bump `core.constants.VERSION` and add matching `update_history.md` entry
+- [x] T019 Update `PROJECT_AUDIT.md` GAP-008 status to Fixed with evidence
+- [x] T020 Re-check every completed task and leave no unchecked implementation item without an explicit reason
 
 ## Dependencies & Execution Order
 
