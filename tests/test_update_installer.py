@@ -54,17 +54,19 @@ def test_apply_staged_update_restarts_verified_executable(tmp_path: Path):
 
     with mock.patch("core.update_installer.subprocess.run", return_value=mock.Mock(returncode=0)) as smoke:
         with mock.patch("core.update_installer.subprocess.Popen") as restart:
-            update_installer.apply_staged_update(
-                target=target,
-                staged=staged,
-                backup=backup,
-                expected_sha256=_sha256(b"new"),
-                expected_size=3,
-            )
+            with mock.patch("core.update_installer._notify_shell_icon_changed") as notify:
+                update_installer.apply_staged_update(
+                    target=target,
+                    staged=staged,
+                    backup=backup,
+                    expected_sha256=_sha256(b"new"),
+                    expected_size=3,
+                )
 
     assert target.read_bytes() == b"new"
     smoke.assert_called_once_with([str(target.resolve()), "--smoke"], timeout=60, check=False, capture_output=True)
     restart.assert_called_once()
+    notify.assert_called_once_with(target.resolve())
 
 
 def test_cleanup_update_artifacts_removes_only_stale_helper_and_staged_files(tmp_path: Path):

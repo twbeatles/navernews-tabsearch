@@ -20,6 +20,10 @@ Release procedure:
    GitHub Release asset is available. The tag-based GitHub Actions workflow
    automates these steps when the release tag matches `core.constants.VERSION`.
 
+The installer replaces only the executable. It does not ship a sidecar
+`news_icon.ico`. The Windows app identity uses the executable's embedded icon,
+and a successful replace notifies Explorer to refresh that path's icon cache.
+
 If an install fails, the next application start reads `last-update-result.json`
 from the runtime `updates/` directory and informs the user whether the previous
 executable was restored. Stale staged and helper executables are cleaned on a

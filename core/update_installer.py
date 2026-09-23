@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -18,6 +20,8 @@ from uuid import uuid4
 
 from core.constants import UPDATE_ARTIFACT_MAX_BYTES, UPDATE_BACKUP_KEEP_COUNT, UPDATE_REQUEST_TIMEOUT_SECONDS
 from core.update_manifest import ReleaseManifest
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_update_staging_root(data_dir: str | Path) -> Path:
@@ -154,6 +158,23 @@ def _wait_for_parent(pid: int, timeout: float = 30.0) -> None:
         raise TimeoutError("기존 프로그램이 종료되지 않았습니다.")
 
 
+def _notify_shell_icon_changed(path: Path) -> None:
+    """Ask Explorer to re-read the icon after the executable is replaced in place.
+
+    Windows caches the icon for a path. Replacing that file leaves the cache
+    pointing at a blank icon until the shell is told the item changed.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        shell32 = ctypes.windll.shell32
+        shell32.SHChangeNotify.argtypes = [ctypes.c_ulong, ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_void_p]
+        shell32.SHChangeNotify.restype = None
+        shell32.SHChangeNotify(0x00002000, 0x0005, str(path), None)  # SHCNE_UPDATEITEM, SHCNF_PATHW
+    except Exception as exc:
+        logger.warning("업데이트된 실행 파일의 아이콘 갱신 알림에 실패했습니다: %s", exc)
+
+
 def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sha256: str, expected_size: int) -> None:
     target, staged, backup = target.resolve(), staged.resolve(), backup.resolve()
     if len({target, staged, backup}) != 3 or target.suffix.lower() != ".exe" or staged.suffix.lower() != ".exe" or backup.parent != target.parent:
@@ -177,8 +198,10 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
     except Exception as exc:
         if backup.is_file():
             os.replace(backup, target)
+            _notify_shell_icon_changed(target)
             raise RuntimeError("업데이트 실패 후 이전 버전으로 복구했습니다.") from exc
         raise
+    _notify_shell_icon_changed(target)
     try:
         backups = sorted(target.parent.glob(f"{target.name}.v*.bak"), key=lambda path: path.stat().st_mtime, reverse=True)
         for old in backups[UPDATE_BACKUP_KEEP_COUNT:]:

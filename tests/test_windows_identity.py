@@ -7,7 +7,10 @@ from core.windows_identity import (
     _register_notification_app_identity,
     _resolve_notification_icon_path,
     _set_process_app_user_model_id,
+    assign_window_class_icon,
     configure_windows_app_identity,
+    resolve_runtime_icon_path,
+    resolve_shell_icon_uri,
 )
 
 
@@ -110,6 +113,45 @@ class WindowsIdentityTests(unittest.TestCase):
 
     def test_configure_windows_app_identity_is_noop_off_windows(self):
         self.assertIsNone(configure_windows_app_identity(platform="linux"))
+
+    def test_runtime_icon_path_prefers_bundle_ico_over_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "bundle"
+            app_dir = root / "app"
+            bundle.mkdir()
+            app_dir.mkdir()
+            (bundle / "news_icon.ico").write_bytes(b"bundle")
+            (app_dir / "news_icon.ico").write_bytes(b"sidecar")
+
+            resolved = resolve_runtime_icon_path(app_dir=str(app_dir), meipass=str(bundle), frozen=True, executable=str(app_dir / "app.exe"))
+
+        self.assertTrue(str(resolved).endswith(str(Path("bundle") / "news_icon.ico")))
+
+    def test_shell_icon_uri_uses_frozen_executable_when_sidecar_is_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app_dir = Path(tmp)
+            executable = app_dir / "NewsScraperPro_Safe.exe"
+            executable.write_bytes(b"MZ")
+
+            resolved = resolve_shell_icon_uri(app_dir=str(app_dir), frozen=True, executable=str(executable))
+
+        self.assertEqual(resolved, str(executable.resolve()))
+
+    def test_shell_icon_uri_prefers_sidecar_over_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app_dir = Path(tmp)
+            icon = app_dir / "news_icon.ico"
+            executable = app_dir / "NewsScraperPro_Safe.exe"
+            icon.write_bytes(b"ico")
+            executable.write_bytes(b"MZ")
+
+            resolved = resolve_shell_icon_uri(app_dir=str(app_dir), frozen=True, executable=str(executable))
+
+        self.assertEqual(resolved, str(icon.resolve()))
+
+    def test_assign_window_class_icon_rejects_missing_window(self):
+        self.assertFalse(assign_window_class_icon(0))
 
 
 if __name__ == "__main__":

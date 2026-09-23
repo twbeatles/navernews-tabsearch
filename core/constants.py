@@ -38,7 +38,7 @@ ICON_FILE = "news_icon.ico"
 ICON_PNG = "news_icon.png"
 APP_NAME = "뉴스 스크래퍼 Pro"
 APP_USER_MODEL_ID = "Twbeatles.NaverNewsScraperPro"
-VERSION = "32.10.0"
+VERSION = "32.10.1"
 PENDING_RESTORE_FILE = RUNTIME_PATHS.pending_restore_file
 
 # GitHub release update channel.  The private half of this Ed25519 key is kept

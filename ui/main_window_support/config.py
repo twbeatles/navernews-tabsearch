@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from typing import Any, Dict, Optional
 
 from PyQt6.QtCore import QRect
@@ -19,7 +18,8 @@ from core.config_store import (
     save_primary_config_file,
 )
 from core.content_filters import normalize_publisher_filter_lists
-from core.constants import APP_DIR, APP_NAME, ICON_FILE, ICON_PNG, VERSION
+from core.constants import APP_NAME, ICON_FILE, ICON_PNG, VERSION
+from core.windows_identity import assign_window_class_icon, resolve_runtime_icon_path
 from core.automation_rules import normalize_automation_rules
 from core.publisher_aliases import normalize_publisher_aliases
 from core.startup import StartupManager
@@ -36,35 +36,22 @@ class _MainWindowConfigMixin:
             app_icon = QIcon(icon_path)
             self.setWindowIcon(app_icon)
             QApplication.setWindowIcon(app_icon)
+            try:
+                assign_window_class_icon(int(self.winId()))
+            except Exception as exc:
+                logger.warning("창 클래스 아이콘을 적용하지 못했습니다: %s", exc)
         else:
             logger.warning("아이콘 파일을 찾을 수 없습니다: %s 또는 %s", ICON_FILE, ICON_PNG)
             logger.warning("실행 파일과 같은 폴더에 아이콘 파일을 배치하세요.")
 
     def _resolve_icon_path(self):
         """런타임 환경(소스/onefile/onedir)에 맞는 아이콘 경로 해석"""
-        search_dirs = []
-        meipass_dir = getattr(sys, "_MEIPASS", None)
-        if meipass_dir:
-            search_dirs.append(meipass_dir)
-        search_dirs.extend(
-            [
-                APP_DIR,
+        return resolve_runtime_icon_path(
+            extra_dirs=[
                 os.path.dirname(os.path.abspath(__file__)),
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             ]
         )
-
-        for base_dir in search_dirs:
-            if not base_dir:
-                continue
-            if sys.platform == "win32":
-                ico_path = os.path.join(base_dir, ICON_FILE)
-                if os.path.exists(ico_path):
-                    return ico_path
-            png_path = os.path.join(base_dir, ICON_PNG)
-            if os.path.exists(png_path):
-                return png_path
-        return None
 
     def load_config(self):
         """설정 로드"""

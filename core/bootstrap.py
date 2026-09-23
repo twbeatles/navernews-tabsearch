@@ -13,7 +13,7 @@ os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
 os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
 
 from PyQt6.QtCore import QLockFile, Qt, QTimer
-from PyQt6.QtGui import QColor, QPixmap
+from PyQt6.QtGui import QColor, QIcon, QPixmap
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
@@ -32,7 +32,7 @@ from core.constants import (
 )
 from core.logging_setup import configure_logging
 from core.protocols import LockFileProtocol
-from core.windows_identity import configure_windows_app_identity
+from core.windows_identity import configure_windows_app_identity, resolve_runtime_icon_path
 from ui.main_window import MainApp
 
 configure_logging()
@@ -117,6 +117,19 @@ def _setup_instance_server(
 
     server.newConnection.connect(on_new_connection)
     return server
+
+
+def _apply_application_icon(app: QApplication) -> None:
+    """Set the window icon before any window, including the startup splash.
+
+    Qt registers its window class from the icon that is current when the first
+    window appears. The splash used to be that window, so the taskbar kept the
+    generic class icon even after the main window loaded the real one.
+    """
+    icon_path = resolve_runtime_icon_path()
+    if not icon_path:
+        return
+    app.setWindowIcon(QIcon(icon_path))
 
 
 def _show_startup_splash(app: QApplication):
@@ -259,6 +272,7 @@ def main():
         configure_windows_app_identity()
 
         app = QApplication(sys.argv)
+        _apply_application_icon(app)
         instance_lock = QLockFile(INSTANCE_LOCK_FILE)
         instance_lock.setStaleLockTime(10000)
         if not instance_lock.tryLock(0):
