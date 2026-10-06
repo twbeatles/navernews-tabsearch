@@ -175,50 +175,37 @@ class _MainWindowTabsMixin:
         """새 탭 추가 다이얼로그 - 검색 히스토리 지원"""
         dialog = QDialog(self)
         dialog.setWindowTitle("새 탭 추가")
-        dialog.resize(450, 300)
+        dialog.setMinimumWidth(420)
 
         layout = QVBoxLayout(dialog)
+        layout.setSpacing(8)
 
-        info_label = QLabel(
-            "검색할 키워드를 입력하세요.\n"
-            "제외 키워드는 '-'를 앞에 붙여주세요.\n\n"
-            "예시: 주식 -코인, 인공지능 AI -광고\n"
-            "※ API 검색은 양키워드를 모두 사용하며, DB 그룹은 첫 키워드 기준입니다."
-        )
-        info_label.setStyleSheet("color: #666; font-size: 9pt;")
-        layout.addWidget(info_label)
+        layout.addWidget(QLabel("어떤 뉴스를 볼까요?"))
 
         input_field = QLineEdit()
-        input_field.setPlaceholderText("🔍 키워드 입력...")
+        input_field.setPlaceholderText("검색어 (예: 인공지능 -광고)")
+        input_field.setClearButtonEnabled(True)
         layout.addWidget(input_field)
 
-        if self.search_history:
-            history_label = QLabel("📋 최근 검색:")
-            history_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
-            layout.addWidget(history_label)
+        info_label = QLabel("단어 앞에 '-'를 붙이면 그 단어가 들어간 기사를 제외합니다.")
+        info_label.setObjectName("Hint")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
 
+        if self.search_history:
             history_layout = QHBoxLayout()
+            history_layout.setSpacing(6)
+            history_label = QLabel("최근")
+            history_label.setObjectName("Hint")
+            history_layout.addWidget(history_label)
             for kw in self.search_history[:5]:
                 btn = QPushButton(kw)
-                btn.setStyleSheet("padding: 4px 8px; font-size: 9pt;")
+                btn.setObjectName("Chip")
+                btn.setAutoDefault(False)
                 btn.clicked.connect(lambda checked, text=kw: input_field.setText(text))
                 history_layout.addWidget(btn)
             history_layout.addStretch()
             layout.addLayout(history_layout)
-
-        quick_label = QLabel("💡 추천 키워드:")
-        quick_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        layout.addWidget(quick_label)
-
-        quick_layout = QHBoxLayout()
-        examples = ["주식", "부동산", "IT 기술", "스포츠", "경제"]
-        for example in examples:
-            btn = QPushButton(example)
-            btn.setStyleSheet("padding: 4px 8px; font-size: 9pt;")
-            btn.clicked.connect(lambda checked, text=example: input_field.setText(text))
-            quick_layout.addWidget(btn)
-        quick_layout.addStretch()
-        layout.addLayout(quick_layout)
 
         layout.addStretch()
 
@@ -260,7 +247,7 @@ class _MainWindowTabsMixin:
             if existing_tab is not None:
                 QMessageBox.information(
                     self,
-                    "중복 태브",
+                    "중복 탭",
                     f"'{existing_tab[1].keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다."
                 )
                 self.tabs.setCurrentIndex(existing_tab[0])
@@ -316,8 +303,8 @@ class _MainWindowTabsMixin:
 
         text, ok = QInputDialog.getText(
             self,
-            "탭 이름 변경",
-            "새 검색 키워드를 입력하세요:",
+            "검색어 변경",
+            "이 탭의 새 검색어:",
             QLineEdit.EchoMode.Normal,
             w.keyword,
         )
@@ -441,16 +428,18 @@ class _MainWindowTabsMixin:
 
         menu = QMenu(self)
 
-        act_refresh = self._add_menu_action(menu, "🔄 새로고침")
-        act_rename = self._add_menu_action(menu, "✏️ 이름 변경")
+        act_refresh = self._add_menu_action(menu, "새로고침")
+        act_reset_cursor = self._add_menu_action(menu, "처음부터 다시 불러오기")
+        act_reset_cursor.setToolTip("이전 기사 가져오기 위치를 처음으로 되돌립니다")
+        act_rename = self._add_menu_action(menu, "검색어 변경")
         menu.addSeparator()
 
-        refresh_policy_menu = menu.addMenu("⏰ 자동 새로고침")
+        refresh_policy_menu = menu.addMenu("자동 새로고침")
         if refresh_policy_menu is None:
             raise RuntimeError("Failed to create refresh policy menu")
         policy_options = [
-            ("inherit", "전역 설정 상속"),
-            ("off", "이 탭 자동 새로고침 끔"),
+            ("inherit", "기본 설정 따름"),
+            ("off", "끔"),
             ("10", "10분"),
             ("30", "30분"),
             ("60", "1시간"),
@@ -466,15 +455,14 @@ class _MainWindowTabsMixin:
             or "inherit"
         )
         for policy_value, label in policy_options:
-            prefix = "✓ " if policy_value == current_policy else ""
-            act = self._add_menu_action(refresh_policy_menu, f"{prefix}{label}")
+            act = self._add_menu_action(refresh_policy_menu, label)
+            act.setCheckable(True)
+            act.setChecked(policy_value == current_policy)
             act.triggered.connect(
                 lambda checked=False, value=policy_value, k=keyword: self.set_tab_refresh_policy(k, value)
             )
 
-        menu.addSeparator()
-
-        group_menu = menu.addMenu("📁 그룹에 추가")
+        group_menu = menu.addMenu("그룹에 추가")
         if group_menu is None:
             raise RuntimeError("Failed to create group menu")
         groups = self.keyword_group_manager.get_all_groups()
@@ -486,8 +474,7 @@ class _MainWindowTabsMixin:
             group_menu.setDisabled(True)
 
         menu.addSeparator()
-        act_reset_cursor = self._add_menu_action(menu, "⏮ 페이징 커서 초기화")
-        act_close = self._add_menu_action(menu, "❌ 탭 닫기")
+        act_close = self._add_menu_action(menu, "탭 닫기")
 
         action = menu.exec(tab_bar.mapToGlobal(pos))
 
@@ -516,7 +503,7 @@ class _MainWindowTabsMixin:
             _tab_index, tab_widget = located_tab
             self.sync_tab_load_more_state(normalized_keyword)
         if notify:
-            self.show_success_toast(f"'{normalized_keyword}' 페이징 커서를 처음(1페이지)으로 초기화했습니다.")
+            self.show_success_toast(f"'{normalized_keyword}' 다음 가져오기는 처음부터 다시 시작합니다.")
 
     def set_tab_refresh_policy(self: MainApp, keyword: str, policy: str) -> None:
         allowed = {"inherit", "off", "10", "30", "60", "120", "360"}

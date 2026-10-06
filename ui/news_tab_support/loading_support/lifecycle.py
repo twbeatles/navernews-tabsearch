@@ -66,6 +66,7 @@ class _NewsTabLoadingLifecycleMixin:
             "btn_save_search",
             "btn_delete_search",
             "btn_date_toggle",
+            "btn_reset_filters",
             "btn_load",
             "btn_read_all",
         )

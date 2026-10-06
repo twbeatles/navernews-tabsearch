@@ -63,14 +63,14 @@ class _FetchWorkerStateMixin:
         is_maintenance_active = getattr(self, "is_maintenance_mode_active", lambda: False)
         if is_maintenance_active():
             tab_widget.btn_load.setEnabled(False)
-            tab_widget.btn_load.setText("🔒 유지보수 중")
+            tab_widget.btn_load.setText("유지보수 중")
             return False
 
         has_more = self._compute_load_more_state(total, last_api_start_index)
         if has_more:
             tab_widget.btn_load.setEnabled(True)
-            tab_widget.btn_load.setText("📄 더 불러오기")
+            tab_widget.btn_load.setText("이전 기사 가져오기")
         else:
             tab_widget.btn_load.setEnabled(False)
-            tab_widget.btn_load.setText("📄 마지막 페이지")
+            tab_widget.btn_load.setText("모두 가져옴")
         return has_more

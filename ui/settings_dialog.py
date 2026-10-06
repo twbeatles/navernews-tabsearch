@@ -34,7 +34,7 @@ class SettingsDialog(
         self._help_mode = bool(help_mode)
         self._initial_tab = max(0, int(initial_tab))
         self.setWindowTitle("도움말" if self._help_mode else "설정 및 도움말")
-        self.resize(600, 550)
+        self.resize(620, 560)
         self.config = config
         self._api_validate_worker: Optional[QThread] = None
         self._data_task_worker: Optional[QThread] = None
@@ -42,9 +42,6 @@ class SettingsDialog(
         self._maintenance_active_for_data_task = False
         self._pending_parent_data_change: Optional[tuple[str, int]] = None
         self._startup_status: Optional[StartupStatus] = None
-        self.is_dark = False
-        if parent and hasattr(parent, "theme_idx"):
-            self.is_dark = parent.theme_idx == 1
         self.setup_ui()
 
     def _typed_parent(self) -> Optional[SettingsDialogParentProtocol]:
@@ -136,13 +133,15 @@ class SettingsDialog(
     def setup_ui(self):
         """테마 적용 UI 설정"""
         layout = QVBoxLayout(self)
-        bg_color, text_color = self._theme_colors()
 
         self.tab_widget = QTabWidget()
+        self.tab_widget.setDocumentMode(True)
         if not self._help_mode:
-            self.tab_widget.addTab(self._build_settings_tab(bg_color, text_color), "⚙ 설정")
-        self.tab_widget.addTab(self._build_help_tab(bg_color, text_color), "📖 도움말")
-        self.tab_widget.addTab(self._build_shortcuts_tab(bg_color, text_color), "⌨ 단축키")
+            self.tab_widget.addTab(self._build_general_page(), "일반")
+            self.tab_widget.addTab(self._build_alerts_page(), "알림·트레이")
+            self.tab_widget.addTab(self._build_data_page(), "데이터")
+        self.tab_widget.addTab(self._build_help_tab(), "도움말")
+        self.tab_widget.addTab(self._build_shortcuts_tab(), "단축키")
         self.tab_widget.setCurrentIndex(min(self._initial_tab, max(0, self.tab_widget.count() - 1)))
         layout.addWidget(self.tab_widget)
 

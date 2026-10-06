@@ -44,7 +44,7 @@ class KeywordGroupDialog(QDialog):
 
     def __init__(self, group_manager: KeywordGroupManager, current_tabs: List[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("📁 키워드 그룹 관리")
+        self.setWindowTitle("키워드 그룹 관리")
         self.resize(600, 500)
         self.group_manager = group_manager
         self.current_tabs = current_tabs
@@ -58,14 +58,14 @@ class KeywordGroupDialog(QDialog):
 
         # 설명
         info = QLabel("키워드를 그룹(폴더)으로 정리하여 관리할 수 있습니다. 변경 내용은 저장 시에만 반영됩니다.")
-        info.setStyleSheet("color: #666; margin-bottom: 10px;")
+        info.setObjectName("Hint")
         layout.addWidget(info)
 
         # 그룹 관리 영역
         main_layout = QHBoxLayout()
 
         # 왼쪽: 그룹 목록
-        left_group = QGroupBox("📁 그룹")
+        left_group = QGroupBox("그룹")
         left_layout = QVBoxLayout(left_group)
 
         self.group_list = QListWidget()
@@ -73,9 +73,9 @@ class KeywordGroupDialog(QDialog):
         left_layout.addWidget(self.group_list)
 
         group_btn_layout = QHBoxLayout()
-        self.btn_add_group = QPushButton("➕ 추가")
+        self.btn_add_group = QPushButton("추가")
         self.btn_add_group.clicked.connect(self.add_group)
-        self.btn_del_group = QPushButton("🗑 삭제")
+        self.btn_del_group = QPushButton("삭제")
         self.btn_del_group.clicked.connect(self.delete_group)
         group_btn_layout.addWidget(self.btn_add_group)
         group_btn_layout.addWidget(self.btn_del_group)
@@ -86,10 +86,10 @@ class KeywordGroupDialog(QDialog):
         # 중앙: 버튼
         center_layout = QVBoxLayout()
         center_layout.addStretch()
-        self.btn_add_to_group = QPushButton("→")
+        self.btn_add_to_group = QPushButton("")
         self.btn_add_to_group.setFixedWidth(40)
         self.btn_add_to_group.clicked.connect(self.add_keyword_to_group)
-        self.btn_remove_from_group = QPushButton("←")
+        self.btn_remove_from_group = QPushButton("")
         self.btn_remove_from_group.setFixedWidth(40)
         self.btn_remove_from_group.clicked.connect(self.remove_keyword_from_group)
         center_layout.addWidget(self.btn_add_to_group)
@@ -98,7 +98,7 @@ class KeywordGroupDialog(QDialog):
         main_layout.addLayout(center_layout)
 
         # 오른쪽: 키워드 목록
-        right_group = QGroupBox("🔑 키워드")
+        right_group = QGroupBox("키워드")
         right_layout = QVBoxLayout(right_group)
 
         # 그룹의 키워드

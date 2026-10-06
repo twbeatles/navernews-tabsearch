@@ -48,20 +48,20 @@ class _MainWindowTrayMixin:
 
             tray_menu = QMenu(self)
 
-            action_show = self._add_menu_action(tray_menu, "📰 열기")
+            action_show = self._add_menu_action(tray_menu, "열기")
             action_show.triggered.connect(self.show_window)
 
-            action_refresh = self._add_menu_action(tray_menu, "🔄 새로고침")
+            action_refresh = self._add_menu_action(tray_menu, "새로고침")
             action_refresh.triggered.connect(self._safe_refresh_all)
 
             tray_menu.addSeparator()
 
-            action_settings = self._add_menu_action(tray_menu, "⚙ 설정")
+            action_settings = self._add_menu_action(tray_menu, "설정")
             action_settings.triggered.connect(self.open_settings)
 
             tray_menu.addSeparator()
 
-            action_quit = self._add_menu_action(tray_menu, "❌ 종료")
+            action_quit = self._add_menu_action(tray_menu, "종료")
             action_quit.triggered.connect(self.real_quit)
 
             self.tray.setContextMenu(tray_menu)

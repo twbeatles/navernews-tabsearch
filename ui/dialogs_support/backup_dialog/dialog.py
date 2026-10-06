@@ -56,7 +56,7 @@ class BackupDialog(
 ):
     def __init__(self, auto_backup: AutoBackup, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("💾 백업 관리")
+        self.setWindowTitle("백업 관리")
         self.resize(500, 400)
         self.auto_backup = auto_backup
         self._verify_worker: Optional[IterativeJobWorker] = None

@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+CLEAN_OLD_LABEL = "30일 지난 기사 정리"
+CLEAN_ALL_LABEL = "모든 기사 삭제"
+
 
 class _SettingsDialogTasksMixin:
     def _runtime_paths(self: SettingsDialog) -> RuntimePaths:
@@ -444,8 +447,8 @@ class _SettingsDialogTasksMixin:
         self.btn_all.setEnabled(False)
         if hasattr(self, "btn_optimize_db"):
             self.btn_optimize_db.setEnabled(False)
-        self.btn_clean.setText("⏳ 작업 중...")
-        self.btn_all.setText("⏳ 작업 중...")
+        self.btn_clean.setText("작업 중...")
+        self.btn_all.setText("작업 중...")
         if hasattr(self, "btn_optimize_db"):
             self.btn_optimize_db.setText("작업 중...")
 
@@ -513,8 +516,8 @@ class _SettingsDialogTasksMixin:
         self.btn_all.setEnabled(True)
         if hasattr(self, "btn_optimize_db"):
             self.btn_optimize_db.setEnabled(True)
-        self.btn_clean.setText("🧹 오래된 데이터 정리 (30일 이전)")
-        self.btn_all.setText("🗑 모든 기사 삭제 (북마크 제외)")
+        self.btn_clean.setText(CLEAN_OLD_LABEL)
+        self.btn_all.setText(CLEAN_ALL_LABEL)
         if hasattr(self, "btn_optimize_db"):
             self.btn_optimize_db.setText("DB 최적화")
         self._data_task_worker = None

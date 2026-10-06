@@ -47,7 +47,10 @@ class _MainWindowBadgeShellMixin:
         count = max(0, int(unread_count or 0))
         if count > 0:
             badge = " (99+)" if count > 99 else f" ({count})"
-        return f"{self._tab_icon_for_keyword(normalized_keyword)} {normalized_keyword}{badge}"
+        # 모든 탭이 뉴스 탭이므로 정상 탭에는 아이콘을 붙이지 않고, 검색어가
+        # 무효한 탭만 표시한다.
+        prefix = "" if has_positive_keyword(normalized_keyword) else f"{self._tab_icon_for_keyword(normalized_keyword)} "
+        return f"{prefix}{normalized_keyword}{badge}"
 
     def _schedule_badge_refresh(self, delay_ms: int = 75):
         if not hasattr(self, "_badge_refresh_timer"):

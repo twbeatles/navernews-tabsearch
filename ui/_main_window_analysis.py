@@ -65,7 +65,7 @@ def _build_storage_group(stats: Dict[str, int], theme_idx: int):
     if unused_scopes is not None:
         items.append(("사용하지 않는 범위:", f"{int(unused_scopes or 0):,}개"))
 
-    group = QGroupBox("💾 저장소")
+    group = QGroupBox("저장소")
     grid = QGridLayout()
     for i, (label, value) in enumerate(items):
         lbl = QLabel(label)

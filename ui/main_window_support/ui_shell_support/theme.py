@@ -51,7 +51,7 @@ class _MainWindowThemeShellMixin:
         return 0
 
     def _active_app_stylesheet(self) -> str:
-        return AppStyle.DARK if self._effective_theme_idx() == 1 else AppStyle.LIGHT
+        return AppStyle.for_theme(self._effective_theme_idx() == 1)
 
     def _refresh_system_theme(self) -> None:
         if int(getattr(self, "theme_idx", 0) or 0) != 2:

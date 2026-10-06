@@ -25,8 +25,8 @@ class _NewsTabUILayoutMixin:
     def setup_ui(self):
         """UI 설정"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(6)
 
         filter_card = QFrame()
         filter_card.setObjectName("FilterCard")
@@ -34,15 +34,15 @@ class _NewsTabUILayoutMixin:
         filter_card.setStyleSheet(card_qss(DARK_PALETTE if is_dark else LIGHT_PALETTE))
 
         filter_layout = QVBoxLayout(filter_card)
-        filter_layout.setContentsMargins(12, 10, 12, 10)
-        filter_layout.setSpacing(8)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setSpacing(6)
 
         # === 기본 필터 행 (항상 표시) ===
         basic_row = QHBoxLayout()
         basic_row.setSpacing(10)
 
         self.inp_filter = QLineEdit()
-        self.inp_filter.setPlaceholderText("🔍 제목 또는 내용으로 필터링...")
+        self.inp_filter.setPlaceholderText("이 탭에서 찾기 (제목·내용)")
         self.inp_filter.setClearButtonEnabled(True)
 
         self.filter_timer = QTimer(self)
@@ -63,16 +63,24 @@ class _NewsTabUILayoutMixin:
         self.btn_advanced = QToolButton()
         self.btn_advanced.setObjectName("Disclosure")
         self.btn_advanced.setCheckable(True)
-        self.btn_advanced.setText("고급 필터 ▾")
+        self.btn_advanced.setText("필터 ▾")
         self.btn_advanced.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        self.btn_advanced.setToolTip("출처·태그·기간·저장 검색 등 고급 필터 표시/숨김")
+        self.btn_advanced.setToolTip("출처·태그·기간·저장 검색 필터 표시/숨김")
         self.btn_advanced.toggled.connect(self._toggle_advanced_filters)
+
+        self.btn_reset_filters = QToolButton()
+        self.btn_reset_filters.setObjectName("Disclosure")
+        self.btn_reset_filters.setText("초기화")
+        self.btn_reset_filters.setToolTip("이 탭에 걸린 필터를 모두 해제합니다")
+        self.btn_reset_filters.clicked.connect(self._reset_filters)
+        self.btn_reset_filters.setVisible(False)
 
         basic_row.addWidget(self.inp_filter, 4)
         basic_row.addWidget(self.combo_sort, 1)
         basic_row.addWidget(self.chk_unread)
         basic_row.addWidget(self.chk_hide_dup)
         basic_row.addWidget(self.btn_advanced)
+        basic_row.addWidget(self.btn_reset_filters)
         filter_layout.addLayout(basic_row)
 
         # === 고급 필터 (접기) ===
@@ -98,7 +106,7 @@ class _NewsTabUILayoutMixin:
         adv_row1.addWidget(self.combo_tag_filter)
 
         self.btn_date_toggle = QToolButton()
-        self.btn_date_toggle.setText("📅 기간")
+        self.btn_date_toggle.setText("기간")
         self.btn_date_toggle.setCheckable(True)
         self.btn_date_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.btn_date_toggle.toggled.connect(self._toggle_date_filter)
@@ -179,25 +187,29 @@ class _NewsTabUILayoutMixin:
 
         btm_layout = QHBoxLayout()
 
-        self.btn_load = QPushButton("📥 더 불러오기")
-        self.btn_read_all = QPushButton("✓ 모두 읽음")
-        self.btn_top = QPushButton("⬆ 맨 위로")
+        self.btn_read_all = QPushButton("모두 읽음")
+        self.btn_load = QPushButton("이전 기사 가져오기")
+        self.btn_load.setToolTip("네이버에서 이 키워드의 이전 기사를 더 가져옵니다")
         self.lbl_status = QLabel("대기 중")
+        self.lbl_status.setObjectName("TabStatus")
 
         if self.is_bookmark_tab:
             self.btn_load.hide()
 
-        btm_layout.addWidget(self.btn_load)
         btm_layout.addWidget(self.btn_read_all)
-        btm_layout.addWidget(self.btn_top)
+        btm_layout.addWidget(self.btn_load)
         btm_layout.addStretch()
         btm_layout.addWidget(self.lbl_status)
         layout.addLayout(btm_layout)
 
-        self.btn_top.clicked.connect(lambda: self._browser_scroll_bar().setValue(0))
         self.btn_read_all.clicked.connect(self.mark_all_read)
+
+    def _advanced_button_text(self, expanded: bool) -> str:
+        """고급 필터 토글 라벨. 접힌 영역에 조건이 걸려 있으면 ●로 알린다."""
+        marker = " ●" if self._has_advanced_filters() else ""
+        return f"필터{marker} {'▴' if expanded else '▾'}"
 
     def _toggle_advanced_filters(self, checked: bool):
         """고급 필터 영역 표시/숨김 토글"""
         self.advanced_container.setVisible(checked)
-        self.btn_advanced.setText("고급 필터 ▴" if checked else "고급 필터 ▾")
+        self.btn_advanced.setText(self._advanced_button_text(checked))

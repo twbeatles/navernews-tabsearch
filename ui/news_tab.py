@@ -67,8 +67,6 @@ class NewsTab(
         self._last_render_signature: Optional[Tuple[Any, ...]] = None
         self._last_loaded_scope_signature: Optional[Tuple[Any, ...]] = None
         self._last_filter_text = ""
-        self._cached_badge_keyword = ""
-        self._cached_badges_html = ""
         self._request_scope_signatures: Dict[int, Tuple[Any, ...]] = {}
         self._render_context_signature: Optional[Tuple[Any, ...]] = None
         self._rendered_body_html = ""

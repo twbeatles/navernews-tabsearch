@@ -72,7 +72,7 @@ class LogViewerDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("📋 로그 뷰어")
+        self.setWindowTitle("로그 뷰어")
         self.resize(800, 600)
 
         layout = QVBoxLayout(self)
@@ -80,13 +80,13 @@ class LogViewerDialog(QDialog):
         # 상단 버튼
         btn_layout = QHBoxLayout()
 
-        self.btn_refresh = QPushButton("🔄 새로고침")
+        self.btn_refresh = QPushButton("새로고침")
         self.btn_refresh.clicked.connect(self.load_logs)
 
-        self.btn_clear = QPushButton("🗑 로그 지우기")
+        self.btn_clear = QPushButton("로그 지우기")
         self.btn_clear.clicked.connect(self.clear_logs)
 
-        self.btn_open_file = QPushButton("📁 로그 파일 열기")
+        self.btn_open_file = QPushButton("로그 파일 열기")
         self.btn_open_file.clicked.connect(self.open_log_file)
 
         self.chk_auto_scroll = QCheckBox("자동 스크롤")

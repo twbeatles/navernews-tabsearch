@@ -10,7 +10,6 @@ from PyQt6.QtCore import QTimer
 from core.publisher_aliases import canonical_publisher
 from core.text_utils import TextUtils, parse_date_string, perf_timer
 from ui.styles import AppStyle, Colors
-from ui.styles_support import DARK_PALETTE, LIGHT_PALETTE
 
 
 class _NewsTabRenderingMixin:
@@ -58,19 +57,24 @@ class _NewsTabRenderingMixin:
         return f"<html><head><meta charset='utf-8'>{css}</head><body>{body_html}{remaining_html}</body></html>"
 
     def _empty_state_html(self) -> str:
-        if self.is_bookmark_tab:
-            title = "⭐ 북마크"
-            body = "아직 북마크한 기사가 없습니다.<br>기사 카드의 <b>북마크</b> 버튼으로<br>중요한 기사를 모아 보세요."
+        # 걸린 필터가 원인인 경우를 먼저 안내한다. 북마크 탭에서도 필터 때문에
+        # 비어 보이는 것과 실제로 북마크가 없는 것을 구분해야 한다.
+        if self._current_filter_text() or self._has_advanced_filters():
+            title = "조건에 맞는 기사가 없습니다"
+            body = "필터를 바꾸거나 <b>초기화</b>해 보세요."
         elif self.chk_unread.isChecked():
-            title = "🎉 모두 확인했어요"
-            body = "안 읽은 기사가 없습니다.<br>새 소식이 도착하면 여기에 표시됩니다."
-        elif self._has_active_filters():
-            title = "🔍 결과 없음"
-            body = "현재 필터 조건에 맞는 기사가 없습니다.<br>필터를 조정하거나 초기화해 보세요."
+            title = "모두 읽었습니다"
+            body = "새 기사가 도착하면 여기에 표시됩니다."
+        elif self.is_bookmark_tab:
+            title = "북마크한 기사가 없습니다"
+            body = "기사 아래의 <b>북마크</b>를 누르면 여기에 모입니다."
         else:
-            title = "📰 아직 비어 있어요"
+            title = "아직 기사가 없습니다"
             body = "위의 <b>새로고침</b>을 눌러 최신 뉴스를 가져오세요."
-        return f"<div class='empty-state'><div class='empty-state-title'>{title}</div>{body}</div>"
+        return (
+            f"<p class='empty-state-title' align='center'>{title}</p>"
+            f"<p class='empty-state' align='center'>{body}</p>"
+        )
 
     def _item_render_cache_key(self, item: Dict[str, Any], filter_word: str) -> Tuple[Any, ...]:
         return (
@@ -120,7 +124,6 @@ class _NewsTabRenderingMixin:
                 self._rendered_item_count = 0
                 self._render_context_signature = self._render_context_key(filter_word)
             else:
-                base_badges_html = self._get_keyword_badges_html()
                 render_context = self._render_context_key(filter_word)
                 can_append = (
                     append_from_index is not None
@@ -130,13 +133,13 @@ class _NewsTabRenderingMixin:
                 )
                 if can_append:
                     new_fragments = [
-                        self._render_single_item(item, filter_word, base_badges_html)
+                        self._render_single_item(item, filter_word)
                         for item in self.filtered_data_cache[append_from_index:]
                     ]
                     self._rendered_body_html += "".join(new_fragments)
                 else:
                     self._rendered_body_html = "".join(
-                        self._render_single_item(item, filter_word, base_badges_html)
+                        self._render_single_item(item, filter_word)
                         for item in self.filtered_data_cache
                     )
                 self._rendered_item_count = len(self.filtered_data_cache)
@@ -183,21 +186,7 @@ class _NewsTabRenderingMixin:
         elif (not was_read) and now_read:
             self._unread_count_cache = max(0, self._unread_count_cache - 1)
 
-    def _get_keyword_badges_html(self) -> str:
-        if self.is_bookmark_tab or not self.keyword:
-            return ""
-        if self._cached_badge_keyword == self.keyword:
-            return self._cached_badges_html
-        badges = []
-        for kw in self.keyword.split():
-            if kw.startswith("-"):
-                continue
-            badges.append(f"<span class='keyword-tag'>{html.escape(kw)}</span>")
-        self._cached_badge_keyword = self.keyword
-        self._cached_badges_html = "".join(badges)
-        return self._cached_badges_html
-
-    def _render_single_item(self, item: Dict[str, Any], filter_word: str, base_badges_html: str) -> str:
+    def _render_single_item(self, item: Dict[str, Any], filter_word: str, extra_badges_html: str = "") -> str:
         """단일 뉴스 아이템 HTML 렌더링"""
         link_hash = str(
             item.get("_link_hash")
@@ -209,9 +198,10 @@ class _NewsTabRenderingMixin:
         if cached_html is not None:
             return cached_html
 
-        is_read_cls = " read" if item.get("is_read", 0) else ""
-        is_dup_cls = " duplicate" if item.get("is_duplicate", 0) else ""
-        title_pfx = "⭐ " if item.get("is_bookmarked", 0) else ""
+        is_read = bool(item.get("is_read", 0))
+        is_bookmarked = bool(item.get("is_bookmarked", 0))
+        read_sfx = "-read" if is_read else ""
+        title_pfx = "<span class='star'>★</span> " if is_bookmarked else ""
 
         item_title = item.get("title", "(제목 없음)")
         item_desc = item.get("description", "")
@@ -223,10 +213,6 @@ class _NewsTabRenderingMixin:
             title = html.escape(item_title)
             desc = html.escape(item_desc)
 
-        palette = DARK_PALETTE if self.theme == 1 else LIGHT_PALETTE
-        bk_txt = "북마크 해제" if item.get("is_bookmarked", 0) else "북마크"
-        bk_col = palette.danger if item.get("is_bookmarked", 0) else palette.primary
-
         date_str = item.get("_date_fmt") or parse_date_string(item.get("pubDate", ""))
         item["_date_fmt"] = date_str
         raw_publisher = str(item.get("publisher", "출처없음") or "출처없음")
@@ -234,71 +220,56 @@ class _NewsTabRenderingMixin:
         display_publisher = canonical_publisher(raw_publisher, aliases) or raw_publisher
         if display_publisher != raw_publisher:
             publisher_html = (
-                f"{html.escape(display_publisher)}"
-                f" <span title='{html.escape(raw_publisher)}'>(alias)</span>"
+                f"<span title='{html.escape(raw_publisher)}'>{html.escape(display_publisher)}</span>"
             )
         else:
             publisher_html = html.escape(raw_publisher)
-        date_html = html.escape(str(date_str or ""))
+
+        # 메타 줄: 출처 · 시간 뒤에 부가 표시(유사/태그/메모)를 같은 줄로 잇는다.
+        meta_parts = [publisher_html, html.escape(str(date_str or ""))]
+        if extra_badges_html:
+            meta_parts.append(extra_badges_html)
+        if item.get("is_duplicate", 0):
+            meta_parts.append("<span class='dup'>유사</span>")
         tags = [
             tag.strip()
             for tag in str(item.get("tags", "") or "").split(",")
             if tag.strip()
         ]
-        tags_html = "".join(
-            f"<span class='keyword-tag'>#{html.escape(tag)}</span>"
-            for tag in tags
+        if tags:
+            meta_parts.append(" ".join(f"<span class='tag'>#{html.escape(tag)}</span>" for tag in tags))
+        if item.get("notes") and str(item.get("notes", "")).strip():
+            meta_parts.append(f"<a href='app://note/{link_hash}'>메모</a>")
+        meta_html = " · ".join(part for part in meta_parts if part)
+
+        bk_txt = "북마크 해제" if is_bookmarked else "북마크"
+        actions = (
+            f"<a href='app://bm/{link_hash}'>{bk_txt}</a>"
+            f"&nbsp;&nbsp;&nbsp;<a href='app://share/{link_hash}'>공유</a>"
         )
 
-        has_note = bool(item.get("notes") and str(item.get("notes", "")).strip())
-        note_indicator = " 📝" if has_note else ""
-
-        actions = f"""
-            <a href='app://share/{link_hash}'>공유</a>
-            <a href='app://ext/{link_hash}'>외부</a>
-            <a href='app://note/{link_hash}'>메모{note_indicator}</a>
-            <a href='app://tag/{link_hash}'>태그</a>
-        """
-        if item.get("is_read", 0):
-            actions += f"<a href='app://unread/{link_hash}'>안읽음</a>"
-        actions += f"<a href='app://bm/{link_hash}' style='color:{bk_col}'>{bk_txt}</a>"
-
-        badges = base_badges_html
-
-        if item.get("is_duplicate", 0):
-            badges += "<span class='duplicate-badge'>유사</span>"
-        badges += tags_html
-
         rendered = f"""
-        <div class="news-item{is_read_cls}{is_dup_cls}">
-            <a href="app://open/{link_hash}" class="title-link">{title_pfx}{title}</a>
-            <div class="meta-info">
-                <span class="meta-left">📰 {publisher_html} · {date_html} {badges}</span>
-                <span class="actions">{actions}</span>
-            </div>
-            <div class="description">{desc}</div>
+        <div class="news-item">
+            <div><a href="app://open/{link_hash}" class="title-link{read_sfx}">{title_pfx}{title}</a></div>
+            <div class="description{read_sfx}">{desc}</div>
+            <table width="100%" cellspacing="0" cellpadding="0" style="margin-top:6px;"><tr>
+                <td class="meta">{meta_html}</td>
+                <td class="actions" align="right">{actions}</td>
+            </tr></table>
         </div>
+        <table width="100%" cellspacing="0" cellpadding="0" style="margin:10px 0;"><tr>
+            <td class="rule" height="1"></td>
+        </tr></table>
         """
         self._item_html_cache[cache_key] = rendered
         return rendered
 
     def _get_load_more_html(self, remaining: int) -> str:
-        """더 보기 버튼 HTML"""
-        palette = DARK_PALETTE if self.theme == 1 else LIGHT_PALETTE
-        return f"""
-        <div class="load-more-container" style="text-align: center; padding: 20px;">
-            <a href="app://load_more" style="
-                display: inline-block;
-                padding: 12px 30px;
-                background: linear-gradient(135deg, {palette.primary}, {palette.primary_grad_end});
-                color: white;
-                text-decoration: none;
-                border-radius: 25px;
-                font-weight: bold;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            ">더 보기 ({remaining}개 남음)</a>
-        </div>
-        """
+        """저장된 기사 중 아직 표시하지 않은 항목을 더 보여주는 링크"""
+        return (
+            "<div class='load-more' align='center'>"
+            f"<a href='app://load_more'>더 보기 ({remaining}개 남음)</a></div>"
+        )
 
     def render_html(self):
         """Schedule an HTML render on the next event-loop tick."""
@@ -309,38 +280,29 @@ class _NewsTabRenderingMixin:
         loaded_count = len(self.filtered_data_cache)
         total_filtered = max(self._total_filtered_count, loaded_count)
         active_start_date, active_end_date = self._current_date_range()
+        has_filters = self._has_active_filters()
+        parts = []
 
         if not self.is_bookmark_tab:
-            unread = self._unread_count_cache
             overall_total = max(int(self.total_api_count or 0), total_filtered)
-            msg = f"'{self.keyword}': 총 {overall_total}개"
-
-            if self._has_active_filters():
-                msg += f" | 필터링: {total_filtered}개"
+            if has_filters:
+                parts.append(f"{total_filtered:,}개 일치 (전체 {overall_total:,}개)")
             else:
-                msg += f" | {loaded_count}개"
-
-            if loaded_count < total_filtered:
-                msg += f" (표시: {loaded_count}개)"
-
-            if active_start_date and active_end_date:
-                msg += f" | 기간: {active_start_date}~{active_end_date}"
-
-            if unread > 0:
-                msg += f" | 안 읽음: {unread}개"
-            if self.last_update:
-                msg += f" | 업데이트: {self.last_update}"
-            self.lbl_status.setText(msg)
+                parts.append(f"기사 {total_filtered:,}개")
         else:
-            if self._has_active_filters():
-                status_text = f"⭐ 북마크 {total_filtered}개"
-            else:
-                status_text = f"⭐ 북마크 {loaded_count}개"
+            parts.append(f"북마크 {total_filtered:,}개")
 
-            if loaded_count < total_filtered:
-                status_text += f" (표시: {loaded_count}개)"
+        if loaded_count < total_filtered:
+            parts.append(f"{loaded_count:,}개 표시 중")
+        if active_start_date and active_end_date:
+            parts.append(f"{active_start_date} ~ {active_end_date}")
+        if not self.is_bookmark_tab:
+            if self._unread_count_cache > 0:
+                parts.append(f"안 읽음 {self._unread_count_cache:,}")
+            if self.last_update:
+                parts.append(f"{self.last_update} 업데이트")
 
-            if active_start_date and active_end_date:
-                status_text += f" | 기간: {active_start_date}~{active_end_date}"
-
-            self.lbl_status.setText(status_text)
+        self.lbl_status.setText(" · ".join(parts))
+        update_filter_indicator = getattr(self, "_update_filter_indicator", None)
+        if callable(update_filter_indicator):
+            update_filter_indicator()

@@ -30,6 +30,8 @@
 - 문서는 현재 코드 상태를 우선하고, 오래된 변경 누적 로그를 다시 붙이지 않습니다.
 - **네이버 API 호출 URL/헤더는 `core/naver_api.py`에만 둡니다.** `ApiWorker`와 설정 검증이 동일 헬퍼를 사용해야 합니다.
 - 레거시 Developers Center (`openapi.naver.com`, `X-Naver-Client-*`) 엔드포인트로 되돌리지 않습니다.
+- **UI는 읽기 흐름(탭 → 목록 → 열기/북마크)을 우선합니다.** 부가 기능은 `더보기` 메뉴·우클릭 메뉴·설정으로 보내고, 첫 화면에 버튼을 늘리지 않습니다. `btn_refresh`/`btn_add`/`btn_load`/`btn_read_all`/`lbl_status` 등 다른 모듈과 테스트가 참조하는 위젯 속성명과 `SettingsDialog.get_data()` 키는 유지합니다.
+- 앱 QSS는 `ui/styles_support/app_style.py`의 팔레트 슬롯만 사용합니다. 인라인 `setStyleSheet`에 색상 리터럴을 넣지 않고 `QLabel#Hint` 같은 objectName 규칙을 씁니다. `QTextBrowser`(기사 목록)는 `opacity`·`border-radius`·`:hover`를 지원하지 않습니다.
 
 ## 현재 구조
 
@@ -161,18 +163,16 @@ python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
 - **프로젝트**: `navernews-tabsearch`
 - **Spec Kit 초기화**: `.specify/ 있음`
 - **에이전트 스킬**: Grok=True, Claude=True, Codex/Agy(.agents)=True
-- **활성 기능 디렉터리**: `specs/004-unused-scope-cleanup` (포인터: `.specify/feature.json`)
-- **기능 제목**: 감사 후속 안정성 강화
-- **산출물**: spec=`yes`, plan=`True`, research/data-model/quickstart=`True`, tasks=`True`, converge=`False`
+- **활성 기능 디렉터리**: `specs/005-ui-simplification` (포인터: `.specify/feature.json`)
+- **기능 제목**: UI 간소화
+- **산출물**: spec=`yes`, plan=`False`, research/data-model/quickstart=`False`, tasks=`True`, converge=`False`
 
 ### 에이전트가 먼저 읽을 파일
 
-1. `specs/004-unused-scope-cleanup/spec.md` — 무엇을/왜 (사용자 스토리, FR, 성공 기준)
-2. `specs/004-unused-scope-cleanup/plan.md` — 기술 컨텍스트·구조 결정
-3. `specs/004-unused-scope-cleanup/tasks.md` — 실행 가능 작업 목록 (`[x]`=이미 있음, `[ ]`=잔여)
-4. `specs/004-unused-scope-cleanup/research.md`, `data-model.md`, `quickstart.md`, `contracts/` — 설계 보조
-5. `.specify/feature.json` — 현재 활성 feature path
-6. `.specify/memory/constitution.md` — 원칙(템플릿이면 advisory)
+1. `specs/005-ui-simplification/spec.md` — 무엇을/왜 (사용자 스토리, FR, 성공 기준)
+2. `specs/005-ui-simplification/tasks.md` — 실행 가능 작업 목록 (`[x]`=이미 있음, `[ ]`=잔여)
+3. `.specify/feature.json` — 현재 활성 feature path
+4. `.specify/memory/constitution.md` — 원칙(템플릿이면 advisory)
 
 ### 권장 워크플로 (스킬 / 슬래시 커맨드)
 
@@ -201,8 +201,8 @@ python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
 
 ```text
 # 현재 기능 파악
-read specs/004-unused-scope-cleanup/spec.md
-read specs/004-unused-scope-cleanup/tasks.md
+read specs/005-ui-simplification/spec.md
+read specs/005-ui-simplification/tasks.md
 # 잔여 구현
 /speckit-implement   # 또는 tasks.md 의 [ ] 항목만 수행
 # 구현 후 갭 재점검

@@ -62,10 +62,8 @@ class _MainWindowMaintenanceMixin:
             self.btn_refresh.setEnabled(enabled)
         if hasattr(self, "btn_add"):
             self.btn_add.setEnabled(enabled)
-        if hasattr(self, "btn_save"):
-            self.btn_save.setEnabled(enabled)
-        if hasattr(self, "btn_stats"):
-            self.btn_stats.setEnabled(enabled)
+        if hasattr(self, "action_export"):
+            self.action_export.setEnabled(enabled)
         if hasattr(self, "action_stats"):
             self.action_stats.setEnabled(enabled)
 
@@ -79,7 +77,7 @@ class _MainWindowMaintenanceMixin:
                 self.sync_tab_load_more_state(tab.keyword)
             else:
                 tab.btn_load.setEnabled(False)
-                tab.btn_load.setText("🔒 유지보수 중")
+                tab.btn_load.setText("유지보수 중")
 
     def _apply_maintenance_ui_state(self) -> None:
         active = self.is_maintenance_mode_active()

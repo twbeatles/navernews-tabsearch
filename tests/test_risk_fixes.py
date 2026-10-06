@@ -187,22 +187,26 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         self.assertIn("def _process_tab_hydration", inspect.getsource(MainApp._process_tab_hydration))
         self.assertIn("self.tabs.currentChanged.connect(self._on_current_tab_changed)", init_ui_src)
 
-    def test_secondary_toolbar_actions_are_grouped_under_manage_menu(self):
+    def test_secondary_toolbar_actions_are_grouped_under_more_menu(self):
         init_ui_src = inspect.getsource(MainApp.init_ui)
-        self.assertIn('self.btn_manage = QPushButton("🧰 관리")', init_ui_src)
+        self.assertIn('self.btn_manage = QPushButton("더보기")', init_ui_src)
         self.assertIn("self.btn_manage.setMenu(self.manage_menu)", init_ui_src)
-        self.assertIn('self.action_stats = self._add_menu_action(self.manage_menu, "📊 통계")', init_ui_src)
-        self.assertIn('self.action_tags = self._add_menu_action(self.manage_menu, "🏷 태그")', init_ui_src)
-        self.assertIn('self.action_rules = self._add_menu_action(self.manage_menu, "🤖 규칙")', init_ui_src)
-        self.assertIn('self.action_aliases = self._add_menu_action(self.manage_menu, "📰 Alias")', init_ui_src)
-        self.assertIn("self.action_stats.triggered.connect(self.show_stats_analysis)", init_ui_src)
-        self.assertIn("self.action_tags.triggered.connect(self.show_tag_manager)", init_ui_src)
-        self.assertIn("self.action_rules.triggered.connect(self.show_automation_rules)", init_ui_src)
-        self.assertIn("self.action_aliases.triggered.connect(self.show_publisher_aliases)", init_ui_src)
-        self.assertNotIn("toolbar.addWidget(self.btn_stats)", init_ui_src)
-        self.assertNotIn("toolbar.addWidget(self.btn_tags)", init_ui_src)
-        self.assertNotIn("toolbar.addWidget(self.btn_rules)", init_ui_src)
-        self.assertNotIn("toolbar.addWidget(self.btn_aliases)", init_ui_src)
+        for action_name, handler in (
+            ("action_export", "export_data"),
+            ("action_stats", "show_stats_analysis"),
+            ("action_tags", "show_tag_manager"),
+            ("action_rules", "show_automation_rules"),
+            ("action_aliases", "show_publisher_aliases"),
+            ("action_backup", "show_backup_dialog"),
+            ("action_update", "on_update_button_clicked"),
+            ("action_settings", "open_settings"),
+            ("action_help", "show_help"),
+        ):
+            self.assertIn(f"self.{action_name} = self._add_menu_action(self.manage_menu, ", init_ui_src)
+            self.assertIn(f"self.{action_name}.triggered.connect(self.{handler})", init_ui_src)
+        self.assertEqual(init_ui_src.count("toolbar.addWidget("), 4)
+        for button_name in ("btn_refresh", "btn_archive", "btn_manage", "btn_add"):
+            self.assertIn(f"toolbar.addWidget(self.{button_name})", init_ui_src)
 
     def test_runtime_paths_are_available_on_main_window(self):
         init_src = inspect.getsource(MainApp.__init__)

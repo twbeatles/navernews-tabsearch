@@ -1,5 +1,6 @@
 import hashlib
 import os
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -76,7 +77,8 @@ def test_cleanup_update_artifacts_removes_only_stale_helper_and_staged_files(tmp
     unrelated = tmp_path / "notes.txt"
     for path in (stale_helper, stale_staged, recent_staged, unrelated):
         path.write_bytes(b"x")
-    old = 1
+    # Windows는 1970년 같은 극단적 과거 mtime을 거부하므로 기준 시각에서 상대 계산한다.
+    old = time.time() - 3600
     os.utime(stale_helper, (old, old))
     os.utime(stale_staged, (old, old))
 

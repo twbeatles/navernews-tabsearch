@@ -9,7 +9,6 @@ from typing import List, Optional, Tuple
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QResizeEvent, QShortcut
 from PyQt6.QtWidgets import (
-    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -55,81 +54,52 @@ class _MainWindowSetupShellMixin:
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(12, 10, 12, 0)
+        layout.setSpacing(8)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
 
-        # --- 주 액션 (라벨 버튼) ---
-        self.btn_refresh = QPushButton("🔄 새로고침")
+        self.btn_refresh = QPushButton("새로고침")
         self.btn_refresh.setToolTip("모든 탭의 뉴스를 새로고침합니다 (Ctrl+R, F5)")
         self.btn_refresh.setObjectName("RefreshBtn")
 
-        self.btn_save = QPushButton("📥 내보내기")
-        self.btn_save.setToolTip("현재 탭의 표시 결과를 CSV로 내보냅니다 (Ctrl+S)")
+        self.btn_archive = QPushButton("기사 검색")
+        self.btn_archive.setToolTip("저장된 전체 기사에서 검색합니다 (Ctrl+Shift+F)")
 
-        self.btn_archive = QPushButton("🔎 아카이브")
-        self.btn_archive.setToolTip("저장된 전체 뉴스에서 검색합니다")
-
-        self.btn_manage = QPushButton("🧰 관리")
-        self.btn_manage.setToolTip("태그, 자동화 규칙, 출처 Alias, 통계를 관리합니다")
+        # 읽기 흐름 밖의 기능은 더보기 메뉴 한 곳으로 모은다.
+        self.btn_manage = QPushButton("더보기")
+        self.btn_manage.setObjectName("MoreMenu")
+        self.btn_manage.setToolTip("내보내기, 통계, 태그·규칙 관리, 백업, 설정")
         self.manage_menu = QMenu(self.btn_manage)
-        self.action_stats = self._add_menu_action(self.manage_menu, "📊 통계")
-        self.action_stats.setToolTip("전체 뉴스 통계 및 언론사별 분석 보기")
-        self.action_tags = self._add_menu_action(self.manage_menu, "🏷 태그")
-        self.action_tags.setToolTip("태그 이름 변경, 병합, 삭제 및 현재 탭 일괄 태그 작업")
-        self.action_rules = self._add_menu_action(self.manage_menu, "🤖 규칙")
-        self.action_rules.setToolTip("자동 태그/북마크/읽음 규칙을 관리합니다")
-        self.action_aliases = self._add_menu_action(self.manage_menu, "📰 Alias")
-        self.action_aliases.setToolTip("출처 alias 표시/필터 매핑을 관리합니다")
+        self.action_export = self._add_menu_action(self.manage_menu, "현재 탭 내보내기 (CSV)\tCtrl+S")
+        self.action_stats = self._add_menu_action(self.manage_menu, "통계")
+        self.manage_menu.addSeparator()
+        self.action_tags = self._add_menu_action(self.manage_menu, "태그 관리\tCtrl+Shift+T")
+        self.action_rules = self._add_menu_action(self.manage_menu, "자동화 규칙\tCtrl+Shift+A")
+        self.action_aliases = self._add_menu_action(self.manage_menu, "출처 별칭")
+        self.manage_menu.addSeparator()
+        self.action_backup = self._add_menu_action(self.manage_menu, "백업 및 복원")
+        self.action_update = self._add_menu_action(self.manage_menu, "업데이트 확인")
+        self.manage_menu.addSeparator()
+        self.action_settings = self._add_menu_action(self.manage_menu, "설정\tCtrl+,")
+        self.action_help = self._add_menu_action(self.manage_menu, "도움말\tF1")
         self.btn_manage.setMenu(self.manage_menu)
 
-        toolbar.addWidget(self.btn_refresh)
-        toolbar.addWidget(self.btn_save)
-        toolbar.addWidget(self.btn_archive)
-        toolbar.addWidget(self.btn_manage)
-
-        toolbar.addStretch()
-
-        # --- 보조 액션 (아이콘 전용 묶음) ---
-        self.btn_setting = QPushButton("⚙")
-        self.btn_setting.setObjectName("IconButton")
-        self.btn_setting.setToolTip("API 키 및 프로그램 설정 (Ctrl+,)")
-
-        self.btn_backup = QPushButton("🗂")
-        self.btn_backup.setObjectName("IconButton")
-        self.btn_backup.setToolTip("설정 백업 및 복원")
-
-        self.btn_help = QPushButton("❓")
-        self.btn_help.setObjectName("IconButton")
-        self.btn_help.setToolTip("사용 방법 및 도움말 (F1)")
-
-        self.btn_update = QPushButton("⬆")
-        self.btn_update.setObjectName("IconButton")
-        self.btn_update.setToolTip("GitHub 릴리스 업데이트 확인")
-
-        toolbar.addWidget(self.btn_setting)
-        toolbar.addWidget(self.btn_backup)
-        toolbar.addWidget(self.btn_help)
-        toolbar.addWidget(self.btn_update)
-
-        toolbar_sep = QFrame()
-        toolbar_sep.setFrameShape(QFrame.Shape.VLine)
-        toolbar_sep.setFrameShadow(QFrame.Shadow.Plain)
-        toolbar_sep.setFixedHeight(28)
-        toolbar.addWidget(toolbar_sep)
-
-        # --- 주 CTA ---
-        self.btn_add = QPushButton("➕ 새 탭")
+        self.btn_add = QPushButton("+ 새 탭")
         self.btn_add.setToolTip("새로운 키워드 탭 추가 (Ctrl+T)")
         self.btn_add.setObjectName("AddTab")
 
+        toolbar.addWidget(self.btn_refresh)
+        toolbar.addWidget(self.btn_archive)
+        toolbar.addStretch()
+        toolbar.addWidget(self.btn_manage)
         toolbar.addWidget(self.btn_add)
         layout.addLayout(toolbar)
 
         self.progress = QProgressBar()
         self.progress.setMaximum(100)
-        self.progress.setTextVisible(True)
+        self.progress.setTextVisible(False)
         self.progress.hide()
         layout.addWidget(self.progress)
 
@@ -148,21 +118,21 @@ class _MainWindowSetupShellMixin:
         layout.addWidget(self.tabs)
 
         self.btn_refresh.clicked.connect(self.refresh_all)
-        self.btn_setting.clicked.connect(self.open_settings)
         self.btn_archive.clicked.connect(self.show_archive_search)
+        self.btn_add.clicked.connect(self.add_tab_dialog)
+        self.action_export.triggered.connect(self.export_data)
         self.action_stats.triggered.connect(self.show_stats_analysis)
         self.action_tags.triggered.connect(self.show_tag_manager)
         self.action_rules.triggered.connect(self.show_automation_rules)
         self.action_aliases.triggered.connect(self.show_publisher_aliases)
-        self.btn_help.clicked.connect(self.show_help)
-        self.btn_update.clicked.connect(self.on_update_button_clicked)
-        self.btn_backup.clicked.connect(self.show_backup_dialog)
-        self.btn_add.clicked.connect(self.add_tab_dialog)
-        self.btn_save.clicked.connect(self.export_data)
+        self.action_backup.triggered.connect(self.show_backup_dialog)
+        self.action_update.triggered.connect(self.on_update_button_clicked)
+        self.action_settings.triggered.connect(self.open_settings)
+        self.action_help.triggered.connect(self.show_help)
 
         self.bm_tab = NewsTab("북마크", self._require_db(), self._effective_theme_idx(), self)
         self._connect_news_tab_hydration(self.bm_tab)
-        self.tabs.addTab(self.bm_tab, "⭐ 북마크")
+        self.tabs.addTab(self.bm_tab, "★ 북마크")
         self._tab_bar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
 
         for key in self.tabs_data:

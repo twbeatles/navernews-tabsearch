@@ -47,7 +47,7 @@ class _BackupDialogUISetupMixin:
         # 백업 생성 버튼
         btn_layout = QHBoxLayout()
 
-        self.btn_create = QPushButton("📦 새 백업 생성")
+        self.btn_create = QPushButton("새 백업 생성")
         self.btn_create.clicked.connect(self.create_backup)
 
         self.chk_include_db = QCheckBox("데이터베이스 포함")
@@ -63,13 +63,13 @@ class _BackupDialogUISetupMixin:
             "'데이터베이스 포함'을 선택하세요."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; margin-bottom: 8px;")
+        info_label.setObjectName("Hint")
         layout.addWidget(info_label)
 
         verify_layout = QHBoxLayout()
-        self.btn_verify = QPushButton("🔍 백업 검증")
+        self.btn_verify = QPushButton("백업 검증")
         self.btn_verify.clicked.connect(self.start_backup_verification)
-        self.btn_cancel_verify = QPushButton("⏹ 검증 취소")
+        self.btn_cancel_verify = QPushButton("검증 취소")
         self.btn_cancel_verify.setEnabled(False)
         self.btn_cancel_verify.clicked.connect(self.cancel_backup_verification)
         self.btn_delete_corrupt = QPushButton("손상 백업 일괄 삭제")
@@ -85,7 +85,7 @@ class _BackupDialogUISetupMixin:
         layout.addWidget(self.verify_progress)
 
         self.lbl_verify_status = QLabel("백업 목록을 불러오는 중...")
-        self.lbl_verify_status.setStyleSheet("color: #666;")
+        self.lbl_verify_status.setObjectName("Hint")
         layout.addWidget(self.lbl_verify_status)
 
         # 백업 목록
@@ -97,13 +97,13 @@ class _BackupDialogUISetupMixin:
         # 하단 버튼
         bottom_layout = QHBoxLayout()
 
-        self.btn_restore = QPushButton("♻ 복원")
+        self.btn_restore = QPushButton("복원")
         self.btn_restore.clicked.connect(self.restore_backup)
 
-        self.btn_delete = QPushButton("🗑 삭제")
+        self.btn_delete = QPushButton("삭제")
         self.btn_delete.clicked.connect(self.delete_backup)
 
-        self.btn_open_folder = QPushButton("📂 폴더 열기")
+        self.btn_open_folder = QPushButton("폴더 열기")
         self.btn_open_folder.clicked.connect(self.open_backup_folder)
 
         bottom_layout.addWidget(self.btn_restore)

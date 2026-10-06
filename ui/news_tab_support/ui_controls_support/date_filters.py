@@ -60,12 +60,12 @@ class _NewsTabDateFilterControlsMixin:
         if checked:
             btn_style = (
                 f"background: {btn_active_bg}; border: 1px solid {btn_active_border}; "
-                f"border-radius: 4px; padding: 4px; color: {btn_active_text};"
+                f"border-radius: 6px; padding: 4px 8px; color: {btn_active_text};"
             )
         else:
             btn_style = (
                 f"background: transparent; border: 1px solid {btn_inactive_border}; "
-                f"border-radius: 4px; padding: 4px; color: {btn_inactive_text};"
+                f"border-radius: 6px; padding: 4px 8px; color: {btn_inactive_text};"
             )
         self.btn_date_toggle.setStyleSheet(btn_style)
 
@@ -88,7 +88,7 @@ class _NewsTabDateFilterControlsMixin:
 
     def _refresh_date_filter_controls(self):
         active = bool(self._date_filter_active)
-        self.btn_date_toggle.setText("📅 기간 적용 중" if active else "📅 기간")
+        self.btn_date_toggle.setText("기간 적용 중" if active else "기간")
         interactive = self.btn_date_toggle.isChecked() and not self._maintenance_mode_active
         self.btn_apply_date.setEnabled(interactive)
         self.btn_clear_date.setEnabled(active and not self._maintenance_mode_active)

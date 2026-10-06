@@ -83,19 +83,19 @@ class NewsBrowser(QTextBrowser):
         # 커스텀 메뉴 생성
         menu = QMenu(self)
         
-        act_open = menu.addAction("🌐 브라우저로 열기")
-        act_copy = menu.addAction("📋 제목 및 링크 복사")
+        act_open = menu.addAction("브라우저로 열기")
+        act_copy = menu.addAction("제목과 링크 복사")
         menu.addSeparator()
-        act_bm = menu.addAction("⭐ 북마크 토글")
-        act_read = menu.addAction("👁 읽음/안읽음 토글")
-        act_note = menu.addAction("📝 메모 편집")
-        act_tag = menu.addAction("🏷 태그 편집")
+        act_bm = menu.addAction("북마크 / 해제")
+        act_read = menu.addAction("읽음 / 안 읽음 전환")
+        act_note = menu.addAction("메모 편집")
+        act_tag = menu.addAction("태그 편집")
         menu.addSeparator()
-        act_block_publisher = menu.addAction("🚫 이 출처 차단")
-        act_prefer_publisher = menu.addAction("✓ 이 출처 선호 추가")
+        act_prefer_publisher = menu.addAction("이 출처를 선호 출처에 추가")
+        act_block_publisher = menu.addAction("이 출처 차단")
         menu.addSeparator()
-        act_del = menu.addAction("🗑 목록에서 삭제")
-        
+        act_del = menu.addAction("목록에서 삭제")
+
         # 메뉴 실행
         action = menu.exec(e.globalPos())
         
