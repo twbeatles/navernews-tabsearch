@@ -1,10 +1,10 @@
 {
   "payload": {
-    "artifact_url": "https://github.com/twbeatles/navernews-tabsearch/releases/download/v32.11.0/NewsScraperPro_Safe.exe",
-    "expires_at": "2027-10-06T05:55:51Z",
-    "sha256": "9c7078375ab2a24830abcd6bba6c2cc19377e67c5ce313363772bb0677d27404",
-    "size": 51036155,
-    "version": "32.11.0"
+    "artifact_url": "https://github.com/twbeatles/navernews-tabsearch/releases/download/v32.11.1/NewsScraperPro_Safe.exe",
+    "expires_at": "2027-10-06T06:12:50Z",
+    "sha256": "ac73b56c5359b9a74f91991f9d63fb662bb06643763d59def22ac0c642aedc7e",
+    "size": 51038801,
+    "version": "32.11.1"
   },
-  "signature": "iy0u/lMx/iEEEjtby2fM7EFyzJUhe325IT3n1ttMbVPatzj54KwKJGkjWFiUK/bxbRsaFYk6+/0LWKm8Oii+BQ=="
+  "signature": "UgzFR3eEqt4S+jCzA3bQ1GvS9ujOOyIfkZSbT+XrW60MJmaRjnAJaaXIPs3F9Yg85RwBVEaZuKhCYg5JEVysCQ=="
 }
