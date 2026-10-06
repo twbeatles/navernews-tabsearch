@@ -191,6 +191,31 @@ class TestToolbarAndMaintenance(unittest.TestCase):
         self.assertEqual(format_title(dummy, "AI"), "AI")
         self.assertTrue(format_title(dummy, "-광고").startswith("🚫"))
 
+    def test_tab_tooltip_carries_full_keyword_and_unread_count(self):
+        class _Tabs:
+            def __init__(self):
+                self.tips = {}
+
+            def setTabToolTip(self, index, tip):
+                self.tips[index] = tip
+
+        dummy = cast(Any, type("Dummy", (), {"tabs": _Tabs()})())
+        set_tip = cast(Any, MainApp._set_tab_tooltip)
+
+        set_tip(dummy, 1, "삼성전자 반도체 투자 전망 -광고", 1234)
+        set_tip(dummy, 2, "환율")
+
+        self.assertEqual(dummy.tabs.tips[1], "삼성전자 반도체 투자 전망 -광고 / 안 읽은 기사 1,234개")
+        self.assertEqual(dummy.tabs.tips[2], "환율")
+
+    def test_tab_bar_keeps_roomy_padding_and_separates_tabs(self):
+        for sheet in (AppStyle.LIGHT, AppStyle.DARK):
+            tab_rule = sheet[sheet.index("QTabBar::tab {"):]
+            tab_rule = tab_rule[: tab_rule.index("}")]
+            self.assertIn("padding: 12px 20px;", tab_rule)
+            self.assertIn("margin-right: 4px;", tab_rule)
+            self.assertIn("border: 1px solid", tab_rule)
+
     def test_export_menu_action_follows_maintenance_mode(self):
         src = inspect.getsource(MainApp._set_fetch_controls_enabled)
         self.assertIn("self.action_export.setEnabled(enabled)", src)

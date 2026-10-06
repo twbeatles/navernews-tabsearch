@@ -22,18 +22,19 @@ logger = logging.getLogger(__name__)
 
 # 서브컨트롤보다 크게 그려 두면 QSS가 축소해 그리므로 고배율 화면에서도 선명하다.
 _GLYPH_PX = 32
+_CLOSE_CANVAS_PX = 56
 _ICON_DIR_NAME = "news_scraper_pro_ui"
 _qss_cache: Dict[str, str] = {}
 
 _GLYPH_STROKES = {
     "chevron": [((8, 12), (16, 20)), ((16, 20), (24, 12))],
-    "close": [((9, 9), (23, 23)), ((23, 9), (9, 23))],
+    "close": [((6, 6), (26, 26)), ((26, 6), (6, 26))],
     "check": [((7, 17), (13, 23)), ((13, 23), (25, 9))],
 }
 
 
-def _draw_glyph(path: str, glyph: str, color: str, width: float) -> None:
-    image = QImage(_GLYPH_PX, _GLYPH_PX, QImage.Format.Format_ARGB32_Premultiplied)
+def _draw_glyph(path: str, glyph: str, color: str, width: float, canvas_w: int = _GLYPH_PX) -> None:
+    image = QImage(canvas_w, _GLYPH_PX, QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
     try:
@@ -60,14 +61,15 @@ def glyph_qss(p: Palette) -> str:
         icon_dir = os.path.join(tempfile.gettempdir(), _ICON_DIR_NAME)
         os.makedirs(icon_dir, exist_ok=True)
         urls: Dict[str, str] = {}
-        for key, glyph, color, width in (
-            ("chevron", "chevron", p.text_muted, 3.0),
-            ("close", "close", p.text_muted, 3.0),
-            ("close_hover", "close", p.text, 3.5),
-            ("check", "check", p.on_primary, 4.5),
+        for key, glyph, color, width, canvas_w in (
+            ("chevron", "chevron", p.text_muted, 3.0, _GLYPH_PX),
+            # 닫기 아이콘은 오른쪽에 투명 여백을 둬 탭 가장자리와 간격을 만든다.
+            ("close", "close", p.text_muted, 3.4, _CLOSE_CANVAS_PX),
+            ("close_hover", "close", p.danger, 4.0, _CLOSE_CANVAS_PX),
+            ("check", "check", p.on_primary, 4.5, _GLYPH_PX),
         ):
             path = os.path.join(icon_dir, f"{p.name}_{key}.png")
-            _draw_glyph(path, glyph, color, width)
+            _draw_glyph(path, glyph, color, width, canvas_w)
             urls[key] = path.replace("\\", "/")
     except Exception as exc:
         logger.warning("UI 글리프 생성 실패, 기본 글리프를 사용합니다: %s", exc)
@@ -80,8 +82,8 @@ def glyph_qss(p: Palette) -> str:
         QTabBar::close-button {{
             image: url({urls['close']});
             subcontrol-position: right;
-            width: 12px;
-            height: 12px;
+            width: 24px;
+            height: 14px;
             margin: 2px;
         }}
         QTabBar::close-button:hover {{ image: url({urls['close_hover']}); }}

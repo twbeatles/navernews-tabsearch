@@ -37,6 +37,15 @@ logger = logging.getLogger(__name__)
 class _MainWindowBadgeShellMixin:
     def _set_tab_badge_text(self, tab_index: int, keyword: str, unread_count: int):
         self.tabs.setTabText(tab_index, self._format_tab_title(keyword, unread_count=unread_count))
+        self._set_tab_tooltip(tab_index, keyword, unread_count)
+
+    def _set_tab_tooltip(self, tab_index: int, keyword: str, unread_count: int = 0):
+        """탭 제목이 잘려도 전체 검색어와 안 읽은 수를 알 수 있게 한다."""
+        tip = str(keyword or "").strip()
+        count = max(0, int(unread_count or 0))
+        if tip and count > 0:
+            tip = f"{tip} / 안 읽은 기사 {count:,}개"
+        self.tabs.setTabToolTip(tab_index, tip)
 
     def _tab_icon_for_keyword(self, keyword: str) -> str:
         return "📰" if has_positive_keyword(str(keyword or "")) else "🚫"

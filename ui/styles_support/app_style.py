@@ -168,21 +168,26 @@ def _build_stylesheet(p: Palette) -> str:
             font-family: {_FONT};
             font-size: 10pt;
             color: {p.text_muted};
-            padding: 2px 14px;
+            padding: 12px 20px;
             min-height: 30px;
-            border: none;
+            border: 1px solid {p.border};
             border-bottom: 2px solid transparent;
-            background-color: transparent;
-            margin-right: 2px;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            background-color: {p.bg};
+            margin-right: 4px;
         }}
         QTabBar::tab:selected {{
+            background-color: {p.surface};
+            border-color: {p.primary};
+            border-bottom: 3px solid {p.primary};
             color: {p.primary};
             font-weight: 600;
-            border-bottom: 2px solid {p.primary};
         }}
         QTabBar::tab:!selected:hover {{
             color: {p.text};
-            border-bottom: 2px solid {p.border};
+            background-color: {p.btn_hover_start};
+            border-bottom: 2px solid {p.primary};
         }}
         QLineEdit {{
             font-family: {_FONT};

@@ -166,7 +166,8 @@ class _MainWindowTabsMixin:
         if persisted_cursor > fetch_state.last_api_start_index:
             fetch_state.last_api_start_index = persisted_cursor
         tab.total_api_count = int(self._fetch_total_by_key.get(fetch_key, 0) or 0)
-        self.tabs.addTab(tab, self._format_tab_title(keyword, unread_count=0))
+        tab_index = self.tabs.addTab(tab, self._format_tab_title(keyword, unread_count=0))
+        self._set_tab_tooltip(tab_index, keyword)
         self.sync_tab_load_more_state(keyword)
         if defer_initial_load:
             self._enqueue_tab_hydration(keyword, prioritize=False)
@@ -344,6 +345,7 @@ class _MainWindowTabsMixin:
             w.keyword = new_keyword
             self._remove_tab_hydration(old_keyword)
             self.tabs.setTabText(idx, self._format_tab_title(new_keyword, unread_count=0))
+            self._set_tab_tooltip(idx, new_keyword)
 
             old_search_keyword, old_exclude_words = parse_search_query(old_keyword)
             new_search_keyword, new_exclude_words = parse_search_query(new_keyword)
