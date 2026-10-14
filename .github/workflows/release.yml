@@ -52,11 +52,13 @@ jobs:
       - name: Publish signed manifest to main
         shell: pwsh
         run: |
+          Copy-Item updates/latest.json $env:RUNNER_TEMP/latest.json
           git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
+          git checkout -B main origin/main
+          Copy-Item $env:RUNNER_TEMP/latest.json updates/latest.json
           git add updates/latest.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if (git diff --cached --quiet) { Write-Host "manifest already up to date"; exit 0 }
           git commit -m "chore: publish update manifest for ${{ github.ref_name }}"
           git push origin main

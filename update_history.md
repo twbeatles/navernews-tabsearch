@@ -1,5 +1,13 @@
 # Update History
 
+## v32.11.2 (2026-10-14)
+
+### Qt 바인딩 통일
+
+- Qt 바인딩을 PySide6 6.12.0(PySide6-Fluent-Widgets 1.11.3)으로 통일했습니다. (기존 PyQt6/PyQt-Fluent-Widgets에서 이전)
+- 빌드된 실행 파일 시작 시 `ImportError: DLL load failed while importing _rust`로 죽던 문제를 수정했습니다. (frozen cryptography용 abi3t python3t.dll 번들)
+- PySide6 스텁 엄격화에 걸리던 타입 오류를 수정했습니다. (제품 코드 동작 변경 없음)
+
 ## v32.11.1 (2026-10-06)
 
 ### 탭 모양
