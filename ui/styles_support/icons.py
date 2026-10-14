@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from typing import Dict
+from typing import Dict, cast
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
@@ -47,7 +47,9 @@ def _draw_glyph(path: str, glyph: str, color: str, width: float, canvas_w: int =
             painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
     finally:
         painter.end()
-    if not image.save(path, "PNG"):
+    # PySide6 6.12 스텁은 format을 bytes 계열로 선언하지만, 런타임은 str만
+    # 받으므로 cast로 스텁을 만족시키고 런타임에는 원래 str을 전달한다.
+    if not image.save(path, cast(bytes, "PNG")):
         raise OSError(f"glyph save failed: {path}")
 
 

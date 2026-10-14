@@ -200,7 +200,8 @@ class SettingsDialog(
             self._maintenance_active_for_data_task = False
         self._api_validate_worker = None
         self._data_task_worker = None
-        super().closeEvent(a0)
+        if a0 is not None:
+            super().closeEvent(a0)
 
     def get_data(self) -> Dict:
         """설정 데이터 반환"""

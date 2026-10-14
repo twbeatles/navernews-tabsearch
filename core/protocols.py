@@ -7,7 +7,8 @@ class LockFileProtocol(Protocol):
     def removeStaleLockFile(self) -> bool | None:
         ...
 
-    def tryLock(self, timeout: int) -> bool:
+    # QLockFile.tryLock 스텁은 timeout을 위치 전용으로 선언하므로 맞춘다.
+    def tryLock(self, timeout: int, /) -> bool:
         ...
 
 
