@@ -22,7 +22,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, TypedDict, cast
 
 import requests
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PySide6.QtCore import QObject, QThread, Signal
 
 from core.database import DatabaseQueryError, DatabaseWriteError
 from core.protocols import ClosableProtocol, RequestGetProtocol

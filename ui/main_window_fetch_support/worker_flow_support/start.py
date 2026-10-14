@@ -9,8 +9,8 @@ import traceback
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from PyQt6.QtCore import QMutexLocker, QThread, QTimer
-from PyQt6.QtWidgets import QMessageBox
+from PySide6.QtCore import QMutexLocker, QThread, QTimer
+from PySide6.QtWidgets import QMessageBox
 
 from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
 from core.text_utils import RE_HTML_TAGS

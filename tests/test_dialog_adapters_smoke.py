@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest import mock
 
-from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from ui.dialog_adapters import QtDialogAdapter
 

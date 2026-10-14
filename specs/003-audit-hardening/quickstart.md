@@ -23,7 +23,7 @@ py -3.14 -m venv .venv
 ## Runtime/package smoke
 
 ```powershell
-.venv\Scripts\python -c "from PyQt6 import QtNetwork; import news_scraper_pro"
+.venv\Scripts\python -c "from PySide6 import QtNetwork; import news_scraper_pro"
 .venv\Scripts\python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
 ```
 

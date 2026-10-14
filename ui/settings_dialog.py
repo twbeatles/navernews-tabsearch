@@ -1,13 +1,13 @@
 from typing import Dict, Optional, cast
 
-from PyQt6.QtGui import QCloseEvent
-from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QTabWidget, QVBoxLayout
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QTabWidget, QVBoxLayout
 
 from core.startup import StartupManager
 from core.startup import StartupStatus
 from core.content_filters import normalize_publisher_filter_lists
 from core.validation import ValidationUtils
-from PyQt6.QtCore import QThread
+from PySide6.QtCore import QThread
 from ui._settings_dialog_content import _SettingsDialogContentMixin
 from ui._settings_dialog_docs import _SettingsDialogDocsMixin
 from ui._settings_dialog_tasks import _SettingsDialogTasksMixin

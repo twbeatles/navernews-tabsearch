@@ -3,8 +3,8 @@ import unittest
 from unittest import mock
 from typing import Any, cast
 
-from PyQt6.QtCore import QEventLoop, QTimer
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtWidgets import QApplication
 
 from ui.news_tab import NewsTab
 

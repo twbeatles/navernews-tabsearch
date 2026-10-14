@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Optional
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from core.workers_support.jobs import perf_timer
 from core.workers_support.query_scope import DBQueryScope
@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 class DBWorker(QThread):
     """DB 조회 전용 워커 스레드(UI 블로킹 방지)"""
 
-    finished = pyqtSignal(list, int)
-    error = pyqtSignal(str)
-    settled = pyqtSignal()
+    finished = Signal(list, int)
+    error = Signal(str)
+    settled = Signal()
 
     def __init__(
         self,

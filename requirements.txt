@@ -1,7 +1,5 @@
 # Verified on Windows x64 with Python 3.14 (2026-10-13).
-PyQt6==6.11.0
-PyQt6-Qt6==6.11.2
-PyQt6-sip==13.13.0
+PySide6==6.12.0
 requests==2.34.2
 charset-normalizer==3.5.2
 cryptography==50.0.2

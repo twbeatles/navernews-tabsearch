@@ -13,8 +13,8 @@ import urllib.parse
 from functools import partial
 from typing import Any, Dict, Optional
 
-from PyQt6.QtCore import QMutex, QTimer
-from PyQt6.QtWidgets import QMainWindow, QMessageBox
+from PySide6.QtCore import QMutex, QTimer
+from PySide6.QtWidgets import QMainWindow, QMessageBox
 
 from core.backup import (
     AutoBackup as CoreAutoBackup,

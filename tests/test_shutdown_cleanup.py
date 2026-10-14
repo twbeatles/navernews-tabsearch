@@ -3,7 +3,7 @@ import unittest
 from typing import Any, cast
 from unittest import mock
 
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from ui._main_window_tray import _MainWindowTrayMixin
 from ui.news_tab import NewsTab

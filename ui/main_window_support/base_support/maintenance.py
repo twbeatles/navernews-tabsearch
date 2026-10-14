@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterator, List, Optional
 
-from PyQt6.QtCore import QMutexLocker, QTimer
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QApplication, QMenu, QStatusBar, QStyle, QTabBar, QWidget
+from PySide6.QtCore import QMutexLocker, QTimer
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QApplication, QMenu, QStatusBar, QStyle, QTabBar, QWidget
 
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig

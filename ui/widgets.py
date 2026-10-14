@@ -1,9 +1,9 @@
 import html
 from typing import Dict, Optional
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QContextMenuEvent, QCursor, QMouseEvent, QTextDocument, QWheelEvent
-from PyQt6.QtWidgets import QComboBox, QMenu, QTextBrowser, QToolTip
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QContextMenuEvent, QCursor, QMouseEvent, QTextDocument, QWheelEvent
+from PySide6.QtWidgets import QComboBox, QMenu, QTextBrowser, QToolTip
 
 class NoScrollComboBox(QComboBox):
     """마우스 휠로 값이 변경되지 않는 콤보박스 (설정창 UX 개선)"""
@@ -16,7 +16,7 @@ class NoScrollComboBox(QComboBox):
 
 class NewsBrowser(QTextBrowser):
     """링크 클릭 시 페이지 이동 차단, 호버 시 미리보기 표시"""
-    action_triggered = pyqtSignal(str, str) # action, link_hash
+    action_triggered = Signal(str, str) # action, link_hash
     
     def __init__(self, parent=None):
         super().__init__(parent)

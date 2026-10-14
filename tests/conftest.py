@@ -17,8 +17,8 @@ tempfile.tempdir = str(_TMP_ROOT)
 
 
 # --- Optional runtime dependencies -------------------------------------------
-# This is a Windows PyQt6 desktop app, so the test suite legitimately depends on
-# PyQt6 and cryptography. When one of them is missing (a headless CI image, or a
+# This is a Windows PySide6 desktop app, so the test suite legitimately depends on
+# PySide6 and cryptography. When one of them is missing (a headless CI image, or a
 # platform with no prebuilt wheel), importing those test modules used to raise
 # at COLLECTION time, which aborts the whole run: pytest reports
 # "Interrupted: N errors during collection" and the hundreds of dependency-free
@@ -28,7 +28,7 @@ import importlib.util
 
 import pytest
 
-_OPTIONAL_DEPENDENCIES = ("PyQt6", "cryptography")
+_OPTIONAL_DEPENDENCIES = ("PySide6", "cryptography")
 
 
 def _missing_optional_dependencies() -> list[str]:

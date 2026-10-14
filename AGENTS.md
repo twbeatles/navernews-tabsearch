@@ -4,7 +4,7 @@
 
 ## 프로젝트 요약
 
-- PyQt6 데스크톱 앱
+- PySide6 데스크톱 앱
 - **NAVER API HUB** 뉴스 검색 API + 로컬 SQLite DB
 - 핵심 진입점: `news_scraper_pro.py`
 - 앱 부팅: `core.bootstrap.main()`
@@ -135,7 +135,7 @@ python -m pytest tests/test_naver_api_hub.py tests/test_settings_validation_http
 python -m pytest tests/test_audit_remediation_20260920.py -q
 ```
 
-> PyQt6/cryptography가 없는 환경에서는 해당 모듈이 **skip** 되고 요약에 이유가 표시됩니다(collection 중단 아님).
+> PySide6/cryptography가 없는 환경에서는 해당 모듈이 **skip** 되고 요약에 이유가 표시됩니다(collection 중단 아님).
 
 패키징:
 

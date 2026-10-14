@@ -5,9 +5,9 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from PyQt6.QtCore import QRect
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import QRect
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.config_store import (
     AppConfig,

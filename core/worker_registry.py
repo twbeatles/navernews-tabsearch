@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from PyQt6.QtCore import QThread
+from PySide6.QtCore import QThread
 
 if TYPE_CHECKING:
     from core.workers import ApiWorker

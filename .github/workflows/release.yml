@@ -22,7 +22,7 @@ jobs:
         run: python -m pip install -r requirements-build.txt
 
       - name: QtNetwork and entrypoint import smoke
-        run: python -c "from PyQt6 import QtNetwork; import news_scraper_pro"
+        run: python -c "from PySide6 import QtNetwork; import news_scraper_pro"
 
       - name: Verify tag and application version agree
         shell: pwsh

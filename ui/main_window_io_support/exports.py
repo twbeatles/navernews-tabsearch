@@ -9,7 +9,7 @@ import tempfile
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QTimer
+from PySide6.QtCore import QTimer
 
 from core.config_store import (
     AppConfig,

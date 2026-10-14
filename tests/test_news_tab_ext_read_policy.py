@@ -4,7 +4,7 @@ from typing import Any, cast
 from unittest import mock
 import inspect
 
-from PyQt6.QtCore import QUrl
+from PySide6.QtCore import QUrl
 
 from ui.news_tab import NewsTab
 

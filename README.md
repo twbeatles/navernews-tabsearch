@@ -314,7 +314,7 @@ python news_scraper_pro.py
 
 ## 🛠 데이터 저장 경로 및 기술 스택
 
-- **UI Framework**: Python PyQt6 (다크 모드 / 라이트 모드 / 시스템 테마 완벽 지원)
+- **UI Framework**: Python PySide6 (다크 모드 / 라이트 모드 / 시스템 테마 완벽 지원)
 - **Database**: 로컬 SQLite3 (제목·본문 토큰 AND 부분일치 검색, WAL 모드)
 - **Network**: Requests 기반 NAVER Cloud API HUB 연동 (지수 백오프 재시도 및 안정적 예외 처리)
 - **보안 & 안전성**: 설정 파일 백업 미러링, 서명 기반 자동 업데이트 롤백 지원

@@ -6,7 +6,7 @@ import pytest
 # The root wrapper re-exports the whole application surface, so importing it
 # pulls in every optional runtime dependency. Skip rather than fail when one is
 # unavailable, matching the collection-time behaviour in conftest.py.
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 pytest.importorskip("cryptography")
 
 

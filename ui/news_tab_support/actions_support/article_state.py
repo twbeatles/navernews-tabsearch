@@ -4,9 +4,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, cast
 
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from core.database import DatabaseWriteError
 from core.content_filters import normalize_tags, tags_to_csv, truncate_note

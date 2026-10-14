@@ -3,7 +3,7 @@
 
 import time
 
-from PyQt6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from core.workers import ApiWorker
 from ui.main_window_fetch_support.worker_flow_support import (

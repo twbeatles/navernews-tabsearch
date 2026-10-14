@@ -3,7 +3,7 @@ from collections import deque
 from types import SimpleNamespace
 from typing import Any, cast
 
-from PyQt6.QtCore import QMutex
+from PySide6.QtCore import QMutex
 
 from ui._main_window_fetch import _MainWindowFetchMixin
 from ui.main_window import MainApp

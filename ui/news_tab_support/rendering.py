@@ -5,7 +5,7 @@ import hashlib
 import html
 from typing import Any, Dict, Optional, Tuple
 
-from PyQt6.QtCore import QTimer
+from PySide6.QtCore import QTimer
 
 from core.publisher_aliases import canonical_publisher
 from core.text_utils import TextUtils, parse_date_string, perf_timer

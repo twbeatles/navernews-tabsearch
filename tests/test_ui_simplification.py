@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from ui.main_window import MainApp
 from ui.news_tab import NewsTab

@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 from typing import Any, cast
 
-from PyQt6.QtCore import QMutex
+from PySide6.QtCore import QMutex
 
 from core.query_parser import build_fetch_key, parse_search_query
 from core.worker_registry import WorkerHandle, WorkerRegistry

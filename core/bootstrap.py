@@ -12,10 +12,10 @@ from typing import Callable, Optional
 os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
 os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
 
-from PyQt6.QtCore import QLockFile, Qt, QTimer
-from PyQt6.QtGui import QColor, QIcon, QPixmap
-from PyQt6.QtNetwork import QLocalServer, QLocalSocket
-from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
+from PySide6.QtCore import QLockFile, Qt, QTimer
+from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
+from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from core.backup import apply_pending_restore_if_any, cleanup_applied_pending_restore_files
 from core.constants import (

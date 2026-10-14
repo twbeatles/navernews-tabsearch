@@ -3,7 +3,7 @@
 ## 전제
 
 - `python -m pytest tests/test_scope_cleanup.py -q` 가 통과하는 상태.
-- 데스크톱 앱 실행 가능 환경 (PyQt6).
+- 데스크톱 앱 실행 가능 환경 (PySide6).
 
 ## 검증 시나리오
 

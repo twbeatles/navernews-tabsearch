@@ -12,15 +12,15 @@ GAP-008의 잔여 항목(닫힌 탭이 남긴 죽은 `query_key` 스코프의 �
 
 **Language/Version**: Python 3.10+ (repo convention; `X | Y` unions, `tomllib` 미사용 구간과 동일 수준)
 
-**Primary Dependencies**: PyQt6 (UI), sqlite3 (stdlib), 기존 `core` 믹스인 구조
+**Primary Dependencies**: PySide6 (UI), sqlite3 (stdlib), 기존 `core` 믹스인 구조
 
 **Storage**: 로컬 SQLite (`news`, `news_keywords` — PK `(link, query_key)`, FK `link → news(link) ON DELETE CASCADE`)
 
 **Testing**: pytest (`tests/test_scope_cleanup.py` 신규; `DatabaseManager(tmp, max_connections=...)` + `upsert_news_detailed` 시딩 — `test_audit_remediation_20260920.py`와 동일 패턴)
 
-**Target Platform**: Windows 데스크톱 (PyQt6)
+**Target Platform**: Windows 데스크톱 (PySide6)
 
-**Project Type**: desktop-app (PyQt6)
+**Project Type**: desktop-app (PySide6)
 
 **Performance Goals**: 죽은 범위 50개·소속 10,000건 정리 미리보기+실행이 체감 지연 없이 완료 (단일 DELETE 문 + 스코프 한정 재계산; 전체 DB 스캔 금지)
 

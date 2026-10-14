@@ -13,8 +13,8 @@ import os
 import tempfile
 from typing import Dict
 
-from PyQt6.QtCore import QPointF, Qt
-from PyQt6.QtGui import QColor, QImage, QPainter, QPen
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QColor, QImage, QPainter, QPen
 
 from ui.styles_support.tokens import Palette
 

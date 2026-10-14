@@ -1,8 +1,8 @@
 from collections import deque
 from typing import Deque, Optional, Tuple
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PyQt6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QWidget
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QWidget
 
 from ui.styles import ToastType, UIConstants
 from ui.styles_support import Typography

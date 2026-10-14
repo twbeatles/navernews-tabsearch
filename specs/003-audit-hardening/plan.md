@@ -10,7 +10,7 @@
 
 **Language/Version**: Python 3.14 (release CI 기준, Windows x64)
 
-**Primary Dependencies**: PyQt6, requests, cryptography, charset-normalizer, PyInstaller
+**Primary Dependencies**: PySide6, requests, cryptography, charset-normalizer, PyInstaller
 
 **Storage**: 로컬 SQLite `news_database.db`, JSON 설정 `news_scraper_config.json`, cloud ZIP snapshots
 
@@ -18,7 +18,7 @@
 
 **Target Platform**: Windows 10/11 desktop
 
-**Project Type**: 단일 PyQt6 desktop application
+**Project Type**: 단일 PySide6 desktop application
 
 **Performance Goals**: CSV chunking, cloud sync 최대 20개 import/cycle, UI thread 비차단 유지
 

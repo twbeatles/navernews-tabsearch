@@ -7,7 +7,7 @@ import traceback
 from typing import Any, Callable, Dict, List, Optional, TypedDict, cast
 
 import requests
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 from core.database import DatabaseConnectionError, DatabaseQueryError, DatabaseWriteError
 from core.naver_api import (
@@ -54,9 +54,9 @@ class ApiErrorMeta(TypedDict):
 class ApiWorker(QObject):
     """API 호출 워커 (재시도 로직 및 백그라운드 DB 저장 포함)"""
 
-    finished = pyqtSignal(dict)
-    error = pyqtSignal(str)
-    progress = pyqtSignal(str)
+    finished = Signal(dict)
+    error = Signal(str)
+    progress = Signal(str)
 
     def __init__(
         self,

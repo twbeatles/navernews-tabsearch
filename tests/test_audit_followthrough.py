@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from PyQt6.QtCore import QTimer
+from PySide6.QtCore import QTimer
 
 from core.workers import DBQueryScope
 from ui._main_window_settings_io import _MainWindowSettingsIOMixin

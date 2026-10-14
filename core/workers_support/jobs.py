@@ -5,7 +5,7 @@ import traceback
 from contextlib import contextmanager
 from typing import Any, Dict, Optional, Protocol, cast
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,9 @@ def perf_timer(scope: str, meta: str = ""):
 class AsyncJobWorker(QThread):
     """단발성 비동기 작업 수행 워커"""
 
-    finished = pyqtSignal(object)
-    error = pyqtSignal(str)
-    settled = pyqtSignal()
+    finished = Signal(object)
+    error = Signal(str)
+    settled = Signal()
 
     def __init__(self, job_func, *args, parent=None, **kwargs):
         super().__init__(parent)
@@ -95,11 +95,11 @@ class LongTaskContext:
 class IterativeJobWorker(QThread):
     """Cancel-aware worker for repetitive or chunked background tasks."""
 
-    finished = pyqtSignal(object)
-    error = pyqtSignal(str)
-    progress = pyqtSignal(object)
-    cancelled = pyqtSignal()
-    settled = pyqtSignal()
+    finished = Signal(object)
+    error = Signal(str)
+    progress = Signal(object)
+    cancelled = Signal()
+    settled = Signal()
 
     def __init__(self, job_func, *args, parent=None, **kwargs):
         super().__init__(parent)
@@ -133,10 +133,10 @@ class IterativeJobWorker(QThread):
 class InterruptibleReadWorker(QThread):
     """Dedicated read worker backed by an interruptible SQLite connection."""
 
-    finished = pyqtSignal(object)
-    error = pyqtSignal(str)
-    cancelled = pyqtSignal()
-    settled = pyqtSignal()
+    finished = Signal(object)
+    error = Signal(str)
+    cancelled = Signal()
+    settled = Signal()
 
     def __init__(self, db_manager, job_func, *args, parent=None, **kwargs):
         super().__init__(parent)

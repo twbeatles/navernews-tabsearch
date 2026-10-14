@@ -5,7 +5,7 @@
 ## Project Snapshot
 
 - App: Naver News tab search/management desktop tool
-- Runtime: Python 3.14, PyQt6, SQLite, requests
+- Runtime: Python 3.14, PySide6, SQLite, requests
 - News API: **NAVER API HUB** (not legacy Developers Center)
 - Entry point: `news_scraper_pro.py`
 - Bootstrap: `core.bootstrap.main()`

@@ -1,20 +1,81 @@
 import logging
 from typing import Any, Callable, Dict
 
-from PyQt6.QtCore import QThread
+from PySide6.QtCore import QThread, QTimer, Signal
 
 logger = logging.getLogger(__name__)
 _DETACHED_WORKERS: Dict[int, Any] = {}
+_ACTIVE_FINISH_WATCHERS: set = set()
 
 def _safe_delete_later(obj: Any) -> None:
     try:
         obj.deleteLater()
     except Exception:
         pass
+def _declares_shadowed_finished(worker: Any) -> bool:
+    """Detect a subclass result signal named finished shadowing QThread.finished."""
+    for klass in type(worker).__mro__:
+        if klass is QThread:
+            return False
+        if isinstance(klass.__dict__.get("finished"), Signal):
+            return True
+    return False
+
+
+def _watch_finished_by_polling(worker: Any, slot: Callable[..., Any]) -> bool:
+    """Fire slot once the native thread reports finished, without signals.
+
+    PySide6 resolves QThread.finished.__get__ by instance type and name, so a
+    shadowed finished always binds the subclass result signal and the native
+    no-arg finished() is unreachable from Python. Poll isFinished() instead so
+    result-signal emissions never trigger premature cleanup.
+    """
+    try:
+        timer = QTimer()
+        timer.setInterval(50)
+    except Exception:
+        return False
+    _ACTIVE_FINISH_WATCHERS.add(timer)
+
+    def _stop() -> None:
+        _ACTIVE_FINISH_WATCHERS.discard(timer)
+        try:
+            timer.stop()
+        except Exception:
+            pass
+        try:
+            timer.deleteLater()
+        except Exception:
+            pass
+
+    def _check() -> None:
+        try:
+            finished = worker.isFinished()
+        except Exception:
+            _stop()
+            return
+        if finished:
+            _stop()
+            try:
+                slot()
+            except Exception:
+                logger.exception("qthread finished slot failed")
+
+    try:
+        timer.timeout.connect(_check)
+        timer.start()
+        return True
+    except Exception:
+        _stop()
+        return False
+
+
 def connect_qthread_finished(worker: Any, slot: Callable[..., Any]) -> bool:
     """Connect to QThread.finished even when subclasses define result signals named finished."""
     if not isinstance(worker, QThread):
         return False
+    if _declares_shadowed_finished(worker):
+        return _watch_finished_by_polling(worker, slot)
     try:
         finished_signal = QThread.finished.__get__(worker, type(worker))
         finished_signal.connect(slot)

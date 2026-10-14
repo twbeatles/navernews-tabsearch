@@ -1,8 +1,8 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
-from PyQt6.QtCore import QDate, QSignalBlocker, Qt, QTimer
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QDate, QSignalBlocker, Qt, QTimer
+from PySide6.QtWidgets import (
     QCheckBox,
     QDateEdit,
     QFrame,

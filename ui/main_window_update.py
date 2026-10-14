@@ -8,10 +8,10 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtCore import QUrl
-from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
+from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QUrl
+from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
 
 from core.constants import (
     UPDATE_ARTIFACT_MAX_BYTES,
@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 class _UpdateBridge(QObject):
-    checked = pyqtSignal(object, object, bool)
-    downloaded = pyqtSignal(object, object)
+    checked = Signal(object, object, bool)
+    downloaded = Signal(object, object)
 
 
 def _fit_dialog_buttons(dialog: QMessageBox, horizontal_slack: int = 28) -> None:

@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from PyQt6.QtCore import QTimer, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QMessageBox, QWidget
 
 from core.database import DatabaseManager
 from core.logging_setup import configure_logging
@@ -34,8 +34,8 @@ class NewsTab(
 
     PAGE_SIZE = 50
     FILTER_DEBOUNCE_MS = 250
-    hydration_finished = pyqtSignal(str)
-    hydration_failed = pyqtSignal(str, str)
+    hydration_finished = Signal(str)
+    hydration_failed = Signal(str, str)
 
     def __init__(
         self,

@@ -8,9 +8,9 @@ import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional, cast
 
-from PyQt6.QtCore import Qt, QTimer, QUrl
-from PyQt6.QtGui import QCloseEvent, QDesktopServices
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,

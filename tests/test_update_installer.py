@@ -152,8 +152,8 @@ def test_wait_for_parent_times_out_while_process_is_alive():
 
 
 def test_fit_dialog_buttons_reserves_text_slack():
-    from PyQt6.QtGui import QFontMetrics
-    from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+    from PySide6.QtGui import QFontMetrics
+    from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 
     from ui.main_window_update import _fit_dialog_buttons
 

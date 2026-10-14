@@ -6,9 +6,9 @@ import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 import requests
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
 from core.cloud_sync import (
     delete_quarantined_snapshot,
