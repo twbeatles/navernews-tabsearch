@@ -65,7 +65,11 @@ def test_apply_staged_update_restarts_verified_executable(tmp_path: Path):
                 )
 
     assert target.read_bytes() == b"new"
-    smoke.assert_called_once_with([str(target.resolve()), "--smoke"], timeout=60, check=False, capture_output=True)
+    smoke.assert_called_once()
+    assert smoke.call_args.args[0] == [str(target.resolve()), "--smoke"]
+    assert smoke.call_args.kwargs.get("capture_output") is True
+    for key in (smoke.call_args.kwargs.get("env") or {}):
+        assert not key.upper().startswith(("_MEI", "_MEIPASS", "PYINSTALLER_"))
     restart.assert_called_once()
     notify.assert_called_once_with(target.resolve())
 

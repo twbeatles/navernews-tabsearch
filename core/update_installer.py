@@ -12,8 +12,8 @@ import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -175,11 +175,72 @@ def _notify_shell_icon_changed(path: Path) -> None:
         logger.warning("업데이트된 실행 파일의 아이콘 갱신 알림에 실패했습니다: %s", exc)
 
 
+def _sanitized_bootloader_env() -> dict[str, str]:
+    """Child-process environment without PyInstaller bootloader state.
+
+    A one-file helper or a freshly installed exe must not inherit the parent
+    bundle temp-dir pointers (``_MEI*`` / ``_MEIPASS*`` / ``PYINSTALLER_*``).
+    That directory disappears when the parent exits, so an inheriting child
+    loads the wrong bundle.
+    """
+    env = dict(os.environ)
+    for key in list(env.keys()):
+        upper = key.upper()
+        if upper == "_MEIPASS" or upper.startswith("_MEI") or upper.startswith("_MEIPASS") or upper.startswith("PYINSTALLER_"):
+            del env[key]
+    return env
+
+
+def _sibling_update_backups(target: Path) -> list[Path]:
+    try:
+        backups = [path for path in target.parent.glob(f"{target.name}.v*.bak") if path.is_file()]
+    except OSError:
+        return []
+    try:
+        backups.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
+    return backups
+
+
+def recover_interrupted_update(*, target: Path, backup: Path) -> Path | None:
+    """Restore the install when a rename swap stopped between its two moves.
+
+    The swap moves ``target -> backup`` then ``staged -> target``. A crash in
+    between leaves ``target`` missing while ``backup`` (or a previous
+    attempt's sibling ``*.bak``) still holds the last good exe. The next run
+    puts that backup back before attempting a fresh swap.
+    """
+    resolved_target, resolved_backup = target.resolve(), backup.resolve()
+    if resolved_target.is_file():
+        return None
+    candidates: list[Path] = []
+    if resolved_backup.is_file():
+        candidates.append(resolved_backup)
+    for sibling in _sibling_update_backups(resolved_target):
+        if sibling != resolved_backup and sibling not in candidates:
+            candidates.append(sibling)
+    if not candidates:
+        return None
+    try:
+        candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
+    chosen = candidates[0]
+    os.replace(chosen, resolved_target)
+    _notify_shell_icon_changed(resolved_target)
+    return chosen
+
+
 def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sha256: str, expected_size: int) -> None:
     target, staged, backup = target.resolve(), staged.resolve(), backup.resolve()
     if len({target, staged, backup}) != 3 or target.suffix.lower() != ".exe" or staged.suffix.lower() != ".exe" or backup.parent != target.parent:
         raise ValueError("업데이트 교체 경로가 올바르지 않습니다.")
-    if not target.is_file() or not staged.is_file() or backup.exists() or staged.stat().st_size != expected_size:
+    if not target.is_file():
+        recovered = recover_interrupted_update(target=target, backup=backup)
+        if recovered is None:
+            raise ValueError("업데이트 교체 파일을 확인할 수 없습니다.")
+    if not target.is_file() or not staged.is_file() or staged.stat().st_size != expected_size:
         raise ValueError("업데이트 교체 파일을 확인할 수 없습니다.")
     digest_builder = hashlib.sha256()
     with staged.open("rb") as handle:
@@ -188,16 +249,24 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
     digest = digest_builder.hexdigest().lower()
     if digest != expected_sha256.lower():
         raise ValueError("업데이트 파일 무결성 재검증에 실패했습니다.")
-    shutil.copy2(target, backup)
+    # Windows cannot overwrite or delete a running (or just-exited) exe
+    # (WinError 5), but it can rename it. Move the install aside first so a
+    # locked target never blocks the swap; a first-move failure leaves the
+    # installed file in place. os.replace overwrites a stale backup from an
+    # earlier attempt instead of refusing with "backup already exists".
+    os.replace(target, backup)
     try:
         os.replace(staged, target)
-        completed = subprocess.run([str(target), "--smoke"], timeout=60, check=False, capture_output=True)
+        completed = subprocess.run([str(target), "--smoke"], timeout=60, check=False, capture_output=True, env=_sanitized_bootloader_env())
         if completed.returncode:
             raise RuntimeError("업데이트된 프로그램의 시작 점검에 실패했습니다.")
-        subprocess.Popen([str(target)], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.Popen([str(target)], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=_sanitized_bootloader_env())
     except Exception as exc:
         if backup.is_file():
-            os.replace(backup, target)
+            try:
+                os.replace(backup, target)
+            except OSError:
+                raise RuntimeError("업데이트 실패 후 이전 버전으로 복구하지 못했습니다. 백업에서 직접 복원하십시오.") from exc
             _notify_shell_icon_changed(target)
             raise RuntimeError("업데이트 실패 후 이전 버전으로 복구했습니다.") from exc
         raise
@@ -215,7 +284,7 @@ def launch_update_helper(*, target: Path, staged: Path, version: str, sha256: st
     shutil.copy2(Path(sys.executable).resolve(), helper)
     backup = target.with_name(f"{target.name}.v{version}.{uuid4().hex[:8]}.bak")
     try:
-        subprocess.Popen([str(helper), "--apply-update", "--target", str(target), "--staged", str(staged), "--backup", str(backup), "--parent-pid", str(os.getpid()), "--expected-sha256", sha256, "--expected-size", str(size), "--result-file", str(result_file.resolve())], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.Popen([str(helper), "--apply-update", "--target", str(target), "--staged", str(staged), "--backup", str(backup), "--parent-pid", str(os.getpid()), "--expected-sha256", sha256, "--expected-size", str(size), "--result-file", str(result_file.resolve())], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=_sanitized_bootloader_env())
     except Exception:
         helper.unlink(missing_ok=True)
         raise
