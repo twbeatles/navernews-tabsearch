@@ -183,7 +183,7 @@ def test_cancelled_json_export_closes_snapshot_and_preserves_file(tmp_path):
     with pytest.raises(RuntimeError, match="cancelled"):
         export_scope_to_json(Context(), DB(), DBQueryScope(keyword="x"), str(output), "x", chunk_size=1)
     assert closed == [True]
-    assert output.read_text() == "original"
+    assert output.read_text(encoding="utf-8") == "original"
     assert not list(tmp_path.glob(".export_*.tmp"))
 
 
