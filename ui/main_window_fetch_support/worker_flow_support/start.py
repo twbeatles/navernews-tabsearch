@@ -37,6 +37,8 @@ class _FetchWorkerStartMixin:
         is_sequential: bool = False,
     ):
         """Fetch news for a tab."""
+        if bool(getattr(self, "_shutdown_in_progress", False)):
+            return
         if self.is_maintenance_mode_active():
             action = "더 불러오기" if is_more else "새로고침"
             msg = self._maintenance_block_message(action)

@@ -25,3 +25,25 @@ jobs:
         run: python -m pyright
       - name: Test suite
         run: python -m pytest -q
+      - name: Isolated UI and database startup
+        run: python news_scraper_pro.py --smoke
+      - name: Build frozen application
+        run: python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
+      - name: Frozen startup smoke
+        shell: pwsh
+        run: |
+          $smokeProcess = Start-Process -FilePath ./dist/NewsScraperPro_Safe.exe -ArgumentList '--smoke' -WindowStyle Hidden -PassThru
+          if (-not $smokeProcess.WaitForExit(60000)) { $smokeProcess.Kill(); throw 'Frozen smoke timed out' }
+          if ($smokeProcess.ExitCode -ne 0) { throw "Frozen smoke failed: $($smokeProcess.ExitCode)" }
+
+  core-without-ui:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install core test dependencies without optional UI or crypto
+        run: python -m pip install pytest==9.1.1 requests==2.34.2 charset-normalizer==3.5.2
+      - name: Core tests and explicit optional dependency skips
+        run: python -m pytest -q -rs

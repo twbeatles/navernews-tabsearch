@@ -322,9 +322,12 @@ class _SettingsDialogContentMixin:
         btn_folder.clicked.connect(self.open_data_folder)
         btn_log = QPushButton("로그 보기")
         btn_log.clicked.connect(self.show_log_dialog)
+        self.btn_repair_duplicates = QPushButton("중복 표시 복구")
+        self.btn_repair_duplicates.clicked.connect(self.repair_duplicate_flags)
         layout.addWidget(btn_groups)
         layout.addWidget(btn_folder)
         layout.addWidget(btn_log)
+        layout.addWidget(self.btn_repair_duplicates)
         layout.addStretch()
         group.setLayout(layout)
         return group

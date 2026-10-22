@@ -1,4 +1,5 @@
 import unittest
+import os
 from pathlib import Path
 import re
 
@@ -16,7 +17,9 @@ class TestEncodingSmoke(unittest.TestCase):
         ".yml",
         ".yaml",
     }
-    _SKIP_DIRS = {".git", "build", "dist", "__pycache__", ".pytest_cache"}
+    _SKIP_DIRS = {".git", "build", "dist", "__pycache__", ".pytest_cache",
+                  ".venv", "venv", "env", "ENV", ".pytest_tmp", ".codegraph",
+                  ".zcode", ".mypy_cache", ".pyrightcache", ".ruff_cache", "node_modules"}
     _BROKEN_TOKENS = {
         _KNOWN_BROKEN_TOKEN,
         "\u907a\uacf7\ucb4f",
@@ -38,13 +41,12 @@ class TestEncodingSmoke(unittest.TestCase):
     )
 
     def _iter_repo_text_files(self):
-        for path in Path(".").rglob("*"):
-            if not path.is_file():
-                continue
-            if any(part in self._SKIP_DIRS for part in path.parts):
-                continue
-            if path.suffix.lower() in self._TEXT_SUFFIXES:
-                yield path
+        for root, dirs, files in os.walk("."):
+            dirs[:] = [name for name in dirs if name not in self._SKIP_DIRS]
+            for name in files:
+                path = Path(root) / name
+                if path.suffix.lower() in self._TEXT_SUFFIXES:
+                    yield path
 
     def test_known_broken_token_removed_from_news_tab(self):
         src = Path("ui/news_tab.py").read_text(encoding="utf-8")

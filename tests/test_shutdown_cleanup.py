@@ -212,6 +212,23 @@ class _CallbackFailureTab:
 
 
 class TestShutdownCleanup(unittest.TestCase):
+    def test_cloud_worker_blocks_db_close_until_native_thread_stops(self):
+        dummy = cast(Any, _DummyCloseMain())
+        worker = _FakeWorker(running=True, wait_result=False)
+        dummy._cloud_sync_worker = worker
+        event = mock.Mock()
+        with mock.patch("ui._main_window_tray.QTimer.singleShot") as retry:
+            dummy.close = mock.Mock()
+            dummy._perform_real_close(event)
+            self.assertNotIn("db.close", dummy.call_log)
+            self.assertNotIn("app.quit", dummy.call_log)
+            event.ignore.assert_called_once()
+            retry.assert_called_once()
+        worker.running = False
+        dummy._perform_real_close(_FakeEvent())
+        self.assertIn("db.close", dummy.call_log)
+        self.assertIn("app.quit", dummy.call_log)
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

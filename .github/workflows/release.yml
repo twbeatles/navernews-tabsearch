@@ -34,6 +34,20 @@ jobs:
       - name: Build Windows executable
         run: python -m PyInstaller --noconfirm --clean news_scraper_pro.spec
 
+      - name: Validate tests and types before publishing
+        run: |
+          python -m pyright
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Frozen startup smoke before publishing
+        shell: pwsh
+        run: |
+          $smokeProcess = Start-Process -FilePath ./dist/NewsScraperPro_Safe.exe -ArgumentList '--smoke' -WindowStyle Hidden -PassThru
+          if (-not $smokeProcess.WaitForExit(60000)) { $smokeProcess.Kill(); throw 'Frozen smoke timed out' }
+          if ($smokeProcess.ExitCode -ne 0) { throw "Frozen smoke failed: $($smokeProcess.ExitCode)" }
+
       - name: Create GitHub Release and upload executable
         uses: softprops/action-gh-release@v2
         with:

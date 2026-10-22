@@ -108,6 +108,9 @@ class _NewsUpsertMixin:
                 prepared_items = [prepared_by_link[link] for link in link_order]
 
                 with conn:
+                    # Take the writer reservation before reading old hashes: another
+                    # fetch must not change a shared article between read and write.
+                    conn.execute("BEGIN IMMEDIATE")
                     unique_hashes = sorted(
                         {
                             str(item.get("title_hash", "") or "").strip()
@@ -116,6 +119,20 @@ class _NewsUpsertMixin:
                         }
                     )
                     incoming_links = sorted(link_order)
+                    affected_scopes: Dict[str, Set[str]] = {}
+                    if incoming_links:
+                        placeholders = ",".join("?" for _ in incoming_links)
+                        memberships = conn.execute(
+                            f"""SELECT n.link, COALESCE(n.title_hash, ''), nk.query_key
+                                FROM news n JOIN news_keywords nk ON nk.link=n.link
+                                WHERE n.link IN ({placeholders})""",
+                            incoming_links,
+                        ).fetchall()
+                        for link, old_hash, member_key in memberships:
+                            new_hash = prepared_by_link[link]["title_hash"]
+                            if old_hash != new_hash and member_key:
+                                hashes = affected_scopes.setdefault(str(member_key), set())
+                                hashes.update(h for h in (old_hash, new_hash) if h)
 
                     existing_links_by_hash: Dict[str, Set[str]] = {}
                     if unique_hashes:
@@ -253,11 +270,14 @@ class _NewsUpsertMixin:
                         scope_insert_data,
                     )
 
-                    if affected_hashes:
+                    affected_scopes.setdefault(scope_query_key, set()).update(affected_hashes)
+                    for affected_key, hashes in affected_scopes.items():
+                        if not hashes:
+                            continue
                         self._recalculate_duplicate_flags_for_query_key_hashes(
                             conn,
-                            scope_query_key,
-                            list(affected_hashes),
+                            affected_key,
+                            sorted(hashes),
                         )
 
             return NewsUpsertResult(added_count, duplicate_count, tuple(new_links))

@@ -12,6 +12,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+import pytest
 from typing import Any, Dict, List
 
 from core.database import DatabaseManager
@@ -498,6 +499,8 @@ class TestMarkdownExportEscaping(unittest.TestCase):
     """GAP-005: brackets and parentheses must not break the exported link."""
 
     def test_title_brackets_and_url_parentheses_are_escaped(self):
+        pytest.importorskip("PySide6")
+        pytest.importorskip("cryptography")
         from ui.main_window_io_support.exports import _export_item_markdown
 
         line = _export_item_markdown(
@@ -513,6 +516,8 @@ class TestMarkdownExportEscaping(unittest.TestCase):
         self.assertIn("(<https://example.com/a(1)?q=b>)", line)
 
     def test_missing_link_renders_a_plain_heading(self):
+        pytest.importorskip("PySide6")
+        pytest.importorskip("cryptography")
         from ui.main_window_io_support.exports import _export_item_markdown
 
         line = _export_item_markdown({"title": "제목", "link": ""}).splitlines()[0]
@@ -571,6 +576,8 @@ class TestFtsBackfillDisabledByDefault(unittest.TestCase):
     """GAP-001: no query consults news_fts, so the worker stays off."""
 
     def test_default_is_off_and_the_flag_turns_it_back_on(self):
+        pytest.importorskip("PySide6")
+        pytest.importorskip("cryptography")
         from ui.main_window_support.base_support.fts_backfill import (
             _MainWindowFtsBackfillMixin,
         )

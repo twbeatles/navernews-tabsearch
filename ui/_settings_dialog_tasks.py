@@ -404,6 +404,30 @@ class _SettingsDialogTasksMixin:
 
         self._start_data_task(job_func, self._on_optimize_database_done, "optimize_database")
 
+    def repair_duplicate_flags(self: SettingsDialog):
+        if QMessageBox.question(
+            self, "중복 표시 복구",
+            "저장된 기사의 중복 표시를 다시 계산하시겠습니까?\n기사는 삭제하지 않으며, 작업 중에는 조회와 수집이 중지됩니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        def repair(context) -> int:
+            context.check_cancelled()
+            db = DatabaseManager(self._runtime_paths().db_file)
+            try:
+                return db.recalculate_duplicate_flags()
+            finally:
+                db.close()
+
+        def done(result):
+            setattr(self, "_pending_parent_data_change", ("repair_duplicates", int(result)))
+            if not self._is_closing:
+                QMessageBox.information(self, "완료", "중복 표시를 복구했습니다.")
+
+        self._start_data_task(repair, done, "repair_duplicates")
+
     def import_csv_dialog(self: SettingsDialog):
         parent = self.parent()
         import_csv = getattr(parent, "import_csv_bookmarks_notes", None)
@@ -447,6 +471,8 @@ class _SettingsDialogTasksMixin:
         self.btn_all.setEnabled(False)
         if hasattr(self, "btn_optimize_db"):
             self.btn_optimize_db.setEnabled(False)
+        if hasattr(self, "btn_repair_duplicates"):
+            self.btn_repair_duplicates.setEnabled(False)
         self.btn_clean.setText("작업 중...")
         self.btn_all.setText("작업 중...")
         if hasattr(self, "btn_optimize_db"):
@@ -516,6 +542,8 @@ class _SettingsDialogTasksMixin:
         self.btn_all.setEnabled(True)
         if hasattr(self, "btn_optimize_db"):
             self.btn_optimize_db.setEnabled(True)
+        if hasattr(self, "btn_repair_duplicates"):
+            self.btn_repair_duplicates.setEnabled(True)
         self.btn_clean.setText(CLEAN_OLD_LABEL)
         self.btn_all.setText(CLEAN_ALL_LABEL)
         if hasattr(self, "btn_optimize_db"):

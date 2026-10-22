@@ -402,16 +402,17 @@ def export_scope_to_json(
             close_batch_iter()
         raise
 
-    directory = os.path.dirname(os.path.abspath(output_path)) or "."
-    os.makedirs(directory, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(prefix=".export_", suffix=".tmp", dir=directory)
-    all_items: List[Dict[str, Any]] = []
-
+    written = 0
+    tmp_path = ""
+    fd = None
     try:
+        directory = os.path.dirname(os.path.abspath(output_path)) or "."
+        os.makedirs(directory, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".export_", suffix=".tmp", dir=directory)
         if batch_iter is None:
             def _fallback_iter():
                 offset = 0
-                while len(all_items) < total_count:
+                while written < total_count:
                     rows = db_manager.fetch_news(
                         limit=max(1, int(chunk_size)),
                         offset=max(0, int(offset)),
@@ -424,43 +425,49 @@ def export_scope_to_json(
 
             batch_iter = _fallback_iter()
 
-        for rows in batch_iter:
-            context.check_cancelled()
-            if not rows:
-                break
-            for item in rows:
-                context.check_cancelled()
-                all_items.append(item)
-            context.report(
-                current=len(all_items),
-                total=total_count,
-                message=f"JSON 수집 중... ({len(all_items)}/{total_count})",
-                payload={"stage": "write", "written": len(all_items), "path": output_path},
-            )
-
-        payload = {
-            "keyword": keyword,
-            "exported_at": datetime.now().isoformat(),
-            "count": len(all_items),
-            "items": all_items,
-        }
         with os.fdopen(fd, "w", newline="\n", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+            fd = None
+            f.write('{"keyword": ')
+            json.dump(keyword, f, ensure_ascii=False)
+            f.write(', "exported_at": ')
+            json.dump(datetime.now().isoformat(), f)
+            f.write(', "items": [\n')
+            for rows in batch_iter:
+                context.check_cancelled()
+                if not rows:
+                    break
+                for item in rows:
+                    context.check_cancelled()
+                    if written:
+                        f.write(',\n')
+                    json.dump(item, f, ensure_ascii=False)
+                    written += 1
+                f.flush()
+                context.report(
+                    current=written,
+                    total=total_count,
+                    message=f"JSON 내보내는 중... ({written}/{total_count})",
+                    payload={"stage": "write", "written": written, "path": output_path},
+                )
+            f.write('\n], "count": ' + str(written) + '}\n')
             f.flush()
             os.fsync(f.fileno())
-
+        context.check_cancelled()
         os.replace(tmp_path, output_path)
-        return {"count": len(all_items), "path": output_path, "keyword": keyword, "format": "json"}
+        return {"count": written, "path": output_path, "keyword": keyword, "format": "json"}
     except Exception:
-        close_batch_iter = getattr(batch_iter, "close", None)
-        if callable(close_batch_iter):
-            close_batch_iter()
-        if os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
             except OSError:
                 pass
         raise
+    finally:
+        if fd is not None:
+            os.close(fd)
+        close_batch_iter = getattr(batch_iter, "close", None)
+        if callable(close_batch_iter):
+            close_batch_iter()
 def _csv_truthy(value: Any) -> bool:
     text = str(value or "").strip().lower()
     return text in {"1", "true", "yes", "y", "on", "북마크", "bookmarked", "bookmark"}

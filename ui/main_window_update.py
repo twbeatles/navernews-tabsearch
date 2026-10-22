@@ -62,6 +62,8 @@ class _MainWindowUpdateMixin:
         QTimer.singleShot(0, self._show_pending_update_result)
 
     def check_for_updates(self, interactive: bool = True) -> None:
+        if bool(getattr(self, "_update_shutdown_requested", False)):
+            return
         if self._update_busy:
             if interactive:
                 self._toast("이미 업데이트를 확인하고 있습니다.")

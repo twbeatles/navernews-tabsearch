@@ -24,6 +24,38 @@ from core.update_manifest import ReleaseManifest
 logger = logging.getLogger(__name__)
 
 
+class UpdateRolledBackError(RuntimeError):
+    """The old executable was restored successfully."""
+
+
+def prepare_target_update(*, target: Path, staged: Path, sha256: str, size: int) -> Path:
+    """Copy a verified download beside the install before the application exits.
+
+    Renames are only atomic within a volume. Never copy over the installed exe;
+    a permission/full-disk/hash failure leaves it untouched.
+    """
+    target, staged = target.resolve(), staged.resolve()
+    local = target.parent / f".update-{uuid4().hex}.exe"
+    digest = hashlib.sha256()
+    written = 0
+    try:
+        with staged.open("rb") as src, local.open("xb") as dst:
+            for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                written += len(chunk)
+                if written > size or written > UPDATE_ARTIFACT_MAX_BYTES:
+                    raise ValueError("업데이트 파일 크기가 일치하지 않습니다.")
+                digest.update(chunk)
+                dst.write(chunk)
+            dst.flush()
+            os.fsync(dst.fileno())
+        if written != size or digest.hexdigest().lower() != sha256.lower():
+            raise ValueError("업데이트 파일 무결성 재검증에 실패했습니다.")
+        return local
+    except Exception:
+        local.unlink(missing_ok=True)
+        raise
+
+
 def resolve_update_staging_root(data_dir: str | Path) -> Path:
     root = Path(data_dir).resolve() / "updates"
     root.mkdir(parents=True, exist_ok=True)
@@ -249,12 +281,21 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
     digest = digest_builder.hexdigest().lower()
     if digest != expected_sha256.lower():
         raise ValueError("업데이트 파일 무결성 재검증에 실패했습니다.")
+    original_staged = staged
+    if staged.parent != target.parent:
+        staged = prepare_target_update(target=target, staged=staged,
+                                       sha256=expected_sha256, size=expected_size)
     # Windows cannot overwrite or delete a running (or just-exited) exe
     # (WinError 5), but it can rename it. Move the install aside first so a
     # locked target never blocks the swap; a first-move failure leaves the
     # installed file in place. os.replace overwrites a stale backup from an
     # earlier attempt instead of refusing with "backup already exists".
-    os.replace(target, backup)
+    try:
+        os.replace(target, backup)
+    except Exception:
+        if staged != original_staged:
+            staged.unlink(missing_ok=True)
+        raise
     try:
         os.replace(staged, target)
         completed = subprocess.run([str(target), "--smoke"], timeout=60, check=False, capture_output=True, env=_sanitized_bootloader_env())
@@ -268,8 +309,15 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
             except OSError:
                 raise RuntimeError("업데이트 실패 후 이전 버전으로 복구하지 못했습니다. 백업에서 직접 복원하십시오.") from exc
             _notify_shell_icon_changed(target)
-            raise RuntimeError("업데이트 실패 후 이전 버전으로 복구했습니다.") from exc
+            raise UpdateRolledBackError("업데이트 실패 후 이전 버전으로 복구했습니다.") from exc
         raise
+    finally:
+        if staged != original_staged:
+            staged.unlink(missing_ok=True)
+    try:
+        original_staged.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("사용한 업데이트 다운로드 파일을 정리하지 못했습니다: %s", original_staged)
     _notify_shell_icon_changed(target)
     try:
         backups = sorted(target.parent.glob(f"{target.name}.v*.bak"), key=lambda path: path.stat().st_mtime, reverse=True)
@@ -281,19 +329,25 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
 
 def launch_update_helper(*, target: Path, staged: Path, version: str, sha256: str, size: int, result_file: Path) -> None:
     helper = staged.parent / f"update-helper-{uuid4().hex}.exe"
-    shutil.copy2(Path(sys.executable).resolve(), helper)
+    local_staged = prepare_target_update(target=target, staged=staged, sha256=sha256, size=size)
     backup = target.with_name(f"{target.name}.v{version}.{uuid4().hex[:8]}.bak")
     try:
-        subprocess.Popen([str(helper), "--apply-update", "--target", str(target), "--staged", str(staged), "--backup", str(backup), "--parent-pid", str(os.getpid()), "--expected-sha256", sha256, "--expected-size", str(size), "--result-file", str(result_file.resolve())], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=_sanitized_bootloader_env())
+        shutil.copy2(Path(sys.executable).resolve(), helper)
+        subprocess.Popen([str(helper), "--apply-update", "--target", str(target), "--staged", str(local_staged), "--backup", str(backup), "--parent-pid", str(os.getpid()), "--expected-sha256", sha256, "--expected-size", str(size), "--result-file", str(result_file.resolve())], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=_sanitized_bootloader_env())
     except Exception:
         helper.unlink(missing_ok=True)
+        local_staged.unlink(missing_ok=True)
         raise
+    try:
+        staged.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("업데이트 helper 시작 후 다운로드 파일 정리 지연: %s", staged)
 
 
 def handle_update_helper_args(argv: list[str] | None = None) -> int | None:
     args = list(sys.argv[1:] if argv is None else argv)
     if "--smoke" in args:
-        return 0
+        raise ValueError("--smoke must run through the isolated application entrypoint")
     if "--apply-update" not in args:
         return None
     parser = argparse.ArgumentParser()
@@ -316,8 +370,15 @@ def handle_update_helper_args(argv: list[str] | None = None) -> int | None:
         _wait_for_parent(parsed.parent_pid)
         apply_staged_update(target=Path(parsed.target), staged=Path(parsed.staged), backup=Path(parsed.backup), expected_sha256=parsed.expected_sha256, expected_size=parsed.expected_size)
     except Exception as exc:
-        status = "rolled_back" if "복구" in str(exc) else "failed"
+        status = "rolled_back" if isinstance(exc, UpdateRolledBackError) else "failed"
         write_update_result(result_file, {**base_result, "status": status, "error": str(exc)})
+        if isinstance(exc, UpdateRolledBackError):
+            try:
+                subprocess.Popen([str(Path(parsed.target).resolve())], close_fds=True,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                                 env=_sanitized_bootloader_env())
+            except OSError:
+                logger.exception("이전 버전 재실행 실패")
         return 1
     write_update_result(result_file, {**base_result, "status": "applied"})
     return 0

@@ -12,6 +12,7 @@ from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from core.constants import APP_NAME
+from core.workers_support.lifecycle import request_background_shutdown
 from core.workers import InterruptibleReadWorker, delete_qthread_when_finished, retain_worker_until_finished
 
 if TYPE_CHECKING:
@@ -285,6 +286,42 @@ class _MainWindowTrayMixin:
         """프로그램 실제 종료 처리"""
         logger.info("프로그램 실제 종료 시작...")
 
+        self._shutdown_in_progress = True
+        shutdown_updates = getattr(self, "shutdown_update_support", None)
+        if callable(shutdown_updates):
+            shutdown_updates()
+        # Freeze producers before waiting. A deferred close keeps Qt processing
+        # events, so timers and late cloud callbacks must not launch new jobs.
+        for name in ("timer", "_countdown_timer", "_tab_badge_timer",
+                     "_badge_refresh_timer", "_auto_backup_timer", "_cloud_sync_timer",
+                     "_hydration_timer", "_fts_backfill_retry_timer"):
+            timer = getattr(self, name, None)
+            if timer is not None:
+                timer.stop()
+        owned = [getattr(self, name, None) for name in (
+            "_cloud_sync_worker", "_export_worker", "_csv_import_worker",
+            "_fts_backfill_worker", "_tray_unread_worker")]
+        registry = getattr(self, "_worker_registry", None)
+        if registry is not None:
+            for handle in registry.all_handles():
+                try:
+                    handle.worker.stop()
+                    handle.thread.quit()
+                    owned.append(handle.thread)
+                except (AttributeError, RuntimeError):
+                    pass
+        # Also cover child-dialog maintenance/analysis workers, including those
+        # whose result callback has already cleared its named reference.
+        find_children = getattr(self, "findChildren", None)
+        if callable(find_children):
+            from PySide6.QtCore import QThread
+            owned.extend(find_children(QThread))
+        if not request_background_shutdown(owned):
+            event.ignore()
+            self._force_close = True
+            QTimer.singleShot(100, self.close)
+            return
+
         try:
             self._shutdown_in_progress = True
             shutdown_update_support = getattr(self, "shutdown_update_support", None)
@@ -389,9 +426,6 @@ class _MainWindowTrayMixin:
             logger.error(f"종료 처리 중 오류: {e}")
             traceback.print_exc()
             self._app_instance().quit()
-        finally:
-            self._shutdown_in_progress = False
-
         event.accept()
 
     def _get_close_caller_info(self: MainApp) -> str:

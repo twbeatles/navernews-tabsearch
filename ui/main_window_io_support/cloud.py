@@ -60,6 +60,8 @@ class _MainWindowCloudSyncMixin:
         enabled_override: Optional[bool] = None,
         respect_enabled: bool = True,
     ) -> str:
+        if bool(getattr(self, "_shutdown_in_progress", False)):
+            return "프로그램을 종료하고 있습니다."
         enabled = bool(getattr(self, "cloud_sync_enabled", True)) if enabled_override is None else bool(enabled_override)
         if respect_enabled and not enabled:
             return "클라우드 동기화가 꺼져 있습니다."
@@ -323,6 +325,8 @@ class _MainWindowCloudSyncMixin:
         self.end_database_maintenance()
         self.apply_cloud_sync_settings()
     def _on_cloud_sync_finished(self: MainApp, result: Dict[str, Any]) -> None:
+        if bool(getattr(self, "_shutdown_in_progress", False)):
+            return
         imported = list(result.get("imported", []) or [])
         errors = list(result.get("errors", []) or [])
         merged = [item for item in imported if bool(item.get("merged", False))]
@@ -355,10 +359,14 @@ class _MainWindowCloudSyncMixin:
             self.on_database_maintenance_completed("cloud_sync", news_added + memberships_added)
         self.show_success_toast(status)
     def _on_cloud_sync_error(self: MainApp, error_msg: str) -> None:
+        if bool(getattr(self, "_shutdown_in_progress", False)):
+            return
         self._cloud_sync_last_status = f"클라우드 동기화 실패: {error_msg}"
         self._finish_cloud_sync_worker()
         self.show_error_toast(self._cloud_sync_last_status)
     def _on_cloud_sync_cancelled(self: MainApp) -> None:
+        if bool(getattr(self, "_shutdown_in_progress", False)):
+            return
         self._cloud_sync_last_status = "클라우드 동기화가 취소되었습니다."
         self._finish_cloud_sync_worker()
         self.show_warning_toast(self._cloud_sync_last_status)

@@ -104,7 +104,7 @@ class MainApp(
 ):
     """메인 애플리케이션 윈도우 - 안정성 개선 버전"""
 
-    def __init__(self, runtime_paths: Optional[RuntimePaths] = None):
+    def __init__(self, runtime_paths: Optional[RuntimePaths] = None, *, smoke_mode: bool = False):
         super().__init__()
         self.runtime_paths = runtime_paths or RUNTIME_PATHS
         os.makedirs(self.runtime_paths.data_dir, exist_ok=True)
@@ -220,6 +220,10 @@ class MainApp(
             self.init_ui()
             self._connect_system_theme_change()
             self.setup_shortcuts()
+            if smoke_mode:
+                # Use the real UI/schema, without network, autostart, tray or
+                # periodic jobs. The updater closes it after an event-loop tick.
+                return
             QTimer.singleShot(0, self._start_fts_backfill)
 
             self.timer = QTimer(self)
@@ -276,7 +280,8 @@ class MainApp(
         except Exception as exc:
             logger.critical("MainApp 초기화 중 치명적 오류: %s", exc)
             traceback.print_exc()
-            QMessageBox.critical(None, "초기화 오류", f"프로그램 초기화 중 오류가 발생했습니다:\n{exc}")
+            if not smoke_mode:
+                QMessageBox.critical(None, "초기화 오류", f"프로그램 초기화 중 오류가 발생했습니다:\n{exc}")
             raise
 
 

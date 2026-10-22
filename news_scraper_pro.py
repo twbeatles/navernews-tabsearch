@@ -1,4 +1,24 @@
 import os
+import sys
+
+# Isolation must precede even importing core: its package imports constants and
+# configures runtime paths. Never smoke-test against an installed user's data.
+if __name__ == '__main__' and '--smoke' in sys.argv:
+    import logging
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix='news_update_smoke_') as smoke_dir:
+        os.environ['NEWS_SCRAPER_DATA_DIR'] = smoke_dir
+        os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+        try:
+            from core.runtime_smoke import run_smoke
+            smoke_result = run_smoke(smoke_dir)
+        except Exception:
+            logging.exception('Isolated application smoke failed')
+            smoke_result = 1
+        finally:
+            logging.shutdown()
+    raise SystemExit(smoke_result)
 
 os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
 os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')

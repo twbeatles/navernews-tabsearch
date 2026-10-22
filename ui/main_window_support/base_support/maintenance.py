@@ -176,6 +176,7 @@ class _MainWindowMaintenanceMixin:
             "tag_scope_update": "현재 탭 전체 태그 적용",
             "automation_rules": "자동화 규칙 적용",
             "scope_cleanup": "사용하지 않는 범위 정리",
+            "repair_duplicates": "중복 표시 복구",
         }.get(str(operation or "").strip(), "데이터 정리")
         if str(operation or "").strip() == "cloud_sync":
             operation_label = "클라우드 동기화"
@@ -194,6 +195,8 @@ class _MainWindowMaintenanceMixin:
             return
         self._maintenance_mode = False
         self._maintenance_reason = ""
+        if bool(getattr(self, "_shutdown_in_progress", False)):
+            return
         self._apply_maintenance_ui_state()
         self._status_bar().showMessage("✅ 유지보수 모드가 해제되었습니다.", 3000)
         self.show_toast("유지보수 모드가 해제되었습니다.")

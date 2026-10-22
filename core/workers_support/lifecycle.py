@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Callable, Dict
 
 from PySide6.QtCore import QThread, QTimer, Signal
@@ -6,6 +7,46 @@ from PySide6.QtCore import QThread, QTimer, Signal
 logger = logging.getLogger(__name__)
 _DETACHED_WORKERS: Dict[int, Any] = {}
 _ACTIVE_FINISH_WATCHERS: set = set()
+
+
+def request_background_shutdown(workers: Any, wait_ms: int = 1000) -> bool:
+    """Cancel owned workers and confirm native thread exit within one time budget.
+
+    A result/settled signal may be emitted before run() returns. Only wait()
+    or a stopped native thread permits closing its database or QObject parent.
+    The caller keeps the event loop and parent alive when this returns False.
+    """
+    candidates = list(workers)
+    for retained in list(_DETACHED_WORKERS.values()):
+        candidates.extend(retained if isinstance(retained, tuple) else (retained,))
+    pending = []
+    seen = set()
+    for worker in candidates:
+        if worker is None:
+            continue
+        if id(worker) in seen or not callable(getattr(worker, "isRunning", None)):
+            continue
+        seen.add(id(worker))
+        try:
+            if worker.isRunning():
+                pending.append(worker)
+                request = getattr(worker, "requestInterruption", None)
+                if callable(request):
+                    request()
+                quit_thread = getattr(worker, "quit", None)
+                if callable(quit_thread):
+                    quit_thread()
+        except RuntimeError:
+            continue  # Already deleted by its native-finished cleanup.
+    deadline = time.monotonic() + max(0, wait_ms) / 1000
+    complete = True
+    for worker in pending:
+        try:
+            if not worker.wait(max(0, int((deadline - time.monotonic()) * 1000))):
+                complete = False
+        except RuntimeError:
+            continue
+    return complete
 
 def _safe_delete_later(obj: Any) -> None:
     try:
