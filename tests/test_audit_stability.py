@@ -97,7 +97,7 @@ def test_helper_records_rollback_before_restarting_previous_app(tmp_path):
     staged.write_bytes(b"new")
 
     def restarted(*args, **kwargs):
-        assert json.loads(result.read_text())["status"] == "rolled_back"
+        assert json.loads(result.read_text(encoding="utf-8"))["status"] == "rolled_back"
         assert target.read_bytes() == b"old"
 
     args = ["--apply-update", "--target", str(target), "--staged", str(staged),
