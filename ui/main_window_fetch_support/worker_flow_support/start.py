@@ -38,19 +38,25 @@ class _FetchWorkerStartMixin:
     ):
         """Fetch news for a tab."""
         if bool(getattr(self, "_shutdown_in_progress", False)):
+            if is_sequential:
+                self._abort_sequential_refresh()
             return
         if self.is_maintenance_mode_active():
             action = "더 불러오기" if is_more else "새로고침"
             msg = self._maintenance_block_message(action)
             logger.info("Fetch blocked during maintenance: kw=%s, action=%s", keyword, action)
             self._status_bar().showMessage(msg, 3000)
-            if not is_sequential:
+            if is_sequential:
+                self._advance_sequential_if_awaiting(keyword)
+            else:
                 self.show_warning_toast(msg)
             return
 
         search_keyword, exclude_words = parse_search_query(keyword)
         if not search_keyword:
-            if not is_sequential:
+            if is_sequential:
+                self._advance_sequential_if_awaiting(keyword)
+            else:
                 self.show_warning_toast("탭 검색어에 일반 키워드가 없습니다. 탭 이름을 확인해주세요.")
             return
 
@@ -82,7 +88,9 @@ class _FetchWorkerStartMixin:
         if cooldown_msg:
             logger.info("Fetch blocked by cooldown: kw=%s", keyword)
             self._status_bar().showMessage(cooldown_msg, 3000)
-            if not is_sequential:
+            if is_sequential:
+                self._advance_sequential_if_awaiting(keyword)
+            else:
                 self.show_warning_toast(cooldown_msg)
             return
 
@@ -142,6 +150,14 @@ class _FetchWorkerStartMixin:
 
         old_handle = self._worker_registry.get_active_handle(keyword)
         if old_handle:
+            is_awaited = getattr(self, "_is_awaited_sequential_keyword", None)
+            if not is_sequential and callable(is_awaited) and is_awaited(keyword):
+                logger.warning("Fetch skipped to protect awaited sequential worker: %s", keyword)
+                self._status_bar().showMessage(
+                    f"'{keyword}' 새로고침이 진행 중이라 이번 요청을 건너뛰었습니다.",
+                    4000,
+                )
+                return
             if not self.cleanup_worker(keyword=keyword, request_id=old_handle.request_id, only_if_active=True):
                 logger.warning("Fetch skipped because previous worker is still stopping: %s", keyword)
                 if located_tab := self._find_news_tab(keyword):

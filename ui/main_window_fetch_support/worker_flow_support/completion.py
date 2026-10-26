@@ -36,6 +36,9 @@ class _FetchWorkerCompletionMixin:
         try:
             if not self._is_active_worker_request(keyword, request_id):
                 logger.info("stale on_fetch_done ignored: kw=%s, rid=%s", keyword, request_id)
+                advance_if_awaiting = getattr(self, "_advance_sequential_if_awaiting", None)
+                if is_sequential and callable(advance_if_awaiting):
+                    advance_if_awaiting(keyword)
                 return
 
             search_keyword, exclude_words = parse_search_query(keyword)
@@ -191,6 +194,9 @@ class _FetchWorkerCompletionMixin:
         """Handle a failed fetch."""
         if not self._is_active_worker_request(keyword, request_id):
             logger.info("stale on_fetch_error ignored: kw=%s, rid=%s", keyword, request_id)
+            advance_if_awaiting = getattr(self, "_advance_sequential_if_awaiting", None)
+            if is_sequential and callable(advance_if_awaiting):
+                advance_if_awaiting(keyword)
             return
 
         search_keyword, exclude_words = parse_search_query(keyword)

@@ -276,6 +276,17 @@ class _MainWindowTabsMixin:
                 "탭 닫기",
             ):
                 return
+            is_awaited = getattr(self, "_is_awaited_sequential_keyword", None)
+            advance_if_awaiting = getattr(self, "_advance_sequential_if_awaiting", None)
+            if (
+                self._worker_registry.get_active_request_id(removed_keyword) is None
+                and callable(is_awaited)
+                and callable(advance_if_awaiting)
+                and is_awaited(removed_keyword)
+            ):
+                # The detached worker will never signal completion; advance the
+                # parked sequential chain instead of stalling it.
+                advance_if_awaiting(removed_keyword)
             try:
                 widget.cleanup()
             except Exception as e:
@@ -341,6 +352,17 @@ class _MainWindowTabsMixin:
                 "탭 이름 변경",
             ):
                 return
+            is_awaited = getattr(self, "_is_awaited_sequential_keyword", None)
+            advance_if_awaiting = getattr(self, "_advance_sequential_if_awaiting", None)
+            if (
+                self._worker_registry.get_active_request_id(old_keyword) is None
+                and callable(is_awaited)
+                and callable(advance_if_awaiting)
+                and is_awaited(old_keyword)
+            ):
+                # Same stall guard as tab close: the detached worker will never
+                # signal completion for the old keyword.
+                advance_if_awaiting(old_keyword)
 
             w.keyword = new_keyword
             self._remove_tab_hydration(old_keyword)

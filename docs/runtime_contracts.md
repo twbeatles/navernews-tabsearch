@@ -6,6 +6,7 @@
 - `core.workers_support.lifecycle.request_background_shutdown`이 중단을 요청하고 하나의 시간 예산 안에서 네이티브 스레드 종료를 확인한다. named worker, QObject 자식, 분리 보관된 worker도 확인한다.
 - `_perform_real_close`는 생산 타이머를 중단하고 API worker를 정지시킨다. 작업이 남으면 close event를 무시하고 이벤트 루프를 유지한 채 재시도한다. 대기 timeout을 완료로 처리하거나 스레드를 강제 terminate하지 않는다.
 - 종료 요청 후에는 새 fetch·cloud cycle과 완료 콜백의 새 UI 작업을 시작하지 않는다. 작업이 공유 폴더 I/O에 걸린 경우 안전한 경계까지 종료가 지연될 수 있다.
+- 탭별 순차 새로고침은 항상 다음 탭으로 진전한다. 조기 차단·늦은 콜백·탭 닫기/이름 변경·진행 중 슬롯에 대한 중복 요청 어떤 경우에도 체인이 멈춘 채로 남지 않는다.
 - 새 백그라운드 작업은 QObject 부모 또는 기존 retain helper로 수명을 추적해야 한다. DB를 사용하는 작업을 추적 없이 detach하지 않는다.
 
 ## 전역 기사와 검색 범위

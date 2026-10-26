@@ -129,6 +129,50 @@ class _MainWindowRefreshFlowMixin:
             return
         self._status_bar().showMessage(message, 4000)
         self.show_warning_toast(message)
+    def _is_awaited_sequential_keyword(
+        self: MainApp,
+        keyword: str,
+    ) -> bool:
+        """Whether the sequential chain is currently parked waiting on keyword."""
+        if not bool(getattr(self, "_sequential_refresh_active", False)):
+            return False
+        try:
+            pending = list(getattr(self, "_pending_refresh_keywords", []) or [])
+            idx = int(getattr(self, "_current_refresh_idx", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        return 0 <= idx < len(pending) and pending[idx] == keyword
+    def _advance_sequential_if_awaiting(
+        self: MainApp,
+        keyword: str,
+    ) -> bool:
+        """Advance the sequential chain when it is parked on keyword.
+
+        A stale worker callback or a forcibly detached worker would otherwise
+        leave ``_sequential_refresh_active`` set forever, blocking every later
+        refresh with "already in progress".
+        """
+        if self._is_awaited_sequential_keyword(keyword):
+            self._on_sequential_fetch_done(keyword)
+            return True
+        return False
+    def _abort_sequential_refresh(self: MainApp) -> None:
+        """Silently drop sequential state (used when shutdown preempts refresh)."""
+        self._sequential_refresh_active = False
+        self._pending_refresh_keywords = []
+        self._current_refresh_idx = 0
+        self._total_refresh_count = 0
+        self._sequential_refresh_is_auto = False
+        with QMutexLocker(self._refresh_mutex):
+            self._refresh_in_progress = False
+        try:
+            self.progress.setVisible(False)
+        except Exception:
+            pass
+        try:
+            self.btn_refresh.setEnabled(True)
+        except Exception:
+            pass
     def _begin_sequential_refresh(
         self: MainApp,
         keywords: List[str],
