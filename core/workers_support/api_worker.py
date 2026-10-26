@@ -178,21 +178,27 @@ class ApiWorker(QObject):
         if not self.db_keyword:
             self.db_keyword = self.search_query
 
-        headers = naver_auth_headers(self.cid, self.csec)
-        url = NAVER_NEWS_SEARCH_URL
         self.last_error_meta = {
             "kind": "unknown",
             "status_code": 0,
             "cooldown_seconds": 0,
             "retryable": False,
         }
+        url = NAVER_NEWS_SEARCH_URL
         session: RequestGetProtocol
-        if self.session is not None:
-            session = self.session
-        elif self.session_factory is not None:
-            session = self.session_factory()
-        else:
-            session = requests.Session()
+        try:
+            headers = naver_auth_headers(self.cid, self.csec)
+            if self.session is not None:
+                session = self.session
+            elif self.session_factory is not None:
+                session = self.session_factory()
+            else:
+                session = requests.Session()
+        except Exception as e:
+            # Without a finished/error signal the owning QThread never quits.
+            logger.error(f"ApiWorker 준비 실패: {self.display_keyword} - {e}")
+            self._emit_error(f"오류 발생: {str(e)}", kind="internal_error")
+            return
         owns_session = self.session is None
         self._request_session = cast(ClosableProtocol, session) if hasattr(session, "close") else None
         self._owns_request_session = owns_session
@@ -519,6 +525,8 @@ class ApiWorker(QObject):
                             return
                         self._emit_error(f"오류 발생: {str(e)}", kind="internal_error")
                         return
+                if self.is_running:
+                    self._emit_error("API 요청을 완료하지 못했습니다.", kind="internal_error")
         finally:
             if owns_session and self._request_session is not None:
                 try:

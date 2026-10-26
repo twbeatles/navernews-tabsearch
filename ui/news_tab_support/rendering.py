@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import html
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QObject, QTimer
 
 from core.publisher_aliases import canonical_publisher
 from core.text_utils import TextUtils, parse_date_string, perf_timer
@@ -115,7 +115,7 @@ class _NewsTabRenderingMixin:
             if render_signature == self._last_render_signature:
                 self.update_status_label()
                 if restore_scroll > 0:
-                    QTimer.singleShot(0, lambda: self._browser_scroll_bar().setValue(restore_scroll))
+                    QTimer.singleShot(0, cast(QObject, self), lambda: self._browser_scroll_bar().setValue(restore_scroll))
                 return
 
             if not self.filtered_data_cache:
@@ -152,7 +152,7 @@ class _NewsTabRenderingMixin:
             self._last_render_signature = render_signature
 
             if restore_scroll > 0:
-                QTimer.singleShot(0, lambda: self._browser_scroll_bar().setValue(restore_scroll))
+                QTimer.singleShot(0, cast(QObject, self), lambda: self._browser_scroll_bar().setValue(restore_scroll))
             self.update_status_label()
 
     def _refresh_after_local_change(self, requires_refilter: bool = False):

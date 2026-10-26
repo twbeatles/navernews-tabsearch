@@ -7,6 +7,8 @@
 - `_perform_real_close`는 생산 타이머를 중단하고 API worker를 정지시킨다. 작업이 남으면 close event를 무시하고 이벤트 루프를 유지한 채 재시도한다. 대기 timeout을 완료로 처리하거나 스레드를 강제 terminate하지 않는다.
 - 종료 요청 후에는 새 fetch·cloud cycle과 완료 콜백의 새 UI 작업을 시작하지 않는다. 작업이 공유 폴더 I/O에 걸린 경우 안전한 경계까지 종료가 지연될 수 있다.
 - 탭별 순차 새로고침은 항상 다음 탭으로 진전한다. 조기 차단·늦은 콜백·탭 닫기/이름 변경·진행 중 슬롯에 대한 중복 요청 어떤 경우에도 체인이 멈춘 채로 남지 않는다.
+- `moveToThread`로 옮긴 QObject worker의 신호는 람다나 일반 함수에 직접 연결하지 않는다. PySide6는 이를 emit한 스레드에서 직접 호출하므로 완료 콜백과 `QTimer.singleShot`이 워커 스레드에서 실행된다. GUI 스레드 QObject의 `@Slot`(예: `_ApiWorkerSignalRelay`)으로 받는다. `QThread` 서브클래스의 신호는 영향이 없다.
+- `ApiWorker.run()`은 취소되지 않는 한 항상 `finished` 또는 `error` 중 하나를 emit한다. 신호 없이 반환하면 스레드가 종료되지 않아 순차 새로고침이 멈춘다.
 - 새 백그라운드 작업은 QObject 부모 또는 기존 retain helper로 수명을 추적해야 한다. DB를 사용하는 작업을 추적 없이 detach하지 않는다.
 
 ## 전역 기사와 검색 범위

@@ -25,6 +25,7 @@
 - FTS hard prefilter는 false negative 방지를 위해 다시 켜지 않습니다.
 - DB write/query 실패는 각각 `DatabaseWriteError`, `DatabaseQueryError`로 드러내는 방향을 유지합니다.
 - 단일 탭 fetch, 더 불러오기, 순차 fetch는 모두 `fetch_news()`의 API 자격증명 guard를 통과해야 합니다.
+- `moveToThread` worker 신호는 람다에 직접 연결하지 않고 GUI 스레드 QObject의 `@Slot`(`_ApiWorkerSignalRelay`)으로 받습니다. 순차 새로고침 체인의 `QTimer.singleShot`이 워커 스레드에 예약되면 멈춥니다.
 - 탭 닫기/이름 변경은 active worker cleanup 실패 시 상태 변경을 진행하지 않습니다.
 - 메모는 저장 전 10,000자로 제한하고, import/export 문서 계약과 테스트를 같이 유지합니다.
 - destructive backup 경로는 backup root 아래의 단일 이름만 허용하고, `realpath`로 reparse point까지 확인합니다.

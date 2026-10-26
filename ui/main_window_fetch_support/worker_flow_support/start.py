@@ -7,9 +7,9 @@ import sys
 import time
 import traceback
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
-from PySide6.QtCore import QMutexLocker, QThread, QTimer
+from PySide6.QtCore import QMutexLocker, QObject, QThread, QTimer, Slot
 from PySide6.QtWidgets import QMessageBox
 
 from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
@@ -27,6 +27,38 @@ logger = logging.getLogger(__name__)
 def _facade_attr(name: str, default):
     facade = sys.modules.get("ui.main_window_fetch_support.worker_flow")
     return getattr(facade, name, default) if facade is not None else default
+
+
+class _ApiWorkerSignalRelay(QObject):
+    """GUI-thread receiver for ApiWorker/QThread signals.
+
+    PySide6 runs a bare lambda slot directly in the emitting (worker) thread.
+    Bound slots on this GUI-thread object are queued instead, so fetch
+    callbacks, cleanup and the sequential-refresh QTimer run on the GUI thread.
+    """
+
+    def __init__(
+        self,
+        on_finished: Callable[[dict], None],
+        on_error: Callable[[str], None],
+        on_thread_finished: Callable[[], None],
+    ):
+        super().__init__()
+        self._on_finished = on_finished
+        self._on_error = on_error
+        self._on_thread_finished = on_thread_finished
+
+    @Slot(dict)
+    def relay_finished(self, result: dict) -> None:
+        self._on_finished(result)
+
+    @Slot(str)
+    def relay_error(self, error_msg: str) -> None:
+        self._on_error(error_msg)
+
+    @Slot()
+    def relay_thread_finished(self) -> None:
+        self._on_thread_finished()
 
 
 class _FetchWorkerStartMixin:
@@ -213,18 +245,30 @@ class _FetchWorkerStartMixin:
         self._request_start_index[request_id] = start_idx
         self._worker_registry.register(handle)
 
-        worker.finished.connect(
-            lambda res, rid=request_id: self.on_fetch_done(res, keyword, is_more, is_sequential, rid)
-        )
-        worker.error.connect(
+        relays = self.__dict__.setdefault("_api_worker_signal_relays", {})
+
+        def _on_thread_finished(rid=request_id, kw=keyword) -> None:
+            try:
+                self.cleanup_worker(keyword=kw, request_id=rid, only_if_active=False)
+            finally:
+                finished_relay = relays.pop(rid, None)
+                if finished_relay is not None:
+                    finished_relay.deleteLater()
+
+        relay = _ApiWorkerSignalRelay(
+            lambda res, rid=request_id: self.on_fetch_done(res, keyword, is_more, is_sequential, rid),
             lambda err, rid=request_id, worker_ref=worker: self.on_fetch_error(
                 err,
                 keyword,
                 is_sequential,
                 rid,
                 getattr(worker_ref, "last_error_meta", None),
-            )
+            ),
+            _on_thread_finished,
         )
+        relays[request_id] = relay
+        worker.finished.connect(relay.relay_finished)
+        worker.error.connect(relay.relay_error)
         if not is_sequential:
             worker.progress.connect(self._status_bar().showMessage)
 
@@ -234,13 +278,7 @@ class _FetchWorkerStartMixin:
         worker.error.connect(worker.deleteLater)
 
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda rid=request_id, kw=keyword: self.cleanup_worker(
-                keyword=kw,
-                request_id=rid,
-                only_if_active=False,
-            )
-        )
+        thread.finished.connect(relay.relay_thread_finished)
 
         thread.started.connect(worker.run)
         thread.start()
