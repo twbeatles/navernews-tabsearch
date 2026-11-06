@@ -300,7 +300,7 @@ class _MainWindowTrayMixin:
                 timer.stop()
         owned = [getattr(self, name, None) for name in (
             "_cloud_sync_worker", "_export_worker", "_csv_import_worker",
-            "_fts_backfill_worker", "_tray_unread_worker")]
+            "_fts_backfill_worker", "_tray_unread_worker", "_auto_backup_worker")]
         registry = getattr(self, "_worker_registry", None)
         if registry is not None:
             for handle in registry.all_handles():

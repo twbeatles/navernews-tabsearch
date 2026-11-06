@@ -63,6 +63,7 @@ class _DatabaseInitSchemaMixin:
                 ("read_updated_at", "REAL DEFAULT 0"),
                 ("bookmark_updated_at", "REAL DEFAULT 0"),
                 ("notes_updated_at", "REAL DEFAULT 0"),
+                ("content_updated_at", "REAL DEFAULT 0"),
                 ("is_deleted", "INTEGER DEFAULT 0"),
                 ("delete_updated_at", "REAL DEFAULT 0"),
                 ("delete_machine_id", "TEXT DEFAULT ''"),

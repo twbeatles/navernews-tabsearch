@@ -59,12 +59,31 @@ class _BackupDialogUISetupMixin:
         layout.addLayout(btn_layout)
 
         info_label = QLabel(
-            "참고: 시작 시 자동 백업은 설정만 저장합니다. DB 복원 지점이 필요하면 수동 백업에서 "
-            "'데이터베이스 포함'을 선택하세요."
+            "시작 시 및 설정한 주기마다 DB와 설정을 백그라운드에서 자동 백업합니다. "
+            "기존의 설정 전용 백업에는 기사 데이터가 포함되지 않습니다."
         )
         info_label.setWordWrap(True)
         info_label.setObjectName("Hint")
         layout.addWidget(info_label)
+
+        from ui.main_window_support.auto_backup import auto_backup_status_text
+
+        status_reader = getattr(self.auto_backup, "get_auto_backup_status", None)
+        self.lbl_auto_backup_status = QLabel(
+            auto_backup_status_text(self.auto_backup) if callable(status_reader) else "자동 백업 상태 없음"
+        )
+        self.lbl_auto_backup_status.setWordWrap(True)
+        self.lbl_auto_backup_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.lbl_auto_backup_status.setObjectName("Hint")
+        layout.addWidget(self.lbl_auto_backup_status)
+        if callable(status_reader):
+            self._auto_backup_status_timer = QTimer(self)
+            self._auto_backup_status_timer.setInterval(2000)
+            self._auto_backup_status_timer.timeout.connect(
+                lambda: self.lbl_auto_backup_status.setText(auto_backup_status_text(self.auto_backup))
+            )
+            self.finished.connect(self._auto_backup_status_timer.stop)
+            self._auto_backup_status_timer.start()
 
         verify_layout = QHBoxLayout()
         self.btn_verify = QPushButton("백업 검증")

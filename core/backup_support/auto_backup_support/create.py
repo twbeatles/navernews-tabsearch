@@ -20,6 +20,40 @@ logger = logging.getLogger(__name__)
 
 class _AutoBackupCreateMixin:
     def create_backup(self, include_db: bool = True, trigger: str = "manual") -> Optional[str]:
+        if not self._create_lock.acquire(blocking=False):
+            self.last_create_error = "다른 백업이 진행 중입니다. 완료 후 다시 시도하세요."
+            return None
+        try:
+            result = self._create_backup(include_db, trigger)
+            if str(trigger).strip().lower() == "auto":
+                self._record_auto_backup_result(result, include_db)
+            return result
+        finally:
+            self._create_lock.release()
+
+    def get_auto_backup_status(self) -> Dict[str, Any]:
+        path = os.path.join(self.backup_dir, "auto_backup_status.json")
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                value = json.load(handle)
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _record_auto_backup_result(self, result: Optional[str], include_db: bool) -> None:
+        status = self.get_auto_backup_status()
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        status.update(last_attempt_at=now, last_error="" if result else self.last_create_error,
+                      last_attempt_include_db=bool(include_db))
+        if result:
+            status.update(last_success_at=now, last_success_path=result,
+                          last_success_include_db=bool(include_db))
+        try:
+            _write_json_atomic(os.path.join(self.backup_dir, "auto_backup_status.json"), status)
+        except OSError as exc:
+            logger.warning("자동 백업 상태 저장 실패: %s", exc)
+
+    def _create_backup(self, include_db: bool, trigger: str) -> Optional[str]:
         try:
             self.last_create_error = ""
             normalized_trigger = str(trigger or "manual").strip().lower()
@@ -61,7 +95,9 @@ class _AutoBackupCreateMixin:
             if include_db:
                 backup_db = os.path.join(backup_path, os.path.basename(self.db_file))
                 if not self._snapshot_db(backup_db):
-                    self._copy_db_with_sidecars(backup_db)
+                    # Copying a live DB and WAL as separate files cannot guarantee
+                    # a single transaction snapshot, even if integrity_check passes.
+                    raise OSError(self.last_create_error or "SQLite 스냅샷 백업에 실패했습니다.")
                 actual_include_db = True
 
             info = {
@@ -105,7 +141,7 @@ class _AutoBackupCreateMixin:
                     or "backup self-verification failed"
                 )
                 logger.error("Backup self-verification failed: %s", self.last_create_error)
-                self._cleanup_old_backups()
+                self._cleanup_failed_backups()
                 return None
 
             self._cleanup_old_backups()
@@ -139,9 +175,8 @@ class _AutoBackupCreateMixin:
             dst_conn.commit()
             return True
         except Exception as e:
-            logger.warning(
-                f"스냅샷 백업 실패, 복사 fallback 사용 (snapshot backup failed, fallback copy path will be used): {e}"
-            )
+            self.last_create_error = str(e)
+            logger.warning("SQLite 스냅샷 백업 실패: %s", e)
             return False
         finally:
             if dst_conn:
@@ -151,7 +186,10 @@ class _AutoBackupCreateMixin:
 
     def _cleanup_old_backups(self):
         try:
-            backups = self.get_backup_list()
+            # Failed and unverified payloads must never displace verified recovery points.
+            backups = [entry for entry in self.get_backup_list()
+                       if entry.get("verification_state") == "ok"
+                       and entry.get("is_restorable") and not entry.get("is_corrupt")]
             manual_backups = [
                 backup for backup in backups if str(backup.get("trigger", "manual")).lower() == "manual"
             ]
@@ -176,3 +214,13 @@ class _AutoBackupCreateMixin:
                         logger.warning(f"오래된 자동 백업 삭제 실패: {backup['name']} ({error})")
         except Exception as e:
             logger.error(f"백업 정리 오류: {e}")
+
+    def _cleanup_failed_backups(self) -> None:
+        """Bound failed artifacts separately; never remove a valid recovery point."""
+        failed = [entry for entry in self.get_backup_list()
+                  if entry.get("verification_state") == "failed"
+                  and not entry.get("is_restorable")]
+        for entry in failed[self.MAX_FAILED_BACKUPS:]:
+            deleted, error = self.delete_backup(str(entry["name"]))
+            if not deleted:
+                logger.warning("실패한 백업 정리 실패: %s", error)

@@ -9,6 +9,8 @@ import sqlite3
 import tempfile
 from typing import TYPE_CHECKING, Any, Dict, List, Set
 
+from core.db_cloud_sync_support.policy import CONTENT_FIELDS, clear_content_functions, content_wins, register_content_functions, source_content_projection, source_timestamp, source_wins, tag_candidates_sql
+
 if TYPE_CHECKING:
     from core.database import DatabaseManager
 
@@ -21,15 +23,7 @@ class _CloudSyncPreviewMixin:
         source_news_columns: Set[str],
         field: str,
     ) -> str:
-        if field in source_news_columns:
-            return f"COALESCE(s.{field}, 0)"
-        if field == "read_updated_at":
-            return "CASE WHEN COALESCE(s.is_read, 0) != 0 THEN COALESCE(s.created_at, 0) ELSE 0 END"
-        if field == "bookmark_updated_at":
-            return "CASE WHEN COALESCE(s.is_bookmarked, 0) != 0 THEN COALESCE(s.created_at, 0) ELSE 0 END"
-        if field == "notes_updated_at":
-            return "CASE WHEN COALESCE(s.notes, '') != '' THEN COALESCE(s.created_at, 0) ELSE 0 END"
-        return "0"
+        return source_timestamp(source_news_columns, field)
 
     def _preview_cloud_merge_with_attached(
         self: DatabaseManager,
@@ -39,6 +33,7 @@ class _CloudSyncPreviewMixin:
         has_tag_state: bool,
     ) -> Dict[str, int]:
         summary = {
+            "content_changed": 0,
             "news_added": 0,
             "memberships_added": 0,
             "read_changed": 0,
@@ -62,6 +57,17 @@ class _CloudSyncPreviewMixin:
         bookmark_updated_at = self._cloud_source_timestamp_expr(source_news_columns, "bookmark_updated_at")
         notes_updated_at = self._cloud_source_timestamp_expr(source_news_columns, "notes_updated_at")
 
+        read_choice = source_wins(read_updated_at, "COALESCE(n.read_updated_at, 0)", is_read, "COALESCE(n.is_read, 0)")
+        bookmark_choice = source_wins(bookmark_updated_at, "COALESCE(n.bookmark_updated_at, 0)", is_bookmarked, "COALESCE(n.is_bookmarked, 0)")
+        notes_choice = source_wins(notes_updated_at, "COALESCE(n.notes_updated_at, 0)", notes, "COALESCE(n.notes, '')")
+        source_machine = self._source_expr(source_news_columns, s, "delete_machine_id", "''")
+        source_reason = self._source_expr(source_news_columns, s, "delete_reason", "''")
+        delete_choice = source_wins(
+            delete_updated_at, "COALESCE(n.delete_updated_at, 0)",
+            f"({is_deleted}, {source_machine}, {source_reason})",
+            "(COALESCE(n.is_deleted, 0), COALESCE(n.delete_machine_id, ''), COALESCE(n.delete_reason, ''))",
+        )
+
         summary["news_added"] = int(
             conn.execute(
                 f"""
@@ -73,6 +79,15 @@ class _CloudSyncPreviewMixin:
             ).fetchone()[0]
             or 0
         )
+        content_source = source_content_projection(source_news_columns)
+        register_content_functions(conn, self._calculate_title_hash)
+        content_difference = " OR ".join(
+            f"COALESCE(s.{field}, '') != COALESCE(n.{field}, '')" for field in CONTENT_FIELDS
+        )
+        summary["content_changed"] = int(conn.execute(
+            f"SELECT COUNT(*) FROM ({content_source}) s JOIN news n ON n.link=s.link "
+            f"WHERE {content_wins('s', 'n')} AND ({content_difference})"
+        ).fetchone()[0] or 0)
         summary["read_changed"] = int(
             conn.execute(
                 f"""
@@ -80,7 +95,7 @@ class _CloudSyncPreviewMixin:
                 FROM cloud_src.news s
                 JOIN news n ON n.link = {link}
                 WHERE {link} != ''
-                  AND {read_updated_at} > COALESCE(n.read_updated_at, 0)
+                  AND {read_choice}
                   AND COALESCE({is_read}, 0) != COALESCE(n.is_read, 0)
                 """
             ).fetchone()[0]
@@ -93,7 +108,7 @@ class _CloudSyncPreviewMixin:
                 FROM cloud_src.news s
                 JOIN news n ON n.link = {link}
                 WHERE {link} != ''
-                  AND {bookmark_updated_at} > COALESCE(n.bookmark_updated_at, 0)
+                  AND {bookmark_choice}
                   AND COALESCE({is_bookmarked}, 0) != COALESCE(n.is_bookmarked, 0)
                 """
             ).fetchone()[0]
@@ -106,7 +121,7 @@ class _CloudSyncPreviewMixin:
                 FROM cloud_src.news s
                 JOIN news n ON n.link = {link}
                 WHERE {link} != ''
-                  AND {notes_updated_at} > COALESCE(n.notes_updated_at, 0)
+                  AND {notes_choice}
                   AND COALESCE({notes}, '') != COALESCE(n.notes, '')
                 """
             ).fetchone()[0]
@@ -118,7 +133,7 @@ class _CloudSyncPreviewMixin:
             FROM cloud_src.news s
             LEFT JOIN news n ON n.link = {link}
             WHERE {link} != ''
-              AND COALESCE({delete_updated_at}, 0) > COALESCE(n.delete_updated_at, 0)
+              AND {delete_choice}
               AND COALESCE({is_deleted}, 0) != COALESCE(n.is_deleted, 0)
             GROUP BY COALESCE({is_deleted}, 0)
             """
@@ -149,39 +164,10 @@ class _CloudSyncPreviewMixin:
                 or 0
             )
 
-        if self._table_exists(conn, "cloud_src", "news_tags"):
-            if has_tag_state:
-                source_ts_expr = (
-                    "COALESCE((SELECT st.tags_updated_at FROM cloud_src.news_tag_state st "
-                    "WHERE st.link = nt.link), 0)"
-                )
-            elif "created_at" in source_news_columns:
-                source_ts_expr = (
-                    "COALESCE((SELECT n.created_at FROM cloud_src.news n "
-                    "WHERE n.link = nt.link), 0)"
-                )
-            else:
-                source_ts_expr = "0"
-            summary["tags_changed"] = int(
-                conn.execute(
-                    f"""
-                    SELECT COUNT(*)
-                    FROM (
-                        SELECT nt.link, MAX({source_ts_expr}) AS tags_updated_at
-                        FROM cloud_src.news_tags nt
-                        WHERE nt.link IS NOT NULL AND nt.link != ''
-                        GROUP BY nt.link
-                    ) src
-                    WHERE src.tags_updated_at > COALESCE(
-                        (SELECT local_state.tags_updated_at
-                         FROM news_tag_state local_state
-                         WHERE local_state.link = src.link),
-                        0
-                    )
-                    """
-                ).fetchone()[0]
-                or 0
-            )
+        candidates = tag_candidates_sql(conn, source_news_columns, has_tag_state)
+        summary["tags_changed"] = int(conn.execute(
+            f"SELECT COUNT(*) FROM ({candidates}) WHERE values_changed"
+        ).fetchone()[0] or 0)
         return summary
 
     def preview_cloud_snapshot_db(
@@ -269,6 +255,7 @@ class _CloudSyncPreviewMixin:
             logger.error("Cloud snapshot DB preview failed: %s", e)
             raise self._new_query_error("preview_cloud_snapshot_db", e) from e
         finally:
+            clear_content_functions(conn)
             if attached:
                 try:
                     conn.execute("DETACH DATABASE cloud_src")

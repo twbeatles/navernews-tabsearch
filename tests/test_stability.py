@@ -71,7 +71,7 @@ class TestBackupAndRestore(unittest.TestCase):
             self.assertFalse(Path(str(backup_db) + '-wal').exists())
             self.assertFalse(Path(str(backup_db) + '-shm').exists())
 
-    def test_backup_fallback_copies_sidecars(self):
+    def test_backup_rejects_unsafe_live_sidecar_fallback(self):
         with tempfile.TemporaryDirectory() as td:
             d = Path(td)
             cfg = d / 'config.json'
@@ -86,13 +86,11 @@ class TestBackupAndRestore(unittest.TestCase):
             ab._snapshot_db = lambda dst_db_path: False
 
             backup_path = ab.create_backup(include_db=True)
-            self.assertIsNotNone(backup_path)
-            assert backup_path is not None
-            backup_path_str = backup_path
-
-            backup_db = Path(backup_path_str) / db.name
-            self.assertTrue(Path(str(backup_db) + '-wal').exists())
-            self.assertTrue(Path(str(backup_db) + '-shm').exists())
+            self.assertIsNone(backup_path)
+            self.assertTrue(ab.last_create_error)
+            self.assertEqual(ab.get_backup_list(), [])
+            self.assertEqual(Path(str(db) + '-wal').read_text(encoding='utf-8'), 'fake')
+            self.assertEqual(Path(str(db) + '-shm').read_text(encoding='utf-8'), 'fake')
 
     def test_pending_restore_applies_on_startup(self):
         with tempfile.TemporaryDirectory() as td:
