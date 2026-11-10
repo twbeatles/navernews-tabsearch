@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from core.database import DatabaseManager
@@ -26,7 +26,6 @@ _EXPIRED_TOMBSTONE_SQL = (
 class _NewsDeletionMaintenanceMixin:
     def delete_old_news(self: DatabaseManager, days: int) -> int:
         """Delete old non-bookmarked rows and repair duplicates."""
-        cutoff = (datetime.now() - timedelta(days=days)).timestamp()
         try:
             return self.delete_old_news_chunked(days, operation="delete_old_news")
         except sqlite3.Error as e:

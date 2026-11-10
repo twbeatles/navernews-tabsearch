@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Collection, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Collection, Dict, List, Set, Tuple
 
 if TYPE_CHECKING:
     from core.database import DatabaseManager

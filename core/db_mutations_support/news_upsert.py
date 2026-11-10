@@ -4,10 +4,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
-from core.content_filters import normalize_tags
 from core.query_parser import build_fetch_key
 from core.text_utils import parse_date_to_ts, perf_timer
 

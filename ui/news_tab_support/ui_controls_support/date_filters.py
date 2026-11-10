@@ -1,24 +1,12 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
-from PySide6.QtCore import QDate, QSignalBlocker, Qt, QTimer
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDateEdit,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QInputDialog,
-    QMessageBox,
-    QPushButton,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
 )
 
 from ui.styles_support import DARK_PALETTE, LIGHT_PALETTE
-from ui.widgets import NewsBrowser, NoScrollComboBox
 
 
 class _NewsTabDateFilterControlsMixin:

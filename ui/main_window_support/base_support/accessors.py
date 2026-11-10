@@ -2,12 +2,8 @@
 from __future__ import annotations
 
 import logging
-import time
-from collections import deque
-from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from typing import Iterator, Optional
 
-from PySide6.QtCore import QMutexLocker, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMenu, QStatusBar, QStyle, QTabBar, QWidget
 
@@ -17,9 +13,9 @@ from core.workers import IterativeJobWorker
 from ui.news_tab import NewsTab
 from ui.toast import ToastQueue
 
-logger = logging.getLogger(__name__)
-
 from ui.main_window_support.base_support.state import TabFetchState
+
+logger = logging.getLogger(__name__)
 
 
 class _MainWindowBaseAccessorsMixin:

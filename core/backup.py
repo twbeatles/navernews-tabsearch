@@ -4,18 +4,11 @@ The implementation is split under ``core.backup_support`` while this module
 keeps existing imports and test patch points available.
 """
 
-import datetime
-import json
+import datetime  # noqa: F401 # patched by tests (core.backup.datetime)
 import logging
-import os
-import shutil
-import sqlite3
-import stat
-import tempfile
-import traceback
-from typing import Any, Dict, List, Optional
+import os  # noqa: F401 # patched by tests (core.backup.os)
 
-from core.backup_support import (
+from core.backup_support import (  # noqa: F401 # facade: test patch points (see module docstring)
     AutoBackup,
     PENDING_RESTORE_FILENAME,
     _apply_restore_from_backup,

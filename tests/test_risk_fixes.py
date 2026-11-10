@@ -4,7 +4,6 @@ from pathlib import Path
 
 from core.query_parser import has_positive_keyword
 from ui.main_window import MainApp, TabFetchState
-from ui._main_window_settings_io import _MainWindowSettingsIOMixin
 from ui.news_tab import NewsTab
 
 

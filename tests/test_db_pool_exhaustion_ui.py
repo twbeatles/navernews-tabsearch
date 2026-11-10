@@ -1,11 +1,8 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false
-import tempfile
 import unittest
-from pathlib import Path
 from typing import Any, cast
-from unittest import mock
 
-from core.database import DatabaseConnectionError, DatabaseManager, DatabaseWriteError
+from core.database import DatabaseConnectionError, DatabaseWriteError
 from core.workers_support.api_worker import ApiWorker, _is_db_pool_exhausted_error
 from core.workers_support.db_worker import DBWorker
 from core.workers_support.query_scope import DBQueryScope

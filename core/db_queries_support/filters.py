@@ -4,12 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-import sqlite3
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, List, Optional
 
-from core.publisher_aliases import expand_publisher_filters
-from core.text_utils import perf_timer
 
 if TYPE_CHECKING:
     from core.database import DatabaseManager

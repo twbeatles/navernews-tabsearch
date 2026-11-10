@@ -37,7 +37,7 @@ class NotificationSound:
         """알림 소리 사용 가능 여부"""
         if sys.platform == 'win32':
             try:
-                import winsound
+                import winsound  # noqa: F401 # availability probe
                 return True
             except ImportError:
                 return False

@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from functools import lru_cache
-from typing import Dict
 
 from core.logging_setup import configure_logging
 

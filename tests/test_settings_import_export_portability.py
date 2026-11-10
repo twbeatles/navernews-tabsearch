@@ -1,6 +1,5 @@
 import inspect
 import unittest
-from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 

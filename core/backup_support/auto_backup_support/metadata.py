@@ -5,15 +5,9 @@ import datetime
 import json
 import logging
 import os
-import shutil
-import sqlite3
-import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from core.backup_support.constants import DEFAULT_BACKUP_DIR, PENDING_RESTORE_FILENAME
-from core.backup_support.fs import _rmtree_force, _write_json_atomic
-from core.backup_support.restore import _apply_restore_from_backup
-from core.backup_support.validation import verify_backup_payload
+from core.backup_support.fs import _write_json_atomic
 
 logger = logging.getLogger(__name__)
 

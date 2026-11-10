@@ -4,6 +4,7 @@ import sys
 import threading
 import traceback
 import hashlib
+import logging
 import getpass
 import time
 from datetime import datetime
@@ -36,7 +37,6 @@ from core.windows_identity import configure_windows_app_identity, resolve_runtim
 from ui.main_window import MainApp
 
 configure_logging()
-import logging
 logger = logging.getLogger(__name__)
 
 def _single_instance_identity() -> str:
@@ -216,7 +216,7 @@ def main():
             with open(CRASH_LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*50}\n")
                 f.write(f"시간: {datetime.now()}\n")
-                f.write(f"유형: Main Thread Exception\n")
+                f.write("유형: Main Thread Exception\n")
                 traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
         except (IOError, OSError) as e:
             logger.error(f"크래시 로그 저장 실패: {e}")

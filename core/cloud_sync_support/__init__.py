@@ -1,5 +1,5 @@
 # pyright: reportUnsupportedDunderAll=false
-from core.cloud_sync_support.import_flow import (
+from core.cloud_sync_support.import_flow import (  # noqa: F401 # facade: re-exported via core.cloud_sync star
     _snapshot_import_error,
     aggregate_cloud_import_preview,
     import_cloud_snapshot,
@@ -8,7 +8,7 @@ from core.cloud_sync_support.import_flow import (
     run_cloud_sync_cycle,
     select_cloud_snapshots_for_import,
 )
-from core.cloud_sync_support.models import (
+from core.cloud_sync_support.models import (  # noqa: F401 # facade: re-exported via core.cloud_sync star
     DB_SNAPSHOT_NAME,
     INVALID_SNAPSHOT_DIR,
     MANIFEST_NAME,
@@ -23,7 +23,7 @@ from core.cloud_sync_support.models import (
     CloudSnapshotValidationError,
     CloudSyncError,
 )
-from core.cloud_sync_support.path_policy import (
+from core.cloud_sync_support.path_policy import (  # noqa: F401 # facade: re-exported via core.cloud_sync star
     _is_relative_to,
     _path_parts,
     cloud_sync_path_conflicts_with_runtime,
@@ -31,7 +31,7 @@ from core.cloud_sync_support.path_policy import (
     resolve_cloud_sync_dir,
     runtime_storage_is_probably_cloud,
 )
-from core.cloud_sync_support.snapshot_io import (
+from core.cloud_sync_support.snapshot_io import (  # noqa: F401 # facade: re-exported via core.cloud_sync star
     _atomic_write_json,
     _ensure_size_limit,
     _safe_snapshot_token,

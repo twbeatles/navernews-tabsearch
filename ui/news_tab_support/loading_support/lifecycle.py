@@ -3,14 +3,10 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
 from typing import Any, Optional, Tuple
 
-from PySide6.QtGui import QClipboard
-from PySide6.QtWidgets import QApplication, QScrollBar
 
-from core.text_utils import perf_timer
-from core.workers import DBWorker, retain_worker_until_finished
+from core.workers import retain_worker_until_finished
 
 logger = logging.getLogger(__name__)
 

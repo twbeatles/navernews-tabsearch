@@ -1,8 +1,8 @@
 import html
 from typing import Dict, Optional
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QContextMenuEvent, QCursor, QMouseEvent, QTextDocument, QWheelEvent
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QContextMenuEvent, QMouseEvent, QTextDocument, QWheelEvent
 from PySide6.QtWidgets import QComboBox, QMenu, QTextBrowser, QToolTip
 
 class NoScrollComboBox(QComboBox):

@@ -18,7 +18,7 @@ from core.config_store import (
     save_primary_config_file,
 )
 from core.content_filters import normalize_publisher_filter_lists
-from core.constants import APP_NAME, ICON_FILE, ICON_PNG, VERSION
+from core.constants import ICON_FILE, ICON_PNG
 from core.windows_identity import assign_window_class_icon, resolve_runtime_icon_path
 from core.automation_rules import normalize_automation_rules
 from core.publisher_aliases import normalize_publisher_aliases

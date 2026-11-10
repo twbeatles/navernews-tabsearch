@@ -7,40 +7,16 @@ import os
 import re
 import tempfile
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from PySide6.QtCore import QTimer
 
-from core.config_store import (
-    AppConfig,
-    encode_client_secret_for_storage,
-    normalize_import_settings,
-    normalize_loaded_config,
-    save_primary_config_file,
-)
-from core.cloud_sync import (
-    cleanup_old_snapshots,
-    cloud_sync_path_conflicts_with_runtime,
-    create_cloud_snapshot,
-    import_cloud_snapshot,
-    run_cloud_sync_cycle,
-    runtime_storage_is_probably_cloud,
-    select_cloud_snapshots_for_import,
-)
-from core.constants import CONFIG_FILE, RUNTIME_PATHS, VERSION
-from core.content_filters import normalize_publisher_filter_lists, truncate_note
-from core.keyword_groups import merge_keyword_groups
-from core.machine_identity import get_machine_identity
-from core.automation_rules import normalize_automation_rules
-from core.publisher_aliases import canonical_publisher, normalize_publisher_aliases
-from core.startup import StartupManager
-from core.workers import DBQueryScope, IterativeJobWorker, delete_qthread_when_finished
+from core.content_filters import truncate_note
+from core.publisher_aliases import canonical_publisher
+from core.workers import DBQueryScope
 from ui.dialog_adapters import get_dialog_adapter
-from ui.settings_dialog import SettingsDialog
-from ui.styles import AppStyle
 
 if TYPE_CHECKING:
-    from ui.main_window import MainApp
+    pass
 
 logger = logging.getLogger(__name__)
 EXPORT_CHUNK_SIZE = 500

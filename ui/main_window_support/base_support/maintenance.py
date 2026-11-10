@@ -3,24 +3,14 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import deque
-from dataclasses import dataclass
 from enum import Enum
-from typing import Iterator, List, Optional
+from typing import List
 
 from PySide6.QtCore import QMutexLocker, QTimer
-from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QApplication, QMenu, QStatusBar, QStyle, QTabBar, QWidget
 
-from core.database import DatabaseManager
-from core.http_client import HttpClientConfig
-from core.workers import IterativeJobWorker
-from ui.news_tab import NewsTab
-from ui.toast import ToastQueue
+
 
 logger = logging.getLogger(__name__)
-
-from ui.main_window_support.base_support.state import TabFetchState
 
 
 class WorkerCleanupOutcome(str, Enum):

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.database import DatabaseManager

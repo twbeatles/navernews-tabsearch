@@ -1,6 +1,5 @@
 import unittest
 from types import SimpleNamespace
-from typing import Any, cast
 from unittest import mock
 
 from ui.news_tab import NewsTab

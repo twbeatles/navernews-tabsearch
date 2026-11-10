@@ -2,34 +2,10 @@
 from __future__ import annotations
 
 import logging
-import re
-import traceback
-from typing import List, Optional, Tuple
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QKeySequence, QResizeEvent, QShortcut
-from PySide6.QtWidgets import (
-    QHBoxLayout,
-    QLabel,
-    QMessageBox,
-    QApplication,
-    QProgressBar,
-    QPushButton,
-    QSystemTrayIcon,
-    QTabBar,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
 
-from core.constants import APP_NAME, VERSION
 from core.content_filters import normalize_publisher_filter_lists
-from core.notifications import NotificationSound
-from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
-from core.text_utils import perf_timer
 from ui.dialogs import BackupDialog, KeywordGroupDialog, LogViewerDialog
-from ui.news_tab import NewsTab
-from ui.styles import AppStyle, ToastType
 
 logger = logging.getLogger(__name__)
 

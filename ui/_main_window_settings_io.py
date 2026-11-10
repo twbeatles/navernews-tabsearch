@@ -1,8 +1,6 @@
 """Compatibility facade for MainApp settings/import/export orchestration."""
 
-from core.machine_identity import get_machine_identity
-from core.startup import StartupManager
-from core.config_store import save_primary_config_file
+from core.startup import StartupManager  # noqa: F401 # patched by tests (ui._main_window_settings_io.StartupManager)
 from ui.main_window_io_support.mixin import (
     _MainWindowSettingsIOMixin,
     export_items_to_csv,

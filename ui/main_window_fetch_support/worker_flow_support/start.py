@@ -1,22 +1,18 @@
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
-import html
 import logging
 import sys
 import time
-import traceback
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable
 
-from PySide6.QtCore import QMutexLocker, QObject, QThread, QTimer, Slot
+from PySide6.QtCore import QObject, QThread, Slot
 from PySide6.QtWidgets import QMessageBox
 
-from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
-from core.text_utils import RE_HTML_TAGS
+from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.validation import ValidationUtils
 from core.worker_registry import WorkerHandle
-from core.workers import ApiWorker, retain_qthread_until_finished
+from core.workers import ApiWorker
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp

@@ -1,49 +1,23 @@
-import html
-import json
 import logging
-import os
-import sqlite3
-from datetime import datetime
 from typing import Any, Dict, List, Optional, cast
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
     QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
-    QLabel,
-    QLineEdit,
     QListWidget,
-    QListWidgetItem,
-    QMenu,
     QMessageBox,
-    QProgressBar,
     QPushButton,
-    QTextBrowser,
-    QTextEdit,
     QVBoxLayout,
 )
 
-from core.backup import AutoBackup
-from core.automation_rules import normalize_automation_rules
-from core.content_filters import normalize_tags, tags_to_csv
-from core.keyword_groups import KeywordGroupManager
+from core.content_filters import normalize_tags
 from core.logging_setup import configure_logging
-from core.constants import LOG_FILE
-from core.publisher_aliases import canonical_publisher, normalize_publisher_aliases
 from core.workers import (
     IterativeJobWorker,
-    _normalized_http_url,
     delete_qthread_when_finished,
-    retain_worker_until_finished,
 )
-from ui.dialog_adapters import get_dialog_adapter
 
 configure_logging()
 logger = logging.getLogger(__name__)

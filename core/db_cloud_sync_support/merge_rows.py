@@ -2,12 +2,9 @@
 # pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
-import json
 import logging
-import os
 import sqlite3
-import tempfile
-from typing import TYPE_CHECKING, Any, Dict, List, Set
+from typing import TYPE_CHECKING, Set
 
 if TYPE_CHECKING:
     from core.database import DatabaseManager

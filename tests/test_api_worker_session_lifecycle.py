@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock
 
-import pytest
 
 from core.workers_support.api_worker import ApiWorker
 

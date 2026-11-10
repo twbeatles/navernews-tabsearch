@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Compatibility facade for config storage APIs.
 
 The implementation lives in ``core.config_store_impl`` so settings defaults,
@@ -7,6 +5,7 @@ normalization, secret handling, and file I/O can be split further without
 changing existing imports.
 """
 
+from __future__ import annotations
 import os
 from typing import Any, Dict, Mapping, Tuple
 

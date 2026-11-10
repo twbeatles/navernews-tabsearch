@@ -11,7 +11,7 @@ from typing import Any, cast
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
-from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
+from PySide6.QtWidgets import QMessageBox, QPushButton, QWidget
 
 from core.constants import (
     UPDATE_ARTIFACT_MAX_BYTES,

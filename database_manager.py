@@ -1,11 +1,4 @@
 import warnings
-
-warnings.warn(
-    "Root database_manager imports are deprecated; use core.database instead.",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
 from core.database import (
     DatabaseConnectionError,
     DatabaseManager,
@@ -14,6 +7,13 @@ from core.database import (
     NewsCountSummary,
     NewsUpsertResult,
 )
+
+warnings.warn(
+    "Root database_manager imports are deprecated; use core.database instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 __all__ = [
     'DatabaseConnectionError',

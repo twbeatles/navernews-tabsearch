@@ -2,17 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QInputDialog, QMessageBox
 
-from core.database import DatabaseWriteError
-from core.content_filters import normalize_tags, tags_to_csv
-from core.workers import IterativeJobWorker, _normalized_http_url, delete_qthread_when_finished
-from ui.dialogs import NoteDialog
-from ui.protocols import MainWindowProtocol
+from core.workers import _normalized_http_url
 from ui.news_tab_support.actions_support.article_state import _NewsTabArticleActionsMixin
 
 logger = logging.getLogger(__name__)

@@ -8,14 +8,10 @@ import traceback
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from PySide6.QtCore import QMutexLocker, QThread, QTimer
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QMutexLocker, QTimer
 
-from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
+from core.query_parser import has_positive_keyword
 from core.text_utils import RE_HTML_TAGS
-from core.validation import ValidationUtils
-from core.worker_registry import WorkerHandle
-from core.workers import ApiWorker, retain_qthread_until_finished
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp

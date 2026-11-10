@@ -488,7 +488,7 @@ def normalize_import_settings(
     normalized["alert_keywords"] = normalized_alert_keywords
     if changed_alert and "alert_keywords" in raw_settings:
         warnings.append(
-            f"alert_keywords 값을 정규화했습니다. (최대 10개, 중복 제거)"
+            "alert_keywords 값을 정규화했습니다. (최대 10개, 중복 제거)"
         )
 
     raw_blocked_publishers = raw_settings.get("blocked_publishers", normalized["blocked_publishers"])

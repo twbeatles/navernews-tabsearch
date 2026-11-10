@@ -161,7 +161,7 @@ def test_fit_dialog_buttons_reserves_text_slack():
 
     from ui.main_window_update import _fit_dialog_buttons
 
-    app = QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])  # noqa: F841 # keep-alive: dialog needs a live QApplication
     dialog = QMessageBox()
     dialog.addButton("다운로드 및 설치", QMessageBox.ButtonRole.AcceptRole)
     dialog.addButton("릴리스 페이지 보기", QMessageBox.ButtonRole.ActionRole)

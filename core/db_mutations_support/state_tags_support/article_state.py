@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import sqlite3
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from core.content_filters import normalize_note, normalize_tags
+from core.content_filters import normalize_note
 from core.machine_identity import get_machine_identity
 
 if TYPE_CHECKING:

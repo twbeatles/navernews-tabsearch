@@ -5,28 +5,10 @@ HTTP policy, fetch workers, and DB query workers can evolve independently while
 keeping legacy imports stable.
 """
 
-import html
-import ipaddress
-import json
 import logging
-import re
-import sqlite3
-import threading
-import time
-import traceback
-import urllib.parse
-from contextlib import contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, TypedDict, cast
+import time  # noqa: F401 # patched by tests (core.workers.time)
 
-import requests
-from PySide6.QtCore import QObject, QThread, Signal
 
-from core.database import DatabaseQueryError, DatabaseWriteError
-from core.protocols import ClosableProtocol, RequestGetProtocol
-from core.query_parser import build_fetch_key
 from core.workers_support import (
     ApiErrorMeta,
     ApiWorker,
