@@ -1,14 +1,16 @@
 import time
 import unittest
-from unittest import mock
 from typing import Any, cast
+from unittest import mock
 
 from PySide6.QtCore import QMutex
 
 from core.query_parser import build_fetch_key, parse_search_query
 from core.worker_registry import WorkerHandle, WorkerRegistry
 from ui._main_window_fetch import _MainWindowFetchMixin
-from ui.main_window_fetch_support.worker_flow_support.completion import _FetchWorkerCompletionMixin
+from ui.main_window_fetch_support.worker_flow_support.completion import (
+    _FetchWorkerCompletionMixin,
+)
 
 
 class _DummyStatusBar:

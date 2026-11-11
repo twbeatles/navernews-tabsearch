@@ -7,16 +7,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from core.backup import AutoBackup
-from core.backup import verify_backup_payload
-from core.config_store import DEFAULT_CONFIG
-from core.config_store import load_config_file
-from core.config_store import save_config_file_atomic
-from core.config_store import save_primary_config_file
+from core.backup import AutoBackup, verify_backup_payload
+from core.config_store import (
+    DEFAULT_CONFIG,
+    load_config_file,
+    save_config_file_atomic,
+    save_primary_config_file,
+)
 from core.database import DatabaseManager
 from core.startup import StartupManager
-from core.workers import DBQueryScope
-from core.workers import JobCancelledError
+from core.workers import DBQueryScope, JobCancelledError
 from ui._main_window_settings_io import export_scope_to_csv
 
 

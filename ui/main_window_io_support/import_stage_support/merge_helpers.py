@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-
 from core.keyword_groups import merge_keyword_groups
 
 if TYPE_CHECKING:

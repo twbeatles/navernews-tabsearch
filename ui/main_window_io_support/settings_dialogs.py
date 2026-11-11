@@ -6,15 +6,14 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List
 
-
+from core.automation_rules import normalize_automation_rules
 from core.config_store import (
-    save_primary_config_file,
     _write_text_atomic,
+    save_primary_config_file,
 )
 from core.constants import VERSION
 from core.content_filters import normalize_publisher_filter_lists
 from core.machine_identity import get_machine_identity
-from core.automation_rules import normalize_automation_rules
 from core.publisher_aliases import normalize_publisher_aliases
 from core.startup import StartupManager
 from ui.settings_dialog import SettingsDialog

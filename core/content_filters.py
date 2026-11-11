@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Iterable, List
 
-
 MAX_TAGS_PER_ARTICLE = 20
 MAX_TAG_LENGTH = 30
 MAX_NOTE_LENGTH = 10_000

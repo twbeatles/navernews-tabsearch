@@ -9,6 +9,7 @@ from PySide6.QtCore import QRect
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from core.automation_rules import normalize_automation_rules
 from core.config_store import (
     AppConfig,
     default_config,
@@ -17,12 +18,11 @@ from core.config_store import (
     resolve_client_secret_for_runtime,
     save_primary_config_file,
 )
-from core.content_filters import normalize_publisher_filter_lists
 from core.constants import ICON_FILE, ICON_PNG
-from core.windows_identity import assign_window_class_icon, resolve_runtime_icon_path
-from core.automation_rules import normalize_automation_rules
+from core.content_filters import normalize_publisher_filter_lists
 from core.publisher_aliases import normalize_publisher_aliases
 from core.startup import StartupManager
+from core.windows_identity import assign_window_class_icon, resolve_runtime_icon_path
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,9 @@ class _MainWindowConfigMixin:
         settings = loaded_cfg.get("app_settings", {})
         resolved_client_secret, _ = resolve_client_secret_for_runtime(settings)
         try:
-            from core.config_store_support.secrets import should_warn_plain_client_secret_storage
+            from core.config_store_support.secrets import (
+                should_warn_plain_client_secret_storage,
+            )
 
             self._pending_plain_secret_warning = (
                 bool(resolved_client_secret)
@@ -248,7 +250,9 @@ class _MainWindowConfigMixin:
         try:
             save_primary_config_file(self._config_path_for_persistence(), data)
             try:
-                from core.config_store_support.secrets import should_warn_plain_client_secret_storage
+                from core.config_store_support.secrets import (
+                    should_warn_plain_client_secret_storage,
+                )
 
                 if should_warn_plain_client_secret_storage(data.get("app_settings", {})):
                     self.show_warning_toast(

@@ -7,7 +7,11 @@ import os
 import traceback
 from typing import List, Optional
 
-from core.backup_support.fs import _rmtree_force, _safe_backup_child_dir, _write_json_atomic
+from core.backup_support.fs import (
+    _rmtree_force,
+    _safe_backup_child_dir,
+    _write_json_atomic,
+)
 from core.backup_support.restore import _apply_restore_from_backup
 
 logger = logging.getLogger(__name__)

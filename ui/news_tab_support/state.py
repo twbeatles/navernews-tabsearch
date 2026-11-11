@@ -4,8 +4,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.publisher_aliases import expand_publisher_filters
+from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.text_utils import parse_date_string
 from core.workers import DBQueryScope
 from ui.protocols import MainWindowProtocol

@@ -6,7 +6,6 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, List, Optional
 
-
 if TYPE_CHECKING:
     from core.database import DatabaseManager
 

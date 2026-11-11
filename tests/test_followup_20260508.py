@@ -9,8 +9,8 @@ from core.backup import AutoBackup, cleanup_applied_pending_restore_files
 from core.content_filters import MAX_NOTE_LENGTH
 from core.database import DatabaseManager
 from core.workers import (
-    ApiWorker,
     MAX_FETCH_COOLDOWN_SECONDS,
+    ApiWorker,
     _normalized_http_url,
     _publisher_from_naver_news_url,
     _publisher_source_url,

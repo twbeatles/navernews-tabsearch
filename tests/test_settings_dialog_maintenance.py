@@ -1,7 +1,7 @@
 import unittest
+from pathlib import Path
 from typing import Any, Optional, cast
 from unittest import mock
-from pathlib import Path
 
 from core.constants import get_runtime_paths
 from ui.settings_dialog import SettingsDialog

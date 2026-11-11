@@ -6,7 +6,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set
 from core.content_filters import normalize_tags
 from core.publisher_aliases import canonical_publisher, normalize_publisher_aliases
 
-
 EXCLUDE_TAG = "제외"
 MAX_RULES = 100
 MAX_TERMS = 20

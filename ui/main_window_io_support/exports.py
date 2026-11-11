@@ -9,7 +9,6 @@ import tempfile
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-
 from core.content_filters import truncate_note
 from core.publisher_aliases import canonical_publisher
 from core.workers import DBQueryScope

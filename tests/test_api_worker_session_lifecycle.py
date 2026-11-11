@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-
 from core.workers_support.api_worker import ApiWorker
 
 

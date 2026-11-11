@@ -6,7 +6,6 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from ui.dialog_adapters import QtDialogAdapter
 
-
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 

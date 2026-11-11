@@ -23,6 +23,13 @@ if __name__ == '__main__' and '--smoke' in sys.argv:
 os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
 os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
 
+from core.bootstrap import main
+from core.config_store import (
+    default_config,
+    load_config_file,
+    normalize_import_settings,
+    save_config_file_atomic,
+)
 from core.constants import (
     APP_DIR,
     APP_NAME,
@@ -33,15 +40,9 @@ from core.constants import (
     ICON_PNG,
     LOG_FILE,
     RUNTIME_PATHS,
-    RuntimePaths,
     VERSION,
+    RuntimePaths,
     get_runtime_paths,
-)
-from core.config_store import (
-    default_config,
-    load_config_file,
-    normalize_import_settings,
-    save_config_file_atomic,
 )
 from core.database import (
     DatabaseConnectionError,
@@ -75,10 +76,10 @@ from core.worker_registry import WorkerHandle, WorkerRegistry
 from core.workers import ApiWorker, AsyncJobWorker, DBWorker
 from ui.dialogs import BackupDialog, KeywordGroupDialog, LogViewerDialog, NoteDialog
 from ui.main_window import (
-    AutoBackup,
-    MainApp,
     PENDING_RESTORE_FILE,
     PENDING_RESTORE_FILENAME,
+    AutoBackup,
+    MainApp,
     apply_pending_restore_if_any,
 )
 from ui.news_tab import NewsTab
@@ -86,7 +87,6 @@ from ui.settings_dialog import SettingsDialog
 from ui.styles import AppStyle, Colors, ToastType, UIConstants
 from ui.toast import ToastMessage, ToastQueue
 from ui.widgets import NewsBrowser, NoScrollComboBox
-from core.bootstrap import main
 
 __all__ = [
     'APP_DIR',

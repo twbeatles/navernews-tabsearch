@@ -8,9 +8,8 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QMessageBox, QPushButton, QWidget
 
 from core.constants import (
@@ -28,7 +27,12 @@ from core.update_installer import (
     resolve_update_staging_root,
     update_result_path,
 )
-from core.update_manifest import NoUpdateAvailableError, ReleaseManifest, download_release_manifest, verify_release_manifest
+from core.update_manifest import (
+    NoUpdateAvailableError,
+    ReleaseManifest,
+    download_release_manifest,
+    verify_release_manifest,
+)
 
 logger = logging.getLogger(__name__)
 

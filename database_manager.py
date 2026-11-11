@@ -1,4 +1,5 @@
 import warnings
+
 from core.database import (
     DatabaseConnectionError,
     DatabaseManager,

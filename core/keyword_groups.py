@@ -2,8 +2,8 @@ import logging
 import os
 from typing import Dict, List, Optional
 
-from core.constants import CONFIG_FILE
 from core.config_store import load_config_file, save_primary_config_file
+from core.constants import CONFIG_FILE
 from core.logging_setup import configure_logging
 
 configure_logging()

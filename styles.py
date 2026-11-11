@@ -1,4 +1,5 @@
 import warnings
+
 from ui.styles import AppStyle, Colors, ToastType, UIConstants
 
 warnings.warn(

@@ -5,7 +5,6 @@ import logging
 import time
 from typing import Any, Optional, Tuple
 
-
 from core.workers import retain_worker_until_finished
 
 logger = logging.getLogger(__name__)

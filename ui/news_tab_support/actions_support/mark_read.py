@@ -7,8 +7,10 @@ from typing import Any, Dict, Optional, cast
 from PySide6.QtWidgets import QMessageBox
 
 from core.workers import IterativeJobWorker, delete_qthread_when_finished
+from ui.news_tab_support.actions_support.article_state import (
+    _NewsTabArticleActionsMixin,
+)
 from ui.protocols import MainWindowProtocol
-from ui.news_tab_support.actions_support.article_state import _NewsTabArticleActionsMixin
 
 logger = logging.getLogger(__name__)
 

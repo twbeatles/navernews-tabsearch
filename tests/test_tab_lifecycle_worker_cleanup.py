@@ -5,7 +5,9 @@ from unittest import mock
 
 from core.worker_registry import WorkerHandle, WorkerRegistry
 from ui._main_window_tabs import _MainWindowTabsMixin
-from ui.main_window_fetch_support.worker_flow_support.completion import _FetchWorkerCompletionMixin
+from ui.main_window_fetch_support.worker_flow_support.completion import (
+    _FetchWorkerCompletionMixin,
+)
 
 
 class _FakeWorker:

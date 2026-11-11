@@ -1,7 +1,7 @@
-import unittest
 import os
-from pathlib import Path
 import re
+import unittest
+from pathlib import Path
 
 
 class TestEncodingSmoke(unittest.TestCase):

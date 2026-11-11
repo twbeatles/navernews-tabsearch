@@ -6,24 +6,25 @@ changing existing imports.
 """
 
 from __future__ import annotations
+
 import os
 from typing import Any, Dict, Mapping, Tuple
 
-from core.config_store_support import io as _io
-from core.config_store_support import impl as _impl
-from core.config_store_support import secrets as _secrets
 from core.config_store_impl import (
+    DEFAULT_CONFIG,
     AppConfig,
     AppSettings,
-    DEFAULT_CONFIG,
     WindowGeometry,
+    _write_text_atomic,
     default_config,
     normalize_import_settings,
     normalize_loaded_config,
     save_config_file_atomic,
     save_primary_config_file,
-    _write_text_atomic,
 )
+from core.config_store_support import impl as _impl
+from core.config_store_support import io as _io
+from core.config_store_support import secrets as _secrets
 
 _is_windows_platform = _impl._is_windows_platform
 _dpapi_encrypt_text = _impl._dpapi_encrypt_text

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
-
 MAX_ALIASES = 200
 MAX_PUBLISHER_TEXT = 120
 

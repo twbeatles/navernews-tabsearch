@@ -9,7 +9,11 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, cast
 import requests
 from PySide6.QtCore import QObject, Signal
 
-from core.database import DatabaseConnectionError, DatabaseQueryError, DatabaseWriteError
+from core.database import (
+    DatabaseConnectionError,
+    DatabaseQueryError,
+    DatabaseWriteError,
+)
 from core.naver_api import (
     NAVER_NEWS_SEARCH_URL,
     format_naver_http_error,

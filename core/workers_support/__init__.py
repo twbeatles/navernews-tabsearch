@@ -1,10 +1,5 @@
-from core.workers_support.lifecycle import (
-    _safe_delete_later,
-    connect_qthread_finished,
-    delete_qthread_when_finished,
-    retain_qthread_until_finished,
-    retain_worker_until_finished,
-)
+from core.workers_support.api_worker import ApiErrorMeta, ApiWorker
+from core.workers_support.db_worker import DBWorker
 from core.workers_support.http_policy import (
     MAX_FETCH_COOLDOWN_SECONDS,
     MAX_INLINE_RETRY_AFTER_SECONDS,
@@ -29,9 +24,14 @@ from core.workers_support.jobs import (
     ReadConnectionProtocol,
     perf_timer,
 )
+from core.workers_support.lifecycle import (
+    _safe_delete_later,
+    connect_qthread_finished,
+    delete_qthread_when_finished,
+    retain_qthread_until_finished,
+    retain_worker_until_finished,
+)
 from core.workers_support.query_scope import DBQueryScope
-from core.workers_support.api_worker import ApiErrorMeta, ApiWorker
-from core.workers_support.db_worker import DBWorker
 
 __all__ = [
     "ApiErrorMeta",

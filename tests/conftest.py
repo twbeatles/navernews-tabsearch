@@ -2,7 +2,6 @@ import os
 import tempfile
 from pathlib import Path
 
-
 _TMP_ROOT = Path(__file__).resolve().parent.parent / ".pytest_tmp"
 _TMP_ROOT.mkdir(parents=True, exist_ok=True)
 _RUNTIME_ROOT = _TMP_ROOT / "runtime_data"

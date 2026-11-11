@@ -1,12 +1,12 @@
+import getpass
+import hashlib
+import logging
 import os
 import signal
 import sys
 import threading
-import traceback
-import hashlib
-import logging
-import getpass
 import time
+import traceback
 from datetime import datetime
 from typing import Callable, Optional
 
@@ -18,11 +18,14 @@ from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
-from core.backup import apply_pending_restore_if_any, cleanup_applied_pending_restore_files
+from core.backup import (
+    apply_pending_restore_if_any,
+    cleanup_applied_pending_restore_files,
+)
 from core.constants import (
     APP_NAME,
-    CRASH_LOG_FILE,
     CONFIG_FILE,
+    CRASH_LOG_FILE,
     DATA_DIR,
     DB_FILE,
     INSTANCE_LOCK_FILE,
@@ -33,7 +36,10 @@ from core.constants import (
 )
 from core.logging_setup import configure_logging
 from core.protocols import LockFileProtocol
-from core.windows_identity import configure_windows_app_identity, resolve_runtime_icon_path
+from core.windows_identity import (
+    configure_windows_app_identity,
+    resolve_runtime_icon_path,
+)
 from ui.main_window import MainApp
 
 configure_logging()

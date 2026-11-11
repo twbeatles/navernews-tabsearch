@@ -19,8 +19,8 @@ from core.cloud_sync import (
 from core.database import DatabaseManager
 from core.workers import DBQueryScope
 from ui._main_window_analysis import _MainWindowAnalysisMixin
-from ui.dialogs import ArchiveSearchDialog, AutomationRulesDialog, PublisherAliasDialog
 from ui._main_window_settings_io import export_items_to_markdown
+from ui.dialogs import ArchiveSearchDialog, AutomationRulesDialog, PublisherAliasDialog
 from ui.settings_dialog import SettingsDialog
 
 

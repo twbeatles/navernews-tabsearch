@@ -7,7 +7,6 @@ import sqlite3
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:
     from core.database import DatabaseManager
 

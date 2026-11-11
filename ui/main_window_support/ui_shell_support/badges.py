@@ -4,8 +4,12 @@ from __future__ import annotations
 import logging
 from typing import List, Tuple
 
-
-from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query, parse_tab_query
+from core.query_parser import (
+    build_fetch_key,
+    has_positive_keyword,
+    parse_search_query,
+    parse_tab_query,
+)
 from core.text_utils import perf_timer
 from ui.news_tab import NewsTab
 

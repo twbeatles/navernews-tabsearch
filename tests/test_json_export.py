@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 
-
 from core.workers import DBQueryScope
 from ui.main_window_io_support.exports import export_items_to_json, export_scope_to_json
 

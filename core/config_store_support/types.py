@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, TypedDict
 
+
 class WindowGeometry(TypedDict):
     x: int
     y: int

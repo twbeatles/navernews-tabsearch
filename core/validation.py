@@ -1,6 +1,7 @@
 import re
 from typing import Tuple
 
+
 class ValidationUtils:
     """입력 검증 유틸리티"""
     

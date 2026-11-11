@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.logging_setup import configure_logging
 from core.constants import LOG_FILE
+from core.logging_setup import configure_logging
 
 configure_logging()
 logger = logging.getLogger(__name__)

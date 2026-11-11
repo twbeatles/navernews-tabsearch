@@ -16,7 +16,6 @@ from core.cloud_sync import (
     restore_quarantined_snapshot,
     revalidate_quarantined_snapshot,
 )
-
 from core.constants import DATA_DIR, RUNTIME_PATHS, RuntimePaths
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig

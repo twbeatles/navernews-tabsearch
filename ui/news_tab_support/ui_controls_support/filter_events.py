@@ -4,7 +4,6 @@ from __future__ import annotations
 from PySide6.QtCore import QSignalBlocker
 
 
-
 class _NewsTabFilterEventControlsMixin:
     def _on_sort_changed(self):
         self._request_db_reload("정렬 변경")

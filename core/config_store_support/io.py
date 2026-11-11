@@ -7,7 +7,10 @@ import os
 import tempfile
 from typing import Any, Dict
 
-from core.config_store_support.normalization import default_config, normalize_loaded_config
+from core.config_store_support.normalization import (
+    default_config,
+    normalize_loaded_config,
+)
 from core.config_store_support.secrets import (
     _is_windows_platform,
     encode_client_secret_for_storage,

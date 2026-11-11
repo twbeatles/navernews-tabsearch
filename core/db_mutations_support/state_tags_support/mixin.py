@@ -1,6 +1,10 @@
 
-from core.db_mutations_support.state_tags_support.article_state import _NewsArticleStateMixin
-from core.db_mutations_support.state_tags_support.automation import _NewsAutomationActionsMixin
+from core.db_mutations_support.state_tags_support.article_state import (
+    _NewsArticleStateMixin,
+)
+from core.db_mutations_support.state_tags_support.automation import (
+    _NewsAutomationActionsMixin,
+)
 from core.db_mutations_support.state_tags_support.tags import _NewsTagsMixin
 
 

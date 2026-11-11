@@ -9,15 +9,15 @@ import logging
 import os  # noqa: F401 # patched by tests (core.backup.os)
 
 from core.backup_support import (  # noqa: F401 # facade: test patch points (see module docstring)
-    AutoBackup,
     PENDING_RESTORE_FILENAME,
+    AutoBackup,
     _apply_restore_from_backup,
     _apply_restore_sidecars,
     _atomic_copy_replace,
     _cleanup_restore_stage_dir,
     _retry_remove_readonly,
-    _rollback_files_from_snapshot,
     _rmtree_force,
+    _rollback_files_from_snapshot,
     _snapshot_files_for_rollback,
     _validate_config_backup_payload,
     _validate_restore_sources,

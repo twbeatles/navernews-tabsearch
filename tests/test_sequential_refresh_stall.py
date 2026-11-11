@@ -21,9 +21,15 @@ from PySide6.QtCore import QMutex
 from core.worker_registry import WorkerHandle, WorkerRegistry
 from ui._main_window_tabs import _MainWindowTabsMixin
 from ui.main_window_fetch_support.refresh_flow import _MainWindowRefreshFlowMixin
-from ui.main_window_fetch_support.worker_flow_support.completion import _FetchWorkerCompletionMixin
-from ui.main_window_fetch_support.worker_flow_support.start import _FetchWorkerStartMixin
-from ui.main_window_fetch_support.worker_flow_support.state import _FetchWorkerStateMixin
+from ui.main_window_fetch_support.worker_flow_support.completion import (
+    _FetchWorkerCompletionMixin,
+)
+from ui.main_window_fetch_support.worker_flow_support.start import (
+    _FetchWorkerStartMixin,
+)
+from ui.main_window_fetch_support.worker_flow_support.state import (
+    _FetchWorkerStateMixin,
+)
 
 
 class _DummyButton:

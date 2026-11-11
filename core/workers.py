@@ -8,8 +8,10 @@ keeping legacy imports stable.
 import logging
 import time  # noqa: F401 # patched by tests (core.workers.time)
 
-
 from core.workers_support import (
+    MAX_FETCH_COOLDOWN_SECONDS,
+    MAX_INLINE_RETRY_AFTER_SECONDS,
+    RE_BOLD_TAGS,
     ApiErrorMeta,
     ApiWorker,
     AsyncJobWorker,
@@ -19,11 +21,7 @@ from core.workers_support import (
     IterativeJobWorker,
     JobCancelledError,
     LongTaskContext,
-    MAX_FETCH_COOLDOWN_SECONDS,
-    MAX_INLINE_RETRY_AFTER_SECONDS,
-    RE_BOLD_TAGS,
     ReadConnectionProtocol,
-    _safe_delete_later,
     _host_from_url,
     _is_disallowed_http_host,
     _is_naver_news_host,
@@ -34,6 +32,7 @@ from core.workers_support import (
     _publisher_from_url,
     _publisher_source_url,
     _retry_after_seconds_from_response,
+    _safe_delete_later,
     connect_qthread_finished,
     delete_qthread_when_finished,
     perf_timer,

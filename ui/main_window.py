@@ -1,25 +1,31 @@
-from collections import deque
 import logging
 import os
 import sys
 import traceback
+from collections import deque
 from typing import Dict, Optional
 
 from PySide6.QtCore import QMutex, QTimer
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 
 from core.backup import (
-    AutoBackup as CoreAutoBackup,
     PENDING_RESTORE_FILENAME as CORE_PENDING_RESTORE_FILENAME,
+)
+from core.backup import (
+    AutoBackup as CoreAutoBackup,
+)
+from core.backup import (
     apply_pending_restore_if_any as core_apply_pending_restore_if_any,
 )
 from core.constants import (
     CONFIG_FILE,
     DB_FILE,
-    PENDING_RESTORE_FILE as CORE_PENDING_RESTORE_FILE,
     RUNTIME_PATHS,
-    RuntimePaths,
     VERSION,
+    RuntimePaths,
+)
+from core.constants import (
+    PENDING_RESTORE_FILE as CORE_PENDING_RESTORE_FILE,
 )
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
@@ -32,13 +38,13 @@ from ui._main_window_fetch import _MainWindowFetchMixin
 from ui._main_window_settings_io import _MainWindowSettingsIOMixin
 from ui._main_window_tabs import _MainWindowTabsMixin
 from ui._main_window_tray import _MainWindowTrayMixin
-from ui.main_window_update import _MainWindowUpdateMixin
 from ui.main_window_support import (
     TabFetchState,
     _MainWindowBaseMixin,
     _MainWindowConfigMixin,
     _MainWindowUIShellMixin,
 )
+from ui.main_window_update import _MainWindowUpdateMixin
 from ui.toast import ToastQueue
 
 configure_logging()

@@ -26,8 +26,17 @@ from core.automation_rules import evaluate_automation_rules, normalize_automatio
 from core.content_filters import normalize_publisher_filter_lists
 from core.publisher_aliases import expand_publisher_filters, normalize_publisher_aliases
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
-from core.workers import DBQueryScope, InterruptibleReadWorker, retain_worker_until_finished
-from ui.dialogs import ArchiveSearchDialog, AutomationRulesDialog, PublisherAliasDialog, TagManagerDialog
+from core.workers import (
+    DBQueryScope,
+    InterruptibleReadWorker,
+    retain_worker_until_finished,
+)
+from ui.dialogs import (
+    ArchiveSearchDialog,
+    AutomationRulesDialog,
+    PublisherAliasDialog,
+    TagManagerDialog,
+)
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp

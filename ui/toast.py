@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QGraphicsOpacityEffect, QLabel, QWidget
 from ui.styles import ToastType, UIConstants
 from ui.styles_support import Typography
 
+
 class ToastQueue:
     """토스트 메시지 큐 관리 - 유형별 스타일 지원"""
     def __init__(self, parent: QWidget):

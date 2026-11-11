@@ -8,8 +8,7 @@ from unittest import mock
 from PySide6.QtCore import QTimer
 
 from core.workers import DBQueryScope
-from ui._main_window_settings_io import _MainWindowSettingsIOMixin
-from ui._main_window_settings_io import export_scope_to_csv
+from ui._main_window_settings_io import _MainWindowSettingsIOMixin, export_scope_to_csv
 from ui._main_window_tabs import _MainWindowTabsMixin
 from ui.main_window import MainApp
 

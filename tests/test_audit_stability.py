@@ -3,13 +3,13 @@ import errno
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import threading
 import tracemalloc
-from unittest import mock
+from pathlib import Path
 from typing import Any, cast
+from unittest import mock
 
 import pytest
 
@@ -18,11 +18,12 @@ pytest.importorskip("cryptography")
 
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import QApplication
+from test_json_export import ImmediateExportContext
+
 from core import update_installer
 from core.workers_support.lifecycle import request_background_shutdown
 from core.workers_support.query_scope import DBQueryScope
 from ui.main_window_io_support.exports import export_scope_to_json
-from test_json_export import ImmediateExportContext
 
 
 def test_native_worker_must_finish_even_after_result_signal():
@@ -189,9 +190,11 @@ def test_cancelled_json_export_closes_snapshot_and_preserves_file(tmp_path):
 
 def test_manual_duplicate_repair_preserves_article_state(tmp_path):
     from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QMessageBox
+
     from core.database import DatabaseManager
     from ui.settings_dialog import SettingsDialog
-    from PySide6.QtWidgets import QMessageBox
     paths = SimpleNamespace(db_file=str(tmp_path / "news.db"))
     db = DatabaseManager(paths.db_file)
     try:

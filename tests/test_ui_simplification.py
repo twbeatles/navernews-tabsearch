@@ -18,7 +18,6 @@ from ui.styles import AppStyle
 from ui.styles_support import DARK_PALETTE, LIGHT_PALETTE
 from ui.styles_support.icons import glyph_qss
 
-
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 

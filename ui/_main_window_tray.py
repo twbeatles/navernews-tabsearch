@@ -7,13 +7,17 @@ import os
 import traceback
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QTimer, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from core.constants import APP_NAME
+from core.workers import (
+    InterruptibleReadWorker,
+    delete_qthread_when_finished,
+    retain_worker_until_finished,
+)
 from core.workers_support.lifecycle import request_background_shutdown
-from core.workers import InterruptibleReadWorker, delete_qthread_when_finished, retain_worker_until_finished
 
 if TYPE_CHECKING:
     from ui.main_window import MainApp

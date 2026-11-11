@@ -15,8 +15,8 @@ from unittest import mock
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
-
 from test_sequential_refresh_stall import _FakeTabs, _result, _SequentialStallMain
+
 from ui.main_window_fetch_support.refresh_flow import _MainWindowRefreshFlowMixin
 
 

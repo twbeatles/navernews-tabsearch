@@ -8,7 +8,9 @@ from PySide6.QtWidgets import (
 from core.backup import AutoBackup
 from core.logging_setup import configure_logging
 from core.workers import IterativeJobWorker
-from ui.dialogs_support.backup_dialog.create_delete import _BackupDialogCreateDeleteMixin
+from ui.dialogs_support.backup_dialog.create_delete import (
+    _BackupDialogCreateDeleteMixin,
+)
 from ui.dialogs_support.backup_dialog.listing import _BackupDialogListingMixin
 from ui.dialogs_support.backup_dialog.restore import _BackupDialogRestoreMixin
 from ui.dialogs_support.backup_dialog.ui_setup import _BackupDialogUISetupMixin

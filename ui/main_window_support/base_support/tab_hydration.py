@@ -9,7 +9,6 @@ from PySide6.QtCore import QTimer
 
 from ui.news_tab import NewsTab
 
-
 logger = logging.getLogger(__name__)
 
 

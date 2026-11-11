@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import logging
 
-
 from core.constants import FTS_BACKFILL_ENABLED
 from ui.main_window_support.base_support.accessors import _MainWindowBaseAccessorsMixin
-
 
 logger = logging.getLogger(__name__)
 

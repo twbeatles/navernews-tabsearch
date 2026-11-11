@@ -21,7 +21,9 @@ class TestConfigSecretStorage(unittest.TestCase):
         self.assertIn("client_secret_storage", app_settings)
 
     def test_should_warn_plain_client_secret_storage_on_non_windows(self):
-        from core.config_store_support.secrets import should_warn_plain_client_secret_storage
+        from core.config_store_support.secrets import (
+            should_warn_plain_client_secret_storage,
+        )
 
         settings = {
             "client_secret": "plain-secret",

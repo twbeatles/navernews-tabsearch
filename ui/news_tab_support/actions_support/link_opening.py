@@ -8,7 +8,9 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
 from core.workers import _normalized_http_url
-from ui.news_tab_support.actions_support.article_state import _NewsTabArticleActionsMixin
+from ui.news_tab_support.actions_support.article_state import (
+    _NewsTabArticleActionsMixin,
+)
 
 logger = logging.getLogger(__name__)
 

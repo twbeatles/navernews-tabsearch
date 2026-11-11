@@ -43,14 +43,14 @@ from core.cloud_sync_support.snapshot_io import (  # noqa: F401 # facade: re-exp
     _verify_sqlite_db,
     cleanup_old_snapshots,
     create_cloud_snapshot,
+    delete_quarantined_snapshot,
     extract_snapshot,
     list_cloud_snapshots,
-    quarantine_invalid_snapshot,
     list_quarantined_snapshots,
-    revalidate_quarantined_snapshot,
-    restore_quarantined_snapshot,
-    delete_quarantined_snapshot,
+    quarantine_invalid_snapshot,
     read_snapshot_manifest,
+    restore_quarantined_snapshot,
+    revalidate_quarantined_snapshot,
     sanitize_config_for_cloud,
 )
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 
-
 from core.content_filters import normalize_publisher_filter_lists
 from ui.dialogs import BackupDialog, KeywordGroupDialog, LogViewerDialog
 

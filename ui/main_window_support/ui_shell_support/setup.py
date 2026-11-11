@@ -10,8 +10,8 @@ from PySide6.QtGui import QKeySequence, QResizeEvent, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QMenu,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QTabBar,

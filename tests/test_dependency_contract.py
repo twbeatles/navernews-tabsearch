@@ -2,7 +2,6 @@ from pathlib import Path
 
 from core.constants import RUNTIME_PATHS
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

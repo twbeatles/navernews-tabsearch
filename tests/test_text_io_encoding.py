@@ -11,7 +11,6 @@ import ast
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCAN_DIRS = ("core", "ui", "scripts", "tests")
 SCAN_ROOT_FILES = tuple(ROOT.glob("*.py")) + (ROOT / "news_scraper_pro.py",)

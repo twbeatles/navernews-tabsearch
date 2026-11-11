@@ -6,7 +6,6 @@ from typing import Any, cast
 from unittest import mock
 
 import news_scraper_pro as app
-
 from ui.dialogs import BackupDialog
 
 

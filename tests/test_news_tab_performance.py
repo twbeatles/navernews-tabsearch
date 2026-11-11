@@ -1,13 +1,12 @@
 import os
 import unittest
-from unittest import mock
 from typing import Any, cast
+from unittest import mock
 
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
 from ui.news_tab import NewsTab
-
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

@@ -5,6 +5,7 @@ from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QContextMenuEvent, QMouseEvent, QTextDocument, QWheelEvent
 from PySide6.QtWidgets import QComboBox, QMenu, QTextBrowser, QToolTip
 
+
 class NoScrollComboBox(QComboBox):
     """마우스 휠로 값이 변경되지 않는 콤보박스 (설정창 UX 개선)"""
     

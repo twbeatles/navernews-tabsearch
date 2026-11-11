@@ -3,8 +3,12 @@ import unittest
 from typing import Any, cast
 
 from core.worker_registry import WorkerHandle, WorkerRegistry
-from ui.main_window_fetch_support.worker_flow_support.completion import _FetchWorkerCompletionMixin
-from ui.main_window_fetch_support.worker_flow_support.state import _FetchWorkerStateMixin
+from ui.main_window_fetch_support.worker_flow_support.completion import (
+    _FetchWorkerCompletionMixin,
+)
+from ui.main_window_fetch_support.worker_flow_support.state import (
+    _FetchWorkerStateMixin,
+)
 
 
 class _DummyStaleFetchMain(_FetchWorkerCompletionMixin, _FetchWorkerStateMixin):

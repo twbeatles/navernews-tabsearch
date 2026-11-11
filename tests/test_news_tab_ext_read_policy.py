@@ -1,7 +1,7 @@
+import inspect
 import unittest
 from typing import Any, cast
 from unittest import mock
-import inspect
 
 from PySide6.QtCore import QUrl
 

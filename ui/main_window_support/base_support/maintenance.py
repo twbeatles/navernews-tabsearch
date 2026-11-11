@@ -8,8 +8,6 @@ from typing import List
 
 from PySide6.QtCore import QMutexLocker, QTimer
 
-
-
 logger = logging.getLogger(__name__)
 
 

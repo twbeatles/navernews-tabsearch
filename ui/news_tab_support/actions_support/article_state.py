@@ -6,8 +6,8 @@ from typing import Any, Dict
 
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
-from core.database import DatabaseWriteError
 from core.content_filters import normalize_tags, tags_to_csv, truncate_note
+from core.database import DatabaseWriteError
 from ui.dialogs import NoteDialog
 
 logger = logging.getLogger(__name__)

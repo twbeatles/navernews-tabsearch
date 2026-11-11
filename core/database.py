@@ -4,7 +4,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from queue import Queue
-from typing import Iterator, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator, Optional
 
 from core._db_analytics import _DatabaseAnalyticsMixin
 from core._db_cloud_sync import _DatabaseCloudSyncMixin
@@ -15,7 +15,6 @@ from core._db_schema import _DatabaseSchemaMixin
 from core.db_mutations_support import NewsUpsertResult  # noqa: F401 # hub: tests import via core.database
 from core.db_queries_support import NewsCountSummary  # noqa: F401 # hub: tests import via core.database
 from core.logging_setup import configure_logging
-
 
 configure_logging()
 logger = logging.getLogger(__name__)

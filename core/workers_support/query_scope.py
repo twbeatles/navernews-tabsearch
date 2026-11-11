@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
+
 @dataclass(frozen=True)
 class DBQueryScope:
     keyword: str

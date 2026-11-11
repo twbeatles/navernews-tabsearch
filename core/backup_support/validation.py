@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from core.backup_support.fs import _rmtree_force
 
+
 def _validate_sidecar_policy(db_backup: str) -> str:
     wal_exists = os.path.exists(f"{db_backup}-wal")
     shm_exists = os.path.exists(f"{db_backup}-shm")

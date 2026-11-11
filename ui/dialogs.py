@@ -2,7 +2,6 @@
 
 import logging
 
-
 from core.logging_setup import configure_logging
 from ui.dialogs_support import (
     ArchiveSearchDialog,

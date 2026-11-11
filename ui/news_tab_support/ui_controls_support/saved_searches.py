@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
 )
 
 
-
 class _NewsTabSavedSearchControlsMixin:
     def _refresh_tag_filter_options(self):
         combo = getattr(self, "combo_tag_filter", None)

@@ -18,7 +18,11 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from core.constants import UPDATE_ARTIFACT_MAX_BYTES, UPDATE_BACKUP_KEEP_COUNT, UPDATE_REQUEST_TIMEOUT_SECONDS
+from core.constants import (
+    UPDATE_ARTIFACT_MAX_BYTES,
+    UPDATE_BACKUP_KEEP_COUNT,
+    UPDATE_REQUEST_TIMEOUT_SECONDS,
+)
 from core.update_manifest import ReleaseManifest
 
 logger = logging.getLogger(__name__)

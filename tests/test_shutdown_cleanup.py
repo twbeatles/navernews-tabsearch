@@ -8,7 +8,6 @@ from PySide6.QtWidgets import QApplication
 from ui._main_window_tray import _MainWindowTrayMixin
 from ui.news_tab import NewsTab
 
-
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Dict
 
+
 class Colors:
     """앱 전체에서 사용되는 색상 상수 - 현대화된 팔레트"""
     # 라이트 테마 - Tailwind CSS 인디고 기반

@@ -1,7 +1,6 @@
+import os
 import time
 import unittest
-
-import os
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QApplication

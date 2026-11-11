@@ -13,8 +13,8 @@ from core.config_store_support.types import (
     ALLOWED_TOMBSTONE_RETENTION_DAYS,
     DEFAULT_AUTO_BACKUP_MINUTES,
     DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES,
-    DEFAULT_TOMBSTONE_RETENTION_DAYS,
     DEFAULT_CONFIG,
+    DEFAULT_TOMBSTONE_RETENTION_DAYS,
     AppConfig,
 )
 from core.content_filters import normalize_publisher_filter_lists

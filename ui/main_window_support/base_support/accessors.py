@@ -10,10 +10,9 @@ from PySide6.QtWidgets import QApplication, QMenu, QStatusBar, QStyle, QTabBar, 
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
 from core.workers import IterativeJobWorker
+from ui.main_window_support.base_support.state import TabFetchState
 from ui.news_tab import NewsTab
 from ui.toast import ToastQueue
-
-from ui.main_window_support.base_support.state import TabFetchState
 
 logger = logging.getLogger(__name__)
 

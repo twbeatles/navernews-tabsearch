@@ -6,7 +6,11 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from core.update_manifest import NoUpdateAvailableError, canonical_manifest_payload, verify_release_manifest
+from core.update_manifest import (
+    NoUpdateAvailableError,
+    canonical_manifest_payload,
+    verify_release_manifest,
+)
 
 
 def _document(version: str = "32.7.8") -> tuple[dict[str, object], str]:

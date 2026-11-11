@@ -3,7 +3,6 @@ from logging.handlers import RotatingFileHandler
 
 from core.constants import LOG_FILE
 
-
 _CONFIGURED = False
 
 

@@ -20,7 +20,6 @@ from core.runtime_support import (
     migrate_legacy_runtime_files,
 )
 
-
 APP_DIR = get_app_dir()
 RUNTIME_PATHS = get_runtime_paths(app_dir=APP_DIR)
 DATA_DIR = RUNTIME_PATHS.data_dir

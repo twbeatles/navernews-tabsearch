@@ -1,4 +1,5 @@
 import warnings
+
 from core.query_parser import (
     build_fetch_key,
     has_positive_keyword,

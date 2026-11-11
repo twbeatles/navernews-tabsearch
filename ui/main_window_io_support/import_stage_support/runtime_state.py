@@ -4,14 +4,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-
+from core.automation_rules import normalize_automation_rules
 from core.config_store import (
     AppConfig,
     encode_client_secret_for_storage,
 )
 from core.constants import CONFIG_FILE, RUNTIME_PATHS
 from core.content_filters import normalize_publisher_filter_lists
-from core.automation_rules import normalize_automation_rules
 from core.publisher_aliases import normalize_publisher_aliases
 from ui.styles import AppStyle
 

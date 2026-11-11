@@ -4,13 +4,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Dict
 
-
+from core.automation_rules import dedupe_automation_rules
 from core.config_store import (
     normalize_import_settings,
     normalize_loaded_config,
 )
 from core.machine_identity import get_machine_identity
-from core.automation_rules import dedupe_automation_rules
 from core.publisher_aliases import normalize_publisher_aliases
 
 if TYPE_CHECKING:
