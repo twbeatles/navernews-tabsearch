@@ -54,7 +54,7 @@ def load_config_file(path: str) -> AppConfig:
                     original_error,
                     backup_error,
                 )
-                raise original_error
+                raise original_error from backup_error
         else:
             raise
 

@@ -190,7 +190,7 @@ class _DatabaseFetchQueriesMixin:
                 cursor.execute(query, params)
                 columns = [column[0] for column in cursor.description]
                 for row in cursor.fetchall():
-                    news_items.append(dict(zip(columns, row)))
+                    news_items.append(dict(zip(columns, row, strict=True)))
         except Exception as e:
             logger.error("fetch_news failed: %s", e)
             raise self._new_query_error("fetch_news", e) from e

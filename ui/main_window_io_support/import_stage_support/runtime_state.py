@@ -259,7 +259,7 @@ class _ImportStageRuntimeStateMixin:
         if located_tab is None:
             tabs_list = getattr(self, "_tabs", None)
             if isinstance(tabs_list, list):
-                setattr(
+                setattr(  # noqa: B010 -- paired with getattr _tabs sentinel above; _tabs intentionally undeclared (pyright-checked)
                     self,
                     "_tabs",
                     [tab for tab in tabs_list if str(getattr(tab, "keyword", "")) != str(keyword or "").strip()],

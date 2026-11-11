@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.database import DatabaseManager
+from core.database import DatabaseManager, DatabaseWriteError
 from core.workers import JobCancelledError
 from ui.main_window_io_support.exports import (
     _export_row,
@@ -93,7 +93,7 @@ class TestCsvImportExportHardening(unittest.TestCase):
                         "BEGIN SELECT RAISE(ABORT, 'reject note'); END"
                     )
                     conn.commit()
-                with self.assertRaises(Exception):
+                with self.assertRaises(DatabaseWriteError):
                     db.import_article_state("https://example.com/1", bookmark=1, note="memo")
                 row = db.fetch_news("AI", query_key="ai|")[0]
                 self.assertEqual(int(row["is_bookmarked"]), 0)

@@ -482,7 +482,7 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             dialogs = _FakeDialogAdapter()
             dialog = _DummyDialog(_FakeBackupList(None), auto_backup, dialog_adapter=dialogs)
-            setattr(dialog, "chk_include_db", _Check())
+            setattr(dialog, "chk_include_db", _Check())  # noqa: B010 -- sparse test double; create_backup reads it dynamically, attr intentionally undeclared (pyright-checked tests)
 
             BackupDialog.create_backup(cast(Any, dialog))
 
@@ -505,7 +505,7 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             dialogs = _FakeDialogAdapter()
             dialog = _DummyDialog(_FakeBackupList(None), auto_backup, dialog_adapter=dialogs)
-            setattr(dialog, "chk_include_db", _Check())
+            setattr(dialog, "chk_include_db", _Check())  # noqa: B010 -- sparse test double; create_backup reads it dynamically, attr intentionally undeclared (pyright-checked tests)
 
             BackupDialog.create_backup(cast(Any, dialog))
 

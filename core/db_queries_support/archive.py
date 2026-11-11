@@ -165,7 +165,7 @@ class _DatabaseArchiveQueriesMixin:
             cursor = active_conn.execute(query, params)
             columns = [column[0] for column in cursor.description]
             for row in cursor.fetchall():
-                rows_out.append(dict(zip(columns, row)))
+                rows_out.append(dict(zip(columns, row, strict=True)))
             return rows_out
         except Exception as e:
             logger.error("search_archive failed: %s", e)

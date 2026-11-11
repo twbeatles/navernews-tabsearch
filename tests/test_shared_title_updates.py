@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from core.database import DatabaseManager
+from core.database import DatabaseManager, DatabaseWriteError
 
 
 def article(link, title):
@@ -49,7 +49,7 @@ class TestSharedTitleUpdates(unittest.TestCase):
         self.db.upsert_news([article("L1", "same"), article("L2", "same")], "A")
         with mock.patch.object(self.db, "_recalculate_duplicate_flags_for_query_key_hashes",
                                side_effect=RuntimeError("injected")):
-            with self.assertRaises(Exception):
+            with self.assertRaises(DatabaseWriteError):
                 self.db.upsert_news([article("L1", "new")], "B")
         self.assertEqual({row["title"] for row in self.db.fetch_news("A")}, {"same"})
         self.assertEqual(self.db.fetch_news("B"), [])

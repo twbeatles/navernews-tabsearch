@@ -1,5 +1,4 @@
-# Ruff S1 baseline: pyflakes + pycodestyle errors only (E4,E7,E9,F).
-# S2 (I) / S3 (B) / S4 (UP) intentionally deferred.
+# Ruff staged rollout: S1 (E4,E7,E9,F) -> S2 (I) -> S3 (B); S4 (UP) deferred.
 # F401 audit 2026-11-11: hub + patch-target analysis (from-hub,
 # modattr, patch/getattr strings, tokenize code-refs) over 1284
 # diagnostics — 6 keepers with rationale noqas:
@@ -16,7 +15,7 @@
 line-length = 88
 
 [lint]
-select = ["E4", "E7", "E9", "F", "I"]
+select = ["E4", "E7", "E9", "F", "I", "B"]
 fixable = []
 
 [lint.per-file-ignores]

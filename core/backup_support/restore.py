@@ -160,9 +160,9 @@ def apply_pending_restore_if_any(
     if not valid:
         logger.error("pending restore validation failed: %s (file is kept)", reason)
         return False
-    for candidate_path in [candidate_path]:
-        if os.path.isdir(candidate_path):
-            backup_path = candidate_path
+    for _candidate_path in [candidate_path]:
+        if os.path.isdir(_candidate_path):
+            backup_path = _candidate_path
             break
 
     if not backup_path:

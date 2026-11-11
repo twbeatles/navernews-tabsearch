@@ -399,7 +399,7 @@ class _MainWindowTabsMixin:
             updated_groups = self.keyword_group_manager._normalize_groups(
                 dict(self.keyword_group_manager.groups)
             )
-            for group_name, keywords in updated_groups.items():
+            for _group_name, keywords in updated_groups.items():
                 if old_keyword in keywords:
                     keywords[:] = [new_keyword if keyword == old_keyword else keyword for keyword in keywords]
                     deduped: List[str] = []
