@@ -1,4 +1,3 @@
-
 from ui.dialogs_support.archive_search import ArchiveSearchDialog
 from ui.dialogs_support.automation_rules import AutomationRulesDialog
 from ui.dialogs_support.backups import BackupDialog, _verify_backups_job

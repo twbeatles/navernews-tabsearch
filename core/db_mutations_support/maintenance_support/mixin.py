@@ -1,4 +1,3 @@
-
 from core.db_mutations_support.maintenance_support.deletion import (
     _NewsDeletionMaintenanceMixin,
 )

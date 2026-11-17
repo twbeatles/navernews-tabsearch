@@ -32,7 +32,9 @@ class _MainWindowTrayMixin:
             try:
                 tab.cleanup()
             except Exception as e:
-                logger.warning("탭 종료 정리 오류 (%s): %s", getattr(tab, "keyword", "?"), e)
+                logger.warning(
+                    "탭 종료 정리 오류 (%s): %s", getattr(tab, "keyword", "?"), e
+                )
 
     def setup_system_tray(self: MainApp):
         """시스템 트레이 아이콘 설정"""
@@ -49,7 +51,9 @@ class _MainWindowTrayMixin:
             if icon_path and os.path.exists(icon_path):
                 self.tray.setIcon(QIcon(icon_path))
             else:
-                self.tray.setIcon(self._style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+                self.tray.setIcon(
+                    self._style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+                )
 
             tray_menu = QMenu(self)
 
@@ -130,7 +134,9 @@ class _MainWindowTrayMixin:
                     if not tray:
                         return
                     if self._tray_unread_cache > 0:
-                        tray.setToolTip(f"{APP_NAME}\n📬 읽지 않은 기사: {self._tray_unread_cache:,}개")
+                        tray.setToolTip(
+                            f"{APP_NAME}\n📬 읽지 않은 기사: {self._tray_unread_cache:,}개"
+                        )
                     else:
                         tray.setToolTip(f"{APP_NAME}\n✅ 모든 기사를 읽었습니다")
                 except Exception as exc:
@@ -200,12 +206,7 @@ class _MainWindowTrayMixin:
             if icon_type is None:
                 icon_type = QSystemTrayIcon.MessageIcon.Information
 
-            self.tray.showMessage(
-                title,
-                message,
-                icon_type,
-                5000
-            )
+            self.tray.showMessage(title, message, icon_type, 5000)
         except Exception as e:
             logger.warning(f"트레이 알림 표시 오류: {e}")
 
@@ -224,8 +225,13 @@ class _MainWindowTrayMixin:
                 return
 
             QTimer.singleShot(0, self.hide)
-            if not hasattr(self, "_tray_minimize_notified") or not self._tray_minimize_notified:
-                self.show_tray_notification(APP_NAME, "프로그램이 트레이로 최소화되었습니다.")
+            if (
+                not hasattr(self, "_tray_minimize_notified")
+                or not self._tray_minimize_notified
+            ):
+                self.show_tray_notification(
+                    APP_NAME, "프로그램이 트레이로 최소화되었습니다."
+                )
                 self._tray_minimize_notified = True
             self.update_tray_tooltip()
         except Exception as e:
@@ -242,7 +248,11 @@ class _MainWindowTrayMixin:
         if not hasattr(self, "_user_requested_close"):
             self._user_requested_close = False
 
-        caller_info = self._get_close_caller_info() if hasattr(self, "_get_close_caller_info") else "Unknown"
+        caller_info = (
+            self._get_close_caller_info()
+            if hasattr(self, "_get_close_caller_info")
+            else "Unknown"
+        )
         logger.info(f"closeEvent 호출됨 (호출 원인: {caller_info})")
 
         if self._system_shutdown or self._force_close:
@@ -259,7 +269,7 @@ class _MainWindowTrayMixin:
             if not hasattr(self, "_tray_hide_notified") or not self._tray_hide_notified:
                 self.show_tray_notification(
                     APP_NAME,
-                    "프로그램이 시스템 트레이에서 계속 실행됩니다.\n트레이 아이콘을 더블클릭하여 창을 열 수 있습니다."
+                    "프로그램이 시스템 트레이에서 계속 실행됩니다.\n트레이 아이콘을 더블클릭하여 창을 열 수 있습니다.",
                 )
                 self._tray_hide_notified = True
 
@@ -273,7 +283,7 @@ class _MainWindowTrayMixin:
                 "정말로 프로그램을 종료하시겠습니까?\n\n"
                 "종료하면 뉴스 자동 새로고침이 중지됩니다.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.No,
             )
 
             if reply != QMessageBox.StandardButton.Yes:
@@ -296,15 +306,29 @@ class _MainWindowTrayMixin:
             shutdown_updates()
         # Freeze producers before waiting. A deferred close keeps Qt processing
         # events, so timers and late cloud callbacks must not launch new jobs.
-        for name in ("timer", "_countdown_timer", "_tab_badge_timer",
-                     "_badge_refresh_timer", "_auto_backup_timer", "_cloud_sync_timer",
-                     "_hydration_timer", "_fts_backfill_retry_timer"):
+        for name in (
+            "timer",
+            "_countdown_timer",
+            "_tab_badge_timer",
+            "_badge_refresh_timer",
+            "_auto_backup_timer",
+            "_cloud_sync_timer",
+            "_hydration_timer",
+            "_fts_backfill_retry_timer",
+        ):
             timer = getattr(self, name, None)
             if timer is not None:
                 timer.stop()
-        owned = [getattr(self, name, None) for name in (
-            "_cloud_sync_worker", "_export_worker", "_csv_import_worker",
-            "_fts_backfill_worker", "_tray_unread_worker")]
+        owned = [
+            getattr(self, name, None)
+            for name in (
+                "_cloud_sync_worker",
+                "_export_worker",
+                "_csv_import_worker",
+                "_fts_backfill_worker",
+                "_tray_unread_worker",
+            )
+        ]
         registry = getattr(self, "_worker_registry", None)
         if registry is not None:
             for handle in registry.all_handles():
@@ -319,6 +343,7 @@ class _MainWindowTrayMixin:
         find_children = getattr(self, "findChildren", None)
         if callable(find_children):
             from PySide6.QtCore import QThread
+
             owned.extend(find_children(QThread))
         if not request_background_shutdown(owned):
             event.ignore()
@@ -359,7 +384,9 @@ class _MainWindowTrayMixin:
                         ):
                             defer_db_close = True
                     except Exception as e:
-                        logger.error(f"워커 종료 오류 ({handle.tab_keyword}, rid={handle.request_id}): {e}")
+                        logger.error(
+                            f"워커 종료 오류 ({handle.tab_keyword}, rid={handle.request_id}): {e}"
+                        )
 
             logger.info("워커 정리 완료")
 
@@ -415,7 +442,9 @@ class _MainWindowTrayMixin:
                 logger.error(f"설정 저장 오류: {e}")
 
             if self.db is not None and defer_db_close:
-                logger.warning("DB close deferred because background workers are still settling")
+                logger.warning(
+                    "DB close deferred because background workers are still settling"
+                )
             elif self.db is not None:
                 try:
                     self.db.close()

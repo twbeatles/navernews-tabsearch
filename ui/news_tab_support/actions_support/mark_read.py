@@ -20,9 +20,13 @@ class _NewsTabMarkReadMixin:
         """모두 읽음으로 표시 (비동기)"""
         if getattr(self, "_is_closing", False):
             return
-        if _NewsTabArticleActionsMixin._should_block_local_db_action(self, "mark all read"):
+        if _NewsTabArticleActionsMixin._should_block_local_db_action(
+            self, "mark all read"
+        ):
             return
-        message_box_cls = _NewsTabArticleActionsMixin._runtime_attr(self, "QMessageBox", QMessageBox)
+        message_box_cls = _NewsTabArticleActionsMixin._runtime_attr(
+            self, "QMessageBox", QMessageBox
+        )
         mode_dialog = message_box_cls(self)
         mode_dialog.setIcon(message_box_cls.Icon.Question)
         mode_dialog.setWindowTitle("모두 읽음으로 표시")
@@ -31,8 +35,12 @@ class _NewsTabMarkReadMixin:
             "현재 표시 결과는 필터/기간/제외어 조건으로 계산된 전체 결과입니다."
         )
 
-        btn_visible_only = mode_dialog.addButton("현재 표시 결과만", message_box_cls.ButtonRole.AcceptRole)
-        btn_tab_all = mode_dialog.addButton("탭 전체", message_box_cls.ButtonRole.ActionRole)
+        btn_visible_only = mode_dialog.addButton(
+            "현재 표시 결과만", message_box_cls.ButtonRole.AcceptRole
+        )
+        btn_tab_all = mode_dialog.addButton(
+            "탭 전체", message_box_cls.ButtonRole.ActionRole
+        )
         mode_dialog.addButton(message_box_cls.StandardButton.Cancel)
         mode_dialog.setDefaultButton(btn_visible_only)
         mode_dialog.exec()
@@ -45,9 +53,13 @@ class _NewsTabMarkReadMixin:
         self.btn_read_all.setEnabled(False)
         start_date, end_date = self._current_date_range()
         job_kwargs: Dict[str, Any]
-        publisher_filter_settings = getattr(self, "_publisher_filter_settings", lambda: ((), ()))
+        publisher_filter_settings = getattr(
+            self, "_publisher_filter_settings", lambda: ((), ())
+        )
         blocked_publishers, preferred_publishers = publisher_filter_settings()
-        only_preferred_enabled = getattr(self, "_only_preferred_publishers_enabled", lambda: False)
+        only_preferred_enabled = getattr(
+            self, "_only_preferred_publishers_enabled", lambda: False
+        )
         current_tag_filter = getattr(self, "_current_tag_filter", lambda: "")
 
         if clicked == btn_visible_only:
@@ -115,7 +127,9 @@ class _NewsTabMarkReadMixin:
             )
 
         try:
-            worker_cls = _NewsTabArticleActionsMixin._runtime_attr(self, "IterativeJobWorker", IterativeJobWorker)
+            worker_cls = _NewsTabArticleActionsMixin._runtime_attr(
+                self, "IterativeJobWorker", IterativeJobWorker
+            )
             self.job_worker = worker_cls(job_func, parent=None)
             self.job_worker.finished.connect(self._on_mark_all_read_done)
             self.job_worker.error.connect(self._on_mark_all_read_error)
@@ -140,7 +154,9 @@ class _NewsTabMarkReadMixin:
             reason = ""
         if not started:
             self.lbl_status.setText("읽음 처리 작업을 시작할 수 없습니다.")
-            message_box_cls = _NewsTabArticleActionsMixin._runtime_attr(self, "QMessageBox", QMessageBox)
+            message_box_cls = _NewsTabArticleActionsMixin._runtime_attr(
+                self, "QMessageBox", QMessageBox
+            )
             message_box_cls.warning(
                 self,
                 "유지보수 시작 실패",
@@ -156,7 +172,9 @@ class _NewsTabMarkReadMixin:
             return
         detach_worker_signals = getattr(self, "_detach_worker_signals", None)
         if callable(detach_worker_signals):
-            detach_worker_signals(worker, ("finished", "error", "cancelled", "progress"))
+            detach_worker_signals(
+                worker, ("finished", "error", "cancelled", "progress")
+            )
         if not delete_qthread_when_finished(worker):
             try:
                 worker.deleteLater()
@@ -189,10 +207,18 @@ class _NewsTabMarkReadMixin:
         self._end_mark_all_read_maintenance()
 
         candidate_parent = self._main_window()
-        parent = cast(Optional[MainWindowProtocol], candidate_parent) if candidate_parent is not None else None
+        parent = (
+            cast(Optional[MainWindowProtocol], candidate_parent)
+            if candidate_parent is not None
+            else None
+        )
         if count is not None:
-            if parent is not None and hasattr(parent, "on_database_maintenance_completed"):
-                parent.on_database_maintenance_completed("mark_all_read", int(count or 0))
+            if parent is not None and hasattr(
+                parent, "on_database_maintenance_completed"
+            ):
+                parent.on_database_maintenance_completed(
+                    "mark_all_read", int(count or 0)
+                )
             elif not getattr(self, "_is_closing", False):
                 self.load_data_from_db()
 
@@ -203,9 +229,13 @@ class _NewsTabMarkReadMixin:
 
         if count is not None:
             mode_label = getattr(self, "_mark_all_mode_label", "선택 범위")
-            self.lbl_status.setText(f"✓ {mode_label} {int(count or 0)}개 읽음 처리 완료")
+            self.lbl_status.setText(
+                f"✓ {mode_label} {int(count or 0)}개 읽음 처리 완료"
+            )
             if parent is not None:
-                parent.show_toast(f"✓ {mode_label} {count}개의 기사를 읽음으로 표시했습니다.")
+                parent.show_toast(
+                    f"✓ {mode_label} {count}개의 기사를 읽음으로 표시했습니다."
+                )
             return
 
         if cancelled:
@@ -215,8 +245,12 @@ class _NewsTabMarkReadMixin:
             return
 
         self.lbl_status.setText("오류 발생")
-        message_box_cls = _NewsTabArticleActionsMixin._runtime_attr(self, "QMessageBox", QMessageBox)
-        message_box_cls.critical(self, "오류", f"처리 중 오류가 발생했습니다:\n\n{error_message}")
+        message_box_cls = _NewsTabArticleActionsMixin._runtime_attr(
+            self, "QMessageBox", QMessageBox
+        )
+        message_box_cls.critical(
+            self, "오류", f"처리 중 오류가 발생했습니다:\n\n{error_message}"
+        )
 
     def _on_mark_all_read_done(self, count):
         """모두 읽음 처리 완료"""

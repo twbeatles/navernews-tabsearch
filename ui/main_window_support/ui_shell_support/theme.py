@@ -23,7 +23,10 @@ class _MainWindowThemeShellMixin:
             return 1 if configured == 1 else 0
         try:
             app = QApplication.instance()
-            if app is not None and app.styleHints().colorScheme() == Qt.ColorScheme.Dark:
+            if (
+                app is not None
+                and app.styleHints().colorScheme() == Qt.ColorScheme.Dark
+            ):
                 return 1
         except Exception:
             pass
@@ -46,6 +49,8 @@ class _MainWindowThemeShellMixin:
             app = QApplication.instance()
             if app is None:
                 return
-            app.styleHints().colorSchemeChanged.connect(lambda _scheme: self._refresh_system_theme())
+            app.styleHints().colorSchemeChanged.connect(
+                lambda _scheme: self._refresh_system_theme()
+            )
         except Exception:
             logger.debug("시스템 테마 변경 신호 연결을 건너뜁니다.", exc_info=True)

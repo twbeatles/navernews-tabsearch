@@ -8,4 +8,3 @@ class TestSpecRuntimeTmpdir(unittest.TestCase):
         self.assertIn("runtime_tmpdir=None", src)
         self.assertNotIn("LOCALAPPDATA", src)
         self.assertNotIn("os.environ.get('TEMP'", src)
-

@@ -18,13 +18,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 class _MainWindowRefreshFlowMixin:
     def _current_fetch_cooldown_seconds(self: MainApp) -> int:
-        remaining = int(max(0.0, float(getattr(self, "_fetch_cooldown_until", 0.0) or 0.0) - time.time()))
+        remaining = int(
+            max(
+                0.0,
+                float(getattr(self, "_fetch_cooldown_until", 0.0) or 0.0) - time.time(),
+            )
+        )
         if remaining <= 0:
             self._fetch_cooldown_until = 0.0
             self._fetch_cooldown_reason = ""
         return remaining
+
     def _set_fetch_cooldown(
         self: MainApp,
         seconds: int,
@@ -39,6 +46,7 @@ class _MainWindowRefreshFlowMixin:
         if until > current_until:
             self._fetch_cooldown_until = until
             self._fetch_cooldown_reason = str(reason or "").strip()
+
     def _fetch_cooldown_message(self: MainApp, action_label: str) -> str:
         remaining = self._current_fetch_cooldown_seconds()
         if remaining <= 0:
@@ -46,6 +54,7 @@ class _MainWindowRefreshFlowMixin:
         reason = str(getattr(self, "_fetch_cooldown_reason", "") or "").strip()
         suffix = f" ({reason})" if reason else ""
         return f"{action_label}은(는) 잠시 후 다시 시도해주세요. API 대기 시간 {remaining}초 남음{suffix}"
+
     def _prepare_refresh_keywords(
         self: MainApp,
         keywords: List[str],
@@ -54,19 +63,23 @@ class _MainWindowRefreshFlowMixin:
         for keyword in keywords:
             try:
                 normalized_keyword = str(keyword or "").strip()
-                if not normalized_keyword or not has_positive_keyword(normalized_keyword):
+                if not normalized_keyword or not has_positive_keyword(
+                    normalized_keyword
+                ):
                     continue
                 if normalized_keyword not in prepared:
                     prepared.append(normalized_keyword)
             except Exception as e:
                 logger.error("Failed to normalize refresh keyword '%s': %s", keyword, e)
         return prepared
+
     def _global_refresh_interval_minutes(self: MainApp) -> Optional[int]:
         minutes = [10, 30, 60, 120, 360]
         idx = int(getattr(self, "interval_idx", 5) or 0)
         if 0 <= idx < len(minutes):
             return minutes[idx]
         return None
+
     def _tab_refresh_interval_minutes(self: MainApp, keyword: str) -> Optional[int]:
         policies = getattr(self, "tab_refresh_policies", {})
         canonical_key = ""
@@ -89,6 +102,7 @@ class _MainWindowRefreshFlowMixin:
         if minutes in {10, 30, 60, 120, 360}:
             return minutes
         return self._global_refresh_interval_minutes()
+
     def _auto_refresh_keywords_due(self: MainApp, keywords: List[str]) -> List[str]:
         now_ts = time.time()
         due_keywords: List[str] = []
@@ -102,6 +116,7 @@ class _MainWindowRefreshFlowMixin:
                 due_keywords.append(keyword)
         self._last_auto_refresh_by_keyword = last_by_keyword
         return due_keywords
+
     def _refresh_block_reason(
         self: MainApp,
         action_label: str = "새로고침",
@@ -117,6 +132,7 @@ class _MainWindowRefreshFlowMixin:
         if not valid:
             return f"API 인증 정보가 준비되지 않아 {action_label}을(를) 실행할 수 없습니다. {msg}"
         return ""
+
     def _notify_refresh_blocked(
         self: MainApp,
         message: str,
@@ -125,6 +141,7 @@ class _MainWindowRefreshFlowMixin:
             return
         self._status_bar().showMessage(message, 4000)
         self.show_warning_toast(message)
+
     def _is_awaited_sequential_keyword(
         self: MainApp,
         keyword: str,
@@ -138,6 +155,7 @@ class _MainWindowRefreshFlowMixin:
         except (TypeError, ValueError):
             return False
         return 0 <= idx < len(pending) and pending[idx] == keyword
+
     def _advance_sequential_if_awaiting(
         self: MainApp,
         keyword: str,
@@ -152,6 +170,7 @@ class _MainWindowRefreshFlowMixin:
             self._on_sequential_fetch_done(keyword)
             return True
         return False
+
     def _abort_sequential_refresh(self: MainApp) -> None:
         """Silently drop sequential state (used when shutdown preempts refresh)."""
         self._sequential_refresh_active = False
@@ -169,6 +188,7 @@ class _MainWindowRefreshFlowMixin:
             self.btn_refresh.setEnabled(True)
         except Exception:
             pass
+
     def _begin_sequential_refresh(
         self: MainApp,
         keywords: List[str],
@@ -201,6 +221,7 @@ class _MainWindowRefreshFlowMixin:
         self.btn_refresh.setEnabled(False)
         self._process_next_refresh()
         return True
+
     def _safe_refresh_all(self: MainApp):
         """Timer-safe refresh wrapper."""
         if self.is_maintenance_mode_active():
@@ -226,7 +247,9 @@ class _MainWindowRefreshFlowMixin:
 
         with QMutexLocker(self._refresh_mutex):
             if self._refresh_in_progress or self._sequential_refresh_active:
-                logger.warning("Refresh skipped because another refresh is already running")
+                logger.warning(
+                    "Refresh skipped because another refresh is already running"
+                )
                 return
             self._refresh_in_progress = True
 
@@ -241,6 +264,7 @@ class _MainWindowRefreshFlowMixin:
             if not started:
                 with QMutexLocker(self._refresh_mutex):
                     self._refresh_in_progress = False
+
     def refresh_all(self: MainApp) -> bool:
         """Refresh all tabs sequentially."""
         logger.info("Starting refresh_all")
@@ -300,6 +324,7 @@ class _MainWindowRefreshFlowMixin:
             self._status_bar().showMessage(f"❌ 새로고침 오류: {e}")
             self._finish_sequential_refresh()
             return False
+
     def refresh_selected_tabs(self: MainApp, keywords: List[str]) -> bool:
         """Refresh a selected subset of tabs sequentially."""
         logger.info("Starting refresh_selected_tabs: %s", keywords)
@@ -330,6 +355,7 @@ class _MainWindowRefreshFlowMixin:
         if self._begin_sequential_refresh(keywords, auto_refresh=False):
             return True
         return False
+
     def _process_next_refresh(self: MainApp):
         """Run the next queued tab refresh."""
         if not self._sequential_refresh_active:
@@ -366,6 +392,7 @@ class _MainWindowRefreshFlowMixin:
             logger.error("Refresh failed for '%s': %s", keyword, e)
             self._current_refresh_idx += 1
             QTimer.singleShot(500, self._process_next_refresh)
+
     def _build_fetch_summary_message(
         self: MainApp,
         keyword: str,
@@ -381,6 +408,7 @@ class _MainWindowRefreshFlowMixin:
             msg += f", {filtered_count}건 제외"
         msg += ")"
         return msg
+
     def _notify_fetch_new_items(
         self: MainApp,
         keyword: str,
@@ -410,6 +438,7 @@ class _MainWindowRefreshFlowMixin:
                     f"🔔 알림 키워드: {alert_keyword}",
                     title[:50],
                 )
+
     def _on_sequential_fetch_done(self: MainApp, keyword: str):
         """Advance the sequential refresh chain."""
         if not self._sequential_refresh_active:
@@ -417,6 +446,7 @@ class _MainWindowRefreshFlowMixin:
 
         self._current_refresh_idx += 1
         QTimer.singleShot(300, self._process_next_refresh)
+
     def _finish_sequential_refresh(self: MainApp):
         """Reset sequential refresh state and surface the result."""
         self._sequential_refresh_active = False
@@ -434,7 +464,9 @@ class _MainWindowRefreshFlowMixin:
         new_count = self._sequential_new_count
         dup = self._sequential_dup_count
 
-        toast_msg = f"총 {self._total_refresh_count}개 탭 새로고침 완료 ({new_count}건 새 링크"
+        toast_msg = (
+            f"총 {self._total_refresh_count}개 탭 새로고침 완료 ({new_count}건 새 링크"
+        )
         if dup > 0:
             toast_msg += f", {dup}건 중복"
         toast_msg += ")"
@@ -450,7 +482,9 @@ class _MainWindowRefreshFlowMixin:
             )
 
         self.apply_refresh_interval()
-        request_fts_backfill_resume = getattr(self, "_request_fts_backfill_resume", None)
+        request_fts_backfill_resume = getattr(
+            self, "_request_fts_backfill_resume", None
+        )
         if callable(request_fts_backfill_resume):
             request_fts_backfill_resume(delay_ms=250)
         self._schedule_tab_hydration(50)

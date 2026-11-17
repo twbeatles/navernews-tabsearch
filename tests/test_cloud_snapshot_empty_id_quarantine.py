@@ -5,6 +5,7 @@ PROJECT_AUDIT.md 3.3:
 - merge_cloud_snapshot_db / preview_cloud_snapshot_db 에 빈 snapshot_id 전달 시
   DatabaseWriteError / DatabaseQueryError 로 거부 (신규 방어)
 """
+
 from __future__ import annotations
 
 import json

@@ -35,7 +35,9 @@ class _MainWindowFtsBackfillMixin:
                 self._fts_backfill_retry_timer.stop()
             return
         if self._is_fts_backfill_paused():
-            self._schedule_fts_backfill_retry(max(1000, int(self._fts_backfill_pause_delay_ms or 1000)))
+            self._schedule_fts_backfill_retry(
+                max(1000, int(self._fts_backfill_pause_delay_ms or 1000))
+            )
             return
         if self._fts_backfill_retry_timer.isActive():
             self._fts_backfill_retry_timer.stop()
@@ -47,7 +49,9 @@ class _MainWindowFtsBackfillMixin:
                 result = self._require_db().backfill_news_fts_chunk(limit=250)
                 processed = int(result.get("processed", 0) or 0)
                 total_processed += processed
-                context.report(current=total_processed, total=0, message="FTS backfill running")
+                context.report(
+                    current=total_processed, total=0, message="FTS backfill running"
+                )
                 if bool(result.get("done", False)) or processed <= 0:
                     return {"processed": total_processed, "done": True}
 
@@ -70,7 +74,9 @@ class _MainWindowFtsBackfillMixin:
         self._fts_backfill_worker = None
         self._fts_backfill_pause_requested = False
         self._fts_backfill_retry_attempt += 1
-        self._schedule_fts_backfill_retry(self._next_fts_backfill_retry_delay_ms(), force=True)
+        self._schedule_fts_backfill_retry(
+            self._next_fts_backfill_retry_delay_ms(), force=True
+        )
 
     def _on_fts_backfill_cancelled(self) -> None:
         self._fts_backfill_worker = None
@@ -99,7 +105,9 @@ class _MainWindowFtsBackfillMixin:
             return 15000
         return 30000
 
-    def _schedule_fts_backfill_retry(self, delay_ms: int, *, force: bool = False) -> None:
+    def _schedule_fts_backfill_retry(
+        self, delay_ms: int, *, force: bool = False
+    ) -> None:
         if self._shutdown_in_progress:
             return
         if not self._fts_backfill_enabled():
@@ -135,7 +143,9 @@ class _MainWindowFtsBackfillMixin:
         self._fts_backfill_pause_delay_ms = max(250, int(retry_delay_ms))
         worker = getattr(self, "_fts_backfill_worker", None)
         if worker is None or not worker.isRunning():
-            self._request_fts_backfill_resume(delay_ms=self._fts_backfill_pause_delay_ms)
+            self._request_fts_backfill_resume(
+                delay_ms=self._fts_backfill_pause_delay_ms
+            )
             return
         self._fts_backfill_pause_requested = True
         try:

@@ -13,7 +13,9 @@ class TestKeywordGroupStorage(unittest.TestCase):
             cfg = Path(td) / "config.json"
             save_config_file_atomic(str(cfg), default_config())
 
-            mgr = KeywordGroupManager(config_file=str(cfg), legacy_file=str(Path(td) / "legacy_groups.json"))
+            mgr = KeywordGroupManager(
+                config_file=str(cfg), legacy_file=str(Path(td) / "legacy_groups.json")
+            )
             self.assertTrue(mgr.create_group("시장"))
             self.assertTrue(mgr.add_keyword_to_group("시장", "AI"))
 
@@ -34,14 +36,18 @@ class TestKeywordGroupStorage(unittest.TestCase):
             self.assertEqual(mgr.groups.get("legacy_group"), ["경제", "증시"])
 
             loaded = load_config_file(str(cfg))
-            self.assertEqual(loaded["keyword_groups"].get("legacy_group"), ["경제", "증시"])
+            self.assertEqual(
+                loaded["keyword_groups"].get("legacy_group"), ["경제", "증시"]
+            )
 
     def test_merge_groups_preserves_existing_order_and_appends_new(self):
         with tempfile.TemporaryDirectory() as td:
             cfg = Path(td) / "config.json"
             save_config_file_atomic(str(cfg), default_config())
 
-            mgr = KeywordGroupManager(config_file=str(cfg), legacy_file=str(Path(td) / "legacy_groups.json"))
+            mgr = KeywordGroupManager(
+                config_file=str(cfg), legacy_file=str(Path(td) / "legacy_groups.json")
+            )
             mgr.groups = {"시장": ["AI", "경제"], "기술": ["클라우드"]}
             mgr.save_groups()
 
@@ -59,4 +65,3 @@ class TestKeywordGroupStorage(unittest.TestCase):
 
             loaded = load_config_file(str(cfg))
             self.assertEqual(loaded["keyword_groups"]["시장"], ["AI", "경제", "증시"])
-

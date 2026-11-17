@@ -12,10 +12,18 @@ from ui.dialog_adapters import get_dialog_adapter
 configure_logging()
 logger = logging.getLogger(__name__)
 
-def _verify_backups_job(context, auto_backup: AutoBackup, backup_entries: List[Dict[str, Any]]):
+
+def _verify_backups_job(
+    context, auto_backup: AutoBackup, backup_entries: List[Dict[str, Any]]
+):
     total = len(backup_entries)
     verified_entries: List[Dict[str, Any]] = []
-    context.report(current=0, total=total, message="백업 검증 준비 중...", payload={"stage": "start"})
+    context.report(
+        current=0,
+        total=total,
+        message="백업 검증 준비 중...",
+        payload={"stage": "start"},
+    )
 
     for index, entry in enumerate(backup_entries, start=1):
         context.check_cancelled()
@@ -31,6 +39,8 @@ def _verify_backups_job(context, auto_backup: AutoBackup, backup_entries: List[D
         )
 
     return verified_entries
+
+
 class _BackupDialogVerificationMixin:
     def start_backup_verification(self):
         if self._verify_worker is not None and self._verify_worker.isRunning():
@@ -57,7 +67,9 @@ class _BackupDialogVerificationMixin:
         self.btn_verify.setEnabled(False)
         self.btn_cancel_verify.setEnabled(True)
 
-        worker = IterativeJobWorker(_verify_backups_job, self.auto_backup, backup_entries)
+        worker = IterativeJobWorker(
+            _verify_backups_job, self.auto_backup, backup_entries
+        )
         self._verify_worker = worker
         worker.progress.connect(self._on_backup_verification_progress)
         worker.finished.connect(self._on_backup_verification_finished)
@@ -85,7 +97,9 @@ class _BackupDialogVerificationMixin:
 
         entry = payload.get("entry")
         if isinstance(entry, dict):
-            item = self._find_backup_item(str(entry.get("backup_name", "") or entry.get("name", "")))
+            item = self._find_backup_item(
+                str(entry.get("backup_name", "") or entry.get("name", ""))
+            )
             if item is not None:
                 self._apply_backup_item_state(item, entry)
 
@@ -102,11 +116,17 @@ class _BackupDialogVerificationMixin:
 
     def _on_backup_verification_finished(self, result: List[Dict[str, Any]]):
         for entry in result:
-            item = self._find_backup_item(str(entry.get("backup_name", "") or entry.get("name", "")))
+            item = self._find_backup_item(
+                str(entry.get("backup_name", "") or entry.get("name", ""))
+            )
             if item is not None:
                 self._apply_backup_item_state(item, entry)
 
-        ok_count = sum(1 for entry in result if bool(entry.get("is_restorable")) and not bool(entry.get("is_corrupt")))
+        ok_count = sum(
+            1
+            for entry in result
+            if bool(entry.get("is_restorable")) and not bool(entry.get("is_corrupt"))
+        )
         failed_count = max(0, len(result) - ok_count)
         self._finish_backup_verification_ui(
             f"백업 검증 완료: 정상 {ok_count}개 / 문제 {failed_count}개"
@@ -123,4 +143,5 @@ class _BackupDialogVerificationMixin:
     def _on_backup_verification_cancelled(self):
         self._finish_backup_verification_ui("백업 검증을 취소했습니다.")
 
-__all__ = ['_BackupDialogVerificationMixin', '_verify_backups_job']
+
+__all__ = ["_BackupDialogVerificationMixin", "_verify_backups_job"]

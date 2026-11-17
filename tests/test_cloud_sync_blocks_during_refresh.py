@@ -6,7 +6,9 @@ from ui.main_window_io_support.cloud import _MainWindowCloudSyncMixin
 
 
 class _DummyCloudMain(_MainWindowCloudSyncMixin):
-    def __init__(self, *, refresh_in_progress: bool = False, sequential_refresh: bool = False):
+    def __init__(
+        self, *, refresh_in_progress: bool = False, sequential_refresh: bool = False
+    ):
         self.cloud_sync_enabled = True
         self.cloud_sync_dir = r"C:\sync"
         self._refresh_in_progress = refresh_in_progress

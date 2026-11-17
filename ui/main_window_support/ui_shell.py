@@ -1,4 +1,3 @@
-
 """Compatibility facade for MainApp UI shell mixins."""
 
 from ui.main_window_support.ui_shell_support import (

@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -26,7 +25,9 @@ class _DatabaseCountQueriesMixin:
         conn = None
         try:
             conn = self.get_connection()
-            with perf_timer("db.get_counts", f"kw={keyword}|query_key={query_key or ''}"):
+            with perf_timer(
+                "db.get_counts", f"kw={keyword}|query_key={query_key or ''}"
+            ):
                 if query_key:
                     row = conn.execute(
                         """
@@ -64,7 +65,9 @@ class _DatabaseCountQueriesMixin:
         conn = None
         try:
             conn = self.get_connection()
-            with perf_timer("db.get_unread_count", f"kw={keyword}|query_key={query_key or ''}"):
+            with perf_timer(
+                "db.get_unread_count", f"kw={keyword}|query_key={query_key or ''}"
+            ):
                 params: List[Any] = []
                 query = (
                     "SELECT COUNT(*) "
@@ -118,14 +121,18 @@ class _DatabaseCountQueriesMixin:
         if not raw_values:
             return {}
 
-        cleaned = [value for value in raw_values if isinstance(value, str) and value.strip()]
+        cleaned = [
+            value for value in raw_values if isinstance(value, str) and value.strip()
+        ]
         if not cleaned:
             return {}
 
         conn = None
         try:
             conn = self.get_connection()
-            with perf_timer(f"db.get_unread_counts_by_{column_name}", f"count={len(cleaned)}"):
+            with perf_timer(
+                f"db.get_unread_counts_by_{column_name}", f"count={len(cleaned)}"
+            ):
                 placeholders = ",".join(["?"] * len(cleaned))
                 query = f"""
                     SELECT nk.{column_name}, COUNT(*) AS unread_count

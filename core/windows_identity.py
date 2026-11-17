@@ -42,7 +42,9 @@ def resolve_runtime_icon_path(
         search_dirs.append(str(bundle_dir))
     search_dirs.append(app_dir)
     if is_frozen:
-        exe_path = executable if executable is not None else getattr(sys, "executable", "")
+        exe_path = (
+            executable if executable is not None else getattr(sys, "executable", "")
+        )
         if exe_path:
             search_dirs.append(os.path.dirname(os.path.abspath(exe_path)))
     elif app_dir:
@@ -89,13 +91,17 @@ def resolve_shell_icon_uri(
             return icon_path
     if not is_frozen:
         return None
-    exe_path = os.path.abspath(executable if executable is not None else getattr(sys, "executable", ""))
+    exe_path = os.path.abspath(
+        executable if executable is not None else getattr(sys, "executable", "")
+    )
     if exe_path and os.path.isfile(exe_path):
         return exe_path
     return None
 
 
-def _set_process_app_user_model_id(app_user_model_id: str, *, shell32: Any = None) -> bool:
+def _set_process_app_user_model_id(
+    app_user_model_id: str, *, shell32: Any = None
+) -> bool:
     try:
         shell = shell32 if shell32 is not None else ctypes.windll.shell32
         set_app_id = shell.SetCurrentProcessExplicitAppUserModelID
@@ -126,7 +132,7 @@ def _register_notification_app_identity(
         else:
             winreg = winreg_module
 
-        registry_path = fr"Software\Classes\AppUserModelId\{app_user_model_id}"
+        registry_path = rf"Software\Classes\AppUserModelId\{app_user_model_id}"
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, registry_path) as key:
             winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, display_name)
             if icon_path:
@@ -200,13 +206,22 @@ def _load_shell_icons(icon_source: str) -> tuple[int, int]:
     user32 = ctypes.windll.user32
     image_icon = 1
     load_from_file = 0x0010
-    user32.LoadImageW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+    user32.LoadImageW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_wchar_p,
+        ctypes.c_uint,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint,
+    ]
     user32.LoadImageW.restype = ctypes.c_void_p
 
     def load(width_metric: int, height_metric: int, fallback: int) -> int:
         width = int(user32.GetSystemMetrics(width_metric) or fallback)
         height = int(user32.GetSystemMetrics(height_metric) or fallback)
-        handle = user32.LoadImageW(None, icon_source, image_icon, width, height, load_from_file)
+        handle = user32.LoadImageW(
+            None, icon_source, image_icon, width, height, load_from_file
+        )
         return int(handle or 0)
 
     return load(11, 12, 32), load(49, 50, 16)

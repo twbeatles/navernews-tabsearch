@@ -1,4 +1,3 @@
-
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -16,7 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 class _NewsAutomationActionsMixin:
-    def apply_automation_actions(self: DatabaseManager, mutations: List[Dict[str, Any]]) -> Dict[str, int]:
+    def apply_automation_actions(
+        self: DatabaseManager, mutations: List[Dict[str, Any]]
+    ) -> Dict[str, int]:
         """Apply evaluated automation actions in one transaction."""
         cleaned: List[Dict[str, Any]] = []
         for mutation in mutations or []:
@@ -58,7 +59,9 @@ class _NewsAutomationActionsMixin:
                             if key not in seen:
                                 seen.add(key)
                                 next_tags.append(tag)
-                        if self._set_tags_with_conn(conn, link, next_tags, timestamp=now_ts):
+                        if self._set_tags_with_conn(
+                            conn, link, next_tags, timestamp=now_ts
+                        ):
                             result["tagged"] += 1
                     if mutation.get("mark_read"):
                         cursor = conn.execute(

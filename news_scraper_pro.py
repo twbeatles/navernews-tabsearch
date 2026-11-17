@@ -3,25 +3,26 @@ import sys
 
 # Isolation must precede even importing core: its package imports constants and
 # configures runtime paths. Never smoke-test against an installed user's data.
-if __name__ == '__main__' and '--smoke' in sys.argv:
+if __name__ == "__main__" and "--smoke" in sys.argv:
     import logging
     import tempfile
 
-    with tempfile.TemporaryDirectory(prefix='news_update_smoke_') as smoke_dir:
-        os.environ['NEWS_SCRAPER_DATA_DIR'] = smoke_dir
-        os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    with tempfile.TemporaryDirectory(prefix="news_update_smoke_") as smoke_dir:
+        os.environ["NEWS_SCRAPER_DATA_DIR"] = smoke_dir
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
         try:
             from core.runtime_smoke import run_smoke
+
             smoke_result = run_smoke(smoke_dir)
         except Exception:
-            logging.exception('Isolated application smoke failed')
+            logging.exception("Isolated application smoke failed")
             smoke_result = 1
         finally:
             logging.shutdown()
     raise SystemExit(smoke_result)
 
-os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '1')
-os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
+os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
+os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
 
 from core.bootstrap import main
 from core.config_store import (
@@ -89,73 +90,73 @@ from ui.toast import ToastMessage, ToastQueue
 from ui.widgets import NewsBrowser, NoScrollComboBox
 
 __all__ = [
-    'APP_DIR',
-    'APP_NAME',
-    'CONFIG_FILE',
-    'DATA_DIR',
-    'DB_FILE',
-    'ICON_FILE',
-    'ICON_PNG',
-    'LOG_FILE',
-    'RUNTIME_PATHS',
-    'RuntimePaths',
-    'VERSION',
-    'get_runtime_paths',
-    'PENDING_RESTORE_FILENAME',
-    'PENDING_RESTORE_FILE',
-    'default_config',
-    'load_config_file',
-    'save_config_file_atomic',
-    'normalize_import_settings',
-    'parse_tab_query',
-    'parse_search_query',
-    'has_positive_keyword',
-    'build_fetch_key',
-    'DatabaseConnectionError',
-    'DatabaseManager',
-    'DatabaseQueryError',
-    'DatabaseWriteError',
-    'NewsCountSummary',
-    'NewsUpsertResult',
-    'AutoBackup',
-    'apply_pending_restore_if_any',
-    'WorkerHandle',
-    'WorkerRegistry',
-    'AsyncJobWorker',
-    'ApiWorker',
-    'DBWorker',
-    'ValidationUtils',
-    'TextUtils',
-    'StartupManager',
-    'NotificationSound',
-    'KeywordGroupManager',
-    'ToastQueue',
-    'ToastMessage',
-    'NoScrollComboBox',
-    'NewsBrowser',
-    'NoteDialog',
-    'LogViewerDialog',
-    'BackupDialog',
-    'KeywordGroupDialog',
-    'NewsTab',
-    'MainApp',
-    'SettingsDialog',
-    'Colors',
-    'UIConstants',
-    'ToastType',
-    'AppStyle',
-    'RE_HTML_TAGS',
-    'RE_WHITESPACE',
-    'RE_BOLD_TAGS',
-    'perf_timer',
-    'parse_date_string',
-    'parse_date_to_ts',
-    'get_highlight_pattern',
-    'main',
+    "APP_DIR",
+    "APP_NAME",
+    "CONFIG_FILE",
+    "DATA_DIR",
+    "DB_FILE",
+    "ICON_FILE",
+    "ICON_PNG",
+    "LOG_FILE",
+    "RUNTIME_PATHS",
+    "RuntimePaths",
+    "VERSION",
+    "get_runtime_paths",
+    "PENDING_RESTORE_FILENAME",
+    "PENDING_RESTORE_FILE",
+    "default_config",
+    "load_config_file",
+    "save_config_file_atomic",
+    "normalize_import_settings",
+    "parse_tab_query",
+    "parse_search_query",
+    "has_positive_keyword",
+    "build_fetch_key",
+    "DatabaseConnectionError",
+    "DatabaseManager",
+    "DatabaseQueryError",
+    "DatabaseWriteError",
+    "NewsCountSummary",
+    "NewsUpsertResult",
+    "AutoBackup",
+    "apply_pending_restore_if_any",
+    "WorkerHandle",
+    "WorkerRegistry",
+    "AsyncJobWorker",
+    "ApiWorker",
+    "DBWorker",
+    "ValidationUtils",
+    "TextUtils",
+    "StartupManager",
+    "NotificationSound",
+    "KeywordGroupManager",
+    "ToastQueue",
+    "ToastMessage",
+    "NoScrollComboBox",
+    "NewsBrowser",
+    "NoteDialog",
+    "LogViewerDialog",
+    "BackupDialog",
+    "KeywordGroupDialog",
+    "NewsTab",
+    "MainApp",
+    "SettingsDialog",
+    "Colors",
+    "UIConstants",
+    "ToastType",
+    "AppStyle",
+    "RE_HTML_TAGS",
+    "RE_WHITESPACE",
+    "RE_BOLD_TAGS",
+    "perf_timer",
+    "parse_date_string",
+    "parse_date_to_ts",
+    "get_highlight_pattern",
+    "main",
 ]
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from core.update_installer import handle_update_helper_args
 
     update_exit_code = handle_update_helper_args()

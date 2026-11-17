@@ -17,10 +17,10 @@ warnings.warn(
 
 
 __all__ = [
-    'DatabaseConnectionError',
-    'DatabaseManager',
-    'DatabaseQueryError',
-    'DatabaseWriteError',
-    'NewsCountSummary',
-    'NewsUpsertResult',
+    "DatabaseConnectionError",
+    "DatabaseManager",
+    "DatabaseQueryError",
+    "DatabaseWriteError",
+    "NewsCountSummary",
+    "NewsUpsertResult",
 ]

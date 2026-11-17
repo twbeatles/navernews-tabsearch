@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import copy
@@ -63,20 +62,26 @@ def _atomic_write_json(path: str, payload: Mapping[str, Any]) -> None:
 
 def _ensure_size_limit(label: str, size_bytes: int, max_bytes: int) -> None:
     if int(size_bytes or 0) > int(max_bytes):
-        raise CloudSnapshotValidationError(f"{label} exceeds size limit ({size_bytes} > {max_bytes} bytes)")
+        raise CloudSnapshotValidationError(
+            f"{label} exceeds size limit ({size_bytes} > {max_bytes} bytes)"
+        )
 
 
 def _snapshot_member_info(zf: zipfile.ZipFile, member: str) -> zipfile.ZipInfo:
     try:
         return zf.getinfo(member)
     except KeyError as exc:
-        raise CloudSnapshotValidationError(f"snapshot member is missing: {member}") from exc
+        raise CloudSnapshotValidationError(
+            f"snapshot member is missing: {member}"
+        ) from exc
 
 
 def _validate_snapshot_zip_size(zip_path: str) -> None:
     if not os.path.exists(zip_path):
         raise CloudSyncError(f"snapshot does not exist: {zip_path}")
-    _ensure_size_limit("snapshot zip", os.path.getsize(zip_path), MAX_SNAPSHOT_ZIP_BYTES)
+    _ensure_size_limit(
+        "snapshot zip", os.path.getsize(zip_path), MAX_SNAPSHOT_ZIP_BYTES
+    )
 
 
 def quarantine_invalid_snapshot(zip_path: str, reason: str = "") -> str:
@@ -98,11 +103,15 @@ def quarantine_invalid_snapshot(zip_path: str, reason: str = "") -> str:
         metadata = {
             "original_name": base_name,
             "reason": str(reason or ""),
-            "quarantined_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "quarantined_at": datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat(),
         }
         _atomic_write_json(target + ".metadata.json", metadata)
         if reason:
-            with open(target + ".reason.txt", "w", encoding="utf-8", newline="\n") as handle:
+            with open(
+                target + ".reason.txt", "w", encoding="utf-8", newline="\n"
+            ) as handle:
                 handle.write(str(reason))
                 handle.write("\n")
         return target
@@ -174,7 +183,9 @@ def revalidate_quarantined_snapshot(sync_dir: str, entry_name: str) -> Dict[str,
     if not os.path.isfile(path):
         raise CloudSyncError("quarantined snapshot does not exist")
     try:
-        with tempfile.TemporaryDirectory(prefix="news_cloud_revalidate_") as staging_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="news_cloud_revalidate_"
+        ) as staging_dir:
             manifest = read_snapshot_manifest(path)
             extract_snapshot(path, staging_dir)
         return {"valid": True, "manifest": manifest, "reason": ""}
@@ -187,7 +198,9 @@ def restore_quarantined_snapshot(sync_dir: str, entry_name: str) -> str:
     path = _quarantine_entry_path(root, entry_name)
     validation = revalidate_quarantined_snapshot(root, entry_name)
     if not bool(validation.get("valid")):
-        raise CloudSnapshotValidationError(str(validation.get("reason") or "snapshot is still invalid"))
+        raise CloudSnapshotValidationError(
+            str(validation.get("reason") or "snapshot is still invalid")
+        )
     metadata = _read_quarantine_metadata(path)
     original_name = str(metadata.get("original_name", "") or "").strip()
     if not original_name or os.path.basename(original_name) != original_name:
@@ -256,16 +269,22 @@ def _verify_sqlite_db(db_path: str) -> None:
         conn = sqlite3.connect(db_path, timeout=10.0)
         row = conn.execute("PRAGMA integrity_check").fetchone()
         if not row or str(row[0]).lower() != "ok":
-            raise CloudSnapshotValidationError(f"snapshot integrity_check failed: {row[0] if row else 'unknown'}")
+            raise CloudSnapshotValidationError(
+                f"snapshot integrity_check failed: {row[0] if row else 'unknown'}"
+            )
         news_table = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'news'"
         ).fetchone()
         if news_table is None:
-            raise CloudSnapshotValidationError("snapshot database does not contain news table")
+            raise CloudSnapshotValidationError(
+                "snapshot database does not contain news table"
+            )
     except CloudSnapshotValidationError:
         raise
     except Exception as exc:
-        raise CloudSnapshotValidationError(f"snapshot database is unreadable: {exc}") from exc
+        raise CloudSnapshotValidationError(
+            f"snapshot database is unreadable: {exc}"
+        ) from exc
     finally:
         if conn is not None:
             conn.close()
@@ -306,18 +325,32 @@ def create_cloud_snapshot(
         staging_db = os.path.join(staging_dir, DB_SNAPSHOT_NAME)
         _snapshot_sqlite_db(db_file, staging_db)
         _verify_sqlite_db(staging_db)
-        _ensure_size_limit("snapshot database", os.path.getsize(staging_db), MAX_SNAPSHOT_DB_BYTES)
-        manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
-        settings_bytes = json.dumps(sanitized_config, ensure_ascii=False, indent=2).encode("utf-8")
-        _ensure_size_limit("snapshot manifest", len(manifest_bytes), MAX_SNAPSHOT_JSON_BYTES)
-        _ensure_size_limit("snapshot settings", len(settings_bytes), MAX_SNAPSHOT_JSON_BYTES)
+        _ensure_size_limit(
+            "snapshot database", os.path.getsize(staging_db), MAX_SNAPSHOT_DB_BYTES
+        )
+        manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode(
+            "utf-8"
+        )
+        settings_bytes = json.dumps(
+            sanitized_config, ensure_ascii=False, indent=2
+        ).encode("utf-8")
+        _ensure_size_limit(
+            "snapshot manifest", len(manifest_bytes), MAX_SNAPSHOT_JSON_BYTES
+        )
+        _ensure_size_limit(
+            "snapshot settings", len(settings_bytes), MAX_SNAPSHOT_JSON_BYTES
+        )
 
         try:
-            with zipfile.ZipFile(temp_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            with zipfile.ZipFile(
+                temp_zip_path, "w", compression=zipfile.ZIP_DEFLATED
+            ) as zf:
                 zf.writestr(MANIFEST_NAME, manifest_bytes)
                 zf.writestr(SETTINGS_NAME, settings_bytes)
                 zf.write(staging_db, DB_SNAPSHOT_NAME)
-            _ensure_size_limit("snapshot zip", os.path.getsize(temp_zip_path), MAX_SNAPSHOT_ZIP_BYTES)
+            _ensure_size_limit(
+                "snapshot zip", os.path.getsize(temp_zip_path), MAX_SNAPSHOT_ZIP_BYTES
+            )
             os.replace(temp_zip_path, target_path)
         except Exception as exc:
             raise CloudSyncError(f"snapshot zip write failed: {exc}") from exc
@@ -339,7 +372,11 @@ def create_cloud_snapshot(
 
 def _validate_zip_member_name(name: str) -> None:
     normalized = str(name or "").replace("\\", "/")
-    if normalized.startswith("/") or normalized.startswith("../") or "/../" in normalized:
+    if (
+        normalized.startswith("/")
+        or normalized.startswith("../")
+        or "/../" in normalized
+    ):
         raise CloudSnapshotValidationError(f"unsafe snapshot member path: {name}")
 
 
@@ -350,12 +387,16 @@ def read_snapshot_manifest(zip_path: str) -> Dict[str, Any]:
             if MANIFEST_NAME not in zf.namelist():
                 raise CloudSnapshotValidationError("snapshot manifest is missing")
             info = _snapshot_member_info(zf, MANIFEST_NAME)
-            _ensure_size_limit("snapshot manifest", info.file_size, MAX_SNAPSHOT_JSON_BYTES)
+            _ensure_size_limit(
+                "snapshot manifest", info.file_size, MAX_SNAPSHOT_JSON_BYTES
+            )
             payload = json.loads(zf.read(MANIFEST_NAME).decode("utf-8"))
     except CloudSnapshotValidationError:
         raise
     except (zipfile.BadZipFile, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CloudSnapshotValidationError(f"snapshot manifest could not be read: {exc}") from exc
+        raise CloudSnapshotValidationError(
+            f"snapshot manifest could not be read: {exc}"
+        ) from exc
     except Exception as exc:
         raise CloudSyncError(f"snapshot manifest could not be read: {exc}") from exc
     if not isinstance(payload, dict):
@@ -445,6 +486,7 @@ def cleanup_old_snapshots(sync_dir: str, *, keep: int = 100) -> int:
         except OSError:
             pass
     return deleted
+
 
 __all__ = [
     "_utc_now_iso",

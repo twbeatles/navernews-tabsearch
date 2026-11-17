@@ -1,4 +1,3 @@
-
 import logging
 import os
 import tempfile
@@ -168,7 +167,9 @@ def preview_cloud_snapshot_import(
     return result
 
 
-def aggregate_cloud_import_preview(previews: Sequence[Mapping[str, Any]]) -> Dict[str, int]:
+def aggregate_cloud_import_preview(
+    previews: Sequence[Mapping[str, Any]],
+) -> Dict[str, int]:
     keys = [
         "news_added",
         "memberships_added",
@@ -292,13 +293,16 @@ def run_cloud_sync_cycle(
         "import_totals": aggregate_cloud_import_preview(imported),
         "errors": errors,
         "merged_count": sum(1 for item in imported if bool(item.get("merged", False))),
-        "skipped_count": sum(1 for item in imported if bool(item.get("skipped", False))),
+        "skipped_count": sum(
+            1 for item in imported if bool(item.get("skipped", False))
+        ),
         "invalid_count": quarantined_count,
         "quarantined_count": quarantined_count,
         "retryable_count": retryable_count,
         "pending_unseen": pending_unseen,
         "skipped_seen": skipped_seen,
     }
+
 
 __all__ = [
     "_snapshot_import_error",

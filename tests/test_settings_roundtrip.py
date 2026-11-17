@@ -12,10 +12,20 @@ class TestSettingsRoundtripContract(unittest.TestCase):
     def test_get_data_contains_sound_api_timeout_and_minimize(self):
         src = Path("ui/settings_dialog.py").read_text(encoding="utf-8")
         module = ast.parse(src)
-        cls = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "SettingsDialog")
-        get_data = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "get_data")
+        cls = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.ClassDef) and node.name == "SettingsDialog"
+        )
+        get_data = next(
+            node
+            for node in cls.body
+            if isinstance(node, ast.FunctionDef) and node.name == "get_data"
+        )
 
-        return_node = next(node for node in ast.walk(get_data) if isinstance(node, ast.Return))
+        return_node = next(
+            node for node in ast.walk(get_data) if isinstance(node, ast.Return)
+        )
         self.assertIsNotNone(return_node.value)
         self.assertIsInstance(return_node.value, ast.Dict)
         assert return_node.value is not None
@@ -34,12 +44,16 @@ class TestSettingsRoundtripContract(unittest.TestCase):
         self.assertIn("cloud_sync_interval_minutes", keys)
 
     def test_api_timeout_spinbox_is_present(self):
-        src = inspect.getsource(cast(Any, _SettingsDialogContentMixin)._build_general_group)
+        src = inspect.getsource(
+            cast(Any, _SettingsDialogContentMixin)._build_general_group
+        )
         self.assertIn("QSpinBox", src)
         self.assertIn("setRange(5, 60)", src)
 
     def test_interval_options_use_two_hours(self):
-        src = inspect.getsource(cast(Any, _SettingsDialogContentMixin)._build_general_group)
+        src = inspect.getsource(
+            cast(Any, _SettingsDialogContentMixin)._build_general_group
+        )
         self.assertIn("2시간", src)
         self.assertNotIn("3시간", src)
 
@@ -58,4 +72,7 @@ class TestSettingsRoundtripContract(unittest.TestCase):
     def test_settings_dialog_supports_help_mode(self):
         src = inspect.getsource(SettingsDialog.__init__)
         self.assertIn("help_mode: bool = False", src)
-        self.assertIn('self.setWindowTitle("도움말" if self._help_mode else "설정 및 도움말")', src)
+        self.assertIn(
+            'self.setWindowTitle("도움말" if self._help_mode else "설정 및 도움말")',
+            src,
+        )

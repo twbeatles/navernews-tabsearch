@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -31,7 +30,9 @@ class _DatabaseConnectionSchemaMixin:
         return conn
 
     def _news_column_names(self: DatabaseManager, conn: sqlite3.Connection) -> set[str]:
-        return {str(row[1]) for row in conn.execute("PRAGMA table_info(news)").fetchall()}
+        return {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(news)").fetchall()
+        }
 
     def _ensure_news_column(
         self: DatabaseManager,
@@ -87,7 +88,9 @@ class _DatabaseConnectionSchemaMixin:
                 time.sleep(base_delay_sec * (attempt + 1))
         return last_result
 
-    def _check_integrity(self: DatabaseManager, *, quick: bool = False) -> IntegrityCheckResult:
+    def _check_integrity(
+        self: DatabaseManager, *, quick: bool = False
+    ) -> IntegrityCheckResult:
         """Verify an existing DB before use.
 
         ``quick=True`` runs PRAGMA quick_check, which still detects page-level
@@ -127,7 +130,12 @@ class _DatabaseConnectionSchemaMixin:
                 os.remove(src_path)
                 return True
             except OSError as copy_error:
-                logger.warning("DB artifact preserve failed: %s -> %s (%s)", src_path, dst_path, copy_error)
+                logger.warning(
+                    "DB artifact preserve failed: %s -> %s (%s)",
+                    src_path,
+                    dst_path,
+                    copy_error,
+                )
                 return False
 
     def _recover_database(self: DatabaseManager):
@@ -151,6 +159,9 @@ class _DatabaseConnectionSchemaMixin:
             if preserved_paths:
                 logger.info("Corrupt DB set preserved in %s", corrupt_dir)
             else:
-                logger.warning("DB recovery started but there was no DB file set to preserve: %s", self.db_file)
+                logger.warning(
+                    "DB recovery started but there was no DB file set to preserve: %s",
+                    self.db_file,
+                )
         except Exception as e:
             logger.critical("DB recovery failed: %s", e)

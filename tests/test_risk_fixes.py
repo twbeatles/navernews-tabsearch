@@ -1,10 +1,19 @@
 import inspect
+import re
 import unittest
 from pathlib import Path
 
 from core.query_parser import has_positive_keyword
 from ui.main_window import MainApp, TabFetchState
 from ui.news_tab import NewsTab
+
+
+def _norm(text):
+    # Format-tolerant source matching: ruff format may reflow code
+    # lines and add/remove grouping parentheses. Compare the token
+    # stream, ignoring grouping brackets.
+    toks = re.findall(r"\w+|[^\w\s]", text)
+    return " ".join(t for t in toks if t not in "()[]{}")
 
 
 class TestKeywordValidation(unittest.TestCase):
@@ -32,7 +41,12 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
     def test_add_news_tab_load_more_uses_live_tab_keyword(self):
         block = inspect.getsource(MainApp.add_news_tab)
-        self.assertIn("lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True)", block)
+        self.assertIn(
+            _norm(
+                "lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True)"
+            ),
+            _norm(block),
+        )
         self.assertNotIn("self.fetch_news(keyword, is_more=True)", block)
 
     def test_fetch_tracks_tab_pagination_state(self):
@@ -59,7 +73,10 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
     def test_init_ui_uses_normalized_window_geometry(self):
         block = inspect.getsource(MainApp.init_ui)
-        self.assertIn("initial_geometry = self._normalize_window_geometry(self._saved_geometry)", block)
+        self.assertIn(
+            "initial_geometry = self._normalize_window_geometry(self._saved_geometry)",
+            block,
+        )
         self.assertIn("self.setGeometry(", block)
         self.assertIn("tab_bar = self._tab_bar()", block)
         self.assertIn("tab_bar.setUsesScrollButtons(True)", block)
@@ -67,17 +84,37 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         self.assertNotIn("self.resize(1100, 850)", block)
 
     def test_main_window_has_screen_aware_geometry_helpers(self):
-        self.assertIn("def _get_available_screen_geometry", inspect.getsource(MainApp._get_available_screen_geometry))
-        self.assertIn("def _build_default_window_geometry", inspect.getsource(MainApp._build_default_window_geometry))
-        self.assertIn("def _normalize_window_geometry", inspect.getsource(MainApp._normalize_window_geometry))
+        self.assertIn(
+            "def _get_available_screen_geometry",
+            inspect.getsource(MainApp._get_available_screen_geometry),
+        )
+        self.assertIn(
+            "def _build_default_window_geometry",
+            inspect.getsource(MainApp._build_default_window_geometry),
+        )
+        self.assertIn(
+            "def _normalize_window_geometry",
+            inspect.getsource(MainApp._normalize_window_geometry),
+        )
 
     def test_rename_tab_resets_fetch_state_when_fetch_key_changes(self):
         block = inspect.getsource(MainApp.rename_tab)
-        self.assertIn("old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)", block)
-        self.assertIn("new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)", block)
+        self.assertIn(
+            "old_fetch_key = build_fetch_key(old_search_keyword, old_exclude_words)",
+            block,
+        )
+        self.assertIn(
+            "new_fetch_key = build_fetch_key(new_search_keyword, new_exclude_words)",
+            block,
+        )
         self.assertIn("if old_fetch_key != new_fetch_key:", block)
-        self.assertIn("self._prune_fetch_key_state(old_fetch_key, skip_keyword=new_keyword)", block)
-        self.assertIn("self._tab_fetch_state[new_keyword] = self._make_tab_fetch_state()", block)
+        self.assertIn(
+            "self._prune_fetch_key_state(old_fetch_key, skip_keyword=new_keyword)",
+            block,
+        )
+        self.assertIn(
+            "self._tab_fetch_state[new_keyword] = self._make_tab_fetch_state()", block
+        )
         self.assertNotIn("UPDATE news_keywords SET keyword=? WHERE keyword=?", block)
         self.assertNotIn("UPDATE news SET keyword=? WHERE keyword=?", block)
         self.assertIn("w.load_data_from_db()", block)
@@ -101,7 +138,9 @@ class TestMainWindowRiskFixes(unittest.TestCase):
         block = inspect.getsource(MainApp.update_tray_tooltip)
         self.assertIn("InterruptibleReadWorker", block)
         self.assertIn("db.get_total_unread_count(", block)
-        self.assertIn('blocked_publishers=getattr(self, "blocked_publishers", [])', block)
+        self.assertIn(
+            'blocked_publishers=getattr(self, "blocked_publishers", [])', block
+        )
 
     def test_desktop_notification_uses_toast_fallback_without_tray(self):
         block = inspect.getsource(MainApp.show_desktop_notification)
@@ -110,17 +149,23 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
     def test_tray_notification_falls_back_to_desktop_notification(self):
         src = Path("ui/_main_window_tray.py").read_text(encoding="utf-8")
-        self.assertIn('fallback = getattr(self, "show_desktop_notification", None)', src)
+        self.assertIn(
+            'fallback = getattr(self, "show_desktop_notification", None)', src
+        )
         self.assertIn("fallback(title, message)", src)
 
     def test_tab_icon_uses_query_parser_semantics(self):
         block = inspect.getsource(MainApp._tab_icon_for_keyword)
-        self.assertIn('return "📰" if has_positive_keyword(str(keyword or "")) else "🚫"', block)
+        self.assertIn(
+            'return "📰" if has_positive_keyword(str(keyword or "")) else "🚫"', block
+        )
 
-    def test_countdown_updates_dedicated_label_instead_of_overwriting_status_messages(self):
+    def test_countdown_updates_dedicated_label_instead_of_overwriting_status_messages(
+        self,
+    ):
         block = inspect.getsource(MainApp._update_countdown)
-        self.assertIn('self._set_countdown_status_text(countdown_text)', block)
-        self.assertNotIn('self._status_bar().showMessage(countdown_text)', block)
+        self.assertIn("self._set_countdown_status_text(countdown_text)", block)
+        self.assertNotIn("self._status_bar().showMessage(countdown_text)", block)
 
     def test_show_help_opens_help_mode_dialog(self):
         block = inspect.getsource(MainApp.show_help)
@@ -139,9 +184,14 @@ class TestMainWindowRiskFixes(unittest.TestCase):
 
     def test_close_tab_cleans_active_worker_before_widget_cleanup(self):
         block = inspect.getsource(MainApp.close_tab)
-        self.assertIn("self._worker_registry.get_active_request_id(removed_keyword)", block)
+        self.assertIn(
+            "self._worker_registry.get_active_request_id(removed_keyword)", block
+        )
         self.assertIn("self._ensure_tab_worker_stopped(", block)
-        self.assertLess(block.index("self._ensure_tab_worker_stopped("), block.index("widget.cleanup()"))
+        self.assertLess(
+            block.index("self._ensure_tab_worker_stopped("),
+            block.index("widget.cleanup()"),
+        )
 
 
 class TestStyleRiskFixes(unittest.TestCase):
@@ -168,8 +218,12 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         self.assertIn('self.btn_apply_date = QPushButton("적용")', setup_src)
         self.assertIn('self.btn_clear_date = QPushButton("해제")', setup_src)
         self.assertIn("self._date_filter_active = False", init_src)
-        self.assertIn("def _apply_date_filter", inspect.getsource(NewsTab._apply_date_filter))
-        self.assertIn("def _clear_date_filter", inspect.getsource(NewsTab._clear_date_filter))
+        self.assertIn(
+            "def _apply_date_filter", inspect.getsource(NewsTab._apply_date_filter)
+        )
+        self.assertIn(
+            "def _clear_date_filter", inspect.getsource(NewsTab._clear_date_filter)
+        )
 
     def test_stats_analysis_uses_raw_tab_query_data(self):
         block = inspect.getsource(MainApp.show_stats_analysis)
@@ -182,9 +236,18 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         init_src = inspect.getsource(MainApp.__init__)
         init_ui_src = inspect.getsource(MainApp.init_ui)
         self.assertIn("self._tab_hydration_queue: deque[str] = deque()", init_src)
-        self.assertIn("def _bootstrap_tab_hydration", inspect.getsource(MainApp._bootstrap_tab_hydration))
-        self.assertIn("def _process_tab_hydration", inspect.getsource(MainApp._process_tab_hydration))
-        self.assertIn("self.tabs.currentChanged.connect(self._on_current_tab_changed)", init_ui_src)
+        self.assertIn(
+            "def _bootstrap_tab_hydration",
+            inspect.getsource(MainApp._bootstrap_tab_hydration),
+        )
+        self.assertIn(
+            "def _process_tab_hydration",
+            inspect.getsource(MainApp._process_tab_hydration),
+        )
+        self.assertIn(
+            "self.tabs.currentChanged.connect(self._on_current_tab_changed)",
+            init_ui_src,
+        )
 
     def test_secondary_toolbar_actions_are_grouped_under_more_menu(self):
         init_ui_src = inspect.getsource(MainApp.init_ui)
@@ -201,8 +264,13 @@ class TestNewsTabRiskFixes(unittest.TestCase):
             ("action_settings", "open_settings"),
             ("action_help", "show_help"),
         ):
-            self.assertIn(f"self.{action_name} = self._add_menu_action(self.manage_menu, ", init_ui_src)
-            self.assertIn(f"self.{action_name}.triggered.connect(self.{handler})", init_ui_src)
+            self.assertIn(
+                _norm(f"self.{action_name} = self._add_menu_action(self.manage_menu, "),
+                _norm(init_ui_src),
+            )
+            self.assertIn(
+                f"self.{action_name}.triggered.connect(self.{handler})", init_ui_src
+            )
         self.assertEqual(init_ui_src.count("toolbar.addWidget("), 4)
         for button_name in ("btn_refresh", "btn_archive", "btn_manage", "btn_add"):
             self.assertIn(f"toolbar.addWidget(self.{button_name})", init_ui_src)
@@ -211,4 +279,3 @@ class TestNewsTabRiskFixes(unittest.TestCase):
         init_src = inspect.getsource(MainApp.__init__)
         self.assertIn("self.runtime_paths = runtime_paths or RUNTIME_PATHS", init_src)
         self.assertIn("DatabaseManager(self.runtime_paths.db_file)", init_src)
-

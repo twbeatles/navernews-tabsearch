@@ -1,4 +1,3 @@
-
 from ui.main_window_support.ui_shell_support.actions import _MainWindowActionShellMixin
 from ui.main_window_support.ui_shell_support.badges import _MainWindowBadgeShellMixin
 from ui.main_window_support.ui_shell_support.notifications import (

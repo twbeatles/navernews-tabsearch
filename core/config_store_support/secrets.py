@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import base64
@@ -200,6 +199,7 @@ def resolve_client_secret_for_runtime(settings: Mapping[str, Any]) -> Tuple[str,
         return plain, True
 
     return plain, False
+
 
 __all__ = [
     "_is_windows_platform",

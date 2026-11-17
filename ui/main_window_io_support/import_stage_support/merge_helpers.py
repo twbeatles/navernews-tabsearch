@@ -22,8 +22,12 @@ class _ImportStageMergeHelpersMixin:
         seen_identities = set()
         raw_items: List[str] = []
         if isinstance(imported_history, list):
-            raw_items.extend(str(item).strip() for item in imported_history if isinstance(item, str))
-        raw_items.extend(str(item).strip() for item in self.search_history if isinstance(item, str))
+            raw_items.extend(
+                str(item).strip() for item in imported_history if isinstance(item, str)
+            )
+        raw_items.extend(
+            str(item).strip() for item in self.search_history if isinstance(item, str)
+        )
         for keyword in raw_items:
             if not keyword:
                 continue
@@ -43,7 +47,10 @@ class _ImportStageMergeHelpersMixin:
         merged: Dict[str, int] = {
             str(key): int(value)
             for key, value in current.items()
-            if isinstance(key, str) and key.strip() and isinstance(value, int) and value >= minimum
+            if isinstance(key, str)
+            and key.strip()
+            and isinstance(value, int)
+            and value >= minimum
         }
         if not isinstance(incoming, dict):
             return merged
@@ -100,7 +107,8 @@ class _ImportStageMergeHelpersMixin:
         known_keys = {
             self._canonical_fetch_key_for_keyword(keyword): keyword
             for keyword in (known_keywords or [])
-            if isinstance(keyword, str) and self._canonical_fetch_key_for_keyword(keyword)
+            if isinstance(keyword, str)
+            and self._canonical_fetch_key_for_keyword(keyword)
         }
         normalized: Dict[str, str] = {}
         for raw_key, raw_policy in policies.items():
@@ -109,7 +117,11 @@ class _ImportStageMergeHelpersMixin:
             key_text = raw_key.strip()
             if not key_text:
                 continue
-            canonical_key = key_text.lower() if "|" in key_text else self._canonical_fetch_key_for_keyword(key_text)
+            canonical_key = (
+                key_text.lower()
+                if "|" in key_text
+                else self._canonical_fetch_key_for_keyword(key_text)
+            )
             if not canonical_key:
                 continue
             if known_keys and canonical_key not in known_keys and "|" not in key_text:
@@ -133,13 +145,21 @@ class _ImportStageMergeHelpersMixin:
         imported_new_keywords: List[str] = []
         skipped_invalid_tabs = 0
         for keyword in imported_tabs if isinstance(imported_tabs, list) else []:
-            normalized_keyword = self._normalize_tab_keyword(keyword.strip()) if isinstance(keyword, str) else None
+            normalized_keyword = (
+                self._normalize_tab_keyword(keyword.strip())
+                if isinstance(keyword, str)
+                else None
+            )
             normalized_fetch_key = (
                 self._canonical_fetch_key_for_keyword(normalized_keyword)
                 if normalized_keyword
                 else ""
             )
-            if normalized_keyword and normalized_fetch_key and normalized_fetch_key not in existing_fetch_keys:
+            if (
+                normalized_keyword
+                and normalized_fetch_key
+                and normalized_fetch_key not in existing_fetch_keys
+            ):
                 existing_fetch_keys.add(normalized_fetch_key)
                 imported_new_keywords.append(normalized_keyword)
             elif not normalized_keyword:
@@ -155,8 +175,12 @@ class _ImportStageMergeHelpersMixin:
         existing_groups = dict(getattr(group_manager, "groups", {}))
         if callable(normalize_groups):
             normalized_existing = normalize_groups(existing_groups)
-            normalized_incoming = normalize_groups(imported_groups if isinstance(imported_groups, dict) else {})
+            normalized_incoming = normalize_groups(
+                imported_groups if isinstance(imported_groups, dict) else {}
+            )
         else:
             normalized_existing = existing_groups
-            normalized_incoming = imported_groups if isinstance(imported_groups, dict) else {}
+            normalized_incoming = (
+                imported_groups if isinstance(imported_groups, dict) else {}
+            )
         return merge_keyword_groups(normalized_existing, normalized_incoming)

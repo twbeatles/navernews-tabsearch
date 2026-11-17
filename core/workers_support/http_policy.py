@@ -9,6 +9,7 @@ RE_BOLD_TAGS = re.compile(r"</?b>")
 MAX_INLINE_RETRY_AFTER_SECONDS = 30
 MAX_FETCH_COOLDOWN_SECONDS = 6 * 60 * 60
 
+
 def _parse_retry_after_seconds(
     header_value: Any,
     *,
@@ -28,7 +29,12 @@ def _parse_retry_after_seconds(
     if retry_at.tzinfo is None:
         retry_at = retry_at.replace(tzinfo=timezone.utc)
     reference_time = now or datetime.now(timezone.utc)
-    return min(MAX_FETCH_COOLDOWN_SECONDS, max(0, int((retry_at - reference_time).total_seconds())))
+    return min(
+        MAX_FETCH_COOLDOWN_SECONDS,
+        max(0, int((retry_at - reference_time).total_seconds())),
+    )
+
+
 def _retry_after_seconds_from_response(response: Any) -> int:
     headers = getattr(response, "headers", None)
     if headers is None:
@@ -45,6 +51,8 @@ def _retry_after_seconds_from_response(response: Any) -> int:
         except Exception:
             header_value = None
     return _parse_retry_after_seconds(header_value)
+
+
 def _normalized_http_url(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -55,6 +63,8 @@ def _normalized_http_url(value: Any) -> str:
     if _is_disallowed_http_host(parsed.hostname or ""):
         return ""
     return urllib.parse.urlunparse(parsed)
+
+
 def _is_disallowed_http_host(host: str) -> bool:
     normalized = str(host or "").strip().strip("[]").lower().rstrip(".")
     if not normalized:
@@ -77,22 +87,34 @@ def _is_disallowed_http_host(host: str) -> bool:
             ip.is_unspecified,
         )
     )
+
+
 def _host_from_url(value: str) -> str:
     try:
-        return str(urllib.parse.urlparse(str(value or "")).hostname or "").strip().lower()
+        return (
+            str(urllib.parse.urlparse(str(value or "")).hostname or "").strip().lower()
+        )
     except Exception:
         return ""
+
+
 def _is_naver_news_host(host: str) -> bool:
     normalized = str(host or "").strip().lower().rstrip(".")
     return normalized == "news.naver.com" or normalized.endswith(".news.naver.com")
+
+
 def _is_naver_news_url(value: str) -> bool:
     return _is_naver_news_host(_host_from_url(value))
+
+
 def _publisher_source_url(original_link: str, final_link: str) -> str:
     for candidate in (original_link, final_link):
         host = _host_from_url(candidate)
         if host and not _is_naver_news_host(host):
             return candidate
     return ""
+
+
 def _publisher_from_naver_news_url(value: str) -> str:
     if not _is_naver_news_url(value):
         return ""
@@ -116,6 +138,8 @@ def _publisher_from_naver_news_url(value: str) -> str:
     if not oid or not re.fullmatch(r"[0-9A-Za-z_-]{1,20}", oid):
         return ""
     return f"naver:oid:{oid}"
+
+
 def _publisher_from_url(value: str) -> str:
     parsed = urllib.parse.urlparse(str(value or ""))
     host = parsed.netloc.strip().lower()

@@ -29,7 +29,9 @@ class _RecordingDB:
         raise DatabaseWriteError(
             "upsert_news",
             "Database connection pool exhausted",
-            cause=DatabaseConnectionError("Database connection pool exhausted", pool_exhausted=True),
+            cause=DatabaseConnectionError(
+                "Database connection pool exhausted", pool_exhausted=True
+            ),
         )
 
 
@@ -38,7 +40,9 @@ class TestDbPoolExhaustionUi(unittest.TestCase):
         error = DatabaseWriteError(
             "upsert_news",
             "Database connection pool exhausted",
-            cause=DatabaseConnectionError("Database connection pool exhausted", pool_exhausted=True),
+            cause=DatabaseConnectionError(
+                "Database connection pool exhausted", pool_exhausted=True
+            ),
         )
         self.assertTrue(_is_db_pool_exhausted_error(error))
 

@@ -20,7 +20,12 @@ from ui.main_window_support.ui_shell import _MainWindowUIShellMixin
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, payload: Optional[dict[str, Any]] = None, headers: Optional[dict] = None):
+    def __init__(
+        self,
+        status_code: int,
+        payload: Optional[dict[str, Any]] = None,
+        headers: Optional[dict] = None,
+    ):
         self.status_code = status_code
         self._payload = payload or {}
         self.headers = headers or {}
@@ -72,7 +77,9 @@ class _AlertDummy:
         self.alert_keywords = keywords
 
     def check_alert_keywords(self, items):
-        return cast(Any, _MainWindowUIShellMixin).check_alert_keywords(cast(Any, self), items)
+        return cast(Any, _MainWindowUIShellMixin).check_alert_keywords(
+            cast(Any, self), items
+        )
 
 
 class TestFollowup20260508(unittest.TestCase):
@@ -112,17 +119,25 @@ class TestFollowup20260508(unittest.TestCase):
         self.assertFalse(_normalized_http_url("http://localhost/news"))
         self.assertFalse(_normalized_http_url("http://192.168.1.10/news"))
         self.assertFalse(_normalized_http_url("http://printer.local/news"))
-        self.assertEqual(_normalized_http_url("https://example.com/news"), "https://example.com/news")
+        self.assertEqual(
+            _normalized_http_url("https://example.com/news"), "https://example.com/news"
+        )
 
     def test_naver_only_links_use_oid_publisher_fallback(self):
-        source = _publisher_source_url("", "https://news.naver.com/main/read.naver?oid=001")
+        source = _publisher_source_url(
+            "", "https://news.naver.com/main/read.naver?oid=001"
+        )
         self.assertEqual(source, "")
         self.assertEqual(
-            _publisher_from_naver_news_url("https://news.naver.com/main/read.naver?oid=001"),
+            _publisher_from_naver_news_url(
+                "https://news.naver.com/main/read.naver?oid=001"
+            ),
             "naver:oid:001",
         )
         self.assertEqual(
-            _publisher_from_naver_news_url("https://news.naver.com/mnews/article/001/0000000001"),
+            _publisher_from_naver_news_url(
+                "https://news.naver.com/mnews/article/001/0000000001"
+            ),
             "naver:oid:001",
         )
 
@@ -150,9 +165,15 @@ class TestFollowup20260508(unittest.TestCase):
         session = _SequenceSession([])
         worker, _db = self._make_api_worker(session)
 
-        worker._emit_error("limited", kind="rate_limit", cooldown_seconds=MAX_FETCH_COOLDOWN_SECONDS * 2)
+        worker._emit_error(
+            "limited",
+            kind="rate_limit",
+            cooldown_seconds=MAX_FETCH_COOLDOWN_SECONDS * 2,
+        )
 
-        self.assertEqual(worker.last_error_meta["cooldown_seconds"], MAX_FETCH_COOLDOWN_SECONDS)
+        self.assertEqual(
+            worker.last_error_meta["cooldown_seconds"], MAX_FETCH_COOLDOWN_SECONDS
+        )
 
     def test_5xx_retry_uses_cancellable_exponential_backoff(self):
         payload = {
@@ -167,7 +188,9 @@ class TestFollowup20260508(unittest.TestCase):
                 }
             ],
         }
-        session = _SequenceSession([_FakeResponse(503, {"errorMessage": "down"}), _FakeResponse(200, payload)])
+        session = _SequenceSession(
+            [_FakeResponse(503, {"errorMessage": "down"}), _FakeResponse(200, payload)]
+        )
         worker, db = self._make_api_worker(session, max_retries=2)
 
         with mock.patch("core.workers.time.sleep") as sleep_mock:
@@ -183,7 +206,12 @@ class TestFollowup20260508(unittest.TestCase):
             try:
                 db.upsert_news(
                     [
-                        {"title": f"title {idx}", "link": f"https://example.com/{idx}", "pubDate": "", "description": ""}
+                        {
+                            "title": f"title {idx}",
+                            "link": f"https://example.com/{idx}",
+                            "pubDate": "",
+                            "description": "",
+                        }
                         for idx in range(3)
                     ],
                     "AI",
@@ -194,7 +222,9 @@ class TestFollowup20260508(unittest.TestCase):
                     "AI",
                     query_key="ai|",
                     chunk_size=1,
-                    progress_callback=lambda current, total: progress.append((current, total)),
+                    progress_callback=lambda current, total: progress.append(
+                        (current, total)
+                    ),
                 )
 
                 rows = db.fetch_news("AI", query_key="ai|")
@@ -204,7 +234,9 @@ class TestFollowup20260508(unittest.TestCase):
             finally:
                 db.close()
 
-    def test_csv_import_updates_existing_bookmark_and_note_without_creating_articles(self):
+    def test_csv_import_updates_existing_bookmark_and_note_without_creating_articles(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             db = DatabaseManager(str(root / "news.db"))
@@ -225,10 +257,18 @@ class TestFollowup20260508(unittest.TestCase):
                 with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
                     writer = csv.writer(f)
                     writer.writerow(["링크", "북마크", "메모"])
-                    writer.writerow(["https://example.com/existing", "북마크", "n" * (MAX_NOTE_LENGTH + 3)])
+                    writer.writerow(
+                        [
+                            "https://example.com/existing",
+                            "북마크",
+                            "n" * (MAX_NOTE_LENGTH + 3),
+                        ]
+                    )
                     writer.writerow(["https://example.com/new", "북마크", "new note"])
 
-                result = import_bookmarks_notes_from_csv(_Context(), db, str(csv_path), chunk_size=1)
+                result = import_bookmarks_notes_from_csv(
+                    _Context(), db, str(csv_path), chunk_size=1
+                )
 
                 rows = db.fetch_news("AI", query_key="ai|")
                 self.assertEqual(result["processed"], 2)
@@ -266,7 +306,9 @@ class TestFollowup20260508(unittest.TestCase):
             DatabaseManager(str(db_file)).close()
             backup = AutoBackup(str(config), str(db_file), app_version="test")
 
-            with mock.patch.object(backup, "_write_backup_info", wraps=backup._write_backup_info) as write_mock:
+            with mock.patch.object(
+                backup, "_write_backup_info", wraps=backup._write_backup_info
+            ) as write_mock:
                 result = backup.create_backup(include_db=False)
 
             self.assertIsNotNone(result)
@@ -275,7 +317,10 @@ class TestFollowup20260508(unittest.TestCase):
     def test_regex_alert_keywords_match_and_invalid_regex_is_ignored(self):
         dummy = _AlertDummy(["regex:AI\\s+반도체", "regex:["])
         matches = dummy.check_alert_keywords(
-            [{"title": "AI 반도체 투자", "description": ""}, {"title": "경제", "description": "일반"}]
+            [
+                {"title": "AI 반도체 투자", "description": ""},
+                {"title": "경제", "description": "일반"},
+            ]
         )
 
         self.assertEqual(len(matches), 1)

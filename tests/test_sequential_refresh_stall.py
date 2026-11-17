@@ -12,6 +12,7 @@ Covered stall paths:
 - A manual (non-sequential) fetch must not steal the worker of the slot the
   sequential chain is currently waiting for.
 """
+
 import unittest
 from typing import Any, cast
 from unittest import mock
@@ -349,14 +350,18 @@ class TestSequentialRefreshStall(unittest.TestCase):
         main._worker_registry.register(handle)
         main._worker_registry.pop_by_request_id(6)
 
-        main.on_fetch_done(_result(), "AI", is_more=False, is_sequential=True, request_id=6)
+        main.on_fetch_done(
+            _result(), "AI", is_more=False, is_sequential=True, request_id=6
+        )
 
         self.assertEqual(main.seq_done_keywords, ["AI"])
 
     def test_sequential_stale_callback_for_other_keyword_does_not_advance(self):
         main = self._fresh_main()
 
-        main.on_fetch_done(_result(), "B", is_more=False, is_sequential=True, request_id=999)
+        main.on_fetch_done(
+            _result(), "B", is_more=False, is_sequential=True, request_id=999
+        )
 
         self.assertEqual(main.seq_done_keywords, [])
 
@@ -393,7 +398,9 @@ class TestSequentialRefreshStall(unittest.TestCase):
                 "ui.main_window_fetch_support.worker_flow.ApiWorker",
                 side_effect=AssertionError("must not start a second worker"),
             ),
-            mock.patch("ui.main_window_fetch_support.worker_flow_support.start.QThread"),
+            mock.patch(
+                "ui.main_window_fetch_support.worker_flow_support.start.QThread"
+            ),
         ):
             main.fetch_news("AI")
 

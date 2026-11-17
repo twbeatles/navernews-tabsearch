@@ -17,9 +17,24 @@ class TestEncodingSmoke(unittest.TestCase):
         ".yml",
         ".yaml",
     }
-    _SKIP_DIRS = {".git", "build", "dist", "__pycache__", ".pytest_cache",
-                  ".venv", "venv", "env", "ENV", ".pytest_tmp", ".codegraph",
-                  ".zcode", ".mypy_cache", ".pyrightcache", ".ruff_cache", "node_modules"}
+    _SKIP_DIRS = {
+        ".git",
+        "build",
+        "dist",
+        "__pycache__",
+        ".pytest_cache",
+        ".venv",
+        "venv",
+        "env",
+        "ENV",
+        ".pytest_tmp",
+        ".codegraph",
+        ".zcode",
+        ".mypy_cache",
+        ".pyrightcache",
+        ".ruff_cache",
+        "node_modules",
+    }
     _BROKEN_TOKENS = {
         _KNOWN_BROKEN_TOKEN,
         "\u907a\uacf7\ucb4f",
@@ -89,4 +104,3 @@ class TestEncodingSmoke(unittest.TestCase):
             [],
             msg=f"Suspicious mojibake pattern found in: {', '.join(broken_pattern_files)}",
         )
-

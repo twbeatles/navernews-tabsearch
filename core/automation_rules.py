@@ -72,7 +72,9 @@ def normalize_automation_rules(value: Any) -> List[Dict[str, Any]]:
 
         if not any([keywords, exclude_words, publishers, query_terms]):
             continue
-        if not any([add_tags, mark_read, mark_bookmark, exclude, suppress_notification]):
+        if not any(
+            [add_tags, mark_read, mark_bookmark, exclude, suppress_notification]
+        ):
             continue
 
         normalized.append(
@@ -138,7 +140,12 @@ class AutomationActions:
 
     @property
     def has_actions(self) -> bool:
-        return bool(self.add_tags or self.mark_read or self.mark_bookmark or self.suppress_notification)
+        return bool(
+            self.add_tags
+            or self.mark_read
+            or self.mark_bookmark
+            or self.suppress_notification
+        )
 
 
 def _contains_all(text: str, terms: Sequence[str]) -> bool:
@@ -161,7 +168,9 @@ def evaluate_automation_rules(
     aliases = normalize_publisher_aliases(publisher_aliases or {})
     title = _clean_text(item.get("title"), limit=500)
     description = _clean_text(item.get("description"), limit=1000)
-    keyword = _clean_text(item.get("keyword") or item.get("db_keyword") or item.get("query"), limit=200)
+    keyword = _clean_text(
+        item.get("keyword") or item.get("db_keyword") or item.get("query"), limit=200
+    )
     text = f"{title}\n{description}"
     publisher = _clean_text(item.get("publisher"))
     canonical = canonical_publisher(publisher, aliases)
@@ -207,7 +216,9 @@ def evaluate_automation_rules(
             suppress_notification = True
         mark_read = mark_read or bool(rule.get("mark_read", False))
         mark_bookmark = mark_bookmark or bool(rule.get("mark_bookmark", False))
-        suppress_notification = suppress_notification or bool(rule.get("suppress_notification", False))
+        suppress_notification = suppress_notification or bool(
+            rule.get("suppress_notification", False)
+        )
 
     return AutomationActions(
         matched_rules=matched_rules,

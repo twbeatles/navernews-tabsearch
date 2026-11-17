@@ -112,7 +112,9 @@ class TestFunctionalRisk20260511(unittest.TestCase):
             try:
                 source.upsert_news([_item(1)], "AI", query_key="ai|")
                 target.upsert_news([_item(1)], "AI", query_key="ai|")
-                updated = source.mark_query_as_read_chunked("AI", query_key="ai|", chunk_size=1)
+                updated = source.mark_query_as_read_chunked(
+                    "AI", query_key="ai|", chunk_size=1
+                )
                 self.assertEqual(updated, 1)
                 with source.connection() as conn:
                     row = conn.execute(
@@ -203,19 +205,31 @@ class TestFunctionalRisk20260511(unittest.TestCase):
             db = _db(root / "news.db")
             try:
                 db.upsert_news(
-                    [_item(1, title="AI launch", publisher="naver:oid:001"), _item(2, title="Sports")],
+                    [
+                        _item(1, title="AI launch", publisher="naver:oid:001"),
+                        _item(2, title="Sports"),
+                    ],
                     "AI",
                     query_key="ai|",
                 )
                 self.assertTrue(db.set_tags("https://example.com/1", ["old"]))
                 self.assertEqual(db.rename_tag("old", "important"), 1)
-                self.assertEqual(db.bulk_add_tag_to_links(["https://example.com/1", "https://example.com/2"], "digest"), 2)
-                self.assertEqual(db.get_tags("https://example.com/1"), ["digest", "important"])
+                self.assertEqual(
+                    db.bulk_add_tag_to_links(
+                        ["https://example.com/1", "https://example.com/2"], "digest"
+                    ),
+                    2,
+                )
+                self.assertEqual(
+                    db.get_tags("https://example.com/1"), ["digest", "important"]
+                )
                 rows = db.search_archive(
                     publisher_filter="연합뉴스",
                     publisher_aliases={"naver:oid:001": "연합뉴스"},
                 )
-                self.assertEqual([row["link"] for row in rows], ["https://example.com/1"])
+                self.assertEqual(
+                    [row["link"] for row in rows], ["https://example.com/1"]
+                )
 
                 out = root / "digest.md"
                 export_items_to_markdown(
@@ -230,7 +244,14 @@ class TestFunctionalRisk20260511(unittest.TestCase):
 
                 actions = evaluate_automation_rules(
                     rows[0],
-                    [{"name": "ai", "keywords": ["AI"], "add_tags": ["자동"], "mark_read": True}],
+                    [
+                        {
+                            "name": "ai",
+                            "keywords": ["AI"],
+                            "add_tags": ["자동"],
+                            "mark_read": True,
+                        }
+                    ],
                     publisher_aliases={"naver:oid:001": "연합뉴스"},
                 )
                 self.assertTrue(actions.has_actions)
@@ -284,10 +305,19 @@ class TestFunctionalRisk20260511(unittest.TestCase):
                 rows = db.fetch_news("AI", query_key="ai|")
                 dummy = _DummyAutomationMain(
                     db,
-                    [{"name": "mute", "keywords": ["AI"], "suppress_notification": True, "mark_read": True}],
+                    [
+                        {
+                            "name": "mute",
+                            "keywords": ["AI"],
+                            "suppress_notification": True,
+                            "mark_read": True,
+                        }
+                    ],
                 )
 
-                with mock.patch.object(db, "apply_automation_actions", side_effect=RuntimeError("locked")):
+                with mock.patch.object(
+                    db, "apply_automation_actions", side_effect=RuntimeError("locked")
+                ):
                     with self.assertRaises(RuntimeError):
                         dummy.apply_automation_rules_to_items(rows, dry_run=False)
 
@@ -309,7 +339,13 @@ class TestFunctionalRisk20260511(unittest.TestCase):
                 rows = db.fetch_news("AI", query_key="ai|")
                 dummy = _DummyAutomationMain(
                     db,
-                    [{"name": "mute", "keywords": ["AI"], "suppress_notification": True}],
+                    [
+                        {
+                            "name": "mute",
+                            "keywords": ["AI"],
+                            "suppress_notification": True,
+                        }
+                    ],
                 )
 
                 result = dummy.apply_automation_rules_to_items(rows, dry_run=True)
@@ -360,7 +396,9 @@ class TestFunctionalRisk20260511(unittest.TestCase):
                 scoped_rows = dummy.current_scope_items(chunk_size=20)
 
                 self.assertEqual(len(scoped_rows), 55)
-                self.assertEqual({row["publisher"] for row in scoped_rows}, {"example.com"})
+                self.assertEqual(
+                    {row["publisher"] for row in scoped_rows}, {"example.com"}
+                )
                 self.assertTrue(all("scope" in row["title"] for row in scoped_rows))
             finally:
                 db.close()

@@ -16,13 +16,17 @@ logger = logging.getLogger(__name__)
 
 
 class _AutoBackupCreateMixin:
-    def create_backup(self, include_db: bool = True, trigger: str = "manual") -> Optional[str]:
+    def create_backup(
+        self, include_db: bool = True, trigger: str = "manual"
+    ) -> Optional[str]:
         try:
             self.last_create_error = ""
             normalized_trigger = str(trigger or "manual").strip().lower()
             if normalized_trigger not in {"auto", "manual"}:
                 normalized_trigger = "manual"
-            ok, reason = self.validate_create_backup_prerequisites(include_db=include_db)
+            ok, reason = self.validate_create_backup_prerequisites(
+                include_db=include_db
+            )
             if not ok:
                 logger.warning(
                     "백업 생성 건너뜀: trigger=%s, include_db=%s, reason=%s",
@@ -53,7 +57,10 @@ class _AutoBackupCreateMixin:
                 return None
 
             actual_include_db = False
-            shutil.copy2(self.config_file, os.path.join(backup_path, os.path.basename(self.config_file)))
+            shutil.copy2(
+                self.config_file,
+                os.path.join(backup_path, os.path.basename(self.config_file)),
+            )
 
             if include_db:
                 backup_db = os.path.join(backup_path, os.path.basename(self.db_file))
@@ -79,7 +86,9 @@ class _AutoBackupCreateMixin:
             )
             info.update(
                 {
-                    "verification_state": str(verification.get("verification_state", "failed") or "failed"),
+                    "verification_state": str(
+                        verification.get("verification_state", "failed") or "failed"
+                    ),
                     "verification_error": str(
                         verification.get("verification_error", "")
                         or verification.get("restore_error", "")
@@ -101,7 +110,9 @@ class _AutoBackupCreateMixin:
                     or verification.get("error", "")
                     or "backup self-verification failed"
                 )
-                logger.error("Backup self-verification failed: %s", self.last_create_error)
+                logger.error(
+                    "Backup self-verification failed: %s", self.last_create_error
+                )
                 self._cleanup_old_backups()
                 return None
 
@@ -150,10 +161,14 @@ class _AutoBackupCreateMixin:
         try:
             backups = self.get_backup_list()
             manual_backups = [
-                backup for backup in backups if str(backup.get("trigger", "manual")).lower() == "manual"
+                backup
+                for backup in backups
+                if str(backup.get("trigger", "manual")).lower() == "manual"
             ]
             auto_backups = [
-                backup for backup in backups if str(backup.get("trigger", "manual")).lower() == "auto"
+                backup
+                for backup in backups
+                if str(backup.get("trigger", "manual")).lower() == "auto"
             ]
 
             if len(manual_backups) > self.MAX_MANUAL_BACKUPS:
@@ -162,7 +177,9 @@ class _AutoBackupCreateMixin:
                     if deleted:
                         logger.info(f"오래된 수동 백업 삭제: {backup['name']}")
                     else:
-                        logger.warning(f"오래된 수동 백업 삭제 실패: {backup['name']} ({error})")
+                        logger.warning(
+                            f"오래된 수동 백업 삭제 실패: {backup['name']} ({error})"
+                        )
 
             if len(auto_backups) > self.MAX_AUTO_BACKUPS:
                 for backup in auto_backups[self.MAX_AUTO_BACKUPS :]:
@@ -170,6 +187,8 @@ class _AutoBackupCreateMixin:
                     if deleted:
                         logger.info(f"오래된 자동 백업 삭제: {backup['name']}")
                     else:
-                        logger.warning(f"오래된 자동 백업 삭제 실패: {backup['name']} ({error})")
+                        logger.warning(
+                            f"오래된 자동 백업 삭제 실패: {backup['name']} ({error})"
+                        )
         except Exception as e:
             logger.error(f"백업 정리 오류: {e}")

@@ -31,7 +31,9 @@ class TestImplementationPlanDb(unittest.TestCase):
                 db.upsert_news([_item(1)], "AI", query_key=query_key)
 
                 rows = db.fetch_news("ai", query_key=query_key)
-                self.assertEqual([row["link"] for row in rows], ["https://example.com/1"])
+                self.assertEqual(
+                    [row["link"] for row in rows], ["https://example.com/1"]
+                )
                 self.assertEqual(db.count_news("ai", query_key=query_key), 1)
                 self.assertEqual(db.get_unread_count("ai", query_key=query_key), 1)
                 self.assertEqual(
@@ -81,7 +83,9 @@ class TestImplementationPlanDb(unittest.TestCase):
             finally:
                 db.close()
 
-    def test_visibility_aware_total_unread_and_statistics_exclude_blocked_publishers(self):
+    def test_visibility_aware_total_unread_and_statistics_exclude_blocked_publishers(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as td:
             db = DatabaseManager(str(Path(td) / "news.sqlite"), max_connections=2)
             try:
@@ -96,7 +100,9 @@ class TestImplementationPlanDb(unittest.TestCase):
                 db.set_tags("https://example.com/1", ["visible"])
                 db.set_tags("https://example.com/2", ["blocked"])
 
-                self.assertEqual(db.get_total_unread_count(blocked_publishers=["blocked.com"]), 1)
+                self.assertEqual(
+                    db.get_total_unread_count(blocked_publishers=["blocked.com"]), 1
+                )
                 stats = db.get_statistics(blocked_publishers=["blocked.com"])
                 self.assertEqual(stats["total"], 1)
                 self.assertEqual(stats["unread"], 1)
@@ -186,7 +192,9 @@ class TestImplementationPlanUiGuards(unittest.TestCase):
         apply_src = inspect.getsource(NewsTab._apply_saved_search)
         self.assertIn("btn_delete_search", setup_src)
         self.assertIn("open_saved_search_target_tab", apply_src)
-        self.assertIn("def delete_saved_search", inspect.getsource(MainApp.delete_saved_search))
+        self.assertIn(
+            "def delete_saved_search", inspect.getsource(MainApp.delete_saved_search)
+        )
         self.assertIn(
             "def open_saved_search_target_tab",
             inspect.getsource(MainApp.open_saved_search_target_tab),

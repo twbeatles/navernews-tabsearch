@@ -62,6 +62,7 @@ class _MainWindowDataIOMixin:
             )
         except Exception as e:
             logger.warning("UI sync after DB maintenance failed: %s", e)
+
     def export_data(self: MainApp):
         """Export the current tab's rows as CSV or Markdown."""
         dialogs = _dialogs_for(self)
@@ -87,7 +88,9 @@ class _MainWindowDataIOMixin:
 
         keyword = cur_widget.keyword
         safe_keyword = ValidationUtils.safe_filename_component(keyword, fallback="news")
-        default_name = f"{safe_keyword}_뉴스_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        default_name = (
+            f"{safe_keyword}_뉴스_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        )
         fname, _ = dialogs.get_save_file_name(
             self,
             "데이터 내보내기",
@@ -107,7 +110,9 @@ class _MainWindowDataIOMixin:
         scope_builder = getattr(cur_widget, "_build_query_scope", None)
         if callable(scope_builder):
             try:
-                self._start_export_job(scope_builder(), keyword, fname, export_format=export_format)
+                self._start_export_job(
+                    scope_builder(), keyword, fname, export_format=export_format
+                )
             except TypeError as exc:
                 if "export_format" not in str(exc):
                     raise
@@ -135,8 +140,11 @@ class _MainWindowDataIOMixin:
             dialogs.warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{e}")
             return
 
-        self.show_success_toast(f"총 {int(result.get('count', 0) or 0)}개 항목을 저장했습니다.")
+        self.show_success_toast(
+            f"총 {int(result.get('count', 0) or 0)}개 항목을 저장했습니다."
+        )
         dialogs.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
+
     def _start_export_job(
         self: MainApp,
         scope: DBQueryScope,
@@ -190,6 +198,7 @@ class _MainWindowDataIOMixin:
         worker.cancelled.connect(self._on_export_cancelled)
         delete_qthread_when_finished(worker)
         worker.start()
+
     def _cancel_export_job(self: MainApp) -> None:
         worker = getattr(self, "_export_worker", None)
         if worker is None or not worker.isRunning():
@@ -199,6 +208,7 @@ class _MainWindowDataIOMixin:
         self.btn_save.setText("⏳ 취소 중...")
         self._status_bar().showMessage("내보내기 취소 요청 중...")
         worker.requestInterruption()
+
     def _reset_export_ui(self: MainApp) -> None:
         self.progress.setVisible(False)
         self.progress.setRange(0, 100)
@@ -208,6 +218,7 @@ class _MainWindowDataIOMixin:
         self._export_worker = None
         self._export_target_path = ""
         self._export_cancel_requested = False
+
     def _on_export_progress(self: MainApp, payload: Dict[str, Any]) -> None:
         current = int(payload.get("current", 0) or 0)
         total = int(payload.get("total", 0) or 0)
@@ -219,6 +230,7 @@ class _MainWindowDataIOMixin:
             self.progress.setRange(0, 0)
         if message:
             self._status_bar().showMessage(message)
+
     def _on_export_finished(self: MainApp, result: Dict[str, Any]) -> None:
         exported_count = int(result.get("count", 0) or 0)
         target_path = str(result.get("path", "") or self._export_target_path)
@@ -231,25 +243,38 @@ class _MainWindowDataIOMixin:
             label = "Markdown"
         else:
             label = "CSV"
-        self._status_bar().showMessage(f"{label} 내보내기 완료 ({exported_count}개)", 4000)
-        _dialogs_for(self).information(self, "완료", f"파일이 저장되었습니다:\n{target_path}")
+        self._status_bar().showMessage(
+            f"{label} 내보내기 완료 ({exported_count}개)", 4000
+        )
+        _dialogs_for(self).information(
+            self, "완료", f"파일이 저장되었습니다:\n{target_path}"
+        )
+
     def _on_export_error(self: MainApp, error_msg: str) -> None:
         self._reset_export_ui()
-        _dialogs_for(self).warning(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{error_msg}")
+        _dialogs_for(self).warning(
+            self, "오류", f"내보내기 중 오류가 발생했습니다:\n{error_msg}"
+        )
+
     def _on_export_cancelled(self: MainApp) -> None:
         self._reset_export_ui()
         self._status_bar().showMessage("내보내기를 취소했습니다.", 3000)
         self.show_warning_toast("내보내기를 취소했습니다.")
+
     def import_csv_bookmarks_notes(self: MainApp) -> None:
         """Import bookmark/note state for existing article links only."""
         dialogs = _dialogs_for(self)
         csv_worker = getattr(self, "_csv_import_worker", None)
         if csv_worker is not None and csv_worker.isRunning():
-            dialogs.information(self, "CSV 가져오기", "이미 CSV 가져오기가 진행 중입니다.")
+            dialogs.information(
+                self, "CSV 가져오기", "이미 CSV 가져오기가 진행 중입니다."
+            )
             return
         export_worker = getattr(self, "_export_worker", None)
         if export_worker is not None and export_worker.isRunning():
-            dialogs.warning(self, "CSV 가져오기", "CSV 내보내기가 끝난 뒤 다시 시도하세요.")
+            dialogs.warning(
+                self, "CSV 가져오기", "CSV 내보내기가 끝난 뒤 다시 시도하세요."
+            )
             return
 
         fname, _ = dialogs.get_open_file_name(
@@ -271,7 +296,12 @@ class _MainWindowDataIOMixin:
                 started = False
                 reason = str(exc)
         if not started:
-            dialogs.warning(self, "CSV 가져오기", reason or "현재 DB 작업이 진행 중이라 CSV 가져오기를 시작할 수 없습니다.")
+            dialogs.warning(
+                self,
+                "CSV 가져오기",
+                reason
+                or "현재 DB 작업이 진행 중이라 CSV 가져오기를 시작할 수 없습니다.",
+            )
             return
 
         self._csv_import_maintenance_active = callable(begin_maintenance)
@@ -302,6 +332,7 @@ class _MainWindowDataIOMixin:
         worker.cancelled.connect(self._on_csv_import_cancelled)
         delete_qthread_when_finished(worker)
         worker.start()
+
     def _finish_csv_import_ui(self: MainApp) -> None:
         self.progress.setVisible(False)
         self.progress.setRange(0, 100)
@@ -313,6 +344,7 @@ class _MainWindowDataIOMixin:
             except Exception:
                 pass
         self._csv_import_maintenance_active = False
+
     def _on_csv_import_progress(self: MainApp, payload: Dict[str, Any]) -> None:
         self._csv_import_last_result = dict(payload)
         current = int(payload.get("current", 0) or 0)
@@ -325,6 +357,7 @@ class _MainWindowDataIOMixin:
             self.progress.setRange(0, 0)
         if message:
             self._status_bar().showMessage(message)
+
     def _on_csv_import_finished(self: MainApp, result: Dict[str, Any]) -> None:
         processed = int(result.get("processed", 0) or 0)
         updated = int(result.get("updated", 0) or 0)
@@ -347,11 +380,20 @@ class _MainWindowDataIOMixin:
             f"처리 행: {processed:,}개 (마지막 CSV 행 {last_row:,})\n"
             f"기존 기사 갱신: {updated:,}개\n변경 없음: {unchanged:,}개\n"
             f"기사가 없음: {missing:,}개\n실패: {failed:,}개"
-            + (f"\n10,000자를 넘겨 잘린 메모: {truncated_notes:,}개" if truncated_notes else ""),
+            + (
+                f"\n10,000자를 넘겨 잘린 메모: {truncated_notes:,}개"
+                if truncated_notes
+                else ""
+            ),
         )
+
     def _on_csv_import_error(self: MainApp, error_msg: str) -> None:
         worker = getattr(self, "_csv_import_worker", None)
-        partial = dict(getattr(worker, "last_progress_payload", {}) or getattr(self, "_csv_import_last_result", {}) or {})
+        partial = dict(
+            getattr(worker, "last_progress_payload", {})
+            or getattr(self, "_csv_import_last_result", {})
+            or {}
+        )
         self._finish_csv_import_ui()
         self._status_bar().showMessage("CSV 가져오기에 실패했습니다.", 4000)
         _dialogs_for(self).warning(
@@ -362,9 +404,14 @@ class _MainWindowDataIOMixin:
             f"처리: {int(partial.get('processed', 0) or 0):,}행 / "
             f"마지막 CSV 행: {int(partial.get('last_row', 0) or 0):,}",
         )
+
     def _on_csv_import_cancelled(self: MainApp) -> None:
         worker = getattr(self, "_csv_import_worker", None)
-        partial = dict(getattr(worker, "last_progress_payload", {}) or getattr(self, "_csv_import_last_result", {}) or {})
+        partial = dict(
+            getattr(worker, "last_progress_payload", {})
+            or getattr(self, "_csv_import_last_result", {})
+            or {}
+        )
         self._finish_csv_import_ui()
         message = (
             f"CSV 가져오기를 취소했습니다. 부분 반영 {int(partial.get('updated', 0) or 0):,}개 / "

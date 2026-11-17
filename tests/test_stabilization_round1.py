@@ -44,7 +44,10 @@ class _FakeExportContext:
 
     def check_cancelled(self):
         self.check_count += 1
-        if self.cancel_on_check is not None and self.check_count >= self.cancel_on_check:
+        if (
+            self.cancel_on_check is not None
+            and self.check_count >= self.cancel_on_check
+        ):
             raise JobCancelledError()
 
 
@@ -109,7 +112,12 @@ class TestExportScopeToCsv(unittest.TestCase):
         self.assertEqual(len(rows), 6)
         self.assertEqual(rows[1][0], "title-0")
         self.assertEqual(rows[5][0], "title-4")
-        self.assertTrue(any("내보내기 준비 중" in report.get("message", "") for report in context.reports))
+        self.assertTrue(
+            any(
+                "내보내기 준비 중" in report.get("message", "")
+                for report in context.reports
+            )
+        )
 
     def test_cancelled_export_removes_tmp_file(self):
         items = [self._item(index) for index in range(3)]
@@ -154,7 +162,9 @@ class TestBackupVerification(unittest.TestCase):
             backup_dir.mkdir()
             (backup_dir / cfg.name).write_text("{broken-json", encoding="utf-8")
 
-            result = verify_backup_payload(str(backup_dir), str(cfg), str(db), require_db=False)
+            result = verify_backup_payload(
+                str(backup_dir), str(cfg), str(db), require_db=False
+            )
 
         self.assertTrue(result["is_corrupt"])
         self.assertFalse(result["is_restorable"])
@@ -171,7 +181,9 @@ class TestBackupVerification(unittest.TestCase):
             (backup_dir / cfg.name).write_text("{}", encoding="utf-8")
             (backup_dir / db.name).write_text("not-a-sqlite-db", encoding="utf-8")
 
-            result = verify_backup_payload(str(backup_dir), str(cfg), str(db), require_db=True)
+            result = verify_backup_payload(
+                str(backup_dir), str(cfg), str(db), require_db=True
+            )
 
         self.assertTrue(result["is_corrupt"])
         self.assertFalse(result["is_restorable"])
@@ -192,7 +204,9 @@ class TestBackupVerification(unittest.TestCase):
             assert created is not None
             backup_name = Path(created).name
 
-            quick_entry = next(item for item in backup.get_backup_list() if item["name"] == backup_name)
+            quick_entry = next(
+                item for item in backup.get_backup_list() if item["name"] == backup_name
+            )
             verified_entry = backup.verify_backup_by_name(backup_name, require_db=True)
 
         self.assertEqual(quick_entry["verification_state"], "ok")
@@ -204,11 +218,15 @@ class TestBackupVerification(unittest.TestCase):
 
 class TestStartupStatus(unittest.TestCase):
     def test_get_startup_status_reports_healthy_registration(self):
-        expected_command = '"C:\\Python311\\python.exe" "D:\\app\\news_scraper_pro.py" --minimized'
+        expected_command = (
+            '"C:\\Python311\\python.exe" "D:\\app\\news_scraper_pro.py" --minimized'
+        )
         fake_winreg = _FakeWinreg(expected_command)
 
         with mock.patch.object(StartupManager, "is_available", return_value=True):
-            with mock.patch.object(StartupManager, "build_startup_command", return_value=expected_command):
+            with mock.patch.object(
+                StartupManager, "build_startup_command", return_value=expected_command
+            ):
                 with mock.patch("core.startup._get_winreg", return_value=fake_winreg):
                     with mock.patch("core.startup.os.path.exists", return_value=True):
                         status = StartupManager.get_startup_status(start_minimized=True)
@@ -221,12 +239,16 @@ class TestStartupStatus(unittest.TestCase):
         self.assertEqual(status["actual_target"], "D:\\app\\news_scraper_pro.py")
 
     def test_get_startup_status_marks_stale_registration_for_repair(self):
-        expected_command = '"C:\\Python311\\python.exe" "D:\\app\\news_scraper_pro.py" --minimized'
+        expected_command = (
+            '"C:\\Python311\\python.exe" "D:\\app\\news_scraper_pro.py" --minimized'
+        )
         actual_command = '"C:\\Python311\\python.exe" "D:\\app\\news_scraper_pro.py"'
         fake_winreg = _FakeWinreg(actual_command)
 
         with mock.patch.object(StartupManager, "is_available", return_value=True):
-            with mock.patch.object(StartupManager, "build_startup_command", return_value=expected_command):
+            with mock.patch.object(
+                StartupManager, "build_startup_command", return_value=expected_command
+            ):
                 with mock.patch("core.startup._get_winreg", return_value=fake_winreg):
                     with mock.patch("core.startup.os.path.exists", return_value=False):
                         status = StartupManager.get_startup_status(start_minimized=True)
@@ -252,7 +274,9 @@ class TestConfigDurability(unittest.TestCase):
             save_primary_config_file(str(cfg_path), updated)
 
             saved_main = json.loads(cfg_path.read_text(encoding="utf-8"))
-            saved_backup = json.loads(Path(f"{cfg_path}.backup").read_text(encoding="utf-8"))
+            saved_backup = json.loads(
+                Path(f"{cfg_path}.backup").read_text(encoding="utf-8")
+            )
 
         self.assertEqual(saved_main["app_settings"]["theme_index"], 2)
         self.assertEqual(saved_backup["app_settings"]["theme_index"], 1)
@@ -276,7 +300,9 @@ class TestDatabaseEmergencyCap(unittest.TestCase):
     def test_pool_exhaustion_raises_when_emergency_cap_is_zero(self):
         with tempfile.TemporaryDirectory() as td:
             db_path = Path(td) / "news.db"
-            db = DatabaseManager(str(db_path), max_connections=1, max_emergency_connections=0)
+            db = DatabaseManager(
+                str(db_path), max_connections=1, max_emergency_connections=0
+            )
             conn = db.get_connection(timeout=0.01)
             try:
                 from core.database import DatabaseConnectionError
@@ -291,7 +317,9 @@ class TestDatabaseEmergencyCap(unittest.TestCase):
     def test_emergency_connection_is_tracked_and_released(self):
         with tempfile.TemporaryDirectory() as td:
             db_path = Path(td) / "news.db"
-            db = DatabaseManager(str(db_path), max_connections=1, max_emergency_connections=1)
+            db = DatabaseManager(
+                str(db_path), max_connections=1, max_emergency_connections=1
+            )
             pooled = db.get_connection(timeout=0.01)
             emergency = None
             try:

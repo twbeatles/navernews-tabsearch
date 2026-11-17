@@ -52,17 +52,25 @@ class _AutoBackupListingMixin:
                 raw_info = self._read_backup_info(backup_path)
 
                 item["timestamp"] = str(raw_info.get("timestamp", "") or "")
-                item["app_version"] = str(raw_info.get("app_version", self.app_version) or self.app_version)
+                item["app_version"] = str(
+                    raw_info.get("app_version", self.app_version) or self.app_version
+                )
                 include_db_raw = raw_info.get("include_db")
-                item["include_db"] = include_db_raw if isinstance(include_db_raw, bool) else None
-                trigger = str(raw_info.get("trigger", "manual") or "manual").strip().lower()
+                item["include_db"] = (
+                    include_db_raw if isinstance(include_db_raw, bool) else None
+                )
+                trigger = (
+                    str(raw_info.get("trigger", "manual") or "manual").strip().lower()
+                )
                 item["trigger"] = trigger if trigger in {"auto", "manual"} else "manual"
                 item["created_at"] = str(raw_info.get("created_at", "") or "")
                 item["verification_state"] = str(
-                    raw_info.get("verification_state", item["verification_state"]) or item["verification_state"]
+                    raw_info.get("verification_state", item["verification_state"])
+                    or item["verification_state"]
                 ).lower()
                 item["verification_error"] = str(
-                    raw_info.get("verification_error", item["verification_error"]) or item["verification_error"]
+                    raw_info.get("verification_error", item["verification_error"])
+                    or item["verification_error"]
                 )
                 item["is_restorable"] = bool(
                     raw_info.get(
@@ -71,11 +79,16 @@ class _AutoBackupListingMixin:
                     )
                 )
                 item["restore_error"] = str(
-                    raw_info.get("restore_error", item["restore_error"]) or item["restore_error"]
+                    raw_info.get("restore_error", item["restore_error"])
+                    or item["restore_error"]
                 )
                 item["is_corrupt"] = bool(raw_info.get("is_corrupt", False))
-                item["error"] = str(raw_info.get("error", item["error"]) or item["error"])
-                item["last_verified_at"] = str(raw_info.get("last_verified_at", "") or "")
+                item["error"] = str(
+                    raw_info.get("error", item["error"]) or item["error"]
+                )
+                item["last_verified_at"] = str(
+                    raw_info.get("last_verified_at", "") or ""
+                )
             except Exception as item_error:
                 item["is_corrupt"] = True
                 item["error"] = str(item_error)
@@ -83,17 +96,27 @@ class _AutoBackupListingMixin:
                 item["restore_error"] = "백업 메타데이터가 손상되었습니다."
                 item["verification_state"] = "failed"
                 item["verification_error"] = item["restore_error"]
-                logger.warning("corrupt backup metadata detected: %s (%s)", name, item_error)
+                logger.warning(
+                    "corrupt backup metadata detected: %s (%s)", name, item_error
+                )
             else:
-                cfg_backup = os.path.join(backup_path, os.path.basename(self.config_file))
+                cfg_backup = os.path.join(
+                    backup_path, os.path.basename(self.config_file)
+                )
                 db_backup = os.path.join(backup_path, os.path.basename(self.db_file))
-                resolved_include_db = self._resolve_backup_include_db(item, fallback_to_files=True)
+                resolved_include_db = self._resolve_backup_include_db(
+                    item, fallback_to_files=True
+                )
                 item["resolved_include_db"] = resolved_include_db
                 if item["is_corrupt"]:
                     item["is_restorable"] = False
                     item["verification_state"] = "failed"
                     if not item["restore_error"]:
-                        item["restore_error"] = item["error"] or item["verification_error"] or "backup is corrupt"
+                        item["restore_error"] = (
+                            item["error"]
+                            or item["verification_error"]
+                            or "backup is corrupt"
+                        )
                     if not item["verification_error"]:
                         item["verification_error"] = item["restore_error"]
                     backups.append(item)
@@ -143,8 +166,12 @@ class _AutoBackupListingMixin:
         persist: bool = False,
     ) -> Dict[str, Any]:
         verified = dict(backup_entry)
-        backup_name = str(verified.get("name") or verified.get("backup_name") or "").strip()
-        backup_path = str(verified.get("path") or os.path.join(self.backup_dir, backup_name))
+        backup_name = str(
+            verified.get("name") or verified.get("backup_name") or ""
+        ).strip()
+        backup_path = str(
+            verified.get("path") or os.path.join(self.backup_dir, backup_name)
+        )
         include_db = (
             self._resolve_backup_include_db(verified, fallback_to_files=True)
             if require_db is None
@@ -163,7 +190,9 @@ class _AutoBackupListingMixin:
         verified["include_db"] = include_db
         verified["resolved_include_db"] = include_db
         if persist:
-            return self.persist_backup_verification(backup_entry, verified, include_db=include_db)
+            return self.persist_backup_verification(
+                backup_entry, verified, include_db=include_db
+            )
         return verified
 
     def verify_backup_by_name(
@@ -176,7 +205,9 @@ class _AutoBackupListingMixin:
         backup_name = str(backup_name or "").strip()
         for entry in self.get_backup_list():
             if str(entry.get("name", "")).strip() == backup_name:
-                return self.verify_backup_entry(entry, require_db=require_db, persist=persist)
+                return self.verify_backup_entry(
+                    entry, require_db=require_db, persist=persist
+                )
 
         return self.verify_backup_entry(
             {

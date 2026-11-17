@@ -22,8 +22,11 @@ from core.workers import (
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class TagManagerDialog(QDialog):
-    def __init__(self, db, scope_items_provider=None, refresh_callback=None, parent=None):
+    def __init__(
+        self, db, scope_items_provider=None, refresh_callback=None, parent=None
+    ):
         super().__init__(parent)
         self.db = db
         self.scope_items_provider = scope_items_provider
@@ -78,7 +81,9 @@ class TagManagerDialog(QDialog):
         links = []
         seen = set()
         for row in rows:
-            link = str(row.get("link", "") or "").strip() if isinstance(row, dict) else ""
+            link = (
+                str(row.get("link", "") or "").strip() if isinstance(row, dict) else ""
+            )
             if link and link not in seen:
                 seen.add(link)
                 links.append(link)
@@ -94,7 +99,9 @@ class TagManagerDialog(QDialog):
         if callable(begin):
             ok, message = cast(tuple[bool, str], begin("tag_scope_update"))
             if not ok:
-                QMessageBox.warning(self, "태그", message or "유지보수 모드로 전환하지 못했습니다.")
+                QMessageBox.warning(
+                    self, "태그", message or "유지보수 모드로 전환하지 못했습니다."
+                )
                 return False
             self._maintenance_started = True
         return True
@@ -124,7 +131,9 @@ class TagManagerDialog(QDialog):
             QMessageBox.information(self, "태그", "적용할 태그를 입력하세요.")
             return
         if self._scope_worker is not None:
-            QMessageBox.information(self, "태그", "이미 현재 탭 전체 작업이 진행 중입니다.")
+            QMessageBox.information(
+                self, "태그", "이미 현재 탭 전체 작업이 진행 중입니다."
+            )
             return
         if not self._begin_scope_job():
             return
@@ -132,7 +141,9 @@ class TagManagerDialog(QDialog):
         def job(context):
             links = self._scope_links(context)
             total = len(links)
-            context.report(current=0, total=total, message="현재 탭 전체 범위 계산 완료")
+            context.report(
+                current=0, total=total, message="현재 탭 전체 범위 계산 완료"
+            )
             if not links:
                 return {"changed": 0, "total": 0, "tag": tag, "remove": remove}
             if remove:
@@ -140,7 +151,12 @@ class TagManagerDialog(QDialog):
             else:
                 changed = self.db.bulk_add_tag_to_links(links, tag)
             context.report(current=total, total=total, message="태그 적용 완료")
-            return {"changed": int(changed or 0), "total": total, "tag": tag, "remove": remove}
+            return {
+                "changed": int(changed or 0),
+                "total": total,
+                "tag": tag,
+                "remove": remove,
+            }
 
         worker = IterativeJobWorker(job, parent=self)
         self._scope_worker = worker
@@ -164,13 +180,17 @@ class TagManagerDialog(QDialog):
             self._scope_worker = None
             self._set_scope_buttons_enabled(True)
             self._finish_scope_job("tag_scope_update", 0)
-            QMessageBox.warning(self, "태그", f"현재 탭 전체 태그 작업에 실패했습니다.\n\n{error_msg}")
+            QMessageBox.warning(
+                self, "태그", f"현재 탭 전체 태그 작업에 실패했습니다.\n\n{error_msg}"
+            )
 
         def on_cancelled() -> None:
             self._scope_worker = None
             self._set_scope_buttons_enabled(True)
             self._finish_scope_job("tag_scope_update", 0)
-            QMessageBox.information(self, "태그", "현재 탭 전체 태그 작업을 취소했습니다.")
+            QMessageBox.information(
+                self, "태그", "현재 탭 전체 태그 작업을 취소했습니다."
+            )
 
         worker.finished.connect(on_finished)
         worker.error.connect(on_error)
@@ -188,35 +208,47 @@ class TagManagerDialog(QDialog):
             for tag, count in self.db.get_tag_usage():
                 self.tag_list.addItem(f"{tag} ({count})")
         except Exception as exc:
-            QMessageBox.warning(self, "태그", f"태그 목록을 불러오지 못했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "태그", f"태그 목록을 불러오지 못했습니다.\n\n{exc}"
+            )
 
     def rename_selected(self) -> None:
         tag = self._selected_tag()
         if not tag:
             return
-        new_tag, ok = QInputDialog.getText(self, "태그 이름 변경", "새 태그 이름:", text=tag)
+        new_tag, ok = QInputDialog.getText(
+            self, "태그 이름 변경", "새 태그 이름:", text=tag
+        )
         if not ok:
             return
         try:
             changed = self.db.rename_tag(tag, new_tag)
             self.reload()
             self._notify_changed()
-            QMessageBox.information(self, "태그", f"{changed}개 기사 태그를 변경했습니다.")
+            QMessageBox.information(
+                self, "태그", f"{changed}개 기사 태그를 변경했습니다."
+            )
         except Exception as exc:
-            QMessageBox.warning(self, "태그", f"태그 이름 변경에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "태그", f"태그 이름 변경에 실패했습니다.\n\n{exc}"
+            )
 
     def merge_selected(self) -> None:
         tag = self._selected_tag()
         if not tag:
             return
-        target, ok = QInputDialog.getText(self, "태그 병합", "병합할 대상 태그:", text=tag)
+        target, ok = QInputDialog.getText(
+            self, "태그 병합", "병합할 대상 태그:", text=tag
+        )
         if not ok:
             return
         try:
             changed = self.db.rename_tag(tag, target)
             self.reload()
             self._notify_changed()
-            QMessageBox.information(self, "태그", f"{changed}개 기사 태그를 병합했습니다.")
+            QMessageBox.information(
+                self, "태그", f"{changed}개 기사 태그를 병합했습니다."
+            )
         except Exception as exc:
             QMessageBox.warning(self, "태그", f"태그 병합에 실패했습니다.\n\n{exc}")
 
@@ -237,7 +269,9 @@ class TagManagerDialog(QDialog):
             changed = self.db.delete_tag_everywhere(tag)
             self.reload()
             self._notify_changed()
-            QMessageBox.information(self, "태그", f"{changed}개 기사에서 태그를 삭제했습니다.")
+            QMessageBox.information(
+                self, "태그", f"{changed}개 기사에서 태그를 삭제했습니다."
+            )
         except Exception as exc:
             QMessageBox.warning(self, "태그", f"태그 삭제에 실패했습니다.\n\n{exc}")
 
@@ -250,7 +284,9 @@ class TagManagerDialog(QDialog):
     def remove_from_scope(self) -> None:
         tag = self._selected_tag()
         if not tag:
-            tag, ok = QInputDialog.getText(self, "현재 탭 전체 태그 제거", "제거할 태그:")
+            tag, ok = QInputDialog.getText(
+                self, "현재 탭 전체 태그 제거", "제거할 태그:"
+            )
             if not ok:
                 return
         self._start_scope_tag_job(tag, remove=True)
@@ -259,5 +295,6 @@ class TagManagerDialog(QDialog):
         if self._scope_worker is not None and self._scope_worker.isRunning():
             self._scope_worker.stop()
         super().closeEvent(event)
+
 
 __all__ = ["TagManagerDialog"]

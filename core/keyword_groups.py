@@ -34,8 +34,10 @@ def merge_keyword_groups(
 
 class KeywordGroupManager:
     """키워드 그룹(폴더) 관리"""
-    
-    def __init__(self, config_file: str = CONFIG_FILE, legacy_file: Optional[str] = None):
+
+    def __init__(
+        self, config_file: str = CONFIG_FILE, legacy_file: Optional[str] = None
+    ):
         self.config_file = config_file
         self.legacy_file = legacy_file or os.path.join(
             os.path.dirname(os.path.abspath(config_file)),
@@ -77,14 +79,18 @@ class KeywordGroupManager:
             with open(self.legacy_file, "r", encoding="utf-8") as f:
                 raw = json.load(f)
 
-            if isinstance(raw, dict) and "keyword_groups" in raw and isinstance(raw.get("keyword_groups"), dict):
+            if (
+                isinstance(raw, dict)
+                and "keyword_groups" in raw
+                and isinstance(raw.get("keyword_groups"), dict)
+            ):
                 return self._normalize_groups(raw["keyword_groups"])
             if isinstance(raw, dict):
                 return self._normalize_groups(raw)
         except Exception as e:
             logger.error(f"레거시 키워드 그룹 로드 오류: {e}")
         return {}
-    
+
     def load_groups(self):
         """그룹 설정 로드"""
         try:
@@ -121,12 +127,14 @@ class KeywordGroupManager:
     def replace_groups(self, groups: Dict[str, List[str]]) -> bool:
         """전체 그룹 구성을 저장 가능한 상태로 교체한다."""
         return self._persist_groups(groups)
-    
+
     def save_groups(self) -> bool:
         """그룹 설정 저장"""
         return self._persist_groups(self.groups)
 
-    def merge_groups(self, incoming_groups: Dict[str, List[str]], save: bool = True) -> Dict[str, List[str]]:
+    def merge_groups(
+        self, incoming_groups: Dict[str, List[str]], save: bool = True
+    ) -> Dict[str, List[str]]:
         """가져온 그룹과 현재 그룹을 병합한다."""
         normalized_existing = self._normalize_groups(self.groups)
         normalized_incoming = self._normalize_groups(incoming_groups or {})
@@ -139,7 +147,7 @@ class KeywordGroupManager:
         self.groups = merged
         self.last_error = ""
         return self.groups
-    
+
     def create_group(self, name: str) -> bool:
         """새 그룹 생성"""
         group_name = str(name or "").strip()
@@ -152,7 +160,7 @@ class KeywordGroupManager:
         candidate = self._normalize_groups(dict(self.groups))
         candidate[group_name] = []
         return self.replace_groups(candidate)
-    
+
     def delete_group(self, name: str) -> bool:
         """그룹 삭제"""
         if name not in self.groups:
@@ -161,7 +169,7 @@ class KeywordGroupManager:
         candidate = self._normalize_groups(dict(self.groups))
         del candidate[name]
         return self.replace_groups(candidate)
-    
+
     def add_keyword_to_group(self, group: str, keyword: str) -> bool:
         """그룹에 키워드 추가"""
         normalized_group = str(group or "").strip()
@@ -178,7 +186,7 @@ class KeywordGroupManager:
         candidate = self._normalize_groups(dict(self.groups))
         candidate.setdefault(normalized_group, []).append(normalized_keyword)
         return self.replace_groups(candidate)
-    
+
     def remove_keyword_from_group(self, group: str, keyword: str) -> bool:
         """그룹에서 키워드 제거"""
         normalized_group = str(group or "").strip()
@@ -192,15 +200,15 @@ class KeywordGroupManager:
         candidate = self._normalize_groups(dict(self.groups))
         candidate[normalized_group].remove(normalized_keyword)
         return self.replace_groups(candidate)
-    
+
     def get_group_keywords(self, group: str) -> List[str]:
         """그룹의 키워드 목록 반환"""
         return self.groups.get(group, [])
-    
+
     def get_all_groups(self) -> List[str]:
         """모든 그룹명 반환"""
         return list(self.groups.keys())
-    
+
     def get_keyword_group(self, keyword: str) -> Optional[str]:
         """키워드가 속한 그룹 반환"""
         for group, keywords in self.groups.items():

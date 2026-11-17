@@ -29,6 +29,7 @@ from core.workers import (
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class AutomationRulesDialog(QDialog):
     def __init__(
         self,
@@ -125,7 +126,9 @@ class AutomationRulesDialog(QDialog):
 
         btn_new.clicked.connect(self.add_rule)
         btn_delete.clicked.connect(self.delete_selected_rule)
-        btn_update_form.clicked.connect(lambda: self.save_form_to_selected(silent=False))
+        btn_update_form.clicked.connect(
+            lambda: self.save_form_to_selected(silent=False)
+        )
         btn_load_json.clicked.connect(self.load_rules_from_editor)
         btn_preview.clicked.connect(self.preview)
         btn_apply.clicked.connect(self.apply_now)
@@ -190,7 +193,9 @@ class AutomationRulesDialog(QDialog):
         self.chk_mark_read.setChecked(bool(rule.get("mark_read", False)))
         self.chk_mark_bookmark.setChecked(bool(rule.get("mark_bookmark", False)))
         self.chk_exclude.setChecked(bool(rule.get("exclude", False)))
-        self.chk_suppress_notification.setChecked(bool(rule.get("suppress_notification", False)))
+        self.chk_suppress_notification.setChecked(
+            bool(rule.get("suppress_notification", False))
+        )
 
     def form_rule(self) -> Dict[str, Any]:
         return {
@@ -216,7 +221,9 @@ class AutomationRulesDialog(QDialog):
         normalized = normalize_automation_rules([self.form_rule()])
         if not normalized:
             if not silent:
-                QMessageBox.warning(self, "자동화", "조건과 동작이 모두 있는 규칙만 저장할 수 있습니다.")
+                QMessageBox.warning(
+                    self, "자동화", "조건과 동작이 모두 있는 규칙만 저장할 수 있습니다."
+                )
             return False
         self.rules[index] = normalized[0]
         self.refresh_rule_list(select_row=index)
@@ -265,7 +272,9 @@ class AutomationRulesDialog(QDialog):
                 f"JSON에서 {len(normalized)}개 규칙을 불러왔습니다. 정규화로 제외된 항목: {dropped}개",
             )
         except Exception as exc:
-            QMessageBox.warning(self, "자동화", f"JSON 불러오기에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "자동화", f"JSON 불러오기에 실패했습니다.\n\n{exc}"
+            )
 
     def current_rules(self) -> Optional[List[Dict[str, Any]]]:
         if self.selected_index() >= 0 and not self.save_form_to_selected(silent=False):
@@ -302,7 +311,9 @@ class AutomationRulesDialog(QDialog):
                 ),
             )
         except Exception as exc:
-            QMessageBox.warning(self, "자동화", f"규칙 미리보기에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "자동화", f"규칙 미리보기에 실패했습니다.\n\n{exc}"
+            )
 
     def _maintenance_parent(self) -> Optional[Any]:
         parent = self.parent()
@@ -314,7 +325,9 @@ class AutomationRulesDialog(QDialog):
         if callable(begin):
             ok, message = cast(tuple[bool, str], begin("automation_rules"))
             if not ok:
-                QMessageBox.warning(self, "자동화", message or "유지보수 모드로 전환하지 못했습니다.")
+                QMessageBox.warning(
+                    self, "자동화", message or "유지보수 모드로 전환하지 못했습니다."
+                )
                 return False
             self._maintenance_started = True
         return True
@@ -332,9 +345,13 @@ class AutomationRulesDialog(QDialog):
         elif callable(self.refresh_callback):
             self.refresh_callback()
 
-    def _apply_rules(self, rows: List[Dict[str, Any]], rules: List[Dict[str, Any]], dry_run: bool) -> Dict[str, Any]:
+    def _apply_rules(
+        self, rows: List[Dict[str, Any]], rules: List[Dict[str, Any]], dry_run: bool
+    ) -> Dict[str, Any]:
         try:
-            return dict(self.apply_callback(rows, rules, dry_run=dry_run, refresh=False))
+            return dict(
+                self.apply_callback(rows, rules, dry_run=dry_run, refresh=False)
+            )
         except TypeError as exc:
             if "refresh" not in str(exc):
                 raise
@@ -345,7 +362,9 @@ class AutomationRulesDialog(QDialog):
         if rules is None:
             return
         if self._apply_worker is not None:
-            QMessageBox.information(self, "자동화", "이미 현재 탭 전체 적용이 진행 중입니다.")
+            QMessageBox.information(
+                self, "자동화", "이미 현재 탭 전체 적용이 진행 중입니다."
+            )
             return
         if not self._begin_apply_job():
             return
@@ -354,7 +373,9 @@ class AutomationRulesDialog(QDialog):
             rows = self._scope_items(context)
             context.report(current=0, total=len(rows), message="자동화 규칙 적용 중...")
             result = self._apply_rules(rows, rules, dry_run=False)
-            context.report(current=len(rows), total=len(rows), message="자동화 규칙 적용 완료")
+            context.report(
+                current=len(rows), total=len(rows), message="자동화 규칙 적용 완료"
+            )
             result["total"] = len(rows)
             return result
 
@@ -386,7 +407,9 @@ class AutomationRulesDialog(QDialog):
             self._apply_worker = None
             self._finish_apply_job(0)
             self.status_label.setText("")
-            QMessageBox.warning(self, "자동화", f"규칙 적용에 실패했습니다.\n\n{error_msg}")
+            QMessageBox.warning(
+                self, "자동화", f"규칙 적용에 실패했습니다.\n\n{error_msg}"
+            )
 
         def on_cancelled() -> None:
             self._apply_worker = None
@@ -409,7 +432,9 @@ class AutomationRulesDialog(QDialog):
             self.rules = rules
             self.refresh_rule_list(select_row=self.selected_index())
             self.sync_editor()
-            QMessageBox.information(self, "자동화", f"규칙 {len(rules)}개를 저장했습니다.")
+            QMessageBox.information(
+                self, "자동화", f"규칙 {len(rules)}개를 저장했습니다."
+            )
         except Exception as exc:
             QMessageBox.warning(self, "자동화", f"규칙 저장에 실패했습니다.\n\n{exc}")
 
@@ -417,5 +442,6 @@ class AutomationRulesDialog(QDialog):
         if self._apply_worker is not None and self._apply_worker.isRunning():
             self._apply_worker.stop()
         super().closeEvent(event)
+
 
 __all__ = ["AutomationRulesDialog"]

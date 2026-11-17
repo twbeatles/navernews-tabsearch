@@ -53,12 +53,18 @@ class _NewsTabStateMixin:
 
     def _publisher_filter_settings(self) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
         parent = self.window()
-        blocked = getattr(parent, "blocked_publishers", []) if parent is not None else []
-        preferred = getattr(parent, "preferred_publishers", []) if parent is not None else []
+        blocked = (
+            getattr(parent, "blocked_publishers", []) if parent is not None else []
+        )
+        preferred = (
+            getattr(parent, "preferred_publishers", []) if parent is not None else []
+        )
         aliases = getattr(parent, "publisher_aliases", {}) if parent is not None else {}
         blocked = expand_publisher_filters(list(blocked), aliases)
         preferred = expand_publisher_filters(list(preferred), aliases)
-        return tuple(str(item) for item in blocked), tuple(str(item) for item in preferred)
+        return tuple(str(item) for item in blocked), tuple(
+            str(item) for item in preferred
+        )
 
     def _current_tag_filter(self) -> str:
         combo = getattr(self, "combo_tag_filter", None)
@@ -131,7 +137,9 @@ class _NewsTabStateMixin:
         link_hash = str(prepared.get("_link_hash", "") or "")
         if link_hash:
             self._item_by_hash[link_hash] = prepared
-            self._preview_data_cache[link_hash] = str(prepared.get("description", "") or "")
+            self._preview_data_cache[link_hash] = str(
+                prepared.get("description", "") or ""
+            )
         normalized_link = str(prepared.get("link", "") or "").strip()
         if normalized_link:
             self._item_by_link[normalized_link] = prepared
@@ -160,7 +168,11 @@ class _NewsTabStateMixin:
     def _discard_item_render_cache(self, link_hash: str):
         if not link_hash:
             return
-        stale_keys = [cache_key for cache_key in self._item_html_cache if cache_key[3] == link_hash]
+        stale_keys = [
+            cache_key
+            for cache_key in self._item_html_cache
+            if cache_key[3] == link_hash
+        ]
         for cache_key in stale_keys:
             self._item_html_cache.pop(cache_key, None)
 

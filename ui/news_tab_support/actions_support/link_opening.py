@@ -37,7 +37,9 @@ class _NewsTabLinkOpeningMixin:
             return False
         url = QUrl(safe_url)
 
-        desktop_services = _NewsTabArticleActionsMixin._runtime_attr(self, "QDesktopServices", QDesktopServices)
+        desktop_services = _NewsTabArticleActionsMixin._runtime_attr(
+            self, "QDesktopServices", QDesktopServices
+        )
         if not desktop_services.openUrl(url):
             self._emit_local_action_failure(failure_message)
             return False
@@ -93,7 +95,9 @@ class _NewsTabLinkOpeningMixin:
 
         elif action == "bm":
             new_val = not bool(target.get("is_bookmarked", 0))
-            message = "⭐ 북마크에 추가되었습니다." if new_val else "북마크가 해제되었습니다."
+            message = (
+                "⭐ 북마크에 추가되었습니다." if new_val else "북마크가 해제되었습니다."
+            )
             self._set_bookmark_state(target, new_val, success_message=message)
 
         elif action == "share":
@@ -156,7 +160,11 @@ class _NewsTabLinkOpeningMixin:
             ):
                 parent = self._main_window()
                 if parent is not None:
-                    parent.show_toast("✓ 읽음으로 표시되었습니다." if new_val else "📖 안 읽음으로 표시되었습니다.")
+                    parent.show_toast(
+                        "✓ 읽음으로 표시되었습니다."
+                        if new_val
+                        else "📖 안 읽음으로 표시되었습니다."
+                    )
 
         elif action == "note":
             self._edit_note_for_target(target)

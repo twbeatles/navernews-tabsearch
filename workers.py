@@ -9,4 +9,4 @@ warnings.warn(
 )
 
 
-__all__ = ['AsyncJobWorker', 'ApiWorker', 'DBWorker']
+__all__ = ["AsyncJobWorker", "ApiWorker", "DBWorker"]

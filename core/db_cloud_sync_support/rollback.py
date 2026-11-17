@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -15,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class _CloudSyncRollbackMixin:
-    def _create_cloud_merge_rollback_backup(self: DatabaseManager, conn: sqlite3.Connection) -> str:
+    def _create_cloud_merge_rollback_backup(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> str:
         db_dir = os.path.dirname(os.path.abspath(self.db_file)) or "."
         os.makedirs(db_dir, exist_ok=True)
         fd, backup_path = tempfile.mkstemp(

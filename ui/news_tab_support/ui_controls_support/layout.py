@@ -91,12 +91,16 @@ class _NewsTabUILayoutMixin:
         adv_row1.setSpacing(12)
 
         self.chk_preferred_publishers = QCheckBox("선호 출처만")
-        self.chk_preferred_publishers.stateChanged.connect(self._on_preferred_publishers_changed)
+        self.chk_preferred_publishers.stateChanged.connect(
+            self._on_preferred_publishers_changed
+        )
 
         self.combo_tag_filter = NoScrollComboBox()
         self.combo_tag_filter.setEditable(True)
         self.combo_tag_filter.setMinimumWidth(130)
-        self.combo_tag_filter.currentTextChanged.connect(lambda _text: self._on_tag_filter_changed())
+        self.combo_tag_filter.currentTextChanged.connect(
+            lambda _text: self._on_tag_filter_changed()
+        )
         self._refresh_tag_filter_options()
 
         adv_row1.addWidget(self.chk_preferred_publishers)
@@ -106,7 +110,9 @@ class _NewsTabUILayoutMixin:
         self.btn_date_toggle = QToolButton()
         self.btn_date_toggle.setText("기간")
         self.btn_date_toggle.setCheckable(True)
-        self.btn_date_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.btn_date_toggle.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
         self.btn_date_toggle.toggled.connect(self._toggle_date_filter)
 
         self.date_container = QWidget()

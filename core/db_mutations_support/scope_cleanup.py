@@ -142,14 +142,18 @@ class _NewsScopeCleanupMixin:
         """Describe the dead scopes a cleanup would remove, without changing data."""
         keep = self._normalize_scope_keep_set(keep_query_keys)
         if not keep:
-            raise ValueError("cleanup_unused_scopes requires at least one live query key")
+            raise ValueError(
+                "cleanup_unused_scopes requires at least one live query key"
+            )
         conn = self.get_connection()
         try:
             dead_scopes = self._build_dead_scopes(self._dead_scope_rows(conn, keep))
             dead_keys = [scope.query_key for scope in dead_scopes]
             return ScopeCleanupPreview(
                 dead_scopes=tuple(dead_scopes),
-                removable_memberships=sum(scope.membership_count for scope in dead_scopes),
+                removable_memberships=sum(
+                    scope.membership_count for scope in dead_scopes
+                ),
                 orphaned_articles=self._count_orphaned_articles(conn, keep, dead_keys),
             )
         except Exception as e:
@@ -165,13 +169,17 @@ class _NewsScopeCleanupMixin:
         """Delete dead-scope memberships atomically and fix live duplicate flags."""
         keep = self._normalize_scope_keep_set(keep_query_keys)
         if not keep:
-            raise ValueError("cleanup_unused_scopes requires at least one live query key")
+            raise ValueError(
+                "cleanup_unused_scopes requires at least one live query key"
+            )
         conn = self.get_connection()
         try:
             with conn:
                 dead_keys = [
                     scope.query_key
-                    for scope in self._build_dead_scopes(self._dead_scope_rows(conn, keep))
+                    for scope in self._build_dead_scopes(
+                        self._dead_scope_rows(conn, keep)
+                    )
                 ]
                 doomed_hashes = self._doomed_title_hashes(conn, dead_keys)
                 # Count orphans before the delete using the same definition as the

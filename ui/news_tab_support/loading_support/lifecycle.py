@@ -18,7 +18,11 @@ class _NewsTabLoadingLifecycleMixin:
         return bool(self._initial_load_inflight)
 
     def request_initial_hydration(self) -> bool:
-        if self._is_closing or self._initial_load_completed or self._initial_load_inflight:
+        if (
+            self._is_closing
+            or self._initial_load_completed
+            or self._initial_load_inflight
+        ):
             return False
         self._initial_load_deferred = False
         self.load_data_from_db()
@@ -80,20 +84,26 @@ class _NewsTabLoadingLifecycleMixin:
             if self._initial_load_inflight and self._initial_request_id is not None:
                 remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
                 if not self.cancel_initial_hydration(wait_ms=remaining_ms):
-                    logger.warning("DBWorker maintenance wait timeout: %s", self.keyword)
+                    logger.warning(
+                        "DBWorker maintenance wait timeout: %s", self.keyword
+                    )
                     finished = False
             else:
                 self._detach_worker_signals(self.worker, ("finished", "error"))
                 self.worker.stop()
                 remaining_ms = max(50, int((deadline - time.monotonic()) * 1000))
                 if not self.worker.wait(remaining_ms):
-                    logger.warning("DBWorker maintenance wait timeout: %s", self.keyword)
+                    logger.warning(
+                        "DBWorker maintenance wait timeout: %s", self.keyword
+                    )
                     finished = False
                 else:
                     self._initial_load_inflight = False
 
         if self.job_worker is not None and self.job_worker.isRunning():
-            self._detach_worker_signals(self.job_worker, ("finished", "error", "cancelled", "progress"))
+            self._detach_worker_signals(
+                self.job_worker, ("finished", "error", "cancelled", "progress")
+            )
             try:
                 self.job_worker.stop()
             except Exception:
@@ -109,7 +119,9 @@ class _NewsTabLoadingLifecycleMixin:
         self._pending_scroll_restore = 0
         return finished
 
-    def _detach_worker_signals(self, worker: Any, signal_names: Tuple[str, ...]) -> None:
+    def _detach_worker_signals(
+        self, worker: Any, signal_names: Tuple[str, ...]
+    ) -> None:
         for signal_name in signal_names:
             signal = getattr(worker, signal_name, None)
             if signal is None:
@@ -160,7 +172,9 @@ class _NewsTabLoadingLifecycleMixin:
                 if worker.isRunning():
                     worker.stop()
                     if not worker.wait(1000):
-                        logger.warning("DBWorker cleanup wait timeout: %s", self.keyword)
+                        logger.warning(
+                            "DBWorker cleanup wait timeout: %s", self.keyword
+                        )
                         retain_worker_until_finished(worker)
             except Exception as exc:
                 logger.warning("DBWorker cleanup failed (%s): %s", self.keyword, exc)
@@ -169,7 +183,9 @@ class _NewsTabLoadingLifecycleMixin:
 
         if hasattr(self, "job_worker") and self.job_worker:
             job_worker = self.job_worker
-            self._detach_worker_signals(job_worker, ("finished", "error", "cancelled", "progress"))
+            self._detach_worker_signals(
+                job_worker, ("finished", "error", "cancelled", "progress")
+            )
             try:
                 if job_worker.isRunning():
                     try:
@@ -184,7 +200,9 @@ class _NewsTabLoadingLifecycleMixin:
                         except Exception:
                             pass
                         retain_worker_until_finished(job_worker)
-                        logger.warning("Job worker cleanup wait timeout: %s", self.keyword)
+                        logger.warning(
+                            "Job worker cleanup wait timeout: %s", self.keyword
+                        )
                 else:
                     try:
                         job_worker.deleteLater()

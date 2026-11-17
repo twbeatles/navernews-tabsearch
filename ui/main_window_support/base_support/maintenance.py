@@ -80,7 +80,9 @@ class _MainWindowMaintenanceMixin:
                 update_tray_tooltip()
                 QTimer.singleShot(300, update_tray_tooltip)
 
-    def _cancel_active_fetch_workers(self, wait_ms: int = 1500) -> tuple[bool, List[str]]:
+    def _cancel_active_fetch_workers(
+        self, wait_ms: int = 1500
+    ) -> tuple[bool, List[str]]:
         deadline = time.monotonic() + (max(0, int(wait_ms)) / 1000.0)
         unfinished_keywords: List[str] = []
 
@@ -103,7 +105,11 @@ class _MainWindowMaintenanceMixin:
                 only_if_active=False,
                 wait_ms=remaining_ms,
             )
-            outcome = WorkerCleanupOutcome.FINISHED if finished else WorkerCleanupOutcome.DETACHED_RUNNING
+            outcome = (
+                WorkerCleanupOutcome.FINISHED
+                if finished
+                else WorkerCleanupOutcome.DETACHED_RUNNING
+            )
             if not outcome.safe_for_database_maintenance:
                 logger.warning(
                     "Worker is not safe for maintenance: %s (rid=%s, outcome=%s)",
@@ -124,11 +130,15 @@ class _MainWindowMaintenanceMixin:
                 else:
                     self._reset_export_ui()
             except Exception as exc:
-                logger.warning("Failed to stop export worker before maintenance: %s", exc)
+                logger.warning(
+                    "Failed to stop export worker before maintenance: %s", exc
+                )
                 unfinished_keywords.append("CSV export")
 
         for _index, tab in self._iter_news_tabs():
-            cancel_background_tasks = getattr(tab, "cancel_background_tasks_for_maintenance", None)
+            cancel_background_tasks = getattr(
+                tab, "cancel_background_tasks_for_maintenance", None
+            )
             if not callable(cancel_background_tasks):
                 continue
             try:
@@ -136,7 +146,11 @@ class _MainWindowMaintenanceMixin:
                 if not cancel_background_tasks(remaining_ms):
                     unfinished_keywords.append(tab.keyword)
             except Exception as exc:
-                logger.warning("Failed to stop tab background tasks before maintenance (%s): %s", tab.keyword, exc)
+                logger.warning(
+                    "Failed to stop tab background tasks before maintenance (%s): %s",
+                    tab.keyword,
+                    exc,
+                )
                 unfinished_keywords.append(tab.keyword)
 
         self._hydration_inflight_keyword = ""
@@ -149,7 +163,9 @@ class _MainWindowMaintenanceMixin:
         ok, unfinished_keywords = self._cancel_active_fetch_workers(wait_ms=1500)
         if not ok:
             keywords_txt = ", ".join(unfinished_keywords)
-            logger.warning("Database maintenance blocked by active fetch workers: %s", keywords_txt)
+            logger.warning(
+                "Database maintenance blocked by active fetch workers: %s", keywords_txt
+            )
             return (
                 False,
                 f"활성 새로고침이 1.5초 안에 실제 종료되지 않았습니다: {keywords_txt}",
@@ -175,7 +191,9 @@ class _MainWindowMaintenanceMixin:
         update_tray_tooltip = getattr(self, "update_tray_tooltip", None)
         if callable(update_tray_tooltip):
             update_tray_tooltip()
-        self.show_warning_toast(f"{operation_label}를 위해 유지보수 모드로 전환했습니다.")
+        self.show_warning_toast(
+            f"{operation_label}를 위해 유지보수 모드로 전환했습니다."
+        )
         return True, ""
 
     def end_database_maintenance(self) -> None:

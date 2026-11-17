@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,6 +49,7 @@ class CloudSnapshot:
     machine_id: str
     created_at: str
     app_version: str
+
 
 __all__ = [
     "SNAPSHOT_FORMAT_VERSION",

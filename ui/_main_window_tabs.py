@@ -129,11 +129,17 @@ class _MainWindowTabsMixin:
         action_label: str,
     ) -> None:
         message = f"'{keyword}' 이전 새로고침이 아직 종료 중이라 {action_label}을(를) 잠시 후 다시 시도해 주세요."
-        logger.warning("Tab action blocked while worker is stopping: action=%s, keyword=%s", action_label, keyword)
+        logger.warning(
+            "Tab action blocked while worker is stopping: action=%s, keyword=%s",
+            action_label,
+            keyword,
+        )
         try:
             self._status_bar().showMessage(message, 4000)
         except Exception as exc:
-            logger.debug("Status bar message failed during worker cleanup block: %s", exc)
+            logger.debug(
+                "Status bar message failed during worker cleanup block: %s", exc
+            )
         show_warning_toast = getattr(self, "show_warning_toast", None)
         if callable(show_warning_toast):
             show_warning_toast(message)
@@ -142,7 +148,9 @@ class _MainWindowTabsMixin:
         """뉴스 탭 추가"""
         normalized_keyword = self._normalize_tab_keyword(keyword)
         if not normalized_keyword:
-            logger.warning("유효하지 않은 탭 키워드로 add_news_tab 요청이 무시되었습니다.")
+            logger.warning(
+                "유효하지 않은 탭 키워드로 add_news_tab 요청이 무시되었습니다."
+            )
             return
 
         keyword = normalized_keyword
@@ -155,18 +163,28 @@ class _MainWindowTabsMixin:
         tab = NewsTab(
             keyword,
             self._require_db(),
-            self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx,
+            self._effective_theme_idx()
+            if hasattr(self, "_effective_theme_idx")
+            else self.theme_idx,
             self,
             defer_initial_load=defer_initial_load,
         )
         self._connect_news_tab_hydration(tab)
-        tab.btn_load.clicked.connect(lambda _checked=False, tab_ref=tab: self.fetch_news(tab_ref.keyword, is_more=True))
-        fetch_state = self._tab_fetch_state.setdefault(keyword, self._make_tab_fetch_state())
+        tab.btn_load.clicked.connect(
+            lambda _checked=False, tab_ref=tab: self.fetch_news(
+                tab_ref.keyword, is_more=True
+            )
+        )
+        fetch_state = self._tab_fetch_state.setdefault(
+            keyword, self._make_tab_fetch_state()
+        )
         persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
         if persisted_cursor > fetch_state.last_api_start_index:
             fetch_state.last_api_start_index = persisted_cursor
         tab.total_api_count = int(self._fetch_total_by_key.get(fetch_key, 0) or 0)
-        tab_index = self.tabs.addTab(tab, self._format_tab_title(keyword, unread_count=0))
+        tab_index = self.tabs.addTab(
+            tab, self._format_tab_title(keyword, unread_count=0)
+        )
         self._set_tab_tooltip(tab_index, keyword)
         self.sync_tab_load_more_state(keyword)
         if defer_initial_load:
@@ -188,7 +206,9 @@ class _MainWindowTabsMixin:
         input_field.setClearButtonEnabled(True)
         layout.addWidget(input_field)
 
-        info_label = QLabel("단어 앞에 '-'를 붙이면 그 단어가 들어간 기사를 제외합니다.")
+        info_label = QLabel(
+            "단어 앞에 '-'를 붙이면 그 단어가 들어간 기사를 제외합니다."
+        )
         info_label.setObjectName("Hint")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -229,7 +249,7 @@ class _MainWindowTabsMixin:
                     self,
                     "입력 오류",
                     f"키워드가 너무 깁니다. ({len(raw_keyword)}자)\n"
-                    "최대 100자까지 입력 가능합니다."
+                    "최대 100자까지 입력 가능합니다.",
                 )
                 return
 
@@ -249,7 +269,7 @@ class _MainWindowTabsMixin:
                 QMessageBox.information(
                     self,
                     "중복 탭",
-                    f"'{existing_tab[1].keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다."
+                    f"'{existing_tab[1].keyword}' 탭이 이미 존재합니다.\n해당 탭으로 이동합니다.",
                 )
                 self.tabs.setCurrentIndex(existing_tab[0])
                 return
@@ -269,7 +289,9 @@ class _MainWindowTabsMixin:
         removed_keyword = None
         if widget is not None:
             removed_keyword = widget.keyword
-            active_request_id = self._worker_registry.get_active_request_id(removed_keyword)
+            active_request_id = self._worker_registry.get_active_request_id(
+                removed_keyword
+            )
             if not self._ensure_tab_worker_stopped(
                 removed_keyword,
                 active_request_id,
@@ -298,8 +320,12 @@ class _MainWindowTabsMixin:
             self._tab_fetch_state.pop(removed_keyword, None)
             self._last_auto_refresh_by_keyword.pop(removed_keyword, None)
             self.tab_refresh_policies.pop(removed_keyword, None)
-            removed_search_query, removed_exclude_words = parse_search_query(removed_keyword)
-            removed_fetch_key = build_fetch_key(removed_search_query, removed_exclude_words)
+            removed_search_query, removed_exclude_words = parse_search_query(
+                removed_keyword
+            )
+            removed_fetch_key = build_fetch_key(
+                removed_search_query, removed_exclude_words
+            )
             self.tab_refresh_policies.pop(removed_fetch_key, None)
             self._prune_fetch_key_state(removed_fetch_key)
         self.save_config()
@@ -366,7 +392,9 @@ class _MainWindowTabsMixin:
 
             w.keyword = new_keyword
             self._remove_tab_hydration(old_keyword)
-            self.tabs.setTabText(idx, self._format_tab_title(new_keyword, unread_count=0))
+            self.tabs.setTabText(
+                idx, self._format_tab_title(new_keyword, unread_count=0)
+            )
             self._set_tab_tooltip(idx, new_keyword)
 
             old_search_keyword, old_exclude_words = parse_search_query(old_keyword)
@@ -380,20 +408,39 @@ class _MainWindowTabsMixin:
                 self._last_fetch_request_ts.pop(new_fetch_key, None)
                 self._prune_fetch_key_state(old_fetch_key, skip_keyword=new_keyword)
                 self._tab_fetch_state[new_keyword] = self._make_tab_fetch_state()
-                persisted_cursor = int(self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0)
+                persisted_cursor = int(
+                    self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0
+                )
                 if persisted_cursor > 0:
-                    self._tab_fetch_state[new_keyword].last_api_start_index = persisted_cursor
-                w.total_api_count = int(self._fetch_total_by_key.get(new_fetch_key, 0) or 0)
+                    self._tab_fetch_state[
+                        new_keyword
+                    ].last_api_start_index = persisted_cursor
+                w.total_api_count = int(
+                    self._fetch_total_by_key.get(new_fetch_key, 0) or 0
+                )
                 w.last_update = None
             elif fetch_state is not None:
                 self._tab_fetch_state[new_keyword] = fetch_state
-                w.total_api_count = int(self._fetch_total_by_key.get(new_fetch_key, w.total_api_count) or 0)
+                w.total_api_count = int(
+                    self._fetch_total_by_key.get(new_fetch_key, w.total_api_count) or 0
+                )
             else:
-                self._tab_fetch_state.setdefault(new_keyword, self._make_tab_fetch_state())
-                persisted_cursor = int(self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0)
-                if persisted_cursor > self._tab_fetch_state[new_keyword].last_api_start_index:
-                    self._tab_fetch_state[new_keyword].last_api_start_index = persisted_cursor
-                w.total_api_count = int(self._fetch_total_by_key.get(new_fetch_key, 0) or 0)
+                self._tab_fetch_state.setdefault(
+                    new_keyword, self._make_tab_fetch_state()
+                )
+                persisted_cursor = int(
+                    self._fetch_cursor_by_key.get(new_fetch_key, 0) or 0
+                )
+                if (
+                    persisted_cursor
+                    > self._tab_fetch_state[new_keyword].last_api_start_index
+                ):
+                    self._tab_fetch_state[
+                        new_keyword
+                    ].last_api_start_index = persisted_cursor
+                w.total_api_count = int(
+                    self._fetch_total_by_key.get(new_fetch_key, 0) or 0
+                )
 
             groups_changed = False
             updated_groups = self.keyword_group_manager._normalize_groups(
@@ -401,7 +448,10 @@ class _MainWindowTabsMixin:
             )
             for _group_name, keywords in updated_groups.items():
                 if old_keyword in keywords:
-                    keywords[:] = [new_keyword if keyword == old_keyword else keyword for keyword in keywords]
+                    keywords[:] = [
+                        new_keyword if keyword == old_keyword else keyword
+                        for keyword in keywords
+                    ]
                     deduped: List[str] = []
                     for keyword in keywords:
                         if keyword not in deduped:
@@ -417,11 +467,17 @@ class _MainWindowTabsMixin:
             old_policy_key = self._canonical_fetch_key_for_keyword(old_keyword)
             new_policy_key = self._canonical_fetch_key_for_keyword(new_keyword)
             if old_policy_key in getattr(self, "tab_refresh_policies", {}):
-                self.tab_refresh_policies[new_policy_key] = self.tab_refresh_policies.pop(old_policy_key)
+                self.tab_refresh_policies[new_policy_key] = (
+                    self.tab_refresh_policies.pop(old_policy_key)
+                )
             elif old_keyword in getattr(self, "tab_refresh_policies", {}):
-                self.tab_refresh_policies[new_policy_key] = self.tab_refresh_policies.pop(old_keyword)
+                self.tab_refresh_policies[new_policy_key] = (
+                    self.tab_refresh_policies.pop(old_keyword)
+                )
             if old_keyword in getattr(self, "_last_auto_refresh_by_keyword", {}):
-                self._last_auto_refresh_by_keyword[new_keyword] = self._last_auto_refresh_by_keyword.pop(old_keyword)
+                self._last_auto_refresh_by_keyword[new_keyword] = (
+                    self._last_auto_refresh_by_keyword.pop(old_keyword)
+                )
 
             try:
                 w.load_data_from_db()
@@ -483,7 +539,9 @@ class _MainWindowTabsMixin:
             act.setCheckable(True)
             act.setChecked(policy_value == current_policy)
             act.triggered.connect(
-                lambda checked=False, value=policy_value, k=keyword: self.set_tab_refresh_policy(k, value)
+                lambda checked=False, value=policy_value, k=keyword: (
+                    self.set_tab_refresh_policy(k, value)
+                )
             )
 
         group_menu = menu.addMenu("그룹에 추가")
@@ -493,7 +551,11 @@ class _MainWindowTabsMixin:
         if groups:
             for group in groups:
                 act = self._add_menu_action(group_menu, group)
-                act.triggered.connect(lambda checked, g=group, k=keyword: self._add_to_group_callback(g, k))
+                act.triggered.connect(
+                    lambda checked, g=group, k=keyword: self._add_to_group_callback(
+                        g, k
+                    )
+                )
         else:
             group_menu.setDisabled(True)
 
@@ -511,7 +573,9 @@ class _MainWindowTabsMixin:
         elif action == act_close:
             self.close_tab(idx)
 
-    def reset_tab_fetch_cursor(self: MainApp, keyword: str, *, notify: bool = True) -> None:
+    def reset_tab_fetch_cursor(
+        self: MainApp, keyword: str, *, notify: bool = True
+    ) -> None:
         """탭의 API 페이징 커서를 1로 초기화한다."""
         normalized_keyword = str(keyword or "").strip()
         if not normalized_keyword:
@@ -527,7 +591,9 @@ class _MainWindowTabsMixin:
             _tab_index, tab_widget = located_tab
             self.sync_tab_load_more_state(normalized_keyword)
         if notify:
-            self.show_success_toast(f"'{normalized_keyword}' 다음 가져오기는 처음부터 다시 시작합니다.")
+            self.show_success_toast(
+                f"'{normalized_keyword}' 다음 가져오기는 처음부터 다시 시작합니다."
+            )
 
     def set_tab_refresh_policy(self: MainApp, keyword: str, policy: str) -> None:
         allowed = {"inherit", "off", "10", "30", "60", "120", "360"}

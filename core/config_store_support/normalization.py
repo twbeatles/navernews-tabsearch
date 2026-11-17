@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import copy
@@ -49,7 +48,11 @@ def _normalize_auto_backup_minutes(
     value: Any,
     default: int = DEFAULT_AUTO_BACKUP_MINUTES,
 ) -> int:
-    fallback = int(default) if int(default) in ALLOWED_AUTO_BACKUP_MINUTES else DEFAULT_AUTO_BACKUP_MINUTES
+    fallback = (
+        int(default)
+        if int(default) in ALLOWED_AUTO_BACKUP_MINUTES
+        else DEFAULT_AUTO_BACKUP_MINUTES
+    )
     parsed = _to_int(value, fallback)
     if parsed in ALLOWED_AUTO_BACKUP_MINUTES:
         return parsed
@@ -204,7 +207,8 @@ def _to_saved_searches(value: Any) -> Dict[str, Dict[str, Any]]:
             "sort_mode": str(payload.get("sort_mode", "최신순") or "최신순"),
             "only_unread": _to_bool(payload.get("only_unread"), False),
             "hide_duplicates": _to_bool(payload.get("hide_duplicates"), False),
-            "date_active": _to_bool(payload.get("date_active"), False) and bool(start_date or end_date),
+            "date_active": _to_bool(payload.get("date_active"), False)
+            and bool(start_date or end_date),
             "start_date": start_date,
             "end_date": end_date,
             "tag_filter": str(payload.get("tag_filter", "") or "").strip()[:30],
@@ -310,7 +314,9 @@ def _coerce_int_range_for_import(
     return clamped, changed
 
 
-def _coerce_auto_backup_minutes_for_import(value: Any, fallback: int) -> Tuple[int, bool]:
+def _coerce_auto_backup_minutes_for_import(
+    value: Any, fallback: int
+) -> Tuple[int, bool]:
     fallback = _normalize_auto_backup_minutes(fallback)
     if isinstance(value, int) and not isinstance(value, bool):
         parsed = value
@@ -334,7 +340,9 @@ def normalize_import_settings(
     baseline = copy.deepcopy(DEFAULT_CONFIG["app_settings"])
 
     if isinstance(fallback_settings, dict):
-        baseline["theme_index"] = _to_int(fallback_settings.get("theme_index"), baseline["theme_index"])
+        baseline["theme_index"] = _to_int(
+            fallback_settings.get("theme_index"), baseline["theme_index"]
+        )
         baseline["refresh_interval_index"] = _to_int(
             fallback_settings.get("refresh_interval_index"),
             baseline["refresh_interval_index"],
@@ -371,17 +379,25 @@ def normalize_import_settings(
         baseline["api_timeout"] = _to_int(
             fallback_settings.get("api_timeout"), baseline["api_timeout"]
         )
-        baseline["blocked_publishers"], baseline["preferred_publishers"] = normalize_publisher_filter_lists(
-            fallback_settings.get("blocked_publishers", baseline["blocked_publishers"]),
-            fallback_settings.get("preferred_publishers", baseline["preferred_publishers"]),
+        baseline["blocked_publishers"], baseline["preferred_publishers"] = (
+            normalize_publisher_filter_lists(
+                fallback_settings.get(
+                    "blocked_publishers", baseline["blocked_publishers"]
+                ),
+                fallback_settings.get(
+                    "preferred_publishers", baseline["preferred_publishers"]
+                ),
+            )
         )
         baseline["cloud_sync_enabled"] = _to_bool(
             fallback_settings.get("cloud_sync_enabled"),
             baseline["cloud_sync_enabled"],
         )
-        baseline["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
-            fallback_settings.get("cloud_sync_interval_minutes"),
-            baseline["cloud_sync_interval_minutes"],
+        baseline["cloud_sync_interval_minutes"] = (
+            _normalize_cloud_sync_interval_minutes(
+                fallback_settings.get("cloud_sync_interval_minutes"),
+                baseline["cloud_sync_interval_minutes"],
+            )
         )
         baseline["tombstone_retention_days"] = _normalize_tombstone_retention_days(
             fallback_settings.get("tombstone_retention_days"),
@@ -390,8 +406,12 @@ def normalize_import_settings(
 
     normalized = {
         "theme_index": max(0, min(2, int(baseline["theme_index"]))),
-        "refresh_interval_index": max(0, min(5, int(baseline["refresh_interval_index"]))),
-        "auto_backup_minutes": _normalize_auto_backup_minutes(baseline["auto_backup_minutes"]),
+        "refresh_interval_index": max(
+            0, min(5, int(baseline["refresh_interval_index"]))
+        ),
+        "auto_backup_minutes": _normalize_auto_backup_minutes(
+            baseline["auto_backup_minutes"]
+        ),
         "notification_enabled": bool(baseline["notification_enabled"]),
         "alert_keywords": list(baseline["alert_keywords"]),
         "sound_enabled": bool(baseline["sound_enabled"]),
@@ -438,13 +458,13 @@ def normalize_import_settings(
         )
         normalized[field] = coerced
         if changed and field in raw_settings:
-            warnings.append(
-                f"{field} 값을 {coerced}(으)로 보정했습니다."
-            )
+            warnings.append(f"{field} 값을 {coerced}(으)로 보정했습니다.")
 
-    coerced_backup_minutes, changed_backup_minutes = _coerce_auto_backup_minutes_for_import(
-        raw_settings.get("auto_backup_minutes"),
-        int(normalized["auto_backup_minutes"]),
+    coerced_backup_minutes, changed_backup_minutes = (
+        _coerce_auto_backup_minutes_for_import(
+            raw_settings.get("auto_backup_minutes"),
+            int(normalized["auto_backup_minutes"]),
+        )
     )
     normalized["auto_backup_minutes"] = coerced_backup_minutes
     if changed_backup_minutes and "auto_backup_minutes" in raw_settings:
@@ -453,9 +473,11 @@ def normalize_import_settings(
         )
 
     if "cloud_sync_interval_minutes" in raw_settings:
-        normalized["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
-            raw_settings.get("cloud_sync_interval_minutes"),
-            int(normalized["cloud_sync_interval_minutes"]),
+        normalized["cloud_sync_interval_minutes"] = (
+            _normalize_cloud_sync_interval_minutes(
+                raw_settings.get("cloud_sync_interval_minutes"),
+                int(normalized["cloud_sync_interval_minutes"]),
+            )
         )
 
     if "tombstone_retention_days" in raw_settings:
@@ -475,33 +497,41 @@ def normalize_import_settings(
             )
 
     for field in bool_fields:
-        coerced, changed = _coerce_bool_for_import(raw_settings.get(field), normalized[field])
+        coerced, changed = _coerce_bool_for_import(
+            raw_settings.get(field), normalized[field]
+        )
         normalized[field] = coerced
         if changed and field in raw_settings:
-            warnings.append(
-                f"{field} 값을 {coerced}(으)로 보정했습니다."
-            )
+            warnings.append(f"{field} 값을 {coerced}(으)로 보정했습니다.")
 
     normalized_alert_keywords, changed_alert = _normalize_alert_keywords(
         raw_settings.get("alert_keywords", normalized["alert_keywords"])
     )
     normalized["alert_keywords"] = normalized_alert_keywords
     if changed_alert and "alert_keywords" in raw_settings:
-        warnings.append(
-            "alert_keywords 값을 정규화했습니다. (최대 10개, 중복 제거)"
-        )
+        warnings.append("alert_keywords 값을 정규화했습니다. (최대 10개, 중복 제거)")
 
-    raw_blocked_publishers = raw_settings.get("blocked_publishers", normalized["blocked_publishers"])
-    raw_preferred_publishers = raw_settings.get("preferred_publishers", normalized["preferred_publishers"])
+    raw_blocked_publishers = raw_settings.get(
+        "blocked_publishers", normalized["blocked_publishers"]
+    )
+    raw_preferred_publishers = raw_settings.get(
+        "preferred_publishers", normalized["preferred_publishers"]
+    )
     normalized_blocked, normalized_preferred = normalize_publisher_filter_lists(
         raw_blocked_publishers,
         raw_preferred_publishers,
     )
     normalized["blocked_publishers"] = normalized_blocked
     normalized["preferred_publishers"] = normalized_preferred
-    if "blocked_publishers" in raw_settings and normalized_blocked != raw_blocked_publishers:
+    if (
+        "blocked_publishers" in raw_settings
+        and normalized_blocked != raw_blocked_publishers
+    ):
         warnings.append("blocked_publishers 값을 정규화했습니다. (중복/충돌 제거)")
-    if "preferred_publishers" in raw_settings and normalized_preferred != raw_preferred_publishers:
+    if (
+        "preferred_publishers" in raw_settings
+        and normalized_preferred != raw_preferred_publishers
+    ):
         warnings.append("preferred_publishers 값을 정규화했습니다. (중복/충돌 제거)")
 
     return normalized, warnings
@@ -518,20 +548,25 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         app_raw = raw["app_settings"]
         app_cfg = cfg["app_settings"]
         app_cfg["client_id"] = str(app_raw.get("client_id", app_cfg["client_id"]))
-        app_cfg["client_secret"] = str(app_raw.get("client_secret", app_cfg["client_secret"]))
+        app_cfg["client_secret"] = str(
+            app_raw.get("client_secret", app_cfg["client_secret"])
+        )
         app_cfg["client_secret_enc"] = str(
             app_raw.get("client_secret_enc", app_cfg["client_secret_enc"])
         )
         app_cfg["client_secret_storage"] = _normalize_secret_storage(
             app_raw.get("client_secret_storage", app_cfg["client_secret_storage"])
         )
-        app_cfg["theme_index"] = max(0, min(2, _to_int(app_raw.get("theme_index"), app_cfg["theme_index"])))
+        app_cfg["theme_index"] = max(
+            0, min(2, _to_int(app_raw.get("theme_index"), app_cfg["theme_index"]))
+        )
         app_cfg["refresh_interval_index"] = max(
             0,
             min(
                 5,
                 _to_int(
-                    app_raw.get("refresh_interval_index"), app_cfg["refresh_interval_index"]
+                    app_raw.get("refresh_interval_index"),
+                    app_cfg["refresh_interval_index"],
                 ),
             ),
         )
@@ -546,19 +581,35 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         app_cfg["notification_enabled"] = _to_bool(
             app_raw.get("notification_enabled"), app_cfg["notification_enabled"]
         )
-        app_cfg["alert_keywords"], _ = _normalize_alert_keywords(app_raw.get("alert_keywords"))
-        app_cfg["sound_enabled"] = _to_bool(app_raw.get("sound_enabled"), app_cfg["sound_enabled"])
-        app_cfg["minimize_to_tray"] = _to_bool(app_raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"])
-        app_cfg["close_to_tray"] = _to_bool(app_raw.get("close_to_tray"), app_cfg["close_to_tray"])
-        app_cfg["start_minimized"] = _to_bool(app_raw.get("start_minimized"), app_cfg["start_minimized"])
+        app_cfg["alert_keywords"], _ = _normalize_alert_keywords(
+            app_raw.get("alert_keywords")
+        )
+        app_cfg["sound_enabled"] = _to_bool(
+            app_raw.get("sound_enabled"), app_cfg["sound_enabled"]
+        )
+        app_cfg["minimize_to_tray"] = _to_bool(
+            app_raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"]
+        )
+        app_cfg["close_to_tray"] = _to_bool(
+            app_raw.get("close_to_tray"), app_cfg["close_to_tray"]
+        )
+        app_cfg["start_minimized"] = _to_bool(
+            app_raw.get("start_minimized"), app_cfg["start_minimized"]
+        )
         app_cfg["auto_start_enabled"] = _to_bool(
             app_raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"]
         )
-        app_cfg["notify_on_refresh"] = _to_bool(app_raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
-        app_cfg["api_timeout"] = max(5, min(60, _to_int(app_raw.get("api_timeout"), app_cfg["api_timeout"])))
-        app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = normalize_publisher_filter_lists(
-            app_raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
-            app_raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
+        app_cfg["notify_on_refresh"] = _to_bool(
+            app_raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"]
+        )
+        app_cfg["api_timeout"] = max(
+            5, min(60, _to_int(app_raw.get("api_timeout"), app_cfg["api_timeout"]))
+        )
+        app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = (
+            normalize_publisher_filter_lists(
+                app_raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
+                app_raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
+            )
         )
         app_cfg["cloud_sync_enabled"] = _to_bool(
             app_raw.get("cloud_sync_enabled"),
@@ -575,10 +626,20 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         geom_raw = app_raw.get("window_geometry")
         if isinstance(geom_raw, dict):
             app_cfg["window_geometry"] = {
-                "x": _to_int(geom_raw.get("x"), cfg["app_settings"]["window_geometry"]["x"]),
-                "y": _to_int(geom_raw.get("y"), cfg["app_settings"]["window_geometry"]["y"]),
-                "width": _to_int(geom_raw.get("width"), cfg["app_settings"]["window_geometry"]["width"]),
-                "height": _to_int(geom_raw.get("height"), cfg["app_settings"]["window_geometry"]["height"]),
+                "x": _to_int(
+                    geom_raw.get("x"), cfg["app_settings"]["window_geometry"]["x"]
+                ),
+                "y": _to_int(
+                    geom_raw.get("y"), cfg["app_settings"]["window_geometry"]["y"]
+                ),
+                "width": _to_int(
+                    geom_raw.get("width"),
+                    cfg["app_settings"]["window_geometry"]["width"],
+                ),
+                "height": _to_int(
+                    geom_raw.get("height"),
+                    cfg["app_settings"]["window_geometry"]["height"],
+                ),
             }
 
         cfg["tabs"] = _to_str_list(raw.get("tabs"))
@@ -587,20 +648,30 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
         cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
         cfg["saved_searches"] = _to_saved_searches(raw.get("saved_searches"))
-        cfg["tab_refresh_policies"] = _to_tab_refresh_policies(raw.get("tab_refresh_policies"))
-        cfg["automation_rules"] = normalize_automation_rules(raw.get("automation_rules"))
-        cfg["publisher_aliases"] = normalize_publisher_aliases(raw.get("publisher_aliases"))
+        cfg["tab_refresh_policies"] = _to_tab_refresh_policies(
+            raw.get("tab_refresh_policies")
+        )
+        cfg["automation_rules"] = normalize_automation_rules(
+            raw.get("automation_rules")
+        )
+        cfg["publisher_aliases"] = normalize_publisher_aliases(
+            raw.get("publisher_aliases")
+        )
         return cfg
 
     # Legacy flat schema
     app_cfg = cfg["app_settings"]
     app_cfg["client_id"] = str(raw.get("id", app_cfg["client_id"]))
     app_cfg["client_secret"] = str(raw.get("secret", app_cfg["client_secret"]))
-    app_cfg["client_secret_enc"] = str(raw.get("client_secret_enc", app_cfg["client_secret_enc"]))
+    app_cfg["client_secret_enc"] = str(
+        raw.get("client_secret_enc", app_cfg["client_secret_enc"])
+    )
     app_cfg["client_secret_storage"] = _normalize_secret_storage(
         raw.get("client_secret_storage", app_cfg["client_secret_storage"])
     )
-    app_cfg["theme_index"] = max(0, min(2, _to_int(raw.get("theme"), app_cfg["theme_index"])))
+    app_cfg["theme_index"] = max(
+        0, min(2, _to_int(raw.get("theme"), app_cfg["theme_index"]))
+    )
     app_cfg["refresh_interval_index"] = max(
         0, min(5, _to_int(raw.get("interval"), app_cfg["refresh_interval_index"]))
     )
@@ -616,22 +687,40 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
         raw.get("notification_enabled"), app_cfg["notification_enabled"]
     )
     app_cfg["alert_keywords"], _ = _normalize_alert_keywords(raw.get("alert_keywords"))
-    app_cfg["sound_enabled"] = _to_bool(raw.get("sound_enabled"), app_cfg["sound_enabled"])
-    app_cfg["minimize_to_tray"] = _to_bool(raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"])
-    app_cfg["close_to_tray"] = _to_bool(raw.get("close_to_tray"), app_cfg["close_to_tray"])
-    app_cfg["start_minimized"] = _to_bool(raw.get("start_minimized"), app_cfg["start_minimized"])
-    app_cfg["auto_start_enabled"] = _to_bool(raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"])
-    app_cfg["notify_on_refresh"] = _to_bool(raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"])
-    app_cfg["api_timeout"] = max(5, min(60, _to_int(raw.get("api_timeout"), app_cfg["api_timeout"])))
-    app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = normalize_publisher_filter_lists(
-        raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
-        raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
+    app_cfg["sound_enabled"] = _to_bool(
+        raw.get("sound_enabled"), app_cfg["sound_enabled"]
+    )
+    app_cfg["minimize_to_tray"] = _to_bool(
+        raw.get("minimize_to_tray"), app_cfg["minimize_to_tray"]
+    )
+    app_cfg["close_to_tray"] = _to_bool(
+        raw.get("close_to_tray"), app_cfg["close_to_tray"]
+    )
+    app_cfg["start_minimized"] = _to_bool(
+        raw.get("start_minimized"), app_cfg["start_minimized"]
+    )
+    app_cfg["auto_start_enabled"] = _to_bool(
+        raw.get("auto_start_enabled"), app_cfg["auto_start_enabled"]
+    )
+    app_cfg["notify_on_refresh"] = _to_bool(
+        raw.get("notify_on_refresh"), app_cfg["notify_on_refresh"]
+    )
+    app_cfg["api_timeout"] = max(
+        5, min(60, _to_int(raw.get("api_timeout"), app_cfg["api_timeout"]))
+    )
+    app_cfg["blocked_publishers"], app_cfg["preferred_publishers"] = (
+        normalize_publisher_filter_lists(
+            raw.get("blocked_publishers", app_cfg["blocked_publishers"]),
+            raw.get("preferred_publishers", app_cfg["preferred_publishers"]),
+        )
     )
     app_cfg["cloud_sync_enabled"] = _to_bool(
         raw.get("cloud_sync_enabled"),
         app_cfg["cloud_sync_enabled"],
     )
-    app_cfg["cloud_sync_dir"] = str(raw.get("cloud_sync_dir", app_cfg["cloud_sync_dir"]) or "").strip()
+    app_cfg["cloud_sync_dir"] = str(
+        raw.get("cloud_sync_dir", app_cfg["cloud_sync_dir"]) or ""
+    ).strip()
     app_cfg["cloud_sync_interval_minutes"] = _normalize_cloud_sync_interval_minutes(
         raw.get("cloud_sync_interval_minutes"),
         app_cfg["cloud_sync_interval_minutes"],
@@ -642,10 +731,13 @@ def normalize_loaded_config(raw: Dict[str, Any]) -> AppConfig:
     cfg["pagination_state"] = _to_pagination_state(raw.get("pagination_state"))
     cfg["pagination_totals"] = _to_pagination_totals(raw.get("pagination_totals"))
     cfg["saved_searches"] = _to_saved_searches(raw.get("saved_searches"))
-    cfg["tab_refresh_policies"] = _to_tab_refresh_policies(raw.get("tab_refresh_policies"))
+    cfg["tab_refresh_policies"] = _to_tab_refresh_policies(
+        raw.get("tab_refresh_policies")
+    )
     cfg["automation_rules"] = normalize_automation_rules(raw.get("automation_rules"))
     cfg["publisher_aliases"] = normalize_publisher_aliases(raw.get("publisher_aliases"))
     return cfg
+
 
 __all__ = [
     "_to_bool",

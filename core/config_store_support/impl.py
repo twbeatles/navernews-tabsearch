@@ -1,4 +1,3 @@
-
 """Compatibility facade for config store support helpers."""
 
 from core.config_store_support.io import (

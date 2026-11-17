@@ -100,7 +100,14 @@ class _DummyMain:
     def _status_bar(self):
         return self._status
 
-    def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False, wait_ms=1000, force=False):
+    def cleanup_worker(
+        self,
+        keyword=None,
+        request_id=None,
+        only_if_active=False,
+        wait_ms=1000,
+        force=False,
+    ):
         self.cleanup_calls.append((keyword, request_id, only_if_active, wait_ms, force))
         key = (request_id, keyword)
         if force:
@@ -145,7 +152,9 @@ class _DummyFetchBlockMain:
     def show_warning_toast(self, message):
         self.warning_toasts.append(str(message))
 
-    def fetch_news(self, keyword: str, is_more: bool = False, is_sequential: bool = False):
+    def fetch_news(
+        self, keyword: str, is_more: bool = False, is_sequential: bool = False
+    ):
         return cast(Any, _MainWindowFetchMixin).fetch_news(
             cast(Any, self),
             keyword,
@@ -216,7 +225,9 @@ class _DummyHydrationMain:
 
 
 class TestMaintenanceMode(unittest.TestCase):
-    def test_begin_database_maintenance_cancels_workers_and_disables_fetch_controls(self):
+    def test_begin_database_maintenance_cancels_workers_and_disables_fetch_controls(
+        self,
+    ):
         dummy = _DummyMain({(1, "AI"): True})
 
         started, reason = dummy.begin_database_maintenance("delete_old_news")

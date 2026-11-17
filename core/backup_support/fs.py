@@ -9,17 +9,22 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
 def _retry_remove_readonly(func, path: str, _exc_info) -> None:
     try:
         os.chmod(path, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
     except OSError:
         pass
     func(path)
+
+
 def _rmtree_force(path: str) -> None:
     try:
         shutil.rmtree(path, onexc=_retry_remove_readonly)
     except TypeError:
         shutil.rmtree(path, onerror=_retry_remove_readonly)
+
+
 def _write_json_atomic(path: str, payload: Dict[str, Any]) -> None:
     directory = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(directory, exist_ok=True)
@@ -65,7 +70,10 @@ def _safe_backup_child_dir(root_dir: str, backup_name: str) -> tuple[bool, str, 
     try:
         root_real = os.path.realpath(root_abs)
         target_real = os.path.realpath(target_abs)
-        if target_real != root_real and os.path.commonpath([root_real, target_real]) != root_real:
+        if (
+            target_real != root_real
+            and os.path.commonpath([root_real, target_real]) != root_real
+        ):
             return False, "", "백업 경로가 백업 폴더 밖을 가리킵니다."
     except (ValueError, OSError):
         return False, "", "백업 경로를 확인할 수 없습니다."
@@ -86,7 +94,11 @@ def _atomic_copy_replace(src_path: str, dst_path: str) -> None:
                 os.remove(tmp_path)
             except OSError:
                 pass
-def _snapshot_files_for_rollback(paths: List[str], staging_dir: str) -> Dict[str, Optional[str]]:
+
+
+def _snapshot_files_for_rollback(
+    paths: List[str], staging_dir: str
+) -> Dict[str, Optional[str]]:
     snapshots: Dict[str, Optional[str]] = {}
     os.makedirs(staging_dir, exist_ok=True)
     for idx, path in enumerate(paths):
@@ -97,6 +109,8 @@ def _snapshot_files_for_rollback(paths: List[str], staging_dir: str) -> Dict[str
         else:
             snapshots[path] = None
     return snapshots
+
+
 def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
     for target, snapshot in snapshots.items():
         try:
@@ -111,10 +125,14 @@ def _rollback_files_from_snapshot(snapshots: Dict[str, Optional[str]]) -> None:
                 os.remove(target)
         except Exception as rollback_error:
             logger.error("rollback failed for %s: %s", target, rollback_error)
+
+
 def _cleanup_restore_stage_dir(staging_dir: str) -> None:
     try:
         _rmtree_force(staging_dir)
     except FileNotFoundError:
         return
     except Exception as cleanup_error:
-        logger.warning("restore staging cleanup failed for %s: %s", staging_dir, cleanup_error)
+        logger.warning(
+            "restore staging cleanup failed for %s: %s", staging_dir, cleanup_error
+        )

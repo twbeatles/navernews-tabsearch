@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -15,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class _NewsKeywordSchemaMixin:
-    def _create_news_keywords_table(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+    def _create_news_keywords_table(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS news_keywords (
@@ -29,7 +30,9 @@ class _NewsKeywordSchemaMixin:
             """
         )
 
-    def _news_keywords_needs_rebuild(self: DatabaseManager, conn: sqlite3.Connection) -> bool:
+    def _news_keywords_needs_rebuild(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> bool:
         rows = conn.execute("PRAGMA table_info(news_keywords)").fetchall()
         if not rows:
             return False
@@ -45,7 +48,9 @@ class _NewsKeywordSchemaMixin:
     def _legacy_query_key_for_keyword(self: DatabaseManager, keyword: str) -> str:
         return build_fetch_key(str(keyword or "").strip(), [])
 
-    def _rebuild_news_keywords_table(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+    def _rebuild_news_keywords_table(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> None:
         logger.info("Migrating news_keywords to query_key-aware schema")
         conn.execute(
             """
@@ -113,7 +118,9 @@ class _NewsKeywordSchemaMixin:
         conn.execute("DROP TABLE news_keywords")
         conn.execute("ALTER TABLE news_keywords_new RENAME TO news_keywords")
 
-    def _ensure_news_keywords_schema(self: DatabaseManager, conn: sqlite3.Connection) -> bool:
+    def _ensure_news_keywords_schema(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> bool:
         """Create or rebuild news_keywords; True when the table changed shape."""
         has_table = bool(
             conn.execute(

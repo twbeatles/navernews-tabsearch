@@ -24,6 +24,7 @@ from core.publisher_aliases import normalize_publisher_aliases
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class PublisherAliasDialog(QDialog):
     def __init__(self, aliases, save_callback, parent=None):
         super().__init__(parent)
@@ -66,7 +67,9 @@ class PublisherAliasDialog(QDialog):
         advanced_layout.addWidget(btn_load_json)
         layout.addWidget(advanced)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Close)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Close
+        )
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.accept)
         layout.addWidget(buttons)
@@ -81,7 +84,9 @@ class PublisherAliasDialog(QDialog):
     def refresh_alias_list(self, *, select_row: int = -1) -> None:
         self.alias_list.blockSignals(True)
         self.alias_list.clear()
-        for source, alias in sorted(self.aliases.items(), key=lambda item: item[0].casefold()):
+        for source, alias in sorted(
+            self.aliases.items(), key=lambda item: item[0].casefold()
+        ):
             item = QListWidgetItem(f"{source} -> {alias}")
             item.setData(Qt.ItemDataRole.UserRole, source)
             self.alias_list.addItem(item)
@@ -114,7 +119,9 @@ class PublisherAliasDialog(QDialog):
             return True
         if not source or not alias:
             if not silent:
-                QMessageBox.warning(self, "출처 Alias", "source와 alias를 모두 입력하세요.")
+                QMessageBox.warning(
+                    self, "출처 Alias", "source와 alias를 모두 입력하세요."
+                )
             return False
         if self._editing_source and self._editing_source != source:
             self.aliases.pop(self._editing_source, None)
@@ -160,7 +167,9 @@ class PublisherAliasDialog(QDialog):
                 f"JSON에서 {len(aliases)}개 alias를 불러왔습니다. 정규화로 제외된 항목: {dropped}개",
             )
         except Exception as exc:
-            QMessageBox.warning(self, "출처 Alias", f"JSON 불러오기에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "출처 Alias", f"JSON 불러오기에 실패했습니다.\n\n{exc}"
+            )
 
     def save(self) -> None:
         try:
@@ -171,8 +180,13 @@ class PublisherAliasDialog(QDialog):
             self.aliases = aliases
             self.refresh_alias_list(select_row=self.alias_list.currentRow())
             self.sync_editor()
-            QMessageBox.information(self, "출처 Alias", f"Alias {len(aliases)}개를 저장했습니다.")
+            QMessageBox.information(
+                self, "출처 Alias", f"Alias {len(aliases)}개를 저장했습니다."
+            )
         except Exception as exc:
-            QMessageBox.warning(self, "출처 Alias", f"Alias 저장에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "출처 Alias", f"Alias 저장에 실패했습니다.\n\n{exc}"
+            )
+
 
 __all__ = ["PublisherAliasDialog"]

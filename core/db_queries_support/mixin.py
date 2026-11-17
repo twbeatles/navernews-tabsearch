@@ -1,4 +1,3 @@
-
 from core.db_queries_support.archive import _DatabaseArchiveQueriesMixin
 from core.db_queries_support.counts import _DatabaseCountQueriesMixin
 from core.db_queries_support.fetch import _DatabaseFetchQueriesMixin

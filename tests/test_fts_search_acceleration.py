@@ -254,7 +254,9 @@ class TestFtsSearchAcceleration(unittest.TestCase):
                 filter_txt="삼성 반도체 AI",
             )
         }
-        archive_after = {row["link"] for row in mgr.search_archive(filter_txt="삼성 반도체 AI")}
+        archive_after = {
+            row["link"] for row in mgr.search_archive(filter_txt="삼성 반도체 AI")
+        }
 
         self.assertEqual(before, {"https://example.com/k1", "https://example.com/k2"})
         self.assertEqual(after, before)

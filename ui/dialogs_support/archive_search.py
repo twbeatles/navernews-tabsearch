@@ -29,6 +29,7 @@ from core.workers import (
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class ArchiveSearchDialog(QDialog):
     def __init__(self, db, publisher_aliases=None, refresh_callback=None, parent=None):
         super().__init__(parent)
@@ -53,7 +54,14 @@ class ArchiveSearchDialog(QDialog):
         self.txt_start.setPlaceholderText("시작일 YYYY-MM-DD")
         self.txt_end = QLineEdit()
         self.txt_end.setPlaceholderText("종료일 YYYY-MM-DD")
-        for widget in (self.txt_search, self.txt_notes, self.txt_publisher, self.txt_tag, self.txt_start, self.txt_end):
+        for widget in (
+            self.txt_search,
+            self.txt_notes,
+            self.txt_publisher,
+            self.txt_tag,
+            self.txt_start,
+            self.txt_end,
+        ):
             layout.addWidget(widget)
         row = QHBoxLayout()
         self.chk_bookmark = QCheckBox("북마크만")
@@ -121,14 +129,20 @@ class ArchiveSearchDialog(QDialog):
     def load_page(self) -> None:
         try:
             criteria = self._criteria()
-            self.total = self.db.count_archive(**{k: v for k, v in criteria.items() if k != "sort_mode"})
-            rows = self.db.search_archive(**criteria, limit=self.limit, offset=self.offset)
+            self.total = self.db.count_archive(
+                **{k: v for k, v in criteria.items() if k != "sort_mode"}
+            )
+            rows = self.db.search_archive(
+                **criteria, limit=self.limit, offset=self.offset
+            )
         except Exception as exc:
             QMessageBox.warning(self, "아카이브 검색", f"검색에 실패했습니다.\n\n{exc}")
             return
         self.result_list.clear()
         for row in rows:
-            publisher = canonical_publisher(row.get("publisher", ""), self.publisher_aliases)
+            publisher = canonical_publisher(
+                row.get("publisher", ""), self.publisher_aliases
+            )
             state = "읽음" if row.get("is_read") else "안읽음"
             bookmark = " ★" if row.get("is_bookmarked") else ""
             deleted = " [삭제됨]" if int(row.get("is_deleted", 0) or 0) else ""
@@ -168,15 +182,21 @@ class ArchiveSearchDialog(QDialog):
             return
         link = _normalized_http_url(str(row.get("link", "") or ""))
         if not link:
-            QMessageBox.warning(self, "아카이브 검색", "열 수 있는 http/https 링크가 없습니다.")
+            QMessageBox.warning(
+                self, "아카이브 검색", "열 수 있는 http/https 링크가 없습니다."
+            )
             return
         if not QDesktopServices.openUrl(QUrl(link)):
-            QMessageBox.warning(self, "아카이브 검색", "브라우저에서 링크를 열지 못했습니다.")
+            QMessageBox.warning(
+                self, "아카이브 검색", "브라우저에서 링크를 열지 못했습니다."
+            )
             return
         try:
             self.db.update_status(link, "is_read", 1)
         except Exception as exc:
-            QMessageBox.warning(self, "아카이브 검색", f"읽음 처리에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "아카이브 검색", f"읽음 처리에 실패했습니다.\n\n{exc}"
+            )
             return
         self._reload_after_action()
 
@@ -190,7 +210,9 @@ class ArchiveSearchDialog(QDialog):
             self.db.update_status(link, "is_bookmarked", next_value)
             self._reload_after_action()
         except Exception as exc:
-            QMessageBox.warning(self, "아카이브 검색", f"북마크 변경에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "아카이브 검색", f"북마크 변경에 실패했습니다.\n\n{exc}"
+            )
 
     def toggle_read(self) -> None:
         row = self._selected_row()
@@ -202,7 +224,9 @@ class ArchiveSearchDialog(QDialog):
             self.db.update_status(link, "is_read", next_value)
             self._reload_after_action()
         except Exception as exc:
-            QMessageBox.warning(self, "아카이브 검색", f"읽음 상태 변경에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "아카이브 검색", f"읽음 상태 변경에 실패했습니다.\n\n{exc}"
+            )
 
     def edit_note(self) -> None:
         row = self._selected_row()
@@ -222,9 +246,13 @@ class ArchiveSearchDialog(QDialog):
                 self.db.update_status(link, "notes", note_value)
             self._reload_after_action()
             if note_truncated:
-                QMessageBox.information(self, "메모 편집", "메모가 10,000자로 잘려 저장되었습니다.")
+                QMessageBox.information(
+                    self, "메모 편집", "메모가 10,000자로 잘려 저장되었습니다."
+                )
         except Exception as exc:
-            QMessageBox.warning(self, "아카이브 검색", f"메모 저장에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "아카이브 검색", f"메모 저장에 실패했습니다.\n\n{exc}"
+            )
 
     def edit_tags(self) -> None:
         row = self._selected_row()
@@ -237,14 +265,18 @@ class ArchiveSearchDialog(QDialog):
                 current_tags = tags_to_csv(self.db.get_tags(link))
             except Exception:
                 current_tags = ""
-        text, ok = QInputDialog.getText(self, "태그 편집", "태그(쉼표 구분):", text=str(current_tags or ""))
+        text, ok = QInputDialog.getText(
+            self, "태그 편집", "태그(쉼표 구분):", text=str(current_tags or "")
+        )
         if not ok:
             return
         try:
             self.db.set_tags(link, normalize_tags(text))
             self._reload_after_action()
         except Exception as exc:
-            QMessageBox.warning(self, "아카이브 검색", f"태그 저장에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "아카이브 검색", f"태그 저장에 실패했습니다.\n\n{exc}"
+            )
 
     def restore_deleted(self) -> None:
         row = self._selected_row()
@@ -256,11 +288,15 @@ class ArchiveSearchDialog(QDialog):
         try:
             restore = getattr(self.db, "restore_deleted_link", None)
             if not callable(restore) or not restore(link):
-                QMessageBox.warning(self, "아카이브 검색", "복구할 삭제 기사를 찾지 못했습니다.")
+                QMessageBox.warning(
+                    self, "아카이브 검색", "복구할 삭제 기사를 찾지 못했습니다."
+                )
                 return
             self._reload_after_action()
         except Exception as exc:
-            QMessageBox.warning(self, "아카이브 검색", f"기사 복구에 실패했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "아카이브 검색", f"기사 복구에 실패했습니다.\n\n{exc}"
+            )
 
     def show_context_menu(self, pos) -> None:
         if self.result_list.itemAt(pos) is None:
@@ -287,5 +323,6 @@ class ArchiveSearchDialog(QDialog):
             self.edit_tags()
         elif action_restore is not None and selected == action_restore:
             self.restore_deleted()
+
 
 __all__ = ["ArchiveSearchDialog"]

@@ -1,4 +1,3 @@
-
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -26,7 +25,7 @@ class _NewsReadMaintenanceMixin:
         updated_count = 0
         chunk_size = 400
         for idx in range(0, len(deduped_links), chunk_size):
-            chunk = deduped_links[idx: idx + chunk_size]
+            chunk = deduped_links[idx : idx + chunk_size]
             placeholders = ",".join(["?"] * len(chunk))
             now_ts = datetime.now().timestamp()
             cursor = conn.execute(
@@ -84,19 +83,24 @@ class _NewsReadMaintenanceMixin:
 
         append_visibility = getattr(self, "_append_visibility_filter_clause", None)
         if callable(append_visibility):
-            scope_query += cast(str, append_visibility(
-                params,
-                blocked_publishers=blocked_publishers,
-                preferred_publishers=preferred_publishers,
-                only_preferred_publishers=only_preferred_publishers,
-                tag_filter=tag_filter,
-            ))
+            scope_query += cast(
+                str,
+                append_visibility(
+                    params,
+                    blocked_publishers=blocked_publishers,
+                    preferred_publishers=preferred_publishers,
+                    only_preferred_publishers=only_preferred_publishers,
+                    tag_filter=tag_filter,
+                ),
+            )
 
         append_text_filter = getattr(self, "_append_text_filter_clause", None)
         if callable(append_text_filter):
             scope_query += cast(str, append_text_filter(params, filter_txt))
         elif filter_txt:
-            scope_query += " AND (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+            scope_query += (
+                " AND (n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+            )
             wildcard = self._like_contains(filter_txt)
             params.extend([wildcard, wildcard])
 
@@ -114,15 +118,21 @@ class _NewsReadMaintenanceMixin:
                 scope_query += " AND n.pubDate_ts >= ?"
                 params.append(s_ts)
             except ValueError:
-                logger.warning("Invalid start_date format for mark_query_as_read: %s", start_date)
+                logger.warning(
+                    "Invalid start_date format for mark_query_as_read: %s", start_date
+                )
 
         if end_date:
             try:
-                e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                e_ts = (
+                    datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                ).timestamp()
                 scope_query += " AND n.pubDate_ts < ?"
                 params.append(e_ts)
             except ValueError:
-                logger.warning("Invalid end_date format for mark_query_as_read: %s", end_date)
+                logger.warning(
+                    "Invalid end_date format for mark_query_as_read: %s", end_date
+                )
 
         return scope_query, params
 
@@ -284,9 +294,7 @@ class _NewsReadMaintenanceMixin:
             )
             conn.execute("DELETE FROM temp_mark_query_seen_links")
             batch_query = (
-                "SELECT scoped.link FROM ("
-                + scope_query
-                + ") AS scoped "
+                "SELECT scoped.link FROM (" + scope_query + ") AS scoped "
                 "WHERE NOT EXISTS ("
                 "SELECT 1 FROM temp_mark_query_seen_links seen WHERE seen.link = scoped.link"
                 ") "

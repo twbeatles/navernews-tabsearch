@@ -27,17 +27,24 @@ class _AutoBackupRestoreDeleteMixin:
         try:
             target_pending_file = pending_file or self.pending_restore_file
             backup_name = str(backup_name or "").strip()
-            valid, backup_path, reason = _safe_backup_child_dir(self.backup_dir, backup_name)
+            valid, backup_path, reason = _safe_backup_child_dir(
+                self.backup_dir, backup_name
+            )
             if not valid:
                 logger.error("복원 예약 실패: %s", reason)
                 return False
             if not os.path.isdir(backup_path):
-                logger.error("복원 예약 실패: 백업 디렉터리를 찾을 수 없습니다 (%s)", backup_path)
+                logger.error(
+                    "복원 예약 실패: 백업 디렉터리를 찾을 수 없습니다 (%s)", backup_path
+                )
                 return False
             try:
                 os.listdir(backup_path)
             except OSError as access_error:
-                logger.error("복원 예약 실패: 백업 디렉터리에 접근할 수 없습니다 (%s)", access_error)
+                logger.error(
+                    "복원 예약 실패: 백업 디렉터리에 접근할 수 없습니다 (%s)",
+                    access_error,
+                )
                 return False
             payload = {
                 "backup_name": backup_name,
@@ -72,7 +79,9 @@ class _AutoBackupRestoreDeleteMixin:
         if not backup_name:
             return False, "백업 이름이 비어 있습니다."
 
-        valid, backup_path, reason = _safe_backup_child_dir(self.backup_dir, backup_name)
+        valid, backup_path, reason = _safe_backup_child_dir(
+            self.backup_dir, backup_name
+        )
         if not valid:
             return False, reason
         if not os.path.exists(backup_path):
@@ -91,7 +100,9 @@ class _AutoBackupRestoreDeleteMixin:
         """오프라인 복원용 즉시 복원 API (UI에서는 schedule_restore 사용 권장)."""
         try:
             backup_name = str(backup_name or "").strip()
-            valid, backup_path, reason = _safe_backup_child_dir(self.backup_dir, backup_name)
+            valid, backup_path, reason = _safe_backup_child_dir(
+                self.backup_dir, backup_name
+            )
             if not valid:
                 logger.error("백업 복원 실패: %s", reason)
                 return False

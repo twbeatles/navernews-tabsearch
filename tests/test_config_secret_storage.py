@@ -30,9 +30,13 @@ class TestConfigSecretStorage(unittest.TestCase):
             "client_secret_enc": "",
             "client_secret_storage": "plain",
         }
-        with mock.patch("core.config_store_support.secrets._is_windows_platform", return_value=False):
+        with mock.patch(
+            "core.config_store_support.secrets._is_windows_platform", return_value=False
+        ):
             self.assertTrue(should_warn_plain_client_secret_storage(settings))
-        with mock.patch("core.config_store_support.secrets._is_windows_platform", return_value=True):
+        with mock.patch(
+            "core.config_store_support.secrets._is_windows_platform", return_value=True
+        ):
             self.assertFalse(should_warn_plain_client_secret_storage(settings))
 
     def test_encode_client_secret_plain_off_windows(self):
@@ -50,7 +54,9 @@ class TestConfigSecretStorage(unittest.TestCase):
             "client_secret_storage": "dpapi",
         }
         with mock.patch("core.config_store._is_windows_platform", return_value=True):
-            with mock.patch("core.config_store._dpapi_decrypt_text", return_value="decrypted"):
+            with mock.patch(
+                "core.config_store._dpapi_decrypt_text", return_value="decrypted"
+            ):
                 secret, needs_migration = resolve_client_secret_for_runtime(settings)
 
         self.assertEqual(secret, "decrypted")
@@ -84,8 +90,12 @@ class TestConfigSecretStorage(unittest.TestCase):
             payload["app_settings"]["client_secret_storage"] = "plain"
             save_config_file_atomic(str(cfg_path), payload)
 
-            with mock.patch("core.config_store._is_windows_platform", return_value=True):
-                with mock.patch("core.config_store._dpapi_encrypt_text", return_value="ENC_PAYLOAD"):
+            with mock.patch(
+                "core.config_store._is_windows_platform", return_value=True
+            ):
+                with mock.patch(
+                    "core.config_store._dpapi_encrypt_text", return_value="ENC_PAYLOAD"
+                ):
                     loaded = load_config_file(str(cfg_path))
 
             app_settings = loaded["app_settings"]

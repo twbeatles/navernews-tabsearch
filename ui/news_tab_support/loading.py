@@ -1,4 +1,3 @@
-
 """Compatibility facade for NewsTab loading mixins."""
 
 from ui.news_tab_support.loading_support import (

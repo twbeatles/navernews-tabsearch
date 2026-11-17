@@ -32,7 +32,9 @@ class ClosableMockSession:
 def test_api_worker_closes_owned_session_on_successful_run(tmp_path):
     mock_session = ClosableMockSession(200, {"items": [], "total": 0})
     db_mock = MagicMock()
-    db_mock.upsert_news_detailed.return_value = MagicMock(added_count=0, duplicate_count=0, new_links=())
+    db_mock.upsert_news_detailed.return_value = MagicMock(
+        added_count=0, duplicate_count=0, new_links=()
+    )
 
     worker = ApiWorker(
         client_id="test_client_id_12345",
@@ -52,7 +54,9 @@ def test_api_worker_closes_owned_session_on_successful_run(tmp_path):
 
 
 def test_api_worker_closes_owned_session_on_http_error(tmp_path):
-    mock_session = ClosableMockSession(401, {"errorCode": "024", "errorMessage": "Authentication failed"})
+    mock_session = ClosableMockSession(
+        401, {"errorCode": "024", "errorMessage": "Authentication failed"}
+    )
     db_mock = MagicMock()
 
     worker = ApiWorker(
@@ -74,7 +78,9 @@ def test_api_worker_closes_owned_session_on_http_error(tmp_path):
 def test_api_worker_does_not_close_unowned_session(tmp_path):
     mock_session = ClosableMockSession(200, {"items": [], "total": 0})
     db_mock = MagicMock()
-    db_mock.upsert_news_detailed.return_value = MagicMock(added_count=0, duplicate_count=0, new_links=())
+    db_mock.upsert_news_detailed.return_value = MagicMock(
+        added_count=0, duplicate_count=0, new_links=()
+    )
 
     worker = ApiWorker(
         client_id="test_client_id_12345",

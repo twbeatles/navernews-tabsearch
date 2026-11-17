@@ -44,7 +44,9 @@ CLEAN_ALL_LABEL = "모든 기사 삭제"
 class _SettingsDialogTasksMixin:
     def _runtime_paths(self: SettingsDialog) -> RuntimePaths:
         parent = self._typed_parent()
-        runtime_paths = getattr(parent, "runtime_paths", None) if parent is not None else None
+        runtime_paths = (
+            getattr(parent, "runtime_paths", None) if parent is not None else None
+        )
         if isinstance(runtime_paths, RuntimePaths):
             return runtime_paths
         return RUNTIME_PATHS
@@ -91,7 +93,9 @@ class _SettingsDialogTasksMixin:
             }
             if 300 <= int(response.status_code) < 400:
                 payload["error_kind"] = "redirect_error"
-                payload["error_message"] = "API 검증 응답이 리다이렉트를 반환해 중단했습니다."
+                payload["error_message"] = (
+                    "API 검증 응답이 리다이렉트를 반환해 중단했습니다."
+                )
                 return payload
             if response.status_code != 200:
                 status_code = int(response.status_code)
@@ -210,7 +214,9 @@ class _SettingsDialogTasksMixin:
             return
 
         if self._api_validate_worker and self._api_validate_worker.isRunning():
-            QMessageBox.information(self, "진행 중", "이미 API 키 검증이 진행 중입니다.")
+            QMessageBox.information(
+                self, "진행 중", "이미 API 키 검증이 진행 중입니다."
+            )
             return
 
         self.btn_validate.setEnabled(False)
@@ -235,10 +241,14 @@ class _SettingsDialogTasksMixin:
         if self._is_closing or not self.isVisible():
             return
         if int(result.get("status_code", 0)) == 200:
-            QMessageBox.information(self, "검증 성공", "✓ API 키가 정상적으로 작동합니다!")
+            QMessageBox.information(
+                self, "검증 성공", "✓ API 키가 정상적으로 작동합니다!"
+            )
             return
         error_kind = str(result.get("error_kind", "") or "")
-        error_message = str(result.get("error_message", "알 수 없는 오류") or "알 수 없는 오류")
+        error_message = str(
+            result.get("error_message", "알 수 없는 오류") or "알 수 없는 오류"
+        )
         if error_kind == "timeout":
             QMessageBox.warning(
                 self,
@@ -298,9 +308,7 @@ class _SettingsDialogTasksMixin:
         if not total:
             return ""
         if retention_days <= 0:
-            return (
-                f"\n\n삭제 기록 {total:,}건은 '영구 보존' 설정이라 그대로 남습니다."
-            )
+            return f"\n\n삭제 기록 {total:,}건은 '영구 보존' 설정이라 그대로 남습니다."
         kept = max(0, total - reclaimable)
         lines = [f"\n\n삭제 기록 {total:,}건 중 {reclaimable:,}건을 함께 정리합니다."]
         if kept:
@@ -350,8 +358,7 @@ class _SettingsDialogTasksMixin:
             "⚠ 경고",
             "정말 모든 기사를 삭제하시겠습니까?\n\n"
             "이 작업은 취소할 수 없습니다.\n"
-            "(북마크된 기사는 삭제되지 않습니다)"
-            + self._tombstone_cleanup_notice(),
+            "(북마크된 기사는 삭제되지 않습니다)" + self._tombstone_cleanup_notice(),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -401,15 +408,21 @@ class _SettingsDialogTasksMixin:
             finally:
                 db.close()
 
-        self._start_data_task(job_func, self._on_optimize_database_done, "optimize_database")
+        self._start_data_task(
+            job_func, self._on_optimize_database_done, "optimize_database"
+        )
 
     def repair_duplicate_flags(self: SettingsDialog):
-        if QMessageBox.question(
-            self, "중복 표시 복구",
-            "저장된 기사의 중복 표시를 다시 계산하시겠습니까?\n기사는 삭제하지 않으며, 작업 중에는 조회와 수집이 중지됩니다.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        ) != QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "중복 표시 복구",
+                "저장된 기사의 중복 표시를 다시 계산하시겠습니까?\n기사는 삭제하지 않으며, 작업 중에는 조회와 수집이 중지됩니다.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
             return
 
         def repair(context) -> int:
@@ -421,7 +434,9 @@ class _SettingsDialogTasksMixin:
                 db.close()
 
         def done(result):
-            setattr(self, "_pending_parent_data_change", ("repair_duplicates", int(result)))  # noqa: B010 -- dynamic dialog state; intentionally undeclared on SettingsDialog (pyright-checked), read via getattr sentinel
+            setattr(  # noqa: B010 -- dynamic dialog state; intentionally undeclared on SettingsDialog (pyright-checked), read via getattr sentinel
+                self, "_pending_parent_data_change", ("repair_duplicates", int(result))
+            )
             if not self._is_closing:
                 QMessageBox.information(self, "완료", "중복 표시를 복구했습니다.")
 
@@ -433,7 +448,9 @@ class _SettingsDialogTasksMixin:
         if callable(import_csv):
             import_csv()
             return
-        QMessageBox.warning(self, "CSV 가져오기", "현재 창에서는 CSV 가져오기를 사용할 수 없습니다.")
+        QMessageBox.warning(
+            self, "CSV 가져오기", "현재 창에서는 CSV 가져오기를 사용할 수 없습니다."
+        )
 
     def _start_data_task(
         self: SettingsDialog,
@@ -444,7 +461,9 @@ class _SettingsDialogTasksMixin:
         if self._is_closing:
             return
         if self._data_task_worker and self._data_task_worker.isRunning():
-            QMessageBox.information(self, "진행 중", "이미 데이터 정리 작업이 진행 중입니다.")
+            QMessageBox.information(
+                self, "진행 중", "이미 데이터 정리 작업이 진행 중입니다."
+            )
             return
 
         maintenance_active = False
@@ -459,7 +478,8 @@ class _SettingsDialogTasksMixin:
                 QMessageBox.warning(
                     self,
                     "유지보수 시작 실패",
-                    reason or "활성 새로고침 작업을 정리하지 못해 데이터 정리를 시작할 수 없습니다.",
+                    reason
+                    or "활성 새로고침 작업을 정리하지 못해 데이터 정리를 시작할 수 없습니다.",
                 )
                 return
             maintenance_active = True
@@ -491,7 +511,9 @@ class _SettingsDialogTasksMixin:
         setattr(self, "_pending_parent_data_change", ("delete_old_news", count))  # noqa: B010 -- dynamic dialog state; intentionally undeclared on SettingsDialog (pyright-checked), read via getattr sentinel
         if self._is_closing or not self.isVisible():
             return
-        QMessageBox.information(self, "완료", f"✓ {count:,}개의 오래된 기사를 삭제했습니다.")
+        QMessageBox.information(
+            self, "완료", f"✓ {count:,}개의 오래된 기사를 삭제했습니다."
+        )
 
     def _on_clean_all_done(self: SettingsDialog, result: Any):
         count = int(result)
@@ -510,7 +532,9 @@ class _SettingsDialogTasksMixin:
         setattr(self, "_pending_parent_data_change", None)  # noqa: B010 -- dynamic dialog state; intentionally undeclared on SettingsDialog (pyright-checked), read via getattr sentinel
         if self._is_closing or not self.isVisible():
             return
-        QMessageBox.critical(self, "작업 오류", f"데이터 작업 중 오류가 발생했습니다:\n\n{error_msg}")
+        QMessageBox.critical(
+            self, "작업 오류", f"데이터 작업 중 오류가 발생했습니다:\n\n{error_msg}"
+        )
 
     def _on_data_task_cancelled(self: SettingsDialog):
         setattr(self, "_pending_parent_data_change", None)  # noqa: B010 -- dynamic dialog state; intentionally undeclared on SettingsDialog (pyright-checked), read via getattr sentinel
@@ -520,7 +544,9 @@ class _SettingsDialogTasksMixin:
 
     def _on_data_task_finished(self: SettingsDialog, *_args):
         parent = self._typed_parent()
-        maintenance_active = bool(getattr(self, "_maintenance_active_for_data_task", False))
+        maintenance_active = bool(
+            getattr(self, "_maintenance_active_for_data_task", False)
+        )
         if maintenance_active:
             if parent is not None:
                 try:
@@ -614,17 +640,27 @@ class _SettingsDialogTasksMixin:
         )
 
     def cloud_sync_quarantine_dialog(self: SettingsDialog):
-        sync_dir = self.txt_cloud_sync_dir.text().strip() if hasattr(self, "txt_cloud_sync_dir") else ""
+        sync_dir = (
+            self.txt_cloud_sync_dir.text().strip()
+            if hasattr(self, "txt_cloud_sync_dir")
+            else ""
+        )
         if not sync_dir:
-            QMessageBox.information(self, "클라우드 격리 관리", "먼저 클라우드 동기화 폴더를 선택하세요.")
+            QMessageBox.information(
+                self, "클라우드 격리 관리", "먼저 클라우드 동기화 폴더를 선택하세요."
+            )
             return
         try:
             entries = list_quarantined_snapshots(sync_dir)
         except Exception as exc:
-            QMessageBox.warning(self, "클라우드 격리 관리", f"격리 목록을 읽지 못했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "클라우드 격리 관리", f"격리 목록을 읽지 못했습니다.\n\n{exc}"
+            )
             return
         if not entries:
-            QMessageBox.information(self, "클라우드 격리 관리", "격리된 스냅샷이 없습니다.")
+            QMessageBox.information(
+                self, "클라우드 격리 관리", "격리된 스냅샷이 없습니다."
+            )
             return
         labels = [
             f"{entry.get('original_name') or entry['name']} — {entry.get('reason') or '이유 없음'}"
@@ -644,13 +680,18 @@ class _SettingsDialogTasksMixin:
         try:
             validation = revalidate_quarantined_snapshot(sync_dir, entry["name"])
             if bool(validation.get("valid")):
-                if QMessageBox.question(
-                    self,
-                    "클라우드 격리 관리",
-                    "스냅샷 검증에 성공했습니다. 원래 위치로 복구할까요?",
-                ) == QMessageBox.StandardButton.Yes:
+                if (
+                    QMessageBox.question(
+                        self,
+                        "클라우드 격리 관리",
+                        "스냅샷 검증에 성공했습니다. 원래 위치로 복구할까요?",
+                    )
+                    == QMessageBox.StandardButton.Yes
+                ):
                     restored = restore_quarantined_snapshot(sync_dir, entry["name"])
-                    QMessageBox.information(self, "클라우드 격리 관리", f"복구했습니다.\n{restored}")
+                    QMessageBox.information(
+                        self, "클라우드 격리 관리", f"복구했습니다.\n{restored}"
+                    )
                     return
             else:
                 QMessageBox.warning(
@@ -658,15 +699,22 @@ class _SettingsDialogTasksMixin:
                     "클라우드 격리 관리",
                     f"여전히 유효하지 않은 스냅샷입니다.\n\n{validation.get('reason', '')}",
                 )
-            if QMessageBox.question(
-                self,
-                "클라우드 격리 관리",
-                "이 격리 항목을 영구 삭제할까요?",
-            ) == QMessageBox.StandardButton.Yes:
+            if (
+                QMessageBox.question(
+                    self,
+                    "클라우드 격리 관리",
+                    "이 격리 항목을 영구 삭제할까요?",
+                )
+                == QMessageBox.StandardButton.Yes
+            ):
                 delete_quarantined_snapshot(sync_dir, entry["name"])
-                QMessageBox.information(self, "클라우드 격리 관리", "격리 항목을 삭제했습니다.")
+                QMessageBox.information(
+                    self, "클라우드 격리 관리", "격리 항목을 삭제했습니다."
+                )
         except Exception as exc:
-            QMessageBox.warning(self, "클라우드 격리 관리", f"작업을 완료하지 못했습니다.\n\n{exc}")
+            QMessageBox.warning(
+                self, "클라우드 격리 관리", f"작업을 완료하지 못했습니다.\n\n{exc}"
+            )
 
     def show_log_dialog(self: SettingsDialog):
         parent = self._typed_parent()

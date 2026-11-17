@@ -27,6 +27,7 @@ from ui.main_window_io_support.exports import _dialogs_for
 logger = logging.getLogger(__name__)
 EXPORT_CHUNK_SIZE = 500
 
+
 class _MainWindowSettingsDialogsMixin:
     def _build_current_settings_dialog_config(self: MainApp) -> Dict[str, Any]:
         return {
@@ -48,10 +49,17 @@ class _MainWindowSettingsDialogsMixin:
             "preferred_publishers": getattr(self, "preferred_publishers", []),
             "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
             "cloud_sync_dir": str(getattr(self, "cloud_sync_dir", "") or ""),
-            "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
-            "tombstone_retention_days": int(getattr(self, "tombstone_retention_days", 90) or 0),
-            "cloud_sync_last_status": str(getattr(self, "_cloud_sync_last_status", "") or ""),
+            "cloud_sync_interval_minutes": int(
+                getattr(self, "cloud_sync_interval_minutes", 30) or 30
+            ),
+            "tombstone_retention_days": int(
+                getattr(self, "tombstone_retention_days", 90) or 0
+            ),
+            "cloud_sync_last_status": str(
+                getattr(self, "_cloud_sync_last_status", "") or ""
+            ),
         }
+
     def refresh_bookmark_tab(self: MainApp):
         """Reload the bookmark tab."""
         should_block_db_action = getattr(self, "should_block_db_action", None)
@@ -61,6 +69,7 @@ class _MainWindowSettingsDialogsMixin:
         ):
             return
         self.bm_tab.load_data_from_db()
+
     def _import_refresh_block_reason(
         self: MainApp,
     ) -> str:
@@ -68,6 +77,7 @@ class _MainWindowSettingsDialogsMixin:
         if callable(refresh_block_reason):
             return str(refresh_block_reason("가져온 탭 새로고침") or "")
         return ""
+
     def _maybe_refresh_imported_tabs(
         self: MainApp,
         imported_keywords: List[str],
@@ -84,6 +94,7 @@ class _MainWindowSettingsDialogsMixin:
 
         if self._prompt_refresh_imported_tabs(imported_keywords):
             self.refresh_selected_tabs(imported_keywords)
+
     def export_settings(self: MainApp):
         """Export app settings without API credentials."""
         dialogs = _dialogs_for(self)
@@ -116,18 +127,28 @@ class _MainWindowSettingsDialogsMixin:
                 "blocked_publishers": getattr(self, "blocked_publishers", []),
                 "preferred_publishers": getattr(self, "preferred_publishers", []),
                 "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
-                "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
-                "tombstone_retention_days": int(getattr(self, "tombstone_retention_days", 90) or 0),
+                "cloud_sync_interval_minutes": int(
+                    getattr(self, "cloud_sync_interval_minutes", 30) or 30
+                ),
+                "tombstone_retention_days": int(
+                    getattr(self, "tombstone_retention_days", 90) or 0
+                ),
             },
-            "tabs": [tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)],
+            "tabs": [
+                tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)
+            ],
             "keyword_groups": self.keyword_group_manager.groups,
             "search_history": self.search_history,
             "pagination_state": self._fetch_cursor_by_key,
             "pagination_totals": self._fetch_total_by_key,
             "saved_searches": getattr(self, "saved_searches", {}),
             "tab_refresh_policies": getattr(self, "tab_refresh_policies", {}),
-            "automation_rules": normalize_automation_rules(getattr(self, "automation_rules", [])),
-            "publisher_aliases": normalize_publisher_aliases(getattr(self, "publisher_aliases", {})),
+            "automation_rules": normalize_automation_rules(
+                getattr(self, "automation_rules", [])
+            ),
+            "publisher_aliases": normalize_publisher_aliases(
+                getattr(self, "publisher_aliases", {})
+            ),
             "window_geometry": {
                 "x": self.x(),
                 "y": self.y(),
@@ -153,6 +174,7 @@ class _MainWindowSettingsDialogsMixin:
             )
         except Exception as e:
             dialogs.warning(self, "오류", f"설정 내보내기 오류:\n{e}")
+
     def _prompt_refresh_imported_tabs(
         self: MainApp,
         imported_keywords: List[str],
@@ -166,13 +188,18 @@ class _MainWindowSettingsDialogsMixin:
             "새 탭 새로고침",
             f"설정 가져오기로 {label}이 추가되었습니다.\n지금 새로고침할까요?",
         )
+
     def _reconcile_startup_state_from_import(
         self: MainApp,
         normalized_settings: Dict[str, Any],
         import_warnings: List[str],
     ) -> None:
-        requested_auto_start = bool(normalized_settings.get("auto_start_enabled", False))
-        requested_start_minimized = bool(normalized_settings.get("start_minimized", False))
+        requested_auto_start = bool(
+            normalized_settings.get("auto_start_enabled", False)
+        )
+        requested_start_minimized = bool(
+            normalized_settings.get("start_minimized", False)
+        )
 
         if requested_auto_start and not StartupManager.is_available():
             normalized_settings["auto_start_enabled"] = False
@@ -190,33 +217,54 @@ class _MainWindowSettingsDialogsMixin:
         if requested_auto_start:
             if StartupManager.enable_startup(requested_start_minimized):
                 status = StartupManager.get_startup_status(requested_start_minimized)
-                normalized_settings["auto_start_enabled"] = bool(status.get("is_healthy", False))
+                normalized_settings["auto_start_enabled"] = bool(
+                    status.get("is_healthy", False)
+                )
                 if normalized_settings["auto_start_enabled"]:
                     return
-                import_warnings.append("자동 시작 등록은 되었지만 현재 상태가 비정상이라 수리가 필요합니다.")
-                self.show_warning_toast("자동 시작 등록 상태가 비정상입니다. 설정에서 수리해 주세요.")
+                import_warnings.append(
+                    "자동 시작 등록은 되었지만 현재 상태가 비정상이라 수리가 필요합니다."
+                )
+                self.show_warning_toast(
+                    "자동 시작 등록 상태가 비정상입니다. 설정에서 수리해 주세요."
+                )
                 return
-            normalized_settings["auto_start_enabled"] = StartupManager.get_startup_status(
-                requested_start_minimized
-            ).get("is_healthy", False)
-            import_warnings.append("자동 시작 설정을 시스템에 적용하지 못해 현재 상태를 유지했습니다.")
-            self.show_warning_toast("자동 시작 설정 적용에 실패해 시스템 상태를 유지했습니다.")
+            normalized_settings["auto_start_enabled"] = (
+                StartupManager.get_startup_status(requested_start_minimized).get(
+                    "is_healthy", False
+                )
+            )
+            import_warnings.append(
+                "자동 시작 설정을 시스템에 적용하지 못해 현재 상태를 유지했습니다."
+            )
+            self.show_warning_toast(
+                "자동 시작 설정 적용에 실패해 시스템 상태를 유지했습니다."
+            )
             return
 
         if StartupManager.disable_startup():
             status = StartupManager.get_startup_status(False)
-            normalized_settings["auto_start_enabled"] = bool(status.get("is_healthy", False))
+            normalized_settings["auto_start_enabled"] = bool(
+                status.get("is_healthy", False)
+            )
             if not status.get("has_registry_value", False):
                 return
-            import_warnings.append("자동 시작 항목이 남아 있어 완전히 해제되지 않았습니다.")
-            self.show_warning_toast("자동 시작 항목이 남아 있습니다. 설정에서 다시 확인해 주세요.")
+            import_warnings.append(
+                "자동 시작 항목이 남아 있어 완전히 해제되지 않았습니다."
+            )
+            self.show_warning_toast(
+                "자동 시작 항목이 남아 있습니다. 설정에서 다시 확인해 주세요."
+            )
             return
 
         normalized_settings["auto_start_enabled"] = bool(
             StartupManager.get_startup_status(False).get("is_healthy", False)
         )
-        import_warnings.append("자동 시작 해제를 시스템에 적용하지 못해 현재 상태를 유지했습니다.")
+        import_warnings.append(
+            "자동 시작 해제를 시스템에 적용하지 못해 현재 상태를 유지했습니다."
+        )
         self.show_warning_toast("자동 시작 해제에 실패해 시스템 상태를 유지했습니다.")
+
     def import_settings(self: MainApp):
         """Import settings JSON and merge user-state fields conservatively."""
         dialogs = _dialogs_for(self)
@@ -250,14 +298,22 @@ class _MainWindowSettingsDialogsMixin:
             except Exception:
                 added_keywords = list(stage.get("applied_new_keywords", added_keywords))
                 try:
-                    save_primary_config_file(config_path, runtime_snapshot["config_payload"])
+                    save_primary_config_file(
+                        config_path, runtime_snapshot["config_payload"]
+                    )
                 except Exception as rollback_save_error:
-                    logger.error("Import config rollback failed: %s", rollback_save_error)
+                    logger.error(
+                        "Import config rollback failed: %s", rollback_save_error
+                    )
                 self._rollback_import_runtime_state(runtime_snapshot, added_keywords)
                 raise
 
-            self._reconcile_startup_state_from_import(normalized_settings, import_warnings)
-            corrected_auto_start = bool(normalized_settings.get("auto_start_enabled", self.auto_start_enabled))
+            self._reconcile_startup_state_from_import(
+                normalized_settings, import_warnings
+            )
+            corrected_auto_start = bool(
+                normalized_settings.get("auto_start_enabled", self.auto_start_enabled)
+            )
             if self.auto_start_enabled != corrected_auto_start:
                 self.auto_start_enabled = corrected_auto_start
                 corrected_config = self._build_runtime_config_payload(
@@ -268,7 +324,9 @@ class _MainWindowSettingsDialogsMixin:
             msg = "설정을 가져왔습니다."
             if imported_new_keywords:
                 msg += f" ({len(imported_new_keywords)}개 탭 추가)"
-            saved_search_import_count = int(stage.get("saved_search_import_count", 0) or 0)
+            saved_search_import_count = int(
+                stage.get("saved_search_import_count", 0) or 0
+            )
             tab_policy_import_count = int(stage.get("tab_policy_import_count", 0) or 0)
             if saved_search_import_count > 0:
                 msg += f" / 저장 검색 {saved_search_import_count}개 병합"
@@ -281,13 +339,16 @@ class _MainWindowSettingsDialogsMixin:
                 msg += f" / 보정 {len(import_warnings)}건"
             self.show_toast(msg)
 
-            maybe_refresh_imported_tabs = getattr(self, "_maybe_refresh_imported_tabs", None)
+            maybe_refresh_imported_tabs = getattr(
+                self, "_maybe_refresh_imported_tabs", None
+            )
             if callable(maybe_refresh_imported_tabs):
                 maybe_refresh_imported_tabs(imported_new_keywords)
             elif self._prompt_refresh_imported_tabs(imported_new_keywords):
                 self.refresh_selected_tabs(imported_new_keywords)
         except Exception as e:
             dialogs.warning(self, "오류", f"설정 가져오기 오류:\n{e}")
+
     def show_help(self: MainApp):
         """Open the Settings dialog directly on the help tab."""
         dlg = SettingsDialog(
@@ -297,6 +358,7 @@ class _MainWindowSettingsDialogsMixin:
             help_mode=True,
         )
         dlg.exec()
+
     def open_settings(self: MainApp):
         """Open the main settings dialog."""
         dlg = SettingsDialog(self._build_current_settings_dialog_config(), self)
@@ -315,11 +377,17 @@ class _MainWindowSettingsDialogsMixin:
         self.api_timeout = data.get("api_timeout", 15)
         self.cloud_sync_enabled = bool(data.get("cloud_sync_enabled", True))
         self.cloud_sync_dir = str(data.get("cloud_sync_dir", "") or "")
-        self.cloud_sync_interval_minutes = int(data.get("cloud_sync_interval_minutes", 30) or 30)
-        self.tombstone_retention_days = int(data.get("tombstone_retention_days", 90) or 0)
-        self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
-            data.get("blocked_publishers", []),
-            data.get("preferred_publishers", []),
+        self.cloud_sync_interval_minutes = int(
+            data.get("cloud_sync_interval_minutes", 30) or 30
+        )
+        self.tombstone_retention_days = int(
+            data.get("tombstone_retention_days", 90) or 0
+        )
+        self.blocked_publishers, self.preferred_publishers = (
+            normalize_publisher_filter_lists(
+                data.get("blocked_publishers", []),
+                data.get("preferred_publishers", []),
+            )
         )
 
         self.minimize_to_tray = data.get("minimize_to_tray", True)
@@ -327,7 +395,9 @@ class _MainWindowSettingsDialogsMixin:
         prev_start_minimized = self.start_minimized
         new_start_minimized = data.get("start_minimized", False)
         if new_start_minimized and not getattr(self, "tray", None):
-            logger.warning("start_minimized requested without tray support; forcing False")
+            logger.warning(
+                "start_minimized requested without tray support; forcing False"
+            )
             new_start_minimized = False
             self.show_warning_toast(
                 "트레이를 사용할 수 없어 '시작 시 최소화' 옵션은 해제되었습니다."
@@ -350,10 +420,14 @@ class _MainWindowSettingsDialogsMixin:
                         else:
                             self.show_success_toast("자동 시작 옵션을 갱신했습니다.")
                     else:
-                        self.show_warning_toast("자동 시작 등록은 되었지만 상태가 비정상입니다. 설정에서 수리해 주세요.")
+                        self.show_warning_toast(
+                            "자동 시작 등록은 되었지만 상태가 비정상입니다. 설정에서 수리해 주세요."
+                        )
                 else:
                     self.auto_start_enabled = bool(
-                        StartupManager.get_startup_status(new_start_minimized).get("is_healthy", False)
+                        StartupManager.get_startup_status(new_start_minimized).get(
+                            "is_healthy", False
+                        )
                     )
                     self.show_error_toast("자동 시작 설정에 실패했습니다.")
                     logger.error("Failed to enable startup")
@@ -364,26 +438,40 @@ class _MainWindowSettingsDialogsMixin:
                     if not status.get("has_registry_value", False):
                         self.show_success_toast("자동 시작을 해제했습니다.")
                     else:
-                        self.show_warning_toast("자동 시작 항목이 남아 있습니다. 설정에서 다시 확인해 주세요.")
+                        self.show_warning_toast(
+                            "자동 시작 항목이 남아 있습니다. 설정에서 다시 확인해 주세요."
+                        )
                 else:
                     self.auto_start_enabled = bool(
-                        StartupManager.get_startup_status(False).get("is_healthy", False)
+                        StartupManager.get_startup_status(False).get(
+                            "is_healthy", False
+                        )
                     )
                     self.show_error_toast("자동 시작 해제에 실패했습니다.")
                     logger.error("Failed to disable startup")
         else:
             if new_auto_start:
                 self.auto_start_enabled = bool(
-                    StartupManager.get_startup_status(new_start_minimized).get("is_healthy", False)
+                    StartupManager.get_startup_status(new_start_minimized).get(
+                        "is_healthy", False
+                    )
                 )
             else:
                 self.auto_start_enabled = False
 
         if self.theme_idx != data["theme"]:
             self.theme_idx = data["theme"]
-            self.setStyleSheet(self._active_app_stylesheet() if hasattr(self, "_active_app_stylesheet") else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT))
+            self.setStyleSheet(
+                self._active_app_stylesheet()
+                if hasattr(self, "_active_app_stylesheet")
+                else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+            )
             for _index, widget in self._iter_news_tabs():
-                widget.theme = self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx
+                widget.theme = (
+                    self._effective_theme_idx()
+                    if hasattr(self, "_effective_theme_idx")
+                    else self.theme_idx
+                )
                 widget.render_html()
 
         self.apply_refresh_interval()

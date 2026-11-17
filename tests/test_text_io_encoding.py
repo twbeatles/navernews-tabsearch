@@ -64,15 +64,21 @@ def _check_file(path: Path) -> list[str]:
         func = node.func
         if isinstance(func, ast.Attribute) and func.attr in {"read_text", "write_text"}:
             if not _has_encoding(node):
-                violations.append(f"{path}:{node.lineno}: .{func.attr}() without encoding=")
+                violations.append(
+                    f"{path}:{node.lineno}: .{func.attr}() without encoding="
+                )
         elif isinstance(func, ast.Name) and func.id in {"open", "fdopen"}:
             mode = _mode_arg(node, 1)
             if not _is_binary_mode(mode) and not _has_encoding(node):
-                violations.append(f"{path}:{node.lineno}: {func.id}() text mode without encoding=")
+                violations.append(
+                    f"{path}:{node.lineno}: {func.id}() text mode without encoding="
+                )
         elif isinstance(func, ast.Attribute) and func.attr == "fdopen":
             mode = _mode_arg(node, 1)
             if not _is_binary_mode(mode) and not _has_encoding(node):
-                violations.append(f"{path}:{node.lineno}: fdopen() text mode without encoding=")
+                violations.append(
+                    f"{path}:{node.lineno}: fdopen() text mode without encoding="
+                )
         elif isinstance(func, ast.Attribute) and func.attr == "open":
             # Path.open(mode) vs ZipFile.open(name): only judge calls whose
             # first positional argument is a mode string literal, plus bare
@@ -80,10 +86,18 @@ def _check_file(path: Path) -> list[str]:
             # (e.g. zf.open(member)) is left to review.
             if not node.args and not any(k.arg == "mode" for k in node.keywords):
                 if not _has_encoding(node):
-                    violations.append(f"{path}:{node.lineno}: .open() without mode/encoding=")
-            elif node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                    violations.append(
+                        f"{path}:{node.lineno}: .open() without mode/encoding="
+                    )
+            elif (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
                 if not _is_binary_mode(node.args[0]) and not _has_encoding(node):
-                    violations.append(f"{path}:{node.lineno}: .open() text mode without encoding=")
+                    violations.append(
+                        f"{path}:{node.lineno}: .open() text mode without encoding="
+                    )
     return violations
 
 
@@ -95,5 +109,6 @@ class TestTextIoEncoding(unittest.TestCase):
         self.assertEqual(
             violations,
             [],
-            msg="Explicit encoding= required (Windows CI defaults to cp1252):\n" + "\n".join(violations),
+            msg="Explicit encoding= required (Windows CI defaults to cp1252):\n"
+            + "\n".join(violations),
         )

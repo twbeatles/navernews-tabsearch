@@ -50,7 +50,9 @@ class _FakeAutoBackup:
     def __init__(self, backup_dir: str, db_file: str, config_file: str | None = None):
         self.backup_dir = backup_dir
         self.db_file = db_file
-        self.config_file = config_file or str(Path(backup_dir) / "news_scraper_config.json")
+        self.config_file = config_file or str(
+            Path(backup_dir) / "news_scraper_config.json"
+        )
         self.calls = []
         self.verify_calls = []
         self.backups = []
@@ -70,10 +72,15 @@ class _FakeAutoBackup:
         if not Path(self.config_file).exists():
             return False, "설정 파일이 없어 복원 가능한 백업을 만들 수 없습니다."
         if include_db and not Path(self.db_file).exists():
-            return False, "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다."
+            return (
+                False,
+                "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다.",
+            )
         return True, ""
 
-    def verify_backup_by_name(self, backup_name: str, require_db: bool = True, persist: bool = False):
+    def verify_backup_by_name(
+        self, backup_name: str, require_db: bool = True, persist: bool = False
+    ):
         self.verify_calls.append((backup_name, bool(require_db)))
         for backup in self.backups:
             current_name = str(backup.get("name", "") or backup.get("backup_name", ""))
@@ -119,13 +126,17 @@ class _DummyDialog:
         self.format_backup_timestamp = BackupDialog.format_backup_timestamp
         self.load_backups = lambda: None
         self.start_backup_verification = mock.Mock()
-        self._backup_item_text = lambda backup: BackupDialog._backup_item_text(cast(Any, self), backup)
-        self._backup_item_meta = lambda backup: BackupDialog._backup_item_meta(cast(Any, self), backup)
-        self._apply_backup_item_state = (
-            lambda item, backup: BackupDialog._apply_backup_item_state(cast(Any, self), item, backup)
+        self._backup_item_text = lambda backup: BackupDialog._backup_item_text(
+            cast(Any, self), backup
         )
-        self._handle_corrupt_backup = (
-            lambda backup_name, corrupt_error: BackupDialog._handle_corrupt_backup(
+        self._backup_item_meta = lambda backup: BackupDialog._backup_item_meta(
+            cast(Any, self), backup
+        )
+        self._apply_backup_item_state = lambda item, backup: (
+            BackupDialog._apply_backup_item_state(cast(Any, self), item, backup)
+        )
+        self._handle_corrupt_backup = lambda backup_name, corrupt_error: (
+            BackupDialog._handle_corrupt_backup(
                 cast(Any, self), backup_name, corrupt_error
             )
         )
@@ -160,10 +171,14 @@ class _FakeDialogAdapter:
 
 class TestBackupRestoreMode(unittest.TestCase):
     def test_restore_backup_uses_include_db_metadata(self):
-        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        auto_backup = _FakeAutoBackup(
+            backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db"
+        )
         dialogs = _FakeDialogAdapter(ask_yes_no_result=True)
         dialog = _DummyDialog(
-            _FakeBackupList(_FakeItem({"backup_name": "backup_meta", "include_db": False})),
+            _FakeBackupList(
+                _FakeItem({"backup_name": "backup_meta", "include_db": False})
+            ),
             auto_backup,
             dialog_adapter=dialogs,
         )
@@ -171,7 +186,9 @@ class TestBackupRestoreMode(unittest.TestCase):
         BackupDialog.restore_backup(cast(Any, dialog))
 
         self.assertEqual(auto_backup.verify_calls, [("backup_meta", False)])
-        self.assertEqual(auto_backup.calls, [("create_backup", False), ("backup_meta", False)])
+        self.assertEqual(
+            auto_backup.calls, [("create_backup", False), ("backup_meta", False)]
+        )
         self.assertEqual(len(dialogs.info_calls), 1)
 
     def test_restore_backup_legacy_fallback_detects_db_file(self):
@@ -196,9 +213,13 @@ class TestBackupRestoreMode(unittest.TestCase):
             BackupDialog.restore_backup(cast(Any, dialog))
 
             self.assertEqual(auto_backup.verify_calls, [(backup_name, True)])
-            self.assertEqual(auto_backup.calls, [("create_backup", True), (backup_name, True)])
+            self.assertEqual(
+                auto_backup.calls, [("create_backup", True), (backup_name, True)]
+            )
 
-    def test_get_backup_list_preserves_legacy_include_db_as_none_and_resolves_db_presence(self):
+    def test_get_backup_list_preserves_legacy_include_db_as_none_and_resolves_db_presence(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             cfg = root / "config.json"
@@ -214,10 +235,14 @@ class TestBackupRestoreMode(unittest.TestCase):
             info_path = Path(backup_path) / "backup_info.json"
             info_payload = json.loads(info_path.read_text(encoding="utf-8"))
             info_payload.pop("include_db", None)
-            info_path.write_text(json.dumps(info_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            info_path.write_text(
+                json.dumps(info_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
             backups = auto_backup.get_backup_list()
-            entry = next(item for item in backups if item["name"] == Path(backup_path).name)
+            entry = next(
+                item for item in backups if item["name"] == Path(backup_path).name
+            )
 
             self.assertIsNone(entry["include_db"])
             self.assertTrue(entry["resolved_include_db"])
@@ -242,16 +267,26 @@ class TestBackupRestoreMode(unittest.TestCase):
             info_payload["verification_state"] = "pending"
             info_payload["verification_error"] = ""
             info_payload.pop("last_verified_at", None)
-            info_path.write_text(json.dumps(info_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            info_path.write_text(
+                json.dumps(info_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
-            verified = auto_backup.verify_backup_by_name(backup_name, require_db=False, persist=True)
+            verified = auto_backup.verify_backup_by_name(
+                backup_name, require_db=False, persist=True
+            )
             persisted = json.loads(info_path.read_text(encoding="utf-8"))
 
             self.assertFalse(persisted["include_db"])
-            self.assertEqual(persisted["verification_state"], verified["verification_state"])
-            self.assertEqual(persisted["verification_error"], verified["verification_error"])
+            self.assertEqual(
+                persisted["verification_state"], verified["verification_state"]
+            )
+            self.assertEqual(
+                persisted["verification_error"], verified["verification_error"]
+            )
             self.assertTrue(persisted["last_verified_at"])
-            self.assertEqual(persisted["last_verified_at"], verified["last_verified_at"])
+            self.assertEqual(
+                persisted["last_verified_at"], verified["last_verified_at"]
+            )
 
     def test_backup_cleanup_keeps_manual_backups_when_auto_backups_rotate(self):
         with tempfile.TemporaryDirectory() as td:
@@ -269,17 +304,25 @@ class TestBackupRestoreMode(unittest.TestCase):
             self.assertIsNotNone(manual_path)
 
             for _ in range(3):
-                self.assertIsNotNone(auto_backup.create_backup(include_db=False, trigger="auto"))
+                self.assertIsNotNone(
+                    auto_backup.create_backup(include_db=False, trigger="auto")
+                )
 
             backups = auto_backup.get_backup_list()
-            manual_backups = [backup for backup in backups if backup.get("trigger") == "manual"]
-            auto_backups = [backup for backup in backups if backup.get("trigger") == "auto"]
+            manual_backups = [
+                backup for backup in backups if backup.get("trigger") == "manual"
+            ]
+            auto_backups = [
+                backup for backup in backups if backup.get("trigger") == "auto"
+            ]
 
             self.assertEqual(len(manual_backups), 1)
             self.assertEqual(len(auto_backups), 2)
 
     def test_load_backups_formats_microsecond_timestamp_and_trigger_label(self):
-        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        auto_backup = _FakeAutoBackup(
+            backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db"
+        )
         auto_backup.backups = [
             {
                 "name": "backup_1",
@@ -321,7 +364,9 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             corrupt_dir = Path(auto_backup.backup_dir) / "backup_corrupt_meta"
             corrupt_dir.mkdir(parents=True, exist_ok=True)
-            (corrupt_dir / "backup_info.json").write_text("{broken-json", encoding="utf-8")
+            (corrupt_dir / "backup_info.json").write_text(
+                "{broken-json", encoding="utf-8"
+            )
 
             backups = auto_backup.get_backup_list()
             by_name = {entry["name"]: entry for entry in backups}
@@ -333,7 +378,9 @@ class TestBackupRestoreMode(unittest.TestCase):
             self.assertIn("error", by_name["backup_corrupt_meta"])
 
     def test_load_backups_marks_corrupt_items(self):
-        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        auto_backup = _FakeAutoBackup(
+            backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db"
+        )
         auto_backup.backups = [
             {
                 "name": "backup_broken",
@@ -362,7 +409,9 @@ class TestBackupRestoreMode(unittest.TestCase):
         self.assertEqual(meta["last_verified_at"], "")
 
     def test_load_backups_does_not_auto_start_verification(self):
-        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        auto_backup = _FakeAutoBackup(
+            backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db"
+        )
         auto_backup.backups = [
             {
                 "name": "backup_1",
@@ -386,7 +435,9 @@ class TestBackupRestoreMode(unittest.TestCase):
             backup_path = root / backup_name
             backup_path.mkdir(parents=True, exist_ok=True)
 
-            auto_backup = _FakeAutoBackup(backup_dir=str(root), db_file=str(root / "news_database.db"))
+            auto_backup = _FakeAutoBackup(
+                backup_dir=str(root), db_file=str(root / "news_database.db")
+            )
             dialog = _DummyDialog(
                 _FakeBackupList(
                     _FakeItem(
@@ -409,7 +460,9 @@ class TestBackupRestoreMode(unittest.TestCase):
             dialog.load_backups.assert_called_once()
 
     def test_restore_backup_blocks_non_restorable_item(self):
-        auto_backup = _FakeAutoBackup(backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db")
+        auto_backup = _FakeAutoBackup(
+            backup_dir="C:\\tmp", db_file="C:\\tmp\\news_database.db"
+        )
         dialogs = _FakeDialogAdapter()
         dialog = _DummyDialog(
             _FakeBackupList(
@@ -440,7 +493,9 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
 
-            self.assertIsNone(auto_backup.create_backup(include_db=True, trigger="manual"))
+            self.assertIsNone(
+                auto_backup.create_backup(include_db=True, trigger="manual")
+            )
 
     def test_create_backup_returns_none_when_config_is_missing(self):
         with tempfile.TemporaryDirectory() as td:
@@ -451,7 +506,9 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
 
-            self.assertIsNone(auto_backup.create_backup(include_db=False, trigger="manual"))
+            self.assertIsNone(
+                auto_backup.create_backup(include_db=False, trigger="manual")
+            )
             self.assertEqual(auto_backup.get_backup_list(), [])
 
     def test_auto_backup_skips_when_config_is_missing(self):
@@ -463,7 +520,9 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             auto_backup = app.AutoBackup(config_file=str(cfg), db_file=str(db))
 
-            self.assertIsNone(auto_backup.create_backup(include_db=False, trigger="auto"))
+            self.assertIsNone(
+                auto_backup.create_backup(include_db=False, trigger="auto")
+            )
             self.assertEqual(auto_backup.get_backup_list(), [])
 
     def test_backup_dialog_prechecks_missing_db_before_create(self):
@@ -481,7 +540,9 @@ class TestBackupRestoreMode(unittest.TestCase):
                     return True
 
             dialogs = _FakeDialogAdapter()
-            dialog = _DummyDialog(_FakeBackupList(None), auto_backup, dialog_adapter=dialogs)
+            dialog = _DummyDialog(
+                _FakeBackupList(None), auto_backup, dialog_adapter=dialogs
+            )
             setattr(dialog, "chk_include_db", _Check())  # noqa: B010 -- sparse test double; create_backup reads it dynamically, attr intentionally undeclared (pyright-checked tests)
 
             BackupDialog.create_backup(cast(Any, dialog))
@@ -504,7 +565,9 @@ class TestBackupRestoreMode(unittest.TestCase):
                     return False
 
             dialogs = _FakeDialogAdapter()
-            dialog = _DummyDialog(_FakeBackupList(None), auto_backup, dialog_adapter=dialogs)
+            dialog = _DummyDialog(
+                _FakeBackupList(None), auto_backup, dialog_adapter=dialogs
+            )
             setattr(dialog, "chk_include_db", _Check())  # noqa: B010 -- sparse test double; create_backup reads it dynamically, attr intentionally undeclared (pyright-checked tests)
 
             BackupDialog.create_backup(cast(Any, dialog))
@@ -527,10 +590,15 @@ class TestBackupRestoreMode(unittest.TestCase):
 
             info_path = Path(backup_path) / "backup_info.json"
             info = info_path.read_text(encoding="utf-8")
-            info_path.write_text(info.replace('"include_db": false', '"include_db": true'), encoding="utf-8")
+            info_path.write_text(
+                info.replace('"include_db": false', '"include_db": true'),
+                encoding="utf-8",
+            )
 
             backups = auto_backup.get_backup_list()
-            item = next(entry for entry in backups if entry["name"] == Path(backup_path).name)
+            item = next(
+                entry for entry in backups if entry["name"] == Path(backup_path).name
+            )
             self.assertFalse(item["is_restorable"])
             self.assertIn("데이터베이스", item["restore_error"])
 

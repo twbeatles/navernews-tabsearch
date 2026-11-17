@@ -40,6 +40,8 @@ def cleanup_applied_pending_restore_files(pending_file: str) -> int:
     except OSError as e:
         logger.warning("잔여 pending restore applied 파일 정리 실패: %s", e)
         return 0
+
+
 def _validate_restore_sources(
     backup_path: str,
     config_file: str,
@@ -54,7 +56,11 @@ def _validate_restore_sources(
         require_db=restore_db,
     )
     if not verification.get("backup_exists", False):
-        logger.error("%s validation failed: backup path is invalid (%s)", context_label, backup_path)
+        logger.error(
+            "%s validation failed: backup path is invalid (%s)",
+            context_label,
+            backup_path,
+        )
         return None
     if not verification.get("is_restorable", False):
         logger.error(
@@ -68,6 +74,8 @@ def _validate_restore_sources(
         "config_backup": str(verification.get("config_backup", "")),
         "db_backup": str(verification.get("db_backup", "")),
     }
+
+
 def _apply_restore_sidecars(src_db_path: str, dst_db_path: str) -> None:
     atomic_copy_replace = _facade_override("_atomic_copy_replace", _atomic_copy_replace)
     for suffix in ("-wal", "-shm"):
@@ -77,6 +85,8 @@ def _apply_restore_sidecars(src_db_path: str, dst_db_path: str) -> None:
             atomic_copy_replace(src_sidecar, dst_sidecar)
         elif os.path.exists(dst_sidecar):
             os.remove(dst_sidecar)
+
+
 def _apply_restore_from_backup(
     backup_path: str,
     config_file: str,
@@ -110,13 +120,17 @@ def _apply_restore_from_backup(
             os.path.join(staging_dir, "snapshots"),
         )
         try:
-            atomic_copy_replace = _facade_override("_atomic_copy_replace", _atomic_copy_replace)
+            atomic_copy_replace = _facade_override(
+                "_atomic_copy_replace", _atomic_copy_replace
+            )
             atomic_copy_replace(validated["config_backup"], config_file)
             if restore_db:
                 atomic_copy_replace(validated["db_backup"], db_file)
                 _apply_restore_sidecars(validated["db_backup"], db_file)
         except Exception as apply_error:
-            logger.error("%s apply failed, rolling back: %s", context_label, apply_error)
+            logger.error(
+                "%s apply failed, rolling back: %s", context_label, apply_error
+            )
             _rollback_files_from_snapshot(snapshots)
             return False
     except Exception as e:
@@ -126,6 +140,8 @@ def _apply_restore_from_backup(
         _cleanup_restore_stage_dir(staging_dir)
 
     return True
+
+
 def apply_pending_restore_if_any(
     pending_file: str,
     config_file: str,
@@ -153,10 +169,14 @@ def apply_pending_restore_if_any(
 
     backup_path = ""
     if not backup_name:
-        logger.error("pending restore validation failed: backup path is invalid (file is kept)")
+        logger.error(
+            "pending restore validation failed: backup path is invalid (file is kept)"
+        )
         return False
 
-    valid, candidate_path, reason = _safe_backup_child_dir(runtime_backup_dir, backup_name)
+    valid, candidate_path, reason = _safe_backup_child_dir(
+        runtime_backup_dir, backup_name
+    )
     if not valid:
         logger.error("pending restore validation failed: %s (file is kept)", reason)
         return False
@@ -166,7 +186,9 @@ def apply_pending_restore_if_any(
             break
 
     if not backup_path:
-        logger.error("pending restore validation failed: backup path is invalid (file is kept)")
+        logger.error(
+            "pending restore validation failed: backup path is invalid (file is kept)"
+        )
         return False
 
     applied_file = f"{pending_file}.applied"
@@ -197,6 +219,8 @@ def apply_pending_restore_if_any(
     try:
         os.remove(applied_file)
     except OSError as remove_err:
-        logger.warning("restore applied but archived pending file delete failed: %s", remove_err)
+        logger.warning(
+            "restore applied but archived pending file delete failed: %s", remove_err
+        )
 
     return True

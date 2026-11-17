@@ -23,11 +23,14 @@ class NewsUpsertResult:
 
 
 class _NewsUpsertMixin:
-    def _resolve_query_key(self: DatabaseManager, keyword: str, query_key: Optional[str]) -> str:
+    def _resolve_query_key(
+        self: DatabaseManager, keyword: str, query_key: Optional[str]
+    ) -> str:
         normalized_query_key = str(query_key or "").strip()
         if normalized_query_key:
             return normalized_query_key
         return build_fetch_key(str(keyword or "").strip(), [])
+
     def _append_query_scope_sql(
         self: DatabaseManager,
         params: List[Any],
@@ -47,6 +50,7 @@ class _NewsUpsertMixin:
 
         params.append(self._resolve_query_key(keyword, None))
         return f"{alias}.query_key = ?"
+
     def upsert_news(
         self: DatabaseManager,
         items: List[Dict[str, Any]],
@@ -129,7 +133,9 @@ class _NewsUpsertMixin:
                         for link, old_hash, member_key in memberships:
                             new_hash = prepared_by_link[link]["title_hash"]
                             if old_hash != new_hash and member_key:
-                                hashes = affected_scopes.setdefault(str(member_key), set())
+                                hashes = affected_scopes.setdefault(
+                                    str(member_key), set()
+                                )
                                 hashes.update(h for h in (old_hash, new_hash) if h)
 
                     existing_links_by_hash: Dict[str, Set[str]] = {}
@@ -149,7 +155,9 @@ class _NewsUpsertMixin:
                         for row in hash_rows:
                             title_hash = str(row[0] or "")
                             link = str(row[1] or "")
-                            existing_links_by_hash.setdefault(title_hash, set()).add(link)
+                            existing_links_by_hash.setdefault(title_hash, set()).add(
+                                link
+                            )
 
                     existing_hash_by_link: Dict[str, str] = {}
                     if incoming_links:
@@ -176,10 +184,14 @@ class _NewsUpsertMixin:
                         if not isinstance(link, str) or not link:
                             continue
 
-                        hash_links = existing_links_by_hash.setdefault(title_hash, set())
+                        hash_links = existing_links_by_hash.setdefault(
+                            title_hash, set()
+                        )
                         previous_hash = existing_hash_by_link.get(link)
                         same_link_exists = previous_hash is not None
-                        has_other_link = any(existing_link != link for existing_link in hash_links)
+                        has_other_link = any(
+                            existing_link != link for existing_link in hash_links
+                        )
 
                         if same_link_exists:
                             is_dup = has_other_link
@@ -268,7 +280,9 @@ class _NewsUpsertMixin:
                         scope_insert_data,
                     )
 
-                    affected_scopes.setdefault(scope_query_key, set()).update(affected_hashes)
+                    affected_scopes.setdefault(scope_query_key, set()).update(
+                        affected_hashes
+                    )
                     for affected_key, hashes in affected_scopes.items():
                         if not hashes:
                             continue

@@ -98,7 +98,9 @@ class _DatabaseDuplicatesMixin:
             ).fetchall()
 
             if not rows:
-                conn.execute("UPDATE news_keywords SET is_duplicate=0 WHERE is_duplicate != 0")
+                conn.execute(
+                    "UPDATE news_keywords SET is_duplicate=0 WHERE is_duplicate != 0"
+                )
                 return 0
 
             links_by_group: Dict[Tuple[str, str], Set[str]] = {}
@@ -113,7 +115,11 @@ class _DatabaseDuplicatesMixin:
                 query_key = str(row[0] or "")
                 link = str(row[1] or "")
                 title_hash = str(row[2] or "")
-                is_dup = 1 if len(links_by_group.get((query_key, title_hash), set())) > 1 else 0
+                is_dup = (
+                    1
+                    if len(links_by_group.get((query_key, title_hash), set())) > 1
+                    else 0
+                )
                 updates.append((is_dup, link, query_key))
 
             conn.executemany(

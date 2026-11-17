@@ -39,7 +39,10 @@ class _FakeConnection:
 class TestDatabaseIntegrityRecovery(unittest.TestCase):
     def test_check_integrity_distinguishes_corrupt_result(self):
         harness = _SchemaHarness("dummy.db")
-        with mock.patch("core._db_schema.sqlite3.connect", return_value=_FakeConnection(("broken page",))):
+        with mock.patch(
+            "core._db_schema.sqlite3.connect",
+            return_value=_FakeConnection(("broken page",)),
+        ):
             result = cast(Any, harness)._check_integrity()
         self.assertEqual(result.state, "corrupt")
         self.assertIn("broken page", result.detail)
@@ -48,15 +51,24 @@ class TestDatabaseIntegrityRecovery(unittest.TestCase):
         harness = _SchemaHarness("dummy.db")
         unreadable = IntegrityCheckResult("unreadable", "database is locked")
         ok = IntegrityCheckResult("ok", "")
-        with mock.patch.object(harness, "_check_integrity", side_effect=[unreadable, ok]):
-            with mock.patch("core.db_schema_support.connection.time.sleep") as sleep_mock:
-                result = cast(Any, harness)._check_integrity_with_retry(attempts=2, base_delay_sec=0.1)
+        with mock.patch.object(
+            harness, "_check_integrity", side_effect=[unreadable, ok]
+        ):
+            with mock.patch(
+                "core.db_schema_support.connection.time.sleep"
+            ) as sleep_mock:
+                result = cast(Any, harness)._check_integrity_with_retry(
+                    attempts=2, base_delay_sec=0.1
+                )
         self.assertEqual(result.state, "ok")
         sleep_mock.assert_called_once()
 
     def test_check_integrity_distinguishes_unreadable_exception(self):
         harness = _SchemaHarness("dummy.db")
-        with mock.patch("core._db_schema.sqlite3.connect", side_effect=sqlite3.OperationalError("database is locked")):
+        with mock.patch(
+            "core._db_schema.sqlite3.connect",
+            side_effect=sqlite3.OperationalError("database is locked"),
+        ):
             result = cast(Any, harness)._check_integrity()
         self.assertEqual(result.state, "unreadable")
         self.assertIn("locked", result.detail)
@@ -66,15 +78,27 @@ class TestDatabaseIntegrityRecovery(unittest.TestCase):
             db_path = Path(td) / "news.db"
             db_path.write_text("placeholder", encoding="utf-8")
 
-            with mock.patch.object(DatabaseManager, "_check_integrity_with_retry", return_value=IntegrityCheckResult("unreadable", "locked")):
-                with mock.patch.object(DatabaseManager, "_recover_database") as recover_mock:
+            with mock.patch.object(
+                DatabaseManager,
+                "_check_integrity_with_retry",
+                return_value=IntegrityCheckResult("unreadable", "locked"),
+            ):
+                with mock.patch.object(
+                    DatabaseManager, "_recover_database"
+                ) as recover_mock:
                     with mock.patch.object(DatabaseManager, "init_db"):
                         manager = DatabaseManager(str(db_path), max_connections=0)
                         manager.close()
             recover_mock.assert_not_called()
 
-            with mock.patch.object(DatabaseManager, "_check_integrity_with_retry", return_value=IntegrityCheckResult("corrupt", "bad page")):
-                with mock.patch.object(DatabaseManager, "_recover_database") as recover_mock:
+            with mock.patch.object(
+                DatabaseManager,
+                "_check_integrity_with_retry",
+                return_value=IntegrityCheckResult("corrupt", "bad page"),
+            ):
+                with mock.patch.object(
+                    DatabaseManager, "_recover_database"
+                ) as recover_mock:
                     with mock.patch.object(DatabaseManager, "init_db"):
                         manager = DatabaseManager(str(db_path), max_connections=0)
                         manager.close()
@@ -97,7 +121,11 @@ class TestDatabaseIntegrityRecovery(unittest.TestCase):
             self.assertFalse(wal_path.exists())
             self.assertFalse(shm_path.exists())
 
-            corrupt_dirs = [path for path in root.iterdir() if path.is_dir() and path.name.startswith("news.db.corrupt_")]
+            corrupt_dirs = [
+                path
+                for path in root.iterdir()
+                if path.is_dir() and path.name.startswith("news.db.corrupt_")
+            ]
             self.assertEqual(len(corrupt_dirs), 1)
             corrupt_dir = corrupt_dirs[0]
             self.assertTrue((corrupt_dir / "news.db").exists())

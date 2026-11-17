@@ -105,7 +105,8 @@ class TestImportSettingsNormalization(unittest.TestCase):
                             "theme_index": 9,
                             "refresh_interval_index": 999,
                             "notification_enabled": "true",
-                            "alert_keywords": ["AI", "AI", "ECON"] + [f"k{i}" for i in range(20)],
+                            "alert_keywords": ["AI", "AI", "ECON"]
+                            + [f"k{i}" for i in range(20)],
                             "sound_enabled": "0",
                             "minimize_to_tray": "yes",
                             "close_to_tray": "no",
@@ -154,4 +155,3 @@ class TestImportSettingsNormalization(unittest.TestCase):
             self.assertEqual(loaded["pagination_totals"]["ai|coin"], 777)
             self.assertEqual(loaded["pagination_totals"]["empty"], 0)
             self.assertNotIn("negative", loaded["pagination_totals"])
-

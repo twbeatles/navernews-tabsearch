@@ -16,14 +16,23 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _write(target: Path, staged: Path, backup: Path, *, old: bytes = b"old", new: bytes = b"new") -> None:
+def _write(
+    target: Path,
+    staged: Path,
+    backup: Path,
+    *,
+    old: bytes = b"old",
+    new: bytes = b"new",
+) -> None:
     target.write_bytes(old)
     staged.write_bytes(new)
     assert _sha256(new) == hashlib.sha256(new).hexdigest()
 
 
 def _apply_ok(target: Path, staged: Path, backup: Path, new: bytes = b"new") -> None:
-    with mock.patch("core.update_installer.subprocess.run", return_value=mock.Mock(returncode=0)):
+    with mock.patch(
+        "core.update_installer.subprocess.run", return_value=mock.Mock(returncode=0)
+    ):
         with mock.patch("core.update_installer.subprocess.Popen"):
             with mock.patch("core.update_installer._notify_shell_icon_changed"):
                 update_installer.apply_staged_update(
@@ -42,7 +51,10 @@ def test_rename_swap_overwrites_stale_backup_without_copy(tmp_path: Path):
     _write(target, staged, backup)
     backup.write_bytes(b"stale-backup")
 
-    with mock.patch("core.update_installer.shutil.copy2", side_effect=AssertionError("copy must not be used")):
+    with mock.patch(
+        "core.update_installer.shutil.copy2",
+        side_effect=AssertionError("copy must not be used"),
+    ):
         _apply_ok(target, staged, backup)
 
     assert target.read_bytes() == b"new"
@@ -65,7 +77,9 @@ def test_first_move_failure_leaves_install_intact(tmp_path: Path):
             raise PermissionError(13, "Permission denied")
         return real_replace(src, dst)
 
-    with mock.patch.object(update_installer.os, "replace", side_effect=locked_first_move):
+    with mock.patch.object(
+        update_installer.os, "replace", side_effect=locked_first_move
+    ):
         with mock.patch("core.update_installer.subprocess.run") as smoke:
             try:
                 update_installer.apply_staged_update(
@@ -122,7 +136,9 @@ def test_rollback_after_smoke_failure_restores_previous_exe(tmp_path: Path):
     backup = tmp_path / "NewsScraperPro_Safe.exe.v32.bak"
     _write(target, staged, backup)
 
-    with mock.patch("core.update_installer.subprocess.run", return_value=mock.Mock(returncode=1)):
+    with mock.patch(
+        "core.update_installer.subprocess.run", return_value=mock.Mock(returncode=1)
+    ):
         with mock.patch("core.update_installer.subprocess.Popen") as restart:
             with mock.patch("core.update_installer._notify_shell_icon_changed"):
                 with pytest.raises(RuntimeError, match="복구"):
@@ -138,7 +154,9 @@ def test_rollback_after_smoke_failure_restores_previous_exe(tmp_path: Path):
     assert target.read_bytes() == b"old"
 
 
-def test_child_env_strips_bootloader_variables(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_child_env_strips_bootloader_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     target = tmp_path / "NewsScraperPro_Safe.exe"
     staged = tmp_path / "staged.exe"
     backup = tmp_path / "NewsScraperPro_Safe.exe.v32.bak"
@@ -149,7 +167,9 @@ def test_child_env_strips_bootloader_variables(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setenv("PYINSTALLER_BUNDLE", "1")
     monkeypatch.setenv("KEEP_ME", "yes")
 
-    with mock.patch("core.update_installer.subprocess.run", return_value=mock.Mock(returncode=0)) as smoke:
+    with mock.patch(
+        "core.update_installer.subprocess.run", return_value=mock.Mock(returncode=0)
+    ) as smoke:
         with mock.patch("core.update_installer.subprocess.Popen") as restart:
             with mock.patch("core.update_installer._notify_shell_icon_changed"):
                 update_installer.apply_staged_update(
@@ -167,7 +187,12 @@ def test_child_env_strips_bootloader_variables(tmp_path: Path, monkeypatch: pyte
         assert "KEEP_ME" in env and env["KEEP_ME"] == "yes"
         for key in env:
             upper = key.upper()
-            assert not (upper == "_MEIPASS" or upper.startswith("_MEI") or upper.startswith("_MEIPASS") or upper.startswith("PYINSTALLER_")), key
+            assert not (
+                upper == "_MEIPASS"
+                or upper.startswith("_MEI")
+                or upper.startswith("_MEIPASS")
+                or upper.startswith("PYINSTALLER_")
+            ), key
 
 
 def test_launch_helper_uses_clean_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -195,4 +220,9 @@ def test_launch_helper_uses_clean_env(tmp_path: Path, monkeypatch: pytest.Monkey
     assert env is not None
     for key in env:
         upper = key.upper()
-        assert not (upper == "_MEIPASS" or upper.startswith("_MEI") or upper.startswith("_MEIPASS") or upper.startswith("PYINSTALLER_")), key
+        assert not (
+            upper == "_MEIPASS"
+            or upper.startswith("_MEI")
+            or upper.startswith("_MEIPASS")
+            or upper.startswith("PYINSTALLER_")
+        ), key

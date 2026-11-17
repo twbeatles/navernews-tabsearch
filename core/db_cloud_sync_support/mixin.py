@@ -1,4 +1,3 @@
-
 from core.db_cloud_sync_support.apply import _CloudSyncApplyMixin
 from core.db_cloud_sync_support.merge_rows import _CloudSyncMergeRowsMixin
 from core.db_cloud_sync_support.metadata import _CloudSyncMetadataMixin

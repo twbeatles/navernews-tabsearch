@@ -58,7 +58,9 @@ class _MainWindowNotificationShellMixin:
                             matched.append((item, kw))
                             break
                     except re.error as exc:
-                        logger.warning("Invalid alert regex skipped: %s (%s)", pattern, exc)
+                        logger.warning(
+                            "Invalid alert regex skipped: %s (%s)", pattern, exc
+                        )
                     continue
                 if keyword.lower() in searchable_lower:
                     matched.append((item, kw))

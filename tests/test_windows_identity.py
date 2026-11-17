@@ -75,9 +75,13 @@ class WindowsIdentityTests(unittest.TestCase):
     def test_set_process_app_user_model_id_calls_shell_api(self):
         shell32 = _FakeShell32()
 
-        self.assertTrue(_set_process_app_user_model_id(APP_USER_MODEL_ID, shell32=shell32))
+        self.assertTrue(
+            _set_process_app_user_model_id(APP_USER_MODEL_ID, shell32=shell32)
+        )
 
-        self.assertEqual(shell32.SetCurrentProcessExplicitAppUserModelID.calls, [APP_USER_MODEL_ID])
+        self.assertEqual(
+            shell32.SetCurrentProcessExplicitAppUserModelID.calls, [APP_USER_MODEL_ID]
+        )
 
     def test_register_notification_app_identity_sets_display_name_and_icon(self):
         fake_winreg = _FakeWinreg()
@@ -100,7 +104,10 @@ class WindowsIdentityTests(unittest.TestCase):
                 )
             ],
         )
-        self.assertIn(("DisplayName", 0, fake_winreg.REG_SZ, "뉴스 스크래퍼 Pro"), fake_winreg.values)
+        self.assertIn(
+            ("DisplayName", 0, fake_winreg.REG_SZ, "뉴스 스크래퍼 Pro"),
+            fake_winreg.values,
+        )
         self.assertIn(
             (
                 "IconUri",
@@ -124,7 +131,12 @@ class WindowsIdentityTests(unittest.TestCase):
             (bundle / "news_icon.ico").write_bytes(b"bundle")
             (app_dir / "news_icon.ico").write_bytes(b"sidecar")
 
-            resolved = resolve_runtime_icon_path(app_dir=str(app_dir), meipass=str(bundle), frozen=True, executable=str(app_dir / "app.exe"))
+            resolved = resolve_runtime_icon_path(
+                app_dir=str(app_dir),
+                meipass=str(bundle),
+                frozen=True,
+                executable=str(app_dir / "app.exe"),
+            )
 
         self.assertTrue(str(resolved).endswith(str(Path("bundle") / "news_icon.ico")))
 
@@ -134,7 +146,9 @@ class WindowsIdentityTests(unittest.TestCase):
             executable = app_dir / "NewsScraperPro_Safe.exe"
             executable.write_bytes(b"MZ")
 
-            resolved = resolve_shell_icon_uri(app_dir=str(app_dir), frozen=True, executable=str(executable))
+            resolved = resolve_shell_icon_uri(
+                app_dir=str(app_dir), frozen=True, executable=str(executable)
+            )
 
         self.assertEqual(resolved, str(executable.resolve()))
 
@@ -146,7 +160,9 @@ class WindowsIdentityTests(unittest.TestCase):
             icon.write_bytes(b"ico")
             executable.write_bytes(b"MZ")
 
-            resolved = resolve_shell_icon_uri(app_dir=str(app_dir), frozen=True, executable=str(executable))
+            resolved = resolve_shell_icon_uri(
+                app_dir=str(app_dir), frozen=True, executable=str(executable)
+            )
 
         self.assertEqual(resolved, str(icon.resolve()))
 

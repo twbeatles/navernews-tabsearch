@@ -35,7 +35,9 @@ def normalize_publisher_aliases(value: Any) -> Dict[str, str]:
     return normalized
 
 
-def canonical_publisher(publisher: Any, aliases: Mapping[str, str] | None = None) -> str:
+def canonical_publisher(
+    publisher: Any, aliases: Mapping[str, str] | None = None
+) -> str:
     text = _clean_text(publisher)
     if not text:
         return ""
@@ -59,7 +61,10 @@ def expand_publisher_filters(
             result.append(text)
 
     normalized_aliases = normalize_publisher_aliases(aliases or {})
-    alias_pairs = [(source, alias, _key(source), _key(alias)) for source, alias in normalized_aliases.items()]
+    alias_pairs = [
+        (source, alias, _key(source), _key(alias))
+        for source, alias in normalized_aliases.items()
+    ]
     for value in values or []:
         add(value)
         value_key = _key(value)
@@ -80,5 +85,7 @@ def combine_publisher_counts(
     for publisher, count in rows:
         label = canonical_publisher(publisher, aliases) or "(unknown)"
         counts[label] = counts.get(label, 0) + int(count or 0)
-    sorted_rows = sorted(counts.items(), key=lambda item: (-item[1], item[0].casefold()))
+    sorted_rows = sorted(
+        counts.items(), key=lambda item: (-item[1], item[0].casefold())
+    )
     return sorted_rows[: max(1, int(limit or 20))]

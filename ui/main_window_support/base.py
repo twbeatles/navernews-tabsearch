@@ -1,4 +1,3 @@
-
 """Compatibility facade for MainApp base mixins."""
 
 from ui.main_window_support.base_support import (

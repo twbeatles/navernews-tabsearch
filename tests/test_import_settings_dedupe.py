@@ -1,7 +1,16 @@
 import inspect
+import re
 import unittest
 
 from ui.main_window import MainApp
+
+
+def _norm(text):
+    # Format-tolerant source matching: ruff format may reflow code
+    # lines and add/remove grouping parentheses. Compare the token
+    # stream, ignoring grouping brackets.
+    toks = re.findall(r"\w+|[^\w\s]", text)
+    return " ".join(t for t in toks if t not in "()[]{}")
 
 
 class TestImportSettingsDedupe(unittest.TestCase):
@@ -11,7 +20,12 @@ class TestImportSettingsDedupe(unittest.TestCase):
         self.assertIn("existing_fetch_keys = {", block)
         self.assertIn("self._canonical_fetch_key_for_keyword(tab.keyword)", block)
         self.assertIn("existing_fetch_keys.add(normalized_fetch_key)", block)
-        self.assertIn("if normalized_keyword and normalized_fetch_key and normalized_fetch_key not in existing_fetch_keys", block)
+        self.assertIn(
+            _norm(
+                "if normalized_keyword and normalized_fetch_key and normalized_fetch_key not in existing_fetch_keys"
+            ),
+            _norm(block),
+        )
 
     def test_import_normalizes_settings_and_merges_groups(self):
         block = inspect.getsource(MainApp._stage_settings_import)
@@ -28,4 +42,3 @@ class TestImportSettingsDedupe(unittest.TestCase):
         self.assertIn("seen_identities = set()", block)
         self.assertIn("identity = self._history_identity_for_keyword(keyword)", block)
         self.assertIn("if identity in seen_identities:", block)
-

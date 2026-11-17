@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -52,7 +51,10 @@ class _CloudSyncApplyMixin:
                 "deleted": 0,
                 "restored": 0,
             }
-        if normalized_snapshot_id and normalized_snapshot_id in self.get_cloud_sync_seen_snapshot_ids():
+        if (
+            normalized_snapshot_id
+            and normalized_snapshot_id in self.get_cloud_sync_seen_snapshot_ids()
+        ):
             return {
                 "merged": False,
                 "skipped": True,
@@ -70,7 +72,9 @@ class _CloudSyncApplyMixin:
 
         source_path = os.path.abspath(str(snapshot_db_path or ""))
         if not os.path.exists(source_path):
-            raise self._new_write_error("merge_cloud_snapshot_db", FileNotFoundError(source_path))
+            raise self._new_write_error(
+                "merge_cloud_snapshot_db", FileNotFoundError(source_path)
+            )
 
         conn = self.get_connection()
         rollback_backup = ""
@@ -83,10 +87,14 @@ class _CloudSyncApplyMixin:
             conn.execute("ATTACH DATABASE ? AS cloud_src", (source_path,))
             attached = True
             if not self._table_exists(conn, "cloud_src", "news"):
-                raise sqlite3.DatabaseError("snapshot database does not contain news table")
+                raise sqlite3.DatabaseError(
+                    "snapshot database does not contain news table"
+                )
 
             source_news_columns = self._table_columns(conn, "cloud_src", "news")
-            source_keyword_columns = self._table_columns(conn, "cloud_src", "news_keywords")
+            source_keyword_columns = self._table_columns(
+                conn, "cloud_src", "news_keywords"
+            )
             has_tag_state = self._table_exists(conn, "cloud_src", "news_tag_state")
 
             with conn:
@@ -96,23 +104,30 @@ class _CloudSyncApplyMixin:
                     source_keyword_columns,
                     has_tag_state,
                 )
-                before_news = int(conn.execute("SELECT COUNT(*) FROM news").fetchone()[0] or 0)
+                before_news = int(
+                    conn.execute("SELECT COUNT(*) FROM news").fetchone()[0] or 0
+                )
                 before_memberships = int(
-                    conn.execute("SELECT COUNT(*) FROM news_keywords").fetchone()[0] or 0
+                    conn.execute("SELECT COUNT(*) FROM news_keywords").fetchone()[0]
+                    or 0
                 )
                 self._merge_cloud_news_rows(conn, source_news_columns)
                 self._merge_cloud_keyword_rows(conn, source_keyword_columns)
                 self._merge_cloud_tag_rows(conn, source_news_columns, has_tag_state)
                 self._recalculate_duplicate_flags_for_entire_database(conn)
                 if normalized_snapshot_id:
-                    raw_seen = self._get_app_meta(conn, self.CLOUD_SYNC_SEEN_META_KEY, "[]")
+                    raw_seen = self._get_app_meta(
+                        conn, self.CLOUD_SYNC_SEEN_META_KEY, "[]"
+                    )
                     try:
                         seen_payload = json.loads(raw_seen)
                     except Exception:
                         seen_payload = []
                     seen = [
                         str(item)
-                        for item in (seen_payload if isinstance(seen_payload, list) else [])
+                        for item in (
+                            seen_payload if isinstance(seen_payload, list) else []
+                        )
                         if isinstance(item, str) and item.strip()
                     ]
                     if normalized_snapshot_id in seen:
@@ -121,12 +136,17 @@ class _CloudSyncApplyMixin:
                     self._set_app_meta(
                         conn,
                         self.CLOUD_SYNC_SEEN_META_KEY,
-                        json.dumps(seen[: self.CLOUD_SYNC_MAX_SEEN_IDS], ensure_ascii=False),
+                        json.dumps(
+                            seen[: self.CLOUD_SYNC_MAX_SEEN_IDS], ensure_ascii=False
+                        ),
                     )
 
-                after_news = int(conn.execute("SELECT COUNT(*) FROM news").fetchone()[0] or 0)
+                after_news = int(
+                    conn.execute("SELECT COUNT(*) FROM news").fetchone()[0] or 0
+                )
                 after_memberships = int(
-                    conn.execute("SELECT COUNT(*) FROM news_keywords").fetchone()[0] or 0
+                    conn.execute("SELECT COUNT(*) FROM news_keywords").fetchone()[0]
+                    or 0
                 )
 
             result = {

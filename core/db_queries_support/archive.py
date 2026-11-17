@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -18,7 +17,9 @@ RE_FTS_ACCEL_TOKEN = re.compile(r"[0-9A-Za-z\u3131-\u318E\uAC00-\uD7A3]{2,}")
 
 
 class _DatabaseArchiveQueriesMixin:
-    def _archive_base_select(self: DatabaseManager, *, include_deleted: bool = False) -> str:
+    def _archive_base_select(
+        self: DatabaseManager, *, include_deleted: bool = False
+    ) -> str:
         deleted_filter = "1 = 1" if include_deleted else "COALESCE(n.is_deleted, 0) = 0"
         return f"""
             SELECT
@@ -70,7 +71,9 @@ class _DatabaseArchiveQueriesMixin:
     ) -> str:
         fts_match = self._fts_match_expression(filter_txt)
         if fts_match:
-            query += " AND n.rowid IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)"
+            query += (
+                " AND n.rowid IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)"
+            )
             params.append(fts_match)
         query += self._append_text_filter_clause(params, filter_txt)
 
@@ -108,14 +111,20 @@ class _DatabaseArchiveQueriesMixin:
                 query += " AND n.pubDate_ts >= ?"
                 params.append(s_ts)
             except ValueError:
-                logger.warning("Invalid start_date format for archive search: %s", start_date)
+                logger.warning(
+                    "Invalid start_date format for archive search: %s", start_date
+                )
         if end_date:
             try:
-                e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                e_ts = (
+                    datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                ).timestamp()
                 query += " AND n.pubDate_ts < ?"
                 params.append(e_ts)
             except ValueError:
-                logger.warning("Invalid end_date format for archive search: %s", end_date)
+                logger.warning(
+                    "Invalid end_date format for archive search: %s", end_date
+                )
         return query
 
     def search_archive(
@@ -195,7 +204,9 @@ class _DatabaseArchiveQueriesMixin:
             if active_conn is None:
                 active_conn = self.get_connection()
             params: List[Any] = []
-            deleted_filter = "1 = 1" if include_deleted else "COALESCE(n.is_deleted, 0) = 0"
+            deleted_filter = (
+                "1 = 1" if include_deleted else "COALESCE(n.is_deleted, 0) = 0"
+            )
             query = self._append_archive_filters(
                 f"SELECT COUNT(*) FROM news n WHERE {deleted_filter}",
                 params,

@@ -8,6 +8,7 @@ thread that was quitting, so tab-by-tab refresh stopped after the first tab.
 These tests use a real QThread and real signals (the fakes in
 ``test_sequential_refresh_stall`` cannot observe thread affinity).
 """
+
 import threading
 import time
 import unittest
@@ -54,7 +55,9 @@ class _ThreadedSequentialMain(_SequentialStallMain):
         return super().fetch_news(keyword, is_more=is_more, is_sequential=is_sequential)
 
     def _on_sequential_fetch_done(self, keyword):
-        self.callback_threads.append(threading.current_thread() is threading.main_thread())
+        self.callback_threads.append(
+            threading.current_thread() is threading.main_thread()
+        )
         _MainWindowRefreshFlowMixin._on_sequential_fetch_done(self, keyword)
 
     def _finish_sequential_refresh(self):
@@ -87,14 +90,19 @@ class TestApiWorkerThreadAffinity(unittest.TestCase):
     def _run_chain(self, *, fail: bool):
         _app()
         main = _ThreadedSequentialMain()
-        with mock.patch.object(_ThreadedFakeApiWorker, "fail", fail), mock.patch(
-            "ui.main_window_fetch_support.worker_flow.ApiWorker",
-            _ThreadedFakeApiWorker,
+        with (
+            mock.patch.object(_ThreadedFakeApiWorker, "fail", fail),
+            mock.patch(
+                "ui.main_window_fetch_support.worker_flow.ApiWorker",
+                _ThreadedFakeApiWorker,
+            ),
         ):
             main._sequential_refresh_active = False
             self.assertTrue(main._begin_sequential_refresh(["AI", "B", "C"]))
             completed = _pump_until(lambda: main.finished_chain)
-            _pump_until(lambda: not main._worker_registry.all_handles(), timeout_sec=2.0)
+            _pump_until(
+                lambda: not main._worker_registry.all_handles(), timeout_sec=2.0
+            )
         return main, completed
 
     def test_sequential_chain_advances_through_every_tab(self):

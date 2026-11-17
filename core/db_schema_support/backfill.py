@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -22,14 +21,18 @@ class _NewsBackfillSchemaMixin:
         finally:
             self.return_connection(conn)
 
-    def backfill_news_fts_chunk(self: DatabaseManager, limit: int = 250) -> dict[str, int | bool]:
+    def backfill_news_fts_chunk(
+        self: DatabaseManager, limit: int = 250
+    ) -> dict[str, int | bool]:
         conn = self.get_connection()
         processed = 0
         done = False
         try:
             safe_limit = max(1, int(limit))
             with conn:
-                last_rowid = int(self._get_app_meta(conn, self.FTS_BACKFILL_CURSOR_KEY, "0") or 0)
+                last_rowid = int(
+                    self._get_app_meta(conn, self.FTS_BACKFILL_CURSOR_KEY, "0") or 0
+                )
                 rows = conn.execute(
                     """
                     SELECT rowid, title, description
@@ -67,7 +70,9 @@ class _NewsBackfillSchemaMixin:
             self.return_connection(conn)
         return {"processed": processed, "done": done}
 
-    def _backfill_missing_title_hashes(self: DatabaseManager, conn: sqlite3.Connection) -> int:
+    def _backfill_missing_title_hashes(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> int:
         total_updated = 0
         safe_chunk_size = max(1, int(self.TITLE_HASH_BACKFILL_CHUNK_SIZE))
 
@@ -92,7 +97,9 @@ class _NewsBackfillSchemaMixin:
             total_updated += len(updates)
 
         remaining = int(
-            conn.execute("SELECT COUNT(*) FROM news WHERE title_hash IS NULL").fetchone()[0]
+            conn.execute(
+                "SELECT COUNT(*) FROM news WHERE title_hash IS NULL"
+            ).fetchone()[0]
         )
         if remaining > 0:
             logger.warning("title_hash backfill incomplete: remaining=%s", remaining)
@@ -100,7 +107,9 @@ class _NewsBackfillSchemaMixin:
             logger.info("Backfilled title_hash for %s rows", total_updated)
         return total_updated
 
-    def _backfill_missing_pubdate_ts(self: DatabaseManager, conn: sqlite3.Connection) -> int:
+    def _backfill_missing_pubdate_ts(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> int:
         total_updated = 0
         safe_chunk_size = max(1, int(self.PUBDATE_TS_BACKFILL_CHUNK_SIZE))
 
@@ -125,7 +134,9 @@ class _NewsBackfillSchemaMixin:
             total_updated += len(updates)
 
         remaining = int(
-            conn.execute("SELECT COUNT(*) FROM news WHERE pubDate_ts IS NULL").fetchone()[0]
+            conn.execute(
+                "SELECT COUNT(*) FROM news WHERE pubDate_ts IS NULL"
+            ).fetchone()[0]
         )
         if remaining > 0:
             logger.warning("pubDate_ts backfill incomplete: remaining=%s", remaining)

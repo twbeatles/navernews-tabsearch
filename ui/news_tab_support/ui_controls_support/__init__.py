@@ -1,4 +1,3 @@
-
 from ui.news_tab_support.ui_controls_support.date_filters import (
     _NewsTabDateFilterControlsMixin,
 )

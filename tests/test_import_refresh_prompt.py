@@ -67,7 +67,9 @@ class _DummyImportMain:
         return cast(Any, _MainWindowSettingsIOMixin).import_settings(cast(Any, self))
 
     def _config_path_for_persistence(self):
-        return cast(Any, _MainWindowSettingsIOMixin)._config_path_for_persistence(cast(Any, self))
+        return cast(Any, _MainWindowSettingsIOMixin)._config_path_for_persistence(
+            cast(Any, self)
+        )
 
     def _build_runtime_config_payload(self, **kwargs):
         return cast(Any, _MainWindowSettingsIOMixin)._build_runtime_config_payload(
@@ -76,7 +78,9 @@ class _DummyImportMain:
         )
 
     def _merge_search_history(self, imported_history):
-        return cast(Any, _MainWindowSettingsIOMixin)._merge_search_history(cast(Any, self), imported_history)
+        return cast(Any, _MainWindowSettingsIOMixin)._merge_search_history(
+            cast(Any, self), imported_history
+        )
 
     def _merge_int_mapping_keep_max(self, current, incoming, minimum):
         return cast(Any, _MainWindowSettingsIOMixin)._merge_int_mapping_keep_max(
@@ -111,7 +115,9 @@ class _DummyImportMain:
         )
 
     def _snapshot_runtime_state_for_import(self):
-        return cast(Any, _MainWindowSettingsIOMixin)._snapshot_runtime_state_for_import(cast(Any, self))
+        return cast(Any, _MainWindowSettingsIOMixin)._snapshot_runtime_state_for_import(
+            cast(Any, self)
+        )
 
     def _remove_imported_tab_for_rollback(self, keyword):
         return cast(Any, _MainWindowSettingsIOMixin)._remove_imported_tab_for_rollback(
@@ -127,10 +133,14 @@ class _DummyImportMain:
         )
 
     def _apply_import_runtime_stage(self, stage):
-        return cast(Any, _MainWindowSettingsIOMixin)._apply_import_runtime_stage(cast(Any, self), stage)
+        return cast(Any, _MainWindowSettingsIOMixin)._apply_import_runtime_stage(
+            cast(Any, self), stage
+        )
 
     def _stage_settings_import(self, import_data):
-        return cast(Any, _MainWindowSettingsIOMixin)._stage_settings_import(cast(Any, self), import_data)
+        return cast(Any, _MainWindowSettingsIOMixin)._stage_settings_import(
+            cast(Any, self), import_data
+        )
 
     def _canonicalize_tab_refresh_policies(self, policies, known_keywords=None):
         return cast(Any, _MainWindowSettingsIOMixin)._canonicalize_tab_refresh_policies(
@@ -140,13 +150,19 @@ class _DummyImportMain:
         )
 
     def _normalize_tab_keyword(self, raw_keyword):
-        return cast(Any, _MainWindowTabsMixin)._normalize_tab_keyword(cast(Any, self), raw_keyword)
+        return cast(Any, _MainWindowTabsMixin)._normalize_tab_keyword(
+            cast(Any, self), raw_keyword
+        )
 
     def _canonical_fetch_key_for_keyword(self, raw_keyword):
-        return cast(Any, _MainWindowTabsMixin)._canonical_fetch_key_for_keyword(cast(Any, self), raw_keyword)
+        return cast(Any, _MainWindowTabsMixin)._canonical_fetch_key_for_keyword(
+            cast(Any, self), raw_keyword
+        )
 
     def _history_identity_for_keyword(self, raw_keyword):
-        return cast(Any, _MainWindowTabsMixin)._history_identity_for_keyword(cast(Any, self), raw_keyword)
+        return cast(Any, _MainWindowTabsMixin)._history_identity_for_keyword(
+            cast(Any, self), raw_keyword
+        )
 
     def __init__(self, dialog_adapter):
         self._tempdir = tempfile.TemporaryDirectory()
@@ -213,9 +229,13 @@ class _DummyImportMain:
     def _normalize_window_geometry(self, raw_geometry):
         return raw_geometry
 
-    def _reconcile_startup_state_from_import(self, normalized_settings, import_warnings):
+    def _reconcile_startup_state_from_import(
+        self, normalized_settings, import_warnings
+    ):
         if self.reconcile_auto_start_result is not None:
-            normalized_settings["auto_start_enabled"] = bool(self.reconcile_auto_start_result)
+            normalized_settings["auto_start_enabled"] = bool(
+                self.reconcile_auto_start_result
+            )
         return None
 
     def setStyleSheet(self, _style):
@@ -286,7 +306,9 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertEqual(dummy.refresh_requests, [["AI", "경제"]])
         self.assertEqual(len(dialogs.question_calls), 1)
         self.assertEqual(dummy.apply_refresh_calls, 1)
-        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
+        config_payload = json.loads(
+            Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8")
+        )
         self.assertEqual(config_payload["tabs"], ["AI", "경제"])
 
     def test_import_settings_skips_refresh_when_user_declines(self):
@@ -311,7 +333,9 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertEqual(dummy.refresh_requests, [])
         self.assertEqual(len(dialogs.question_calls), 1)
         self.assertEqual(dummy.apply_refresh_calls, 1)
-        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
+        config_payload = json.loads(
+            Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8")
+        )
         self.assertEqual(config_payload["tabs"], ["AI", "경제"])
 
     def test_import_settings_rolls_back_runtime_and_config_when_add_tab_fails(self):
@@ -335,7 +359,9 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertEqual(dummy.theme_idx, 0)
         self.assertEqual([tab.keyword for tab in dummy._tabs[1:]], [])
         self.assertEqual(dummy.keyword_group_manager.groups, {})
-        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
+        config_payload = json.loads(
+            Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8")
+        )
         self.assertEqual(config_payload["tabs"], [])
         self.assertEqual(config_payload["app_settings"]["theme_index"], 0)
 
@@ -364,7 +390,9 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertEqual(dummy.apply_refresh_calls, 0)
         self.assertEqual([tab.keyword for tab in dummy._tabs[1:]], [])
 
-    def test_import_settings_rewrites_config_after_startup_reconcile_changes_auto_start(self):
+    def test_import_settings_rewrites_config_after_startup_reconcile_changes_auto_start(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             import_file = self._write_import_file(
@@ -382,7 +410,9 @@ class TestImportRefreshPrompt(unittest.TestCase):
             dummy.import_settings()
 
         self.assertFalse(dummy.auto_start_enabled)
-        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
+        config_payload = json.loads(
+            Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8")
+        )
         self.assertFalse(config_payload["app_settings"]["auto_start_enabled"])
 
     def test_import_normalizes_saved_search_policies_and_reloads_visibility(self):
@@ -414,10 +444,18 @@ class TestImportRefreshPrompt(unittest.TestCase):
 
             dummy.import_settings()
 
-        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
-        self.assertEqual(config_payload["app_settings"]["blocked_publishers"], ["Blocked.com"])
-        self.assertEqual(config_payload["app_settings"]["preferred_publishers"], ["Good.com"])
-        self.assertEqual(config_payload["saved_searches"]["Main"]["filter_txt"], "market")
+        config_payload = json.loads(
+            Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            config_payload["app_settings"]["blocked_publishers"], ["Blocked.com"]
+        )
+        self.assertEqual(
+            config_payload["app_settings"]["preferred_publishers"], ["Good.com"]
+        )
+        self.assertEqual(
+            config_payload["saved_searches"]["Main"]["filter_txt"], "market"
+        )
         self.assertTrue(config_payload["saved_searches"]["Main"]["only_unread"])
         self.assertEqual(config_payload["tab_refresh_policies"], {"ai|": "inherit"})
         self.assertEqual(dummy.saved_search_combo_refreshes, 1)
@@ -428,7 +466,10 @@ class TestImportRefreshPrompt(unittest.TestCase):
         dialogs = _FakeDialogAdapter()
         dummy = _DummyImportMain(dialogs)
 
-        with mock.patch("ui.main_window_io_support.settings_dialogs.get_machine_identity", return_value="this-machine"):
+        with mock.patch(
+            "ui.main_window_io_support.settings_dialogs.get_machine_identity",
+            return_value="this-machine",
+        ):
             stage = dummy._stage_settings_import(
                 {
                     "export_machine_id": "other-machine",
@@ -440,7 +481,9 @@ class TestImportRefreshPrompt(unittest.TestCase):
 
         self.assertFalse(stage["normalized_settings"]["auto_start_enabled"])
         self.assertFalse(stage["staged_config"]["app_settings"]["auto_start_enabled"])
-        self.assertTrue(any("auto_start_enabled" in warning for warning in stage["import_warnings"]))
+        self.assertTrue(
+            any("auto_start_enabled" in warning for warning in stage["import_warnings"])
+        )
         self.assertEqual(len(dummy.warning_toasts), 1)
 
     def test_import_drops_empty_groups_and_caps_saved_searches_with_warning(self):
@@ -463,8 +506,12 @@ class TestImportRefreshPrompt(unittest.TestCase):
         self.assertNotIn("비어있음", stage["staged_config"]["keyword_groups"])
         self.assertIn("정상", stage["staged_config"]["keyword_groups"])
         self.assertEqual(len(stage["staged_config"]["saved_searches"]), 100)
-        self.assertTrue(any("빈 키워드 그룹" in warning for warning in stage["import_warnings"]))
-        self.assertTrue(any("저장 검색" in warning for warning in stage["import_warnings"]))
+        self.assertTrue(
+            any("빈 키워드 그룹" in warning for warning in stage["import_warnings"])
+        )
+        self.assertTrue(
+            any("저장 검색" in warning for warning in stage["import_warnings"])
+        )
 
     def test_import_dedupes_automation_rules_across_repeated_imports(self):
         dialogs = _FakeDialogAdapter()
@@ -532,8 +579,12 @@ class TestImportRefreshPrompt(unittest.TestCase):
 
             dummy.import_settings()
 
-        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
-        self.assertEqual(config_payload["saved_searches"]["Local"]["filter_txt"], "imported")
+        config_payload = json.loads(
+            Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            config_payload["saved_searches"]["Local"]["filter_txt"], "imported"
+        )
         self.assertEqual(config_payload["saved_searches"]["Keep"]["filter_txt"], "kept")
         self.assertEqual(config_payload["saved_searches"]["Incoming"]["keyword"], "")
         self.assertEqual(config_payload["tab_refresh_policies"]["ai|"], "10")
@@ -569,9 +620,15 @@ class TestImportRefreshPrompt(unittest.TestCase):
 
             dummy.import_settings()
 
-        config_payload = json.loads(Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8"))
-        self.assertEqual(config_payload["saved_searches"]["Dates"]["start_date"], "2026-05-01")
-        self.assertEqual(config_payload["saved_searches"]["Dates"]["end_date"], "2026-05-10")
+        config_payload = json.loads(
+            Path(dummy.keyword_group_manager.config_file).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            config_payload["saved_searches"]["Dates"]["start_date"], "2026-05-01"
+        )
+        self.assertEqual(
+            config_payload["saved_searches"]["Dates"]["end_date"], "2026-05-10"
+        )
         self.assertFalse(config_payload["saved_searches"]["InvalidDate"]["date_active"])
 
 

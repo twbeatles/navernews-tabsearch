@@ -10,12 +10,15 @@ from ui.dialog_adapters import get_dialog_adapter
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class _BackupDialogCreateDeleteMixin:
     def _create_backup_legacy_unused(self):
         """백업 생성"""
         dialogs = get_dialog_adapter(self)
         include_db = self.chk_include_db.isChecked()
-        ok, reason = self.auto_backup.validate_create_backup_prerequisites(include_db=include_db)
+        ok, reason = self.auto_backup.validate_create_backup_prerequisites(
+            include_db=include_db
+        )
         if not ok:
             dialogs.warning(self, "백업 생성 실패", reason)
             return
@@ -32,7 +35,9 @@ class _BackupDialogCreateDeleteMixin:
         """백업 생성"""
         dialogs = get_dialog_adapter(self)
         include_db = self.chk_include_db.isChecked()
-        ok, reason = self.auto_backup.validate_create_backup_prerequisites(include_db=include_db)
+        ok, reason = self.auto_backup.validate_create_backup_prerequisites(
+            include_db=include_db
+        )
         if not ok:
             dialogs.warning(self, "백업 생성 실패", reason)
             return
@@ -43,15 +48,22 @@ class _BackupDialogCreateDeleteMixin:
             dialogs.information(self, "완료", f"백업이 생성되었습니다.\n{result}")
             return
 
-        error_detail = str(getattr(self.auto_backup, "last_create_error", "") or "").strip()
+        error_detail = str(
+            getattr(self.auto_backup, "last_create_error", "") or ""
+        ).strip()
         if error_detail:
-            dialogs.warning(self, "오류", f"백업 생성에 실패했습니다.\n\n{error_detail}")
+            dialogs.warning(
+                self, "오류", f"백업 생성에 실패했습니다.\n\n{error_detail}"
+            )
         else:
             dialogs.warning(self, "오류", "백업 생성에 실패했습니다.")
 
     def _handle_corrupt_backup(self, backup_name: str, corrupt_error: str) -> None:
         dialogs = get_dialog_adapter(self)
-        if dialogs.ask_corrupt_backup_action(self, backup_name, corrupt_error) == "delete":
+        if (
+            dialogs.ask_corrupt_backup_action(self, backup_name, corrupt_error)
+            == "delete"
+        ):
             deleted, error = self.auto_backup.delete_backup(backup_name)
             if deleted:
                 self.load_backups()
@@ -82,7 +94,11 @@ class _BackupDialogCreateDeleteMixin:
             return
 
         if deleted_count > 0:
-            dialogs.information(self, "손상 백업 삭제", f"손상된 백업 {deleted_count:,}개를 삭제했습니다.")
+            dialogs.information(
+                self,
+                "손상 백업 삭제",
+                f"손상된 백업 {deleted_count:,}개를 삭제했습니다.",
+            )
         else:
             dialogs.information(self, "손상 백업 삭제", "삭제할 손상 백업이 없습니다.")
 

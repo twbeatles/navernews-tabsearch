@@ -69,7 +69,9 @@ def parse_naver_api_error(payload: Any) -> Tuple[str, str]:
     return "", "알 수 없는 오류"
 
 
-def format_naver_http_error(status_code: int, error_code: str, error_message: str) -> str:
+def format_naver_http_error(
+    status_code: int, error_code: str, error_message: str
+) -> str:
     """사용자에게 보여줄 HTTP 오류 문구를 만든다."""
     code = str(error_code or "").strip()
     msg = str(error_message or "").strip() or "알 수 없는 오류"

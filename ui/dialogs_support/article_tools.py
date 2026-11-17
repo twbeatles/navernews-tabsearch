@@ -1,4 +1,3 @@
-
 """Compatibility facade for article tool dialogs."""
 
 from ui.dialogs_support.archive_search import ArchiveSearchDialog

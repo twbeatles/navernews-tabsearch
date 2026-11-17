@@ -43,7 +43,9 @@ class TestQThreadLifetime(unittest.TestCase):
         worker = _ResultSignalThread()
         calls: list[str] = []
 
-        self.assertTrue(connect_qthread_finished(worker, lambda: calls.append("thread-finished")))
+        self.assertTrue(
+            connect_qthread_finished(worker, lambda: calls.append("thread-finished"))
+        )
 
         worker.finished.emit({"result": True})
         self.app.processEvents()

@@ -1,7 +1,9 @@
 import test_encoding_smoke as _encoding
 
 
-def test_encoding_scan_excludes_environment_but_keeps_application_files(tmp_path, monkeypatch):
+def test_encoding_scan_excludes_environment_but_keeps_application_files(
+    tmp_path, monkeypatch
+):
     vendor = tmp_path / ".venv" / "Lib" / "site-packages"
     vendor.mkdir(parents=True)
     (vendor / "external.py").write_bytes(b"\xff")

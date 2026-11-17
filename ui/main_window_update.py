@@ -50,7 +50,9 @@ def _fit_dialog_buttons(dialog: QMessageBox, horizontal_slack: int = 28) -> None
     이어진다. sizeHint 기준으로 여유를 더해 잘림을 방지한다.
     """
     for button in dialog.findChildren(QPushButton):
-        button.setMinimumWidth(max(button.minimumWidth(), button.sizeHint().width() + horizontal_slack))
+        button.setMinimumWidth(
+            max(button.minimumWidth(), button.sizeHint().width() + horizontal_slack)
+        )
 
 
 class _MainWindowUpdateMixin:
@@ -62,7 +64,9 @@ class _MainWindowUpdateMixin:
         self._update_bridge.downloaded.connect(self._on_update_downloaded)
         staging_root = resolve_update_staging_root(self._data_dir())
         cleanup_update_artifacts(staging_root)
-        self._pending_update_result = consume_update_result(update_result_path(staging_root))
+        self._pending_update_result = consume_update_result(
+            update_result_path(staging_root)
+        )
         QTimer.singleShot(0, self._show_pending_update_result)
 
     def check_for_updates(self, interactive: bool = True) -> None:
@@ -94,11 +98,15 @@ class _MainWindowUpdateMixin:
         """Run an interactive check; QPushButton.clicked supplies a bool argument."""
         self.check_for_updates(interactive=True)
 
-    def _on_update_checked(self, manifest: object, error: object, interactive: bool) -> None:
+    def _on_update_checked(
+        self, manifest: object, error: object, interactive: bool
+    ) -> None:
         self._update_busy = False
         if isinstance(error, NoUpdateAvailableError):
             if interactive:
-                QMessageBox.information(self._widget(), "업데이트", "현재 최신 버전을 사용 중입니다.")
+                QMessageBox.information(
+                    self._widget(), "업데이트", "현재 최신 버전을 사용 중입니다."
+                )
             return
         if error is not None:
             logger.warning("Update check failed: %s", error)
@@ -111,14 +119,24 @@ class _MainWindowUpdateMixin:
             return
         if not getattr(sys, "frozen", False):
             if interactive:
-                QMessageBox.information(self._widget(), "업데이트", f"새 버전 {manifest.version}이 있습니다. 개발 실행에서는 자동 설치를 사용할 수 없습니다.")
+                QMessageBox.information(
+                    self._widget(),
+                    "업데이트",
+                    f"새 버전 {manifest.version}이 있습니다. 개발 실행에서는 자동 설치를 사용할 수 없습니다.",
+                )
             return
         dialog = QMessageBox(self._widget())
         dialog.setWindowTitle("업데이트 발견")
         dialog.setIcon(QMessageBox.Icon.Information)
-        dialog.setText(f"새 버전 {manifest.version}이 있습니다.\n\n현재 버전: {VERSION}\n최신 버전: {manifest.version}")
-        install = dialog.addButton("다운로드 및 설치", QMessageBox.ButtonRole.AcceptRole)
-        release = dialog.addButton("릴리스 페이지 보기", QMessageBox.ButtonRole.ActionRole)
+        dialog.setText(
+            f"새 버전 {manifest.version}이 있습니다.\n\n현재 버전: {VERSION}\n최신 버전: {manifest.version}"
+        )
+        install = dialog.addButton(
+            "다운로드 및 설치", QMessageBox.ButtonRole.AcceptRole
+        )
+        release = dialog.addButton(
+            "릴리스 페이지 보기", QMessageBox.ButtonRole.ActionRole
+        )
         dialog.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
         _fit_dialog_buttons(dialog)
         dialog.exec()
@@ -131,11 +149,15 @@ class _MainWindowUpdateMixin:
         if self._update_busy:
             return
         self._update_busy = True
-        self._status().showMessage(f"업데이트 {manifest.version} 다운로드 및 검증 중...", 0)
+        self._status().showMessage(
+            f"업데이트 {manifest.version} 다운로드 및 검증 중...", 0
+        )
 
         def work() -> None:
             try:
-                staged = prepare_staged_update(manifest, staging_root=resolve_update_staging_root(self._data_dir()))
+                staged = prepare_staged_update(
+                    manifest, staging_root=resolve_update_staging_root(self._data_dir())
+                )
                 if self._update_shutdown_requested:
                     staged.unlink(missing_ok=True)
                     return
@@ -149,13 +171,23 @@ class _MainWindowUpdateMixin:
     def _on_update_downloaded(self, payload: object, error: object) -> None:
         self._update_busy = False
         if error is not None or not isinstance(payload, tuple):
-            self._show_update_error(str(error or "업데이트 파일을 준비하지 못했습니다."))
+            self._show_update_error(
+                str(error or "업데이트 파일을 준비하지 못했습니다.")
+            )
             return
         manifest, staged = payload
         if not isinstance(manifest, ReleaseManifest) or not isinstance(staged, Path):
             self._show_update_error("업데이트 설치 정보가 올바르지 않습니다.")
             return
-        if QMessageBox.question(self._widget(), "업데이트 검증 완료", f"업데이트 {manifest.version}의 서명과 파일 무결성을 확인했습니다. 지금 설치하시겠습니까?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self._widget(),
+                "업데이트 검증 완료",
+                f"업데이트 {manifest.version}의 서명과 파일 무결성을 확인했습니다. 지금 설치하시겠습니까?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
             staged.unlink(missing_ok=True)
             self._status().showMessage("업데이트 설치를 취소했습니다.", 3000)
             return
@@ -171,7 +203,9 @@ class _MainWindowUpdateMixin:
                 version=VERSION,
                 sha256=manifest.artifact_sha256,
                 size=manifest.artifact_size,
-                result_file=update_result_path(resolve_update_staging_root(self._data_dir())),
+                result_file=update_result_path(
+                    resolve_update_staging_root(self._data_dir())
+                ),
             )
         except Exception as exc:
             staged.unlink(missing_ok=True)
@@ -187,7 +221,9 @@ class _MainWindowUpdateMixin:
         dialog.setWindowTitle("업데이트 실패")
         dialog.setIcon(QMessageBox.Icon.Warning)
         dialog.setText(f"자동 업데이트를 완료하지 못했습니다.\n\n오류: {detail}")
-        release = dialog.addButton("릴리스 페이지 열기", QMessageBox.ButtonRole.ActionRole)
+        release = dialog.addButton(
+            "릴리스 페이지 열기", QMessageBox.ButtonRole.ActionRole
+        )
         dialog.addButton("닫기", QMessageBox.ButtonRole.RejectRole)
         _fit_dialog_buttons(dialog)
         dialog.exec()
@@ -209,16 +245,27 @@ class _MainWindowUpdateMixin:
     def _prepare_update_shutdown(self) -> tuple[bool, str]:
         window = cast(Any, self)
         if window.is_maintenance_mode_active():
-            return False, "다른 유지보수 작업이 진행 중이라 업데이트를 설치할 수 없습니다."
+            return (
+                False,
+                "다른 유지보수 작업이 진행 중이라 업데이트를 설치할 수 없습니다.",
+            )
         ok, unfinished = window._cancel_active_fetch_workers(wait_ms=3000)
         if not ok:
-            return False, "활성 작업을 안전하게 종료하지 못했습니다: " + ", ".join(unfinished)
-        for worker_name in ("_fts_backfill_worker", "_cloud_sync_worker", "_tray_unread_worker"):
+            return False, "활성 작업을 안전하게 종료하지 못했습니다: " + ", ".join(
+                unfinished
+            )
+        for worker_name in (
+            "_fts_backfill_worker",
+            "_cloud_sync_worker",
+            "_tray_unread_worker",
+        ):
             worker = getattr(window, worker_name, None)
             if worker is None or not worker.isRunning():
                 continue
             try:
-                request_stop = getattr(worker, "requestInterruption", None) or getattr(worker, "stop", None)
+                request_stop = getattr(worker, "requestInterruption", None) or getattr(
+                    worker, "stop", None
+                )
                 if callable(request_stop):
                     request_stop()
                 if not worker.wait(3000):
@@ -239,7 +286,11 @@ class _MainWindowUpdateMixin:
             self._toast("업데이트가 성공적으로 설치되었습니다.")
             return
         detail = str(result.get("error", "알 수 없는 오류"))
-        message = "업데이트 설치에 실패했습니다." if status == "failed" else "업데이트 설치 후 이전 버전으로 복구했습니다."
+        message = (
+            "업데이트 설치에 실패했습니다."
+            if status == "failed"
+            else "업데이트 설치 후 이전 버전으로 복구했습니다."
+        )
         logger.warning("Update helper result (%s): %s", status, detail)
         self._status().showMessage(f"{message} {detail}", 8000)
         self._toast(message)

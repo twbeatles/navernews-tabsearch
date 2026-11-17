@@ -3,6 +3,7 @@
 PROJECT_AUDIT.md 3.1: user_agent 기본값이 구버전으로 하드코딩되어
 VERSION 과 어긋나던 문제를 방지하는 회귀 테스트.
 """
+
 from __future__ import annotations
 
 from core.constants import VERSION

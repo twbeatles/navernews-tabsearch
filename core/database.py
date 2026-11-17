@@ -191,13 +191,18 @@ class DatabaseManager(
             return conn
         except Exception as e:
             logger.warning(f"DB 연결 획득 실패 (timeout={timeout}s): {e}")
-            logger.warning(f"활성 연결 수: {self._active_connections}/{self.max_connections}")
+            logger.warning(
+                f"활성 연결 수: {self._active_connections}/{self.max_connections}"
+            )
             # Reserve the slot under the lock BEFORE creating the connection.
             # Checking the cap, releasing the lock to connect, and only then
             # registering would let concurrent callers all pass the check and
             # overshoot the cap.
             with self._lock:
-                active_emergency = len(self._emergency_connections) + self._pending_emergency_connections
+                active_emergency = (
+                    len(self._emergency_connections)
+                    + self._pending_emergency_connections
+                )
                 if active_emergency >= self.max_emergency_connections:
                     self._emergency_connection_rejections += 1
                     logger.error(
@@ -291,8 +296,13 @@ class DatabaseManager(
         with self._lock:
             emergency_count = len(self._emergency_connections)
             if emergency_count > 0:
-                logger.warning(f"비상 연결 {emergency_count}개가 정리되지 않고 남아있음")
-            if self._emergency_connection_uses > 0 or self._emergency_connection_rejections > 0:
+                logger.warning(
+                    f"비상 연결 {emergency_count}개가 정리되지 않고 남아있음"
+                )
+            if (
+                self._emergency_connection_uses > 0
+                or self._emergency_connection_rejections > 0
+            ):
                 logger.warning(
                     "비상 연결 통계: uses=%s, rejects=%s",
                     self._emergency_connection_uses,
@@ -330,7 +340,9 @@ class DatabaseManager(
                     (self.SHUTDOWN_STATE_KEY, str(state)),
                 )
         except Exception as e:
-            logger.debug("Shutdown state marker (%s) could not be written: %s", state, e)
+            logger.debug(
+                "Shutdown state marker (%s) could not be written: %s", state, e
+            )
         finally:
             if conn is not None:
                 try:
@@ -396,4 +408,6 @@ class DatabaseManager(
 
         safe_chunk_size = max(1, int(chunk_size))
 
-        return total_count, NewsSnapshotBatchIterator(self, conn, scope, total_count, safe_chunk_size)
+        return total_count, NewsSnapshotBatchIterator(
+            self, conn, scope, total_count, safe_chunk_size
+        )

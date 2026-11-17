@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -46,5 +45,6 @@ class AutoBackup(
         )
         self.last_create_error = ""
         self._ensure_backup_dir()
+
 
 __all__ = ["AutoBackup"]

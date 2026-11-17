@@ -32,7 +32,9 @@ class UpdateRolledBackError(RuntimeError):
     """The old executable was restored successfully."""
 
 
-def prepare_target_update(*, target: Path, staged: Path, sha256: str, size: int) -> Path:
+def prepare_target_update(
+    *, target: Path, staged: Path, sha256: str, size: int
+) -> Path:
     """Copy a verified download beside the install before the application exits.
 
     Renames are only atomic within a volume. Never copy over the installed exe;
@@ -78,7 +80,9 @@ def write_update_result(path: str | Path, payload: dict[str, object]) -> None:
         raise ValueError("invalid update result status")
     temp_path = result_path.with_name(f".{result_path.name}.{uuid4().hex}.tmp")
     try:
-        temp_path.write_text(json.dumps(data, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        temp_path.write_text(
+            json.dumps(data, ensure_ascii=False, sort_keys=True), encoding="utf-8"
+        )
         os.replace(temp_path, result_path)
     finally:
         temp_path.unlink(missing_ok=True)
@@ -94,12 +98,18 @@ def consume_update_result(path: str | Path) -> dict[str, object] | None:
         result_path.unlink(missing_ok=True)
         return None
     result_path.unlink(missing_ok=True)
-    if not isinstance(data, dict) or str(data.get("status", "")) not in {"applied", "rolled_back", "failed"}:
+    if not isinstance(data, dict) or str(data.get("status", "")) not in {
+        "applied",
+        "rolled_back",
+        "failed",
+    }:
         return None
     return data
 
 
-def cleanup_update_artifacts(staging_root: str | Path, *, max_age_seconds: float = 7 * 24 * 60 * 60) -> list[Path]:
+def cleanup_update_artifacts(
+    staging_root: str | Path, *, max_age_seconds: float = 7 * 24 * 60 * 60
+) -> list[Path]:
     root = Path(staging_root).resolve()
     if not root.is_dir():
         return []
@@ -118,14 +128,21 @@ def cleanup_update_artifacts(staging_root: str | Path, *, max_age_seconds: float
 
 
 def stream_update_artifact(manifest: ReleaseManifest):
-    with urlopen(Request(manifest.artifact_url, headers={"User-Agent": "NaverNewsScraperPro-Updater"}), timeout=UPDATE_REQUEST_TIMEOUT_SECONDS) as response:
+    with urlopen(
+        Request(
+            manifest.artifact_url, headers={"User-Agent": "NaverNewsScraperPro-Updater"}
+        ),
+        timeout=UPDATE_REQUEST_TIMEOUT_SECONDS,
+    ) as response:
         if urlsplit(response.geturl()).scheme != "https":
             raise ValueError("업데이트 파일 리디렉션이 HTTPS가 아닙니다.")
         while chunk := response.read(1024 * 1024):
             yield chunk
 
 
-def prepare_staged_update(manifest: ReleaseManifest, *, staging_root: str | Path) -> Path:
+def prepare_staged_update(
+    manifest: ReleaseManifest, *, staging_root: str | Path
+) -> Path:
     root = Path(staging_root).resolve()
     staged = root / f"update-{manifest.version}-{uuid4().hex}.exe"
     digest, total = hashlib.sha256(), 0
@@ -139,7 +156,10 @@ def prepare_staged_update(manifest: ReleaseManifest, *, staging_root: str | Path
                 handle.write(chunk)
             handle.flush()
             os.fsync(handle.fileno())
-        if total != manifest.artifact_size or digest.hexdigest().lower() != manifest.artifact_sha256:
+        if (
+            total != manifest.artifact_size
+            or digest.hexdigest().lower() != manifest.artifact_sha256
+        ):
             raise ValueError("업데이트 파일 무결성 검증에 실패했습니다.")
         return staged
     except Exception:
@@ -204,11 +224,20 @@ def _notify_shell_icon_changed(path: Path) -> None:
         return
     try:
         shell32 = ctypes.windll.shell32
-        shell32.SHChangeNotify.argtypes = [ctypes.c_ulong, ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_void_p]
+        shell32.SHChangeNotify.argtypes = [
+            ctypes.c_ulong,
+            ctypes.c_uint,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+        ]
         shell32.SHChangeNotify.restype = None
-        shell32.SHChangeNotify(0x00002000, 0x0005, str(path), None)  # SHCNE_UPDATEITEM, SHCNF_PATHW
+        shell32.SHChangeNotify(
+            0x00002000, 0x0005, str(path), None
+        )  # SHCNE_UPDATEITEM, SHCNF_PATHW
     except Exception as exc:
-        logger.warning("업데이트된 실행 파일의 아이콘 갱신 알림에 실패했습니다: %s", exc)
+        logger.warning(
+            "업데이트된 실행 파일의 아이콘 갱신 알림에 실패했습니다: %s", exc
+        )
 
 
 def _sanitized_bootloader_env() -> dict[str, str]:
@@ -222,14 +251,23 @@ def _sanitized_bootloader_env() -> dict[str, str]:
     env = dict(os.environ)
     for key in list(env.keys()):
         upper = key.upper()
-        if upper == "_MEIPASS" or upper.startswith("_MEI") or upper.startswith("_MEIPASS") or upper.startswith("PYINSTALLER_"):
+        if (
+            upper == "_MEIPASS"
+            or upper.startswith("_MEI")
+            or upper.startswith("_MEIPASS")
+            or upper.startswith("PYINSTALLER_")
+        ):
             del env[key]
     return env
 
 
 def _sibling_update_backups(target: Path) -> list[Path]:
     try:
-        backups = [path for path in target.parent.glob(f"{target.name}.v*.bak") if path.is_file()]
+        backups = [
+            path
+            for path in target.parent.glob(f"{target.name}.v*.bak")
+            if path.is_file()
+        ]
     except OSError:
         return []
     try:
@@ -268,15 +306,31 @@ def recover_interrupted_update(*, target: Path, backup: Path) -> Path | None:
     return chosen
 
 
-def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sha256: str, expected_size: int) -> None:
+def apply_staged_update(
+    *,
+    target: Path,
+    staged: Path,
+    backup: Path,
+    expected_sha256: str,
+    expected_size: int,
+) -> None:
     target, staged, backup = target.resolve(), staged.resolve(), backup.resolve()
-    if len({target, staged, backup}) != 3 or target.suffix.lower() != ".exe" or staged.suffix.lower() != ".exe" or backup.parent != target.parent:
+    if (
+        len({target, staged, backup}) != 3
+        or target.suffix.lower() != ".exe"
+        or staged.suffix.lower() != ".exe"
+        or backup.parent != target.parent
+    ):
         raise ValueError("업데이트 교체 경로가 올바르지 않습니다.")
     if not target.is_file():
         recovered = recover_interrupted_update(target=target, backup=backup)
         if recovered is None:
             raise ValueError("업데이트 교체 파일을 확인할 수 없습니다.")
-    if not target.is_file() or not staged.is_file() or staged.stat().st_size != expected_size:
+    if (
+        not target.is_file()
+        or not staged.is_file()
+        or staged.stat().st_size != expected_size
+    ):
         raise ValueError("업데이트 교체 파일을 확인할 수 없습니다.")
     digest_builder = hashlib.sha256()
     with staged.open("rb") as handle:
@@ -287,8 +341,9 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
         raise ValueError("업데이트 파일 무결성 재검증에 실패했습니다.")
     original_staged = staged
     if staged.parent != target.parent:
-        staged = prepare_target_update(target=target, staged=staged,
-                                       sha256=expected_sha256, size=expected_size)
+        staged = prepare_target_update(
+            target=target, staged=staged, sha256=expected_sha256, size=expected_size
+        )
     # Windows cannot overwrite or delete a running (or just-exited) exe
     # (WinError 5), but it can rename it. Move the install aside first so a
     # locked target never blocks the swap; a first-move failure leaves the
@@ -302,18 +357,33 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
         raise
     try:
         os.replace(staged, target)
-        completed = subprocess.run([str(target), "--smoke"], timeout=60, check=False, capture_output=True, env=_sanitized_bootloader_env())
+        completed = subprocess.run(
+            [str(target), "--smoke"],
+            timeout=60,
+            check=False,
+            capture_output=True,
+            env=_sanitized_bootloader_env(),
+        )
         if completed.returncode:
             raise RuntimeError("업데이트된 프로그램의 시작 점검에 실패했습니다.")
-        subprocess.Popen([str(target)], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=_sanitized_bootloader_env())
+        subprocess.Popen(
+            [str(target)],
+            close_fds=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            env=_sanitized_bootloader_env(),
+        )
     except Exception as exc:
         if backup.is_file():
             try:
                 os.replace(backup, target)
             except OSError:
-                raise RuntimeError("업데이트 실패 후 이전 버전으로 복구하지 못했습니다. 백업에서 직접 복원하십시오.") from exc
+                raise RuntimeError(
+                    "업데이트 실패 후 이전 버전으로 복구하지 못했습니다. 백업에서 직접 복원하십시오."
+                ) from exc
             _notify_shell_icon_changed(target)
-            raise UpdateRolledBackError("업데이트 실패 후 이전 버전으로 복구했습니다.") from exc
+            raise UpdateRolledBackError(
+                "업데이트 실패 후 이전 버전으로 복구했습니다."
+            ) from exc
         raise
     finally:
         if staged != original_staged:
@@ -321,23 +391,61 @@ def apply_staged_update(*, target: Path, staged: Path, backup: Path, expected_sh
     try:
         original_staged.unlink(missing_ok=True)
     except OSError:
-        logger.warning("사용한 업데이트 다운로드 파일을 정리하지 못했습니다: %s", original_staged)
+        logger.warning(
+            "사용한 업데이트 다운로드 파일을 정리하지 못했습니다: %s", original_staged
+        )
     _notify_shell_icon_changed(target)
     try:
-        backups = sorted(target.parent.glob(f"{target.name}.v*.bak"), key=lambda path: path.stat().st_mtime, reverse=True)
+        backups = sorted(
+            target.parent.glob(f"{target.name}.v*.bak"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
         for old in backups[UPDATE_BACKUP_KEEP_COUNT:]:
             old.unlink(missing_ok=True)
     except OSError:
         pass
 
 
-def launch_update_helper(*, target: Path, staged: Path, version: str, sha256: str, size: int, result_file: Path) -> None:
+def launch_update_helper(
+    *,
+    target: Path,
+    staged: Path,
+    version: str,
+    sha256: str,
+    size: int,
+    result_file: Path,
+) -> None:
     helper = staged.parent / f"update-helper-{uuid4().hex}.exe"
-    local_staged = prepare_target_update(target=target, staged=staged, sha256=sha256, size=size)
+    local_staged = prepare_target_update(
+        target=target, staged=staged, sha256=sha256, size=size
+    )
     backup = target.with_name(f"{target.name}.v{version}.{uuid4().hex[:8]}.bak")
     try:
         shutil.copy2(Path(sys.executable).resolve(), helper)
-        subprocess.Popen([str(helper), "--apply-update", "--target", str(target), "--staged", str(local_staged), "--backup", str(backup), "--parent-pid", str(os.getpid()), "--expected-sha256", sha256, "--expected-size", str(size), "--result-file", str(result_file.resolve())], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=_sanitized_bootloader_env())
+        subprocess.Popen(
+            [
+                str(helper),
+                "--apply-update",
+                "--target",
+                str(target),
+                "--staged",
+                str(local_staged),
+                "--backup",
+                str(backup),
+                "--parent-pid",
+                str(os.getpid()),
+                "--expected-sha256",
+                sha256,
+                "--expected-size",
+                str(size),
+                "--result-file",
+                str(result_file.resolve()),
+            ],
+            close_fds=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            env=_sanitized_bootloader_env(),
+        )
     except Exception:
         helper.unlink(missing_ok=True)
         local_staged.unlink(missing_ok=True)
@@ -372,15 +480,26 @@ def handle_update_helper_args(argv: list[str] | None = None) -> int | None:
     }
     try:
         _wait_for_parent(parsed.parent_pid)
-        apply_staged_update(target=Path(parsed.target), staged=Path(parsed.staged), backup=Path(parsed.backup), expected_sha256=parsed.expected_sha256, expected_size=parsed.expected_size)
+        apply_staged_update(
+            target=Path(parsed.target),
+            staged=Path(parsed.staged),
+            backup=Path(parsed.backup),
+            expected_sha256=parsed.expected_sha256,
+            expected_size=parsed.expected_size,
+        )
     except Exception as exc:
         status = "rolled_back" if isinstance(exc, UpdateRolledBackError) else "failed"
-        write_update_result(result_file, {**base_result, "status": status, "error": str(exc)})
+        write_update_result(
+            result_file, {**base_result, "status": status, "error": str(exc)}
+        )
         if isinstance(exc, UpdateRolledBackError):
             try:
-                subprocess.Popen([str(Path(parsed.target).resolve())], close_fds=True,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                                 env=_sanitized_bootloader_env())
+                subprocess.Popen(
+                    [str(Path(parsed.target).resolve())],
+                    close_fds=True,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    env=_sanitized_bootloader_env(),
+                )
             except OSError:
                 logger.exception("이전 버전 재실행 실패")
         return 1

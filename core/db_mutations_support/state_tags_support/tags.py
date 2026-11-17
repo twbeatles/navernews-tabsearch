@@ -1,4 +1,3 @@
-
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -45,11 +44,15 @@ class _NewsTagsMixin:
         conn = self.get_connection()
         try:
             with conn:
-                exists = conn.execute("SELECT 1 FROM news WHERE link = ?", (link,)).fetchone()
+                exists = conn.execute(
+                    "SELECT 1 FROM news WHERE link = ?", (link,)
+                ).fetchone()
                 if not exists:
                     return False
                 current_tags = self._tags_for_link_with_conn(conn, link)
-                if {tag.casefold() for tag in current_tags} == {tag.casefold() for tag in normalized_tags}:
+                if {tag.casefold() for tag in current_tags} == {
+                    tag.casefold() for tag in normalized_tags
+                }:
                     return False
                 conn.execute("DELETE FROM news_tags WHERE link = ?", (link,))
                 if normalized_tags:
@@ -88,7 +91,9 @@ class _NewsTagsMixin:
         if not exists:
             return False
         current_tags = self._tags_for_link_with_conn(conn, link)
-        if {tag.casefold() for tag in current_tags} == {tag.casefold() for tag in normalized_tags}:
+        if {tag.casefold() for tag in current_tags} == {
+            tag.casefold() for tag in normalized_tags
+        }:
             return False
         conn.execute("DELETE FROM news_tags WHERE link = ?", (link,))
         if normalized_tags:
@@ -176,14 +181,18 @@ class _NewsTagsMixin:
                     next_tags: List[str] = []
                     seen = set()
                     for tag in current:
-                        replacement = new_value if tag.casefold() == old_value.casefold() else tag
+                        replacement = (
+                            new_value if tag.casefold() == old_value.casefold() else tag
+                        )
                         key = replacement.casefold()
                         if key not in seen:
                             seen.add(key)
                             next_tags.append(replacement)
                         changed = changed or replacement != tag
                     if changed:
-                        self._set_tags_with_conn(conn, link, next_tags, timestamp=now_ts)
+                        self._set_tags_with_conn(
+                            conn, link, next_tags, timestamp=now_ts
+                        )
                 return len(links)
         except sqlite3.Error as e:
             logger.error("rename_tag failed: %s", e)
@@ -214,7 +223,8 @@ class _NewsTagsMixin:
                 now_ts = datetime.now().timestamp()
                 for link in links:
                     current = [
-                        item for item in self._tags_for_link_with_conn(conn, link)
+                        item
+                        for item in self._tags_for_link_with_conn(conn, link)
                         if item.casefold() != target.casefold()
                     ]
                     self._set_tags_with_conn(conn, link, current, timestamp=now_ts)
@@ -225,7 +235,9 @@ class _NewsTagsMixin:
         finally:
             self.return_connection(conn)
 
-    def _tags_for_link_with_conn(self: DatabaseManager, conn: sqlite3.Connection, link: str) -> List[str]:
+    def _tags_for_link_with_conn(
+        self: DatabaseManager, conn: sqlite3.Connection, link: str
+    ) -> List[str]:
         rows = conn.execute(
             "SELECT tag FROM news_tags WHERE link = ? ORDER BY lower(tag), tag",
             (link,),
@@ -254,7 +266,9 @@ class _NewsTagsMixin:
                     current = self._tags_for_link_with_conn(conn, link)
                     if any(item.casefold() == target.casefold() for item in current):
                         continue
-                    if self._set_tags_with_conn(conn, link, [*current, target], timestamp=now_ts):
+                    if self._set_tags_with_conn(
+                        conn, link, [*current, target], timestamp=now_ts
+                    ):
                         changed += 1
             return changed
         except sqlite3.Error as e:
@@ -263,7 +277,9 @@ class _NewsTagsMixin:
         finally:
             self.return_connection(conn)
 
-    def bulk_remove_tag_from_links(self: DatabaseManager, links: List[str], tag: str) -> int:
+    def bulk_remove_tag_from_links(
+        self: DatabaseManager, links: List[str], tag: str
+    ) -> int:
         normalized = normalize_tags([tag])
         if not normalized:
             return 0
@@ -283,10 +299,14 @@ class _NewsTagsMixin:
                     ).fetchone():
                         continue
                     current = self._tags_for_link_with_conn(conn, link)
-                    next_tags = [item for item in current if item.casefold() != target.casefold()]
+                    next_tags = [
+                        item for item in current if item.casefold() != target.casefold()
+                    ]
                     if len(next_tags) == len(current):
                         continue
-                    if self._set_tags_with_conn(conn, link, next_tags, timestamp=now_ts):
+                    if self._set_tags_with_conn(
+                        conn, link, next_tags, timestamp=now_ts
+                    ):
                         changed += 1
             return changed
         except sqlite3.Error as e:

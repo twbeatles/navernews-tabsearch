@@ -9,4 +9,4 @@ warnings.warn(
 )
 
 
-__all__ = ['WorkerHandle', 'WorkerRegistry']
+__all__ = ["WorkerHandle", "WorkerRegistry"]

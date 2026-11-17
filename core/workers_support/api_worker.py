@@ -55,6 +55,8 @@ class ApiErrorMeta(TypedDict):
     status_code: int
     cooldown_seconds: int
     retryable: bool
+
+
 class ApiWorker(QObject):
     """API 호출 워커 (재시도 로직 및 백그라운드 DB 저장 포함)"""
 
@@ -83,7 +85,9 @@ class ApiWorker(QObject):
         self.csec = client_secret
         self.search_query = str(search_query or "").strip()
         self.db_keyword = str(db_keyword or "").strip()
-        self.display_keyword = str(display_keyword or self.search_query or self.db_keyword)
+        self.display_keyword = str(
+            display_keyword or self.search_query or self.db_keyword
+        )
         self.exclude_words = exclude_words
         self.db = db_manager
         self.query_key = str(query_key or "").strip() or build_fetch_key(
@@ -204,11 +208,15 @@ class ApiWorker(QObject):
             self._emit_error(f"오류 발생: {str(e)}", kind="internal_error")
             return
         owns_session = self.session is None
-        self._request_session = cast(ClosableProtocol, session) if hasattr(session, "close") else None
+        self._request_session = (
+            cast(ClosableProtocol, session) if hasattr(session, "close") else None
+        )
         self._owns_request_session = owns_session
 
         try:
-            with perf_timer("api.run", f"kw={self.display_keyword}|max_retries={self.max_retries}"):
+            with perf_timer(
+                "api.run", f"kw={self.display_keyword}|max_retries={self.max_retries}"
+            ):
                 for attempt in range(self.max_retries):
                     if not self.is_running:
                         logger.info(f"ApiWorker 중단됨: {self.display_keyword}")
@@ -227,7 +235,10 @@ class ApiWorker(QObject):
                             "sort": "date",
                         }
 
-                        with perf_timer("api.request", f"kw={self.display_keyword}|attempt={attempt + 1}"):
+                        with perf_timer(
+                            "api.request",
+                            f"kw={self.display_keyword}|attempt={attempt + 1}",
+                        ):
                             resp = session.get(
                                 url,
                                 headers=headers,
@@ -236,7 +247,9 @@ class ApiWorker(QObject):
                                 allow_redirects=False,
                             )
                         if not self.is_running:
-                            logger.info(f"ApiWorker cancelled after response: {self.display_keyword}")
+                            logger.info(
+                                f"ApiWorker cancelled after response: {self.display_keyword}"
+                            )
                             return
 
                         if 300 <= int(resp.status_code) < 400:
@@ -254,7 +267,9 @@ class ApiWorker(QObject):
                             return
 
                         if resp.status_code == 429:
-                            cooldown_seconds = self._rate_limit_wait_seconds(resp, attempt)
+                            cooldown_seconds = self._rate_limit_wait_seconds(
+                                resp, attempt
+                            )
                             if cooldown_seconds > MAX_INLINE_RETRY_AFTER_SECONDS:
                                 self._emit_error(
                                     "API 요청 제한 초과. 잠시 후 다시 시도해주세요.",
@@ -265,7 +280,10 @@ class ApiWorker(QObject):
                                 )
                                 return
                             if attempt < self.max_retries - 1:
-                                self._safe_emit(self.progress, f"요청 제한 초과. {cooldown_seconds}초 후 재시도...")
+                                self._safe_emit(
+                                    self.progress,
+                                    f"요청 제한 초과. {cooldown_seconds}초 후 재시도...",
+                                )
                                 for _ in range(cooldown_seconds):
                                     if not self.is_running:
                                         return
@@ -283,22 +301,39 @@ class ApiWorker(QObject):
                         if resp.status_code != 200:
                             try:
                                 error_data = resp.json()
-                                error_code, error_msg = parse_naver_api_error(error_data)
-                            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                                error_code, error_msg = parse_naver_api_error(
+                                    error_data
+                                )
+                            except (
+                                json.JSONDecodeError,
+                                KeyError,
+                                ValueError,
+                                TypeError,
+                            ):
                                 error_msg = f"HTTP {resp.status_code}"
                                 error_code = ""
                             status_code = int(resp.status_code)
-                            if 500 <= status_code < 600 and attempt < self.max_retries - 1:
+                            if (
+                                500 <= status_code < 600
+                                and attempt < self.max_retries - 1
+                            ):
                                 backoff_seconds = self._retry_backoff_seconds(attempt)
-                                self._safe_emit(self.progress, f"서버 오류. {backoff_seconds}초 후 재시도...")
+                                self._safe_emit(
+                                    self.progress,
+                                    f"서버 오류. {backoff_seconds}초 후 재시도...",
+                                )
                                 if not self._sleep_with_cancel(backoff_seconds):
                                     return
                                 continue
                             error_kind = (
-                                "auth_error" if status_code in (401, 403) else "http_error"
+                                "auth_error"
+                                if status_code in (401, 403)
+                                else "http_error"
                             )
                             self._emit_error(
-                                format_naver_http_error(status_code, error_code, error_msg),
+                                format_naver_http_error(
+                                    status_code, error_code, error_msg
+                                ),
                                 kind=error_kind,
                                 status_code=status_code,
                                 retryable=500 <= status_code < 600,
@@ -311,14 +346,20 @@ class ApiWorker(QObject):
                             items: List[Dict[str, Any]] = []
                             new_items: List[Dict[str, Any]] = []
                             filtered_count = 0
-                            exclude_words_lc = [ex.lower() for ex in self.exclude_words if ex]
+                            exclude_words_lc = [
+                                ex.lower() for ex in self.exclude_words if ex
+                            ]
 
                             for item in raw_items:
                                 if not self.is_running:
                                     break
 
-                                title = html.unescape(RE_BOLD_TAGS.sub("", item.get("title", "")))
-                                desc = html.unescape(RE_BOLD_TAGS.sub("", item.get("description", "")))
+                                title = html.unescape(
+                                    RE_BOLD_TAGS.sub("", item.get("title", ""))
+                                )
+                                desc = html.unescape(
+                                    RE_BOLD_TAGS.sub("", item.get("description", ""))
+                                )
 
                                 if exclude_words_lc:
                                     should_exclude = False
@@ -333,7 +374,9 @@ class ApiWorker(QObject):
                                         continue
 
                                 naver_link = _normalized_http_url(item.get("link", ""))
-                                org_link = _normalized_http_url(item.get("originallink", ""))
+                                org_link = _normalized_http_url(
+                                    item.get("originallink", "")
+                                )
                                 if _is_naver_news_url(naver_link):
                                     final_link = naver_link
                                 elif _is_naver_news_url(org_link):
@@ -344,10 +387,17 @@ class ApiWorker(QObject):
                                     filtered_count += 1
                                     continue
 
-                                publisher_source = _publisher_source_url(org_link, final_link)
+                                publisher_source = _publisher_source_url(
+                                    org_link, final_link
+                                )
                                 publisher = _publisher_from_url(publisher_source)
-                                if not publisher_source and _is_naver_news_url(final_link):
-                                    publisher = _publisher_from_naver_news_url(final_link) or publisher
+                                if not publisher_source and _is_naver_news_url(
+                                    final_link
+                                ):
+                                    publisher = (
+                                        _publisher_from_naver_news_url(final_link)
+                                        or publisher
+                                    )
                                     if publisher == _publisher_from_url(""):
                                         logger.info(
                                             "Naver publisher oid fallback unavailable: %s",
@@ -364,13 +414,19 @@ class ApiWorker(QObject):
                                     }
                                 )
 
-                        self._safe_emit(self.progress, f"'{self.display_keyword}' 저장 중...")
+                        self._safe_emit(
+                            self.progress, f"'{self.display_keyword}' 저장 중..."
+                        )
                         if not self.is_running:
-                            logger.info(f"ApiWorker cancelled before upsert: {self.display_keyword}")
+                            logger.info(
+                                f"ApiWorker cancelled before upsert: {self.display_keyword}"
+                            )
                             return
 
                         try:
-                            upsert_detailed = getattr(self.db, "upsert_news_detailed", None)
+                            upsert_detailed = getattr(
+                                self.db, "upsert_news_detailed", None
+                            )
                             if callable(upsert_detailed):
                                 with perf_timer(
                                     "api.upsert",
@@ -381,18 +437,28 @@ class ApiWorker(QObject):
                                         self.db_keyword,
                                         query_key=self.query_key,
                                     )
-                                added_count = int(getattr(upsert_result, "added_count", 0) or 0)
-                                dup_count = int(getattr(upsert_result, "duplicate_count", 0) or 0)
+                                added_count = int(
+                                    getattr(upsert_result, "added_count", 0) or 0
+                                )
+                                dup_count = int(
+                                    getattr(upsert_result, "duplicate_count", 0) or 0
+                                )
                                 new_link_order = [
                                     str(link).strip()
-                                    for link in (getattr(upsert_result, "new_links", ()) or ())
+                                    for link in (
+                                        getattr(upsert_result, "new_links", ()) or ()
+                                    )
                                     if str(link or "").strip()
                                 ]
                                 new_link_set = set(new_link_order)
                                 seen_new_links = set()
                                 for item in items:
                                     link = str(item.get("link", "") or "").strip()
-                                    if not link or link not in new_link_set or link in seen_new_links:
+                                    if (
+                                        not link
+                                        or link not in new_link_set
+                                        or link in seen_new_links
+                                    ):
                                         continue
                                     seen_new_links.add(link)
                                     new_items.append(item)
@@ -405,7 +471,11 @@ class ApiWorker(QObject):
                                 seen_new_links = set()
                                 for item in items:
                                     link = str(item.get("link", "") or "").strip()
-                                    if not link or link in existing_links or link in seen_new_links:
+                                    if (
+                                        not link
+                                        or link in existing_links
+                                        or link in seen_new_links
+                                    ):
                                         continue
                                     seen_new_links.add(link)
                                     new_items.append(item)
@@ -420,9 +490,15 @@ class ApiWorker(QObject):
                                         query_key=self.query_key,
                                     )
                         except DatabaseQueryError as e:
-                            logger.error("ApiWorker DB read failed: %s - %s", self.display_keyword, e)
+                            logger.error(
+                                "ApiWorker DB read failed: %s - %s",
+                                self.display_keyword,
+                                e,
+                            )
                             if not self.is_running:
-                                logger.info(f"ApiWorker cancelled on DB read error: {self.display_keyword}")
+                                logger.info(
+                                    f"ApiWorker cancelled on DB read error: {self.display_keyword}"
+                                )
                                 return
                             error_kind = (
                                 "db_pool_exhausted"
@@ -437,9 +513,15 @@ class ApiWorker(QObject):
                             )
                             return
                         except DatabaseWriteError as e:
-                            logger.error("ApiWorker DB write failed: %s - %s", self.display_keyword, e)
+                            logger.error(
+                                "ApiWorker DB write failed: %s - %s",
+                                self.display_keyword,
+                                e,
+                            )
                             if not self.is_running:
-                                logger.info(f"ApiWorker cancelled on DB write error: {self.display_keyword}")
+                                logger.info(
+                                    f"ApiWorker cancelled on DB write error: {self.display_keyword}"
+                                )
                                 return
                             error_kind = (
                                 "db_pool_exhausted"
@@ -454,11 +536,21 @@ class ApiWorker(QObject):
                             )
                             return
                         except DatabaseConnectionError as e:
-                            logger.error("ApiWorker DB connection failed: %s - %s", self.display_keyword, e)
+                            logger.error(
+                                "ApiWorker DB connection failed: %s - %s",
+                                self.display_keyword,
+                                e,
+                            )
                             if not self.is_running:
-                                logger.info(f"ApiWorker cancelled on DB connection error: {self.display_keyword}")
+                                logger.info(
+                                    f"ApiWorker cancelled on DB connection error: {self.display_keyword}"
+                                )
                                 return
-                            error_kind = "db_pool_exhausted" if e.pool_exhausted else "db_query_error"
+                            error_kind = (
+                                "db_pool_exhausted"
+                                if e.pool_exhausted
+                                else "db_query_error"
+                            )
                             self._emit_error(
                                 _db_pool_exhausted_message()
                                 if error_kind == "db_pool_exhausted"
@@ -481,18 +573,28 @@ class ApiWorker(QObject):
                         logger.info(
                             f"ApiWorker 완료: {self.display_keyword} ({len(items)}개, 새 링크 {new_count}, 추가 {added_count}, 중복 {dup_count})"
                         )
-                        self._safe_emit(self.progress, f"'{self.display_keyword}' 완료 (새 링크: {new_count}개)")
+                        self._safe_emit(
+                            self.progress,
+                            f"'{self.display_keyword}' 완료 (새 링크: {new_count}개)",
+                        )
                         self._safe_emit(self.finished, result)
                         return
 
                     except requests.Timeout:
-                        logger.warning(f"API 타임아웃: {self.display_keyword} (시도 {attempt + 1})")
+                        logger.warning(
+                            f"API 타임아웃: {self.display_keyword} (시도 {attempt + 1})"
+                        )
                         if not self.is_running:
-                            logger.info(f"ApiWorker cancelled on timeout: {self.display_keyword}")
+                            logger.info(
+                                f"ApiWorker cancelled on timeout: {self.display_keyword}"
+                            )
                             return
                         if attempt < self.max_retries - 1:
                             backoff_seconds = self._retry_backoff_seconds(attempt)
-                            self._safe_emit(self.progress, f"요청 시간 초과. {backoff_seconds}초 후 재시도...")
+                            self._safe_emit(
+                                self.progress,
+                                f"요청 시간 초과. {backoff_seconds}초 후 재시도...",
+                            )
                             if not self._sleep_with_cancel(backoff_seconds):
                                 return
                             continue
@@ -506,11 +608,16 @@ class ApiWorker(QObject):
                     except requests.RequestException as e:
                         logger.warning(f"네트워크 오류: {self.display_keyword} - {e}")
                         if not self.is_running:
-                            logger.info(f"ApiWorker cancelled on request error: {self.display_keyword}")
+                            logger.info(
+                                f"ApiWorker cancelled on request error: {self.display_keyword}"
+                            )
                             return
                         if attempt < self.max_retries - 1:
                             backoff_seconds = self._retry_backoff_seconds(attempt)
-                            self._safe_emit(self.progress, f"네트워크 오류. {backoff_seconds}초 후 재시도...")
+                            self._safe_emit(
+                                self.progress,
+                                f"네트워크 오류. {backoff_seconds}초 후 재시도...",
+                            )
                             if not self._sleep_with_cancel(backoff_seconds):
                                 return
                             continue
@@ -525,12 +632,16 @@ class ApiWorker(QObject):
                         logger.error(f"ApiWorker 예외: {self.display_keyword} - {e}")
                         traceback.print_exc()
                         if not self.is_running:
-                            logger.info(f"ApiWorker cancelled on exception: {self.display_keyword}")
+                            logger.info(
+                                f"ApiWorker cancelled on exception: {self.display_keyword}"
+                            )
                             return
                         self._emit_error(f"오류 발생: {str(e)}", kind="internal_error")
                         return
                 if self.is_running:
-                    self._emit_error("API 요청을 완료하지 못했습니다.", kind="internal_error")
+                    self._emit_error(
+                        "API 요청을 완료하지 못했습니다.", kind="internal_error"
+                    )
         finally:
             if owns_session and self._request_session is not None:
                 try:

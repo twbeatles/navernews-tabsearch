@@ -48,11 +48,14 @@ def request_background_shutdown(workers: Any, wait_ms: int = 1000) -> bool:
             continue
     return complete
 
+
 def _safe_delete_later(obj: Any) -> None:
     try:
         obj.deleteLater()
     except Exception:
         pass
+
+
 def _declares_shadowed_finished(worker: Any) -> bool:
     """Detect a subclass result signal named finished shadowing QThread.finished."""
     for klass in type(worker).__mro__:
@@ -123,9 +126,13 @@ def connect_qthread_finished(worker: Any, slot: Callable[..., Any]) -> bool:
         return True
     except Exception:
         return False
+
+
 def delete_qthread_when_finished(worker: Any) -> bool:
     """Delete a QThread subclass only after Qt reports the native thread has finished."""
     return connect_qthread_finished(worker, lambda *_args: _safe_delete_later(worker))
+
+
 def retain_worker_until_finished(worker: Any) -> None:
     """Keep a detached QThread subclass alive until its run method settles."""
     if worker is None:
@@ -164,6 +171,8 @@ def retain_worker_until_finished(worker: Any) -> None:
     except Exception:
         if not connected:
             release()
+
+
 def retain_qthread_until_finished(thread: Any, *objects: Any) -> None:
     """Keep a QThread and moved worker alive after a cancellation timeout."""
     if thread is None:

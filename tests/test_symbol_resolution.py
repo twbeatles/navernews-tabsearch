@@ -33,7 +33,11 @@ class TestSymbolResolution(unittest.TestCase):
                     continue
                 if name.startswith("__"):
                     continue
-                if name in local_defs or name in accessible_defs or name in builtin_names:
+                if (
+                    name in local_defs
+                    or name in accessible_defs
+                    or name in builtin_names
+                ):
                     continue
                 unresolved.add(name)
 
@@ -52,5 +56,6 @@ class TestSymbolResolution(unittest.TestCase):
         ]
         for path in targets:
             unresolved = self._find_unresolved(path)
-            self.assertEqual(unresolved, set(), f"{path} unresolved: {sorted(unresolved)}")
-
+            self.assertEqual(
+                unresolved, set(), f"{path} unresolved: {sorted(unresolved)}"
+            )

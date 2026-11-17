@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -55,10 +54,18 @@ class _CloudSyncPreviewMixin:
         is_bookmarked = self._source_expr(source_news_columns, s, "is_bookmarked", "0")
         notes = self._source_expr(source_news_columns, s, "notes", "''")
         is_deleted = self._source_expr(source_news_columns, s, "is_deleted", "0")
-        delete_updated_at = self._source_expr(source_news_columns, s, "delete_updated_at", "0")
-        read_updated_at = self._cloud_source_timestamp_expr(source_news_columns, "read_updated_at")
-        bookmark_updated_at = self._cloud_source_timestamp_expr(source_news_columns, "bookmark_updated_at")
-        notes_updated_at = self._cloud_source_timestamp_expr(source_news_columns, "notes_updated_at")
+        delete_updated_at = self._source_expr(
+            source_news_columns, s, "delete_updated_at", "0"
+        )
+        read_updated_at = self._cloud_source_timestamp_expr(
+            source_news_columns, "read_updated_at"
+        )
+        bookmark_updated_at = self._cloud_source_timestamp_expr(
+            source_news_columns, "bookmark_updated_at"
+        )
+        notes_updated_at = self._cloud_source_timestamp_expr(
+            source_news_columns, "notes_updated_at"
+        )
 
         summary["news_added"] = int(
             conn.execute(
@@ -130,7 +137,9 @@ class _CloudSyncPreviewMixin:
         if source_keyword_columns:
             nk = "nk"
             nk_link = self._source_expr(source_keyword_columns, nk, "link", "''")
-            nk_query_key = self._source_expr(source_keyword_columns, nk, "query_key", "''")
+            nk_query_key = self._source_expr(
+                source_keyword_columns, nk, "query_key", "''"
+            )
             summary["memberships_added"] = int(
                 conn.execute(
                     f"""
@@ -218,7 +227,10 @@ class _CloudSyncPreviewMixin:
                 "deleted": 0,
                 "restored": 0,
             }
-        if normalized_snapshot_id and normalized_snapshot_id in self.get_cloud_sync_seen_snapshot_ids():
+        if (
+            normalized_snapshot_id
+            and normalized_snapshot_id in self.get_cloud_sync_seen_snapshot_ids()
+        ):
             return {
                 "merged": False,
                 "skipped": True,
@@ -236,7 +248,9 @@ class _CloudSyncPreviewMixin:
 
         source_path = os.path.abspath(str(snapshot_db_path or ""))
         if not os.path.exists(source_path):
-            raise self._new_query_error("preview_cloud_snapshot_db", FileNotFoundError(source_path))
+            raise self._new_query_error(
+                "preview_cloud_snapshot_db", FileNotFoundError(source_path)
+            )
 
         conn = self.get_connection()
         attached = False
@@ -244,16 +258,22 @@ class _CloudSyncPreviewMixin:
             conn.execute("ATTACH DATABASE ? AS cloud_src", (source_path,))
             attached = True
             if not self._table_exists(conn, "cloud_src", "news"):
-                raise sqlite3.DatabaseError("snapshot database does not contain news table")
+                raise sqlite3.DatabaseError(
+                    "snapshot database does not contain news table"
+                )
             source_news_columns = self._table_columns(conn, "cloud_src", "news")
-            source_keyword_columns = self._table_columns(conn, "cloud_src", "news_keywords")
+            source_keyword_columns = self._table_columns(
+                conn, "cloud_src", "news_keywords"
+            )
             has_tag_state = self._table_exists(conn, "cloud_src", "news_tag_state")
-            preview: Dict[str, Any] = dict(self._preview_cloud_merge_with_attached(
-                conn,
-                source_news_columns,
-                source_keyword_columns,
-                has_tag_state,
-            ))
+            preview: Dict[str, Any] = dict(
+                self._preview_cloud_merge_with_attached(
+                    conn,
+                    source_news_columns,
+                    source_keyword_columns,
+                    has_tag_state,
+                )
+            )
             preview.update(
                 {
                     "merged": False,

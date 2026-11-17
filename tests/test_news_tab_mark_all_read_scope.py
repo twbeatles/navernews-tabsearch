@@ -220,7 +220,14 @@ class TestNewsTabMarkAllReadScope(unittest.TestCase):
 
         self.assertIsNone(dummy.job_worker)
         self.assertTrue(worker.deleted)
-        self.assertEqual(parent.events[1:4], [("end",), ("complete", "mark_all_read", 5), ("toast", "✓ 탭 전체 5개의 기사를 읽음으로 표시했습니다.")])
+        self.assertEqual(
+            parent.events[1:4],
+            [
+                ("end",),
+                ("complete", "mark_all_read", 5),
+                ("toast", "✓ 탭 전체 5개의 기사를 읽음으로 표시했습니다."),
+            ],
+        )
 
     def test_mark_all_read_does_not_start_when_parent_cannot_enter_maintenance(self):
         parent = _FakeMainWindow(start_result=(False, "busy"))

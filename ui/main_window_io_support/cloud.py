@@ -30,6 +30,7 @@ from ui.main_window_io_support.exports import _dialogs_for
 logger = logging.getLogger(__name__)
 EXPORT_CHUNK_SIZE = 500
 
+
 class _MainWindowCloudSyncMixin:
     def _cloud_sync_block_reason(
         self: MainApp,
@@ -41,7 +42,11 @@ class _MainWindowCloudSyncMixin:
     ) -> str:
         if bool(getattr(self, "_shutdown_in_progress", False)):
             return "프로그램을 종료하고 있습니다."
-        enabled = bool(getattr(self, "cloud_sync_enabled", True)) if enabled_override is None else bool(enabled_override)
+        enabled = (
+            bool(getattr(self, "cloud_sync_enabled", True))
+            if enabled_override is None
+            else bool(enabled_override)
+        )
         if respect_enabled and not enabled:
             return "클라우드 동기화가 꺼져 있습니다."
         sync_dir = (
@@ -53,27 +58,35 @@ class _MainWindowCloudSyncMixin:
             return "클라우드 동기화 폴더가 선택되지 않았습니다."
         if runtime_storage_is_probably_cloud(self.runtime_paths):
             return "실시간 DATA_DIR/DB가 클라우드 동기화 폴더 안에 있는 것으로 보입니다. 먼저 로컬 폴더로 옮겨 주세요."
-        if sync_dir and cloud_sync_path_conflicts_with_runtime(sync_dir, self.runtime_paths):
+        if sync_dir and cloud_sync_path_conflicts_with_runtime(
+            sync_dir, self.runtime_paths
+        ):
             return "클라우드 동기화 폴더가 실시간 런타임 데이터 폴더와 겹칩니다."
         if self.is_maintenance_mode_active():
             return "데이터베이스 유지보수 작업이 이미 실행 중입니다."
-        if getattr(self, "_refresh_in_progress", False) or getattr(self, "_sequential_refresh_active", False):
+        if getattr(self, "_refresh_in_progress", False) or getattr(
+            self, "_sequential_refresh_active", False
+        ):
             return "새로고침이 실행 중이라 이번 클라우드 동기화는 건너뜁니다."
         if getattr(self, "_cloud_sync_worker", None) is not None:
             return "클라우드 동기화가 이미 실행 중입니다."
         return ""
+
     def apply_cloud_sync_settings(self: MainApp) -> None:
         timer = getattr(self, "_cloud_sync_timer", None)
         if timer is None:
             return
         timer.stop()
         interval_minutes = int(getattr(self, "cloud_sync_interval_minutes", 30) or 30)
-        interval_minutes = interval_minutes if interval_minutes in {10, 30, 60, 120, 360} else 30
+        interval_minutes = (
+            interval_minutes if interval_minutes in {10, 30, 60, 120, 360} else 30
+        )
         self.cloud_sync_interval_minutes = interval_minutes
         if self._cloud_sync_block_reason(require_folder=True):
             return
         timer.setInterval(interval_minutes * 60 * 1000)
         timer.start()
+
     def run_cloud_sync_now(
         self: MainApp,
         *,
@@ -89,6 +102,7 @@ class _MainWindowCloudSyncMixin:
             interval_override=interval_override,
             respect_enabled=False,
         )
+
     def run_cloud_sync_export_now(
         self: MainApp,
         *,
@@ -104,6 +118,7 @@ class _MainWindowCloudSyncMixin:
             interval_override=interval_override,
             respect_enabled=False,
         )
+
     def run_cloud_sync_import_now(
         self: MainApp,
         *,
@@ -119,6 +134,7 @@ class _MainWindowCloudSyncMixin:
             interval_override=interval_override,
             respect_enabled=False,
         )
+
     def _cloud_import_preview_message(self: MainApp, preview: Dict[str, Any]) -> str:
         totals = dict(preview.get("totals", {}) or {})
         lines = [
@@ -143,6 +159,7 @@ class _MainWindowCloudSyncMixin:
         if pending_unseen:
             lines.append(f"이번에 처리하지 않는 대기 스냅샷: {pending_unseen:,}개")
         return "\n".join(lines)
+
     def _run_cloud_sync_once(
         self: MainApp,
         *,
@@ -235,7 +252,12 @@ class _MainWindowCloudSyncMixin:
                 )
                 self._require_db().mark_cloud_sync_snapshot_seen(snapshot.snapshot_id)
                 cleanup_old_snapshots(sync_dir, keep=100)
-                return {"mode": mode, "exported": snapshot, "imported": [], "errors": []}
+                return {
+                    "mode": mode,
+                    "exported": snapshot,
+                    "imported": [],
+                    "errors": [],
+                }
             if mode == "import":
                 imported = []
                 errors = []
@@ -291,7 +313,9 @@ class _MainWindowCloudSyncMixin:
             result["interval_minutes"] = interval_minutes
             return result
 
-        worker_cls = getattr(self, "_iterative_job_worker_cls", lambda: IterativeJobWorker)()
+        worker_cls = getattr(
+            self, "_iterative_job_worker_cls", lambda: IterativeJobWorker
+        )()
         worker = worker_cls(_job, parent=self)
         self._cloud_sync_worker = worker
         worker.finished.connect(self._on_cloud_sync_finished)
@@ -299,10 +323,12 @@ class _MainWindowCloudSyncMixin:
         worker.cancelled.connect(self._on_cloud_sync_cancelled)
         delete_qthread_when_finished(worker)
         worker.start()
+
     def _finish_cloud_sync_worker(self: MainApp) -> None:
         self._cloud_sync_worker = None
         self.end_database_maintenance()
         self.apply_cloud_sync_settings()
+
     def _on_cloud_sync_finished(self: MainApp, result: Dict[str, Any]) -> None:
         if bool(getattr(self, "_shutdown_in_progress", False)):
             return
@@ -310,7 +336,9 @@ class _MainWindowCloudSyncMixin:
         errors = list(result.get("errors", []) or [])
         merged = [item for item in imported if bool(item.get("merged", False))]
         news_added = sum(int(item.get("news_added", 0) or 0) for item in merged)
-        memberships_added = sum(int(item.get("memberships_added", 0) or 0) for item in merged)
+        memberships_added = sum(
+            int(item.get("memberships_added", 0) or 0) for item in merged
+        )
         import_totals = aggregate_cloud_import_preview(imported)
         exported = result.get("exported")
         exported_text = "내보냄" if exported else "내보내기 없음"
@@ -335,14 +363,18 @@ class _MainWindowCloudSyncMixin:
         self._cloud_sync_last_status = status
         self._finish_cloud_sync_worker()
         if merged:
-            self.on_database_maintenance_completed("cloud_sync", news_added + memberships_added)
+            self.on_database_maintenance_completed(
+                "cloud_sync", news_added + memberships_added
+            )
         self.show_success_toast(status)
+
     def _on_cloud_sync_error(self: MainApp, error_msg: str) -> None:
         if bool(getattr(self, "_shutdown_in_progress", False)):
             return
         self._cloud_sync_last_status = f"클라우드 동기화 실패: {error_msg}"
         self._finish_cloud_sync_worker()
         self.show_error_toast(self._cloud_sync_last_status)
+
     def _on_cloud_sync_cancelled(self: MainApp) -> None:
         if bool(getattr(self, "_shutdown_in_progress", False)):
             return

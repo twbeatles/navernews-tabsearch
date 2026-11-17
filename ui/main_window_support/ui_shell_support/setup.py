@@ -63,11 +63,17 @@ class _MainWindowSetupShellMixin:
         self.btn_manage.setObjectName("MoreMenu")
         self.btn_manage.setToolTip("내보내기, 통계, 태그·규칙 관리, 백업, 설정")
         self.manage_menu = QMenu(self.btn_manage)
-        self.action_export = self._add_menu_action(self.manage_menu, "현재 탭 내보내기 (CSV)\tCtrl+S")
+        self.action_export = self._add_menu_action(
+            self.manage_menu, "현재 탭 내보내기 (CSV)\tCtrl+S"
+        )
         self.action_stats = self._add_menu_action(self.manage_menu, "통계")
         self.manage_menu.addSeparator()
-        self.action_tags = self._add_menu_action(self.manage_menu, "태그 관리\tCtrl+Shift+T")
-        self.action_rules = self._add_menu_action(self.manage_menu, "자동화 규칙\tCtrl+Shift+A")
+        self.action_tags = self._add_menu_action(
+            self.manage_menu, "태그 관리\tCtrl+Shift+T"
+        )
+        self.action_rules = self._add_menu_action(
+            self.manage_menu, "자동화 규칙\tCtrl+Shift+A"
+        )
         self.action_aliases = self._add_menu_action(self.manage_menu, "출처 별칭")
         self.manage_menu.addSeparator()
         self.action_backup = self._add_menu_action(self.manage_menu, "백업 및 복원")
@@ -121,7 +127,9 @@ class _MainWindowSetupShellMixin:
         self.action_settings.triggered.connect(self.open_settings)
         self.action_help.triggered.connect(self.show_help)
 
-        self.bm_tab = NewsTab("북마크", self._require_db(), self._effective_theme_idx(), self)
+        self.bm_tab = NewsTab(
+            "북마크", self._require_db(), self._effective_theme_idx(), self
+        )
         self._connect_news_tab_hydration(self.bm_tab)
         self.tabs.addTab(self.bm_tab, "★ 북마크")
         self._tab_bar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
@@ -140,7 +148,9 @@ class _MainWindowSetupShellMixin:
         if self.client_id:
             self._status_bar().showMessage(f"✅ 준비됨 - {len(self.tabs_data)}개 탭")
         else:
-            self._status_bar().showMessage("⚠️ API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요.")
+            self._status_bar().showMessage(
+                "⚠️ API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요."
+            )
 
     def setup_shortcuts(self):
         """키보드 단축키 설정"""
@@ -156,7 +166,11 @@ class _MainWindowSetupShellMixin:
         QShortcut(QKeySequence("Ctrl+Shift+A"), self, self.show_automation_rules)
 
         for i in range(1, 10):
-            QShortcut(QKeySequence(f"Alt+{i}"), self, lambda idx=i - 1: self.switch_to_tab(idx))
+            QShortcut(
+                QKeySequence(f"Alt+{i}"),
+                self,
+                lambda idx=i - 1: self.switch_to_tab(idx),
+            )
 
         QShortcut(QKeySequence("Ctrl+F"), self, self.focus_filter)
 
@@ -201,7 +215,12 @@ class _MainWindowSetupShellMixin:
                     policy_minutes.append(policy_value)
 
             global_minutes = minutes[idx] if 0 <= idx < len(minutes) else None
-            active_minutes = [value for value in ([global_minutes] if global_minutes else []) + policy_minutes if value]
+            active_minutes = [
+                value
+                for value in ([global_minutes] if global_minutes else [])
+                + policy_minutes
+                if value
+            ]
 
             if active_minutes:
                 tick_minutes = min(active_minutes)
@@ -212,9 +231,13 @@ class _MainWindowSetupShellMixin:
                 self._next_refresh_seconds = tick_minutes * 60
                 self._countdown_timer.setInterval(1000)
                 self._countdown_timer.start()
-                self._set_countdown_status_text(f"⏰ 다음 새로고침 확인: {tick_minutes}분 0초 후")
+                self._set_countdown_status_text(
+                    f"⏰ 다음 새로고침 확인: {tick_minutes}분 0초 후"
+                )
 
-                self._status_bar().showMessage(f"⏰ 자동 새로고침 확인: {tick_minutes}분 간격")
+                self._status_bar().showMessage(
+                    f"⏰ 자동 새로고침 확인: {tick_minutes}분 간격"
+                )
                 logger.info("자동 새로고침 설정: %s분 (%sms)", tick_minutes, ms)
             else:
                 self.timer.stop()

@@ -5,6 +5,7 @@ PROJECT_AUDIT.md 3.4: except (sqlite3.Error, OSError) 를 except Exception 으�
 기존에는 RuntimeError 등이 전파되어 finally 는 동작하나 unreadable 상태로
 분류되지 않았다.
 """
+
 from __future__ import annotations
 
 import sqlite3

@@ -66,7 +66,14 @@ class TestFetchDoneAfterRenameStale(unittest.TestCase):
     def test_on_fetch_done_ignores_callback_without_request_id(self):
         main = _DummyStaleFetchMain()
         main.on_fetch_done(
-            {"new_items": [], "new_count": 0, "added_count": 0, "dup_count": 0, "total": 10, "filtered": 0},
+            {
+                "new_items": [],
+                "new_count": 0,
+                "added_count": 0,
+                "dup_count": 0,
+                "total": 10,
+                "filtered": 0,
+            },
             "AI",
             is_more=False,
             request_id=None,
@@ -89,7 +96,14 @@ class TestFetchDoneAfterRenameStale(unittest.TestCase):
         main._worker_registry.pop_by_request_id(3)
 
         main.on_fetch_done(
-            {"new_items": [], "new_count": 0, "added_count": 0, "dup_count": 0, "total": 99, "filtered": 0},
+            {
+                "new_items": [],
+                "new_count": 0,
+                "added_count": 0,
+                "dup_count": 0,
+                "total": 99,
+                "filtered": 0,
+            },
             "AI",
             is_more=False,
             request_id=3,

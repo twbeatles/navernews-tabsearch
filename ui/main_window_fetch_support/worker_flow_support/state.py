@@ -47,7 +47,9 @@ class _FetchWorkerStateMixin:
         total: Optional[int],
         last_api_start_index: int,
     ) -> bool:
-        is_maintenance_active = getattr(self, "is_maintenance_mode_active", lambda: False)
+        is_maintenance_active = getattr(
+            self, "is_maintenance_mode_active", lambda: False
+        )
         if is_maintenance_active():
             tab_widget.btn_load.setEnabled(False)
             tab_widget.btn_load.setText("유지보수 중")

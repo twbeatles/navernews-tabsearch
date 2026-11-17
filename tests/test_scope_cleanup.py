@@ -79,7 +79,9 @@ class _ScopeCleanupTestCase(unittest.TestCase):
         try:
             return {
                 (str(row[0]), str(row[1])): int(row[2] or 0)
-                for row in conn.execute("SELECT query_key, link, is_duplicate FROM news_keywords")
+                for row in conn.execute(
+                    "SELECT query_key, link, is_duplicate FROM news_keywords"
+                )
             }
         finally:
             self.db.return_connection(conn)
@@ -141,7 +143,10 @@ class TestScopeCleanupExecution(_ScopeCleanupTestCase):
             for row in self.db.fetch_news("AI", query_key=LIVE_KEY)
         }
         self.assertEqual(before, after)
-        links = [row["link"] for row in self.db.fetch_news("dead-keyword", query_key=DEAD_KEY)]
+        links = [
+            row["link"]
+            for row in self.db.fetch_news("dead-keyword", query_key=DEAD_KEY)
+        ]
         self.assertEqual(links, [])
 
     def test_orphaned_articles_are_reported_but_rows_are_kept(self):

@@ -39,7 +39,9 @@ class _CancellingContext(_Context):
 
 
 class TestCsvImportExportHardening(unittest.TestCase):
-    def test_spreadsheet_formula_prefixes_are_neutralized_after_leading_whitespace(self):
+    def test_spreadsheet_formula_prefixes_are_neutralized_after_leading_whitespace(
+        self,
+    ):
         for value in ("=1+1", "+cmd", "-2+3", "@SUM(A1:A2)", " \t=HYPERLINK('x')"):
             with self.subTest(value=value):
                 self.assertTrue(_spreadsheet_safe_csv_cell(value).startswith("'"))
@@ -65,25 +67,47 @@ class TestCsvImportExportHardening(unittest.TestCase):
             db = DatabaseManager(str(Path(td) / "news.db"))
             try:
                 db.upsert_news(
-                    [{"title": "one", "link": "https://example.com/1", "pubDate": "", "description": ""}],
+                    [
+                        {
+                            "title": "one",
+                            "link": "https://example.com/1",
+                            "pubDate": "",
+                            "description": "",
+                        }
+                    ],
                     "AI",
                     query_key="ai|",
                 )
-                changed = db.import_article_state("https://example.com/1", bookmark=1, note="memo")
-                unchanged = db.import_article_state("https://example.com/1", bookmark=1, note="memo")
-                missing = db.import_article_state("https://example.com/missing", bookmark=1, note="memo")
+                changed = db.import_article_state(
+                    "https://example.com/1", bookmark=1, note="memo"
+                )
+                unchanged = db.import_article_state(
+                    "https://example.com/1", bookmark=1, note="memo"
+                )
+                missing = db.import_article_state(
+                    "https://example.com/missing", bookmark=1, note="memo"
+                )
                 self.assertEqual(changed["status"], "updated")
                 self.assertEqual(unchanged["status"], "unchanged")
                 self.assertEqual(missing["status"], "missing")
             finally:
                 db.close()
 
-    def test_atomic_article_state_import_rolls_back_bookmark_when_note_update_fails(self):
+    def test_atomic_article_state_import_rolls_back_bookmark_when_note_update_fails(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as td:
             db = DatabaseManager(str(Path(td) / "news.db"))
             try:
                 db.upsert_news(
-                    [{"title": "one", "link": "https://example.com/1", "pubDate": "", "description": ""}],
+                    [
+                        {
+                            "title": "one",
+                            "link": "https://example.com/1",
+                            "pubDate": "",
+                            "description": "",
+                        }
+                    ],
                     "AI",
                     query_key="ai|",
                 )
@@ -94,7 +118,9 @@ class TestCsvImportExportHardening(unittest.TestCase):
                     )
                     conn.commit()
                 with self.assertRaises(DatabaseWriteError):
-                    db.import_article_state("https://example.com/1", bookmark=1, note="memo")
+                    db.import_article_state(
+                        "https://example.com/1", bookmark=1, note="memo"
+                    )
                 row = db.fetch_news("AI", query_key="ai|")[0]
                 self.assertEqual(int(row["is_bookmarked"]), 0)
                 self.assertEqual(str(row["notes"] or ""), "")
@@ -107,7 +133,14 @@ class TestCsvImportExportHardening(unittest.TestCase):
             db = DatabaseManager(str(root / "news.db"))
             try:
                 db.upsert_news(
-                    [{"title": "one", "link": "https://example.com/1", "pubDate": "", "description": ""}],
+                    [
+                        {
+                            "title": "one",
+                            "link": "https://example.com/1",
+                            "pubDate": "",
+                            "description": "",
+                        }
+                    ],
                     "AI",
                     query_key="ai|",
                 )
@@ -119,7 +152,9 @@ class TestCsvImportExportHardening(unittest.TestCase):
                     writer.writerow(["https://example.com/1", "북마크", "memo"])
                     writer.writerow(["https://example.com/missing", "북마크", "memo"])
                 context = _Context()
-                result = import_bookmarks_notes_from_csv(context, db, str(path), chunk_size=1)
+                result = import_bookmarks_notes_from_csv(
+                    context, db, str(path), chunk_size=1
+                )
                 self.assertEqual(result["processed"], 3)
                 self.assertEqual(result["updated"], 1)
                 self.assertEqual(result["unchanged"], 1)
@@ -128,7 +163,10 @@ class TestCsvImportExportHardening(unittest.TestCase):
                 self.assertEqual(result["last_row"], 4)
                 self.assertEqual(
                     result["processed"],
-                    result["updated"] + result["unchanged"] + result["missing"] + result["failed"],
+                    result["updated"]
+                    + result["unchanged"]
+                    + result["missing"]
+                    + result["failed"],
                 )
                 self.assertEqual(context.reports[-1]["payload"]["unchanged"], 1)
             finally:
@@ -140,7 +178,14 @@ class TestCsvImportExportHardening(unittest.TestCase):
             db = DatabaseManager(str(root / "news.db"))
             try:
                 db.upsert_news(
-                    [{"title": "one", "link": "https://example.com/1", "pubDate": "", "description": ""}],
+                    [
+                        {
+                            "title": "one",
+                            "link": "https://example.com/1",
+                            "pubDate": "",
+                            "description": "",
+                        }
+                    ],
                     "AI",
                     query_key="ai|",
                 )
@@ -152,7 +197,9 @@ class TestCsvImportExportHardening(unittest.TestCase):
                     writer.writerow(["https://example.com/1", ""])
                 context = _CancellingContext()
                 with self.assertRaises(JobCancelledError):
-                    import_bookmarks_notes_from_csv(context, db, str(path), chunk_size=500)
+                    import_bookmarks_notes_from_csv(
+                        context, db, str(path), chunk_size=500
+                    )
                 self.assertEqual(context.latest["processed"], 1)
                 self.assertEqual(context.latest["updated"], 1)
                 self.assertEqual(context.latest["last_row"], 2)

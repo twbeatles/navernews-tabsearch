@@ -1,4 +1,3 @@
-
 from core.db_mutations_support.state_tags_support.article_state import (
     _NewsArticleStateMixin,
 )

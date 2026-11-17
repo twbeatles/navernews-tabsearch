@@ -41,7 +41,9 @@ class _MainWindowConfigMixin:
             except Exception as exc:
                 logger.warning("창 클래스 아이콘을 적용하지 못했습니다: %s", exc)
         else:
-            logger.warning("아이콘 파일을 찾을 수 없습니다: %s 또는 %s", ICON_FILE, ICON_PNG)
+            logger.warning(
+                "아이콘 파일을 찾을 수 없습니다: %s 또는 %s", ICON_FILE, ICON_PNG
+            )
             logger.warning("실행 파일과 같은 폴더에 아이콘 파일을 배치하세요.")
 
     def _resolve_icon_path(self):
@@ -76,10 +78,9 @@ class _MainWindowConfigMixin:
                 should_warn_plain_client_secret_storage,
             )
 
-            self._pending_plain_secret_warning = (
-                bool(resolved_client_secret)
-                and should_warn_plain_client_secret_storage(settings)
-            )
+            self._pending_plain_secret_warning = bool(
+                resolved_client_secret
+            ) and should_warn_plain_client_secret_storage(settings)
         except Exception:
             self._pending_plain_secret_warning = False
         self.config = {
@@ -106,7 +107,9 @@ class _MainWindowConfigMixin:
             "preferred_publishers": settings.get("preferred_publishers", []),
             "cloud_sync_enabled": settings.get("cloud_sync_enabled", True),
             "cloud_sync_dir": settings.get("cloud_sync_dir", ""),
-            "cloud_sync_interval_minutes": settings.get("cloud_sync_interval_minutes", 30),
+            "cloud_sync_interval_minutes": settings.get(
+                "cloud_sync_interval_minutes", 30
+            ),
             "tombstone_retention_days": settings.get("tombstone_retention_days", 90),
             "keyword_groups": loaded_cfg.get("keyword_groups", {}),
             "pagination_state": loaded_cfg.get("pagination_state", {}),
@@ -137,16 +140,28 @@ class _MainWindowConfigMixin:
         self.api_timeout = self.config.get("api_timeout", 15)
         self.cloud_sync_enabled = bool(self.config.get("cloud_sync_enabled", True))
         self.cloud_sync_dir = str(self.config.get("cloud_sync_dir", "") or "")
-        self.cloud_sync_interval_minutes = int(self.config.get("cloud_sync_interval_minutes", 30) or 30)
-        self.tombstone_retention_days = int(self.config.get("tombstone_retention_days", 90) or 0)
-        self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
-            self.config.get("blocked_publishers", []),
-            self.config.get("preferred_publishers", []),
+        self.cloud_sync_interval_minutes = int(
+            self.config.get("cloud_sync_interval_minutes", 30) or 30
+        )
+        self.tombstone_retention_days = int(
+            self.config.get("tombstone_retention_days", 90) or 0
+        )
+        self.blocked_publishers, self.preferred_publishers = (
+            normalize_publisher_filter_lists(
+                self.config.get("blocked_publishers", []),
+                self.config.get("preferred_publishers", []),
+            )
         )
         self.saved_searches = dict(self.config.get("saved_searches", {}))
-        self.automation_rules = normalize_automation_rules(self.config.get("automation_rules", []))
-        self.publisher_aliases = normalize_publisher_aliases(self.config.get("publisher_aliases", {}))
-        canonicalize_policies = getattr(self, "_canonicalize_tab_refresh_policies", None)
+        self.automation_rules = normalize_automation_rules(
+            self.config.get("automation_rules", [])
+        )
+        self.publisher_aliases = normalize_publisher_aliases(
+            self.config.get("publisher_aliases", {})
+        )
+        canonicalize_policies = getattr(
+            self, "_canonicalize_tab_refresh_policies", None
+        )
         raw_tab_refresh_policies = dict(self.config.get("tab_refresh_policies", {}))
         if callable(canonicalize_policies):
             self.tab_refresh_policies = canonicalize_policies(
@@ -155,26 +170,44 @@ class _MainWindowConfigMixin:
             )
         else:
             self.tab_refresh_policies = raw_tab_refresh_policies
-        self.keyword_group_manager.groups = self.keyword_group_manager._normalize_groups(
-            self.config.get("keyword_groups", {})
+        self.keyword_group_manager.groups = (
+            self.keyword_group_manager._normalize_groups(
+                self.config.get("keyword_groups", {})
+            )
         )
         raw_pagination_state = self.config.get("pagination_state", {})
         self._fetch_cursor_by_key = {
             str(fetch_key): int(start_idx)
-            for fetch_key, start_idx in (raw_pagination_state.items() if isinstance(raw_pagination_state, dict) else [])
-            if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+            for fetch_key, start_idx in (
+                raw_pagination_state.items()
+                if isinstance(raw_pagination_state, dict)
+                else []
+            )
+            if isinstance(fetch_key, str)
+            and fetch_key.strip()
+            and isinstance(start_idx, int)
+            and start_idx > 0
         }
         raw_pagination_totals = self.config.get("pagination_totals", {})
         self._fetch_total_by_key = {
             str(fetch_key): int(total)
-            for fetch_key, total in (raw_pagination_totals.items() if isinstance(raw_pagination_totals, dict) else [])
-            if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
+            for fetch_key, total in (
+                raw_pagination_totals.items()
+                if isinstance(raw_pagination_totals, dict)
+                else []
+            )
+            if isinstance(fetch_key, str)
+            and fetch_key.strip()
+            and isinstance(total, int)
+            and total >= 0
         }
         if not hasattr(self, "_pending_plain_secret_warning"):
             self._pending_plain_secret_warning = False
 
         if StartupManager.is_available():
-            startup_status = StartupManager.get_startup_status(start_minimized=self.start_minimized)
+            startup_status = StartupManager.get_startup_status(
+                start_minimized=self.start_minimized
+            )
             self.auto_start_enabled = bool(startup_status.get("is_healthy", False))
 
     def save_config(self):
@@ -191,7 +224,9 @@ class _MainWindowConfigMixin:
                 "client_id": self.client_id,
                 "client_secret": secret_payload.get("client_secret", ""),
                 "client_secret_enc": secret_payload.get("client_secret_enc", ""),
-                "client_secret_storage": secret_payload.get("client_secret_storage", "plain"),
+                "client_secret_storage": secret_payload.get(
+                    "client_secret_storage", "plain"
+                ),
                 "theme_index": self.theme_idx,
                 "refresh_interval_index": self.interval_idx,
                 "auto_backup_minutes": self.auto_backup_minutes,
@@ -227,12 +262,18 @@ class _MainWindowConfigMixin:
             "pagination_state": {
                 str(fetch_key): max(1, min(1000, int(start_idx)))
                 for fetch_key, start_idx in self._fetch_cursor_by_key.items()
-                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+                if isinstance(fetch_key, str)
+                and fetch_key.strip()
+                and isinstance(start_idx, int)
+                and start_idx > 0
             },
             "pagination_totals": {
                 str(fetch_key): int(total)
                 for fetch_key, total in self._fetch_total_by_key.items()
-                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
+                if isinstance(fetch_key, str)
+                and fetch_key.strip()
+                and isinstance(total, int)
+                and total >= 0
             },
             "saved_searches": dict(getattr(self, "saved_searches", {})),
             "tab_refresh_policies": (
@@ -243,8 +284,12 @@ class _MainWindowConfigMixin:
                 if hasattr(self, "_canonicalize_tab_refresh_policies")
                 else dict(getattr(self, "tab_refresh_policies", {}))
             ),
-            "automation_rules": normalize_automation_rules(getattr(self, "automation_rules", [])),
-            "publisher_aliases": normalize_publisher_aliases(getattr(self, "publisher_aliases", {})),
+            "automation_rules": normalize_automation_rules(
+                getattr(self, "automation_rules", [])
+            ),
+            "publisher_aliases": normalize_publisher_aliases(
+                getattr(self, "publisher_aliases", {})
+            ),
         }
 
         try:
@@ -254,7 +299,9 @@ class _MainWindowConfigMixin:
                     should_warn_plain_client_secret_storage,
                 )
 
-                if should_warn_plain_client_secret_storage(data.get("app_settings", {})):
+                if should_warn_plain_client_secret_storage(
+                    data.get("app_settings", {})
+                ):
                     self.show_warning_toast(
                         "API Client Secret이 평문으로 저장되었습니다. config 파일 접근 권한을 확인해주세요."
                     )
@@ -262,11 +309,18 @@ class _MainWindowConfigMixin:
                 logger.debug("Plain secret save warning skipped: %s", exc)
         except Exception as exc:
             logger.error("설정 저장 오류 (Config Save Error): %s", exc)
-            QMessageBox.warning(self, "저장 오류", f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(exc)}")
+            QMessageBox.warning(
+                self,
+                "저장 오류",
+                f"설정을 저장하는 중 오류가 발생했습니다:\n\n{str(exc)}",
+            )
 
     def _show_startup_health_notices(self) -> None:
         db = getattr(self, "db", None)
-        if db is not None and getattr(db, "startup_integrity_state", "ok") == "unreadable":
+        if (
+            db is not None
+            and getattr(db, "startup_integrity_state", "ok") == "unreadable"
+        ):
             detail = str(getattr(db, "startup_integrity_detail", "") or "").strip()
             message = (
                 "데이터베이스 파일에 접근하지 못했습니다. "
@@ -328,7 +382,9 @@ class _MainWindowConfigMixin:
         y = screen_rect.y() + max(0, (screen_rect.height() - height) // 2)
         return {"x": x, "y": y, "width": width, "height": height}
 
-    def _normalize_window_geometry(self, raw_geometry: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    def _normalize_window_geometry(
+        self, raw_geometry: Optional[Dict[str, Any]]
+    ) -> Dict[str, int]:
         default_geometry = self._build_default_window_geometry()
         if not isinstance(raw_geometry, dict):
             return default_geometry

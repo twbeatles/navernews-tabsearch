@@ -410,7 +410,11 @@ class TestWorkerCancellation(unittest.TestCase):
         }
         session = _SequenceSession(
             [
-                _FakeResponse(429, {"errorMessage": "limited", "errorCode": "E429"}, headers={"Retry-After": "7"}),
+                _FakeResponse(
+                    429,
+                    {"errorMessage": "limited", "errorCode": "E429"},
+                    headers={"Retry-After": "7"},
+                ),
                 _FakeResponse(200, payload),
             ]
         )
@@ -425,7 +429,9 @@ class TestWorkerCancellation(unittest.TestCase):
         self.assertEqual(sleep_mock.call_count, 7)
 
     def test_http_429_final_failure_uses_retry_after_http_date_for_cooldown(self):
-        retry_at = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=6), usegmt=True)
+        retry_at = format_datetime(
+            datetime.now(timezone.utc) + timedelta(seconds=6), usegmt=True
+        )
         session = _SequenceSession(
             [
                 _FakeResponse(

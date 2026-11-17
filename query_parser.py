@@ -14,4 +14,9 @@ warnings.warn(
 )
 
 
-__all__ = ['parse_tab_query', 'parse_search_query', 'has_positive_keyword', 'build_fetch_key']
+__all__ = [
+    "parse_tab_query",
+    "parse_search_query",
+    "has_positive_keyword",
+    "build_fetch_key",
+]

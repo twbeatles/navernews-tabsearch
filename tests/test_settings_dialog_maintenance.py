@@ -15,7 +15,9 @@ class _DummyParent:
         self.maintenance_ended = 0
         self.maintenance_active = False
         self.start_result: tuple[bool, str] = (True, "")
-        self.runtime_paths = get_runtime_paths(data_dir=str(Path.cwd() / ".pytest_tmp" / "custom-runtime"))
+        self.runtime_paths = get_runtime_paths(
+            data_dir=str(Path.cwd() / ".pytest_tmp" / "custom-runtime")
+        )
 
     def begin_database_maintenance(self, operation):
         self.maintenance_started.append(operation)
@@ -31,7 +33,9 @@ class _DummyParent:
 
     def on_database_maintenance_completed(self, operation, affected_count):
         self.calls.append((operation, affected_count))
-        self.events.append(("complete", operation, affected_count, self.maintenance_active))
+        self.events.append(
+            ("complete", operation, affected_count, self.maintenance_active)
+        )
 
     def export_settings(self):
         pass
@@ -110,7 +114,9 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
         dialog = _DummySettingsDialog()
         dialog._parent.start_result = (False, "busy")
 
-        with mock.patch("ui._settings_dialog_tasks.QMessageBox.warning") as warning_mock:
+        with mock.patch(
+            "ui._settings_dialog_tasks.QMessageBox.warning"
+        ) as warning_mock:
             dialog._start_data_task(lambda: 1, lambda _result: None, "delete_old_news")
 
         warning_mock.assert_called_once()
@@ -143,10 +149,15 @@ class TestSettingsDialogMaintenanceHooks(unittest.TestCase):
 
     def test_open_data_folder_prefers_parent_runtime_paths(self):
         dialog = _DummySettingsDialog()
-        with mock.patch("ui._settings_dialog_tasks.QDesktopServices.openUrl") as open_url:
+        with mock.patch(
+            "ui._settings_dialog_tasks.QDesktopServices.openUrl"
+        ) as open_url:
             dialog.open_data_folder()
         open_url.assert_called_once()
-        self.assertIn("custom-runtime", open_url.call_args.args[0].toLocalFile().replace("\\", "/"))
+        self.assertIn(
+            "custom-runtime",
+            open_url.call_args.args[0].toLocalFile().replace("\\", "/"),
+        )
 
 
 if __name__ == "__main__":

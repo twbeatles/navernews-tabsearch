@@ -31,21 +31,37 @@ class TestImplementationBatchDbFeatures(unittest.TestCase):
             db = DatabaseManager(str(Path(td) / "news.sqlite"), max_connections=2)
             try:
                 db.upsert_news([_item(1, "alpha.com"), _item(2, "beta.com")], "AI")
-                self.assertFalse(db.update_status("https://example.com/missing", "is_read", 1))
-                self.assertTrue(db.set_tags("https://example.com/1", ["Important", "AI", "ai"]))
+                self.assertFalse(
+                    db.update_status("https://example.com/missing", "is_read", 1)
+                )
+                self.assertTrue(
+                    db.set_tags("https://example.com/1", ["Important", "AI", "ai"])
+                )
 
                 all_rows = db.fetch_news("AI")
                 self.assertEqual(len(all_rows), 2)
                 self.assertEqual(
-                    [row["link"] for row in db.fetch_news("AI", blocked_publishers=["beta.com"])],
+                    [
+                        row["link"]
+                        for row in db.fetch_news("AI", blocked_publishers=["beta.com"])
+                    ],
                     ["https://example.com/1"],
                 )
                 self.assertEqual(
-                    [row["link"] for row in db.fetch_news("AI", preferred_publishers=["beta.com"], only_preferred_publishers=True)],
+                    [
+                        row["link"]
+                        for row in db.fetch_news(
+                            "AI",
+                            preferred_publishers=["beta.com"],
+                            only_preferred_publishers=True,
+                        )
+                    ],
                     ["https://example.com/2"],
                 )
                 tagged_rows = db.fetch_news("AI", tag_filter="important")
-                self.assertEqual([row["link"] for row in tagged_rows], ["https://example.com/1"])
+                self.assertEqual(
+                    [row["link"] for row in tagged_rows], ["https://example.com/1"]
+                )
                 self.assertIn("Important", tagged_rows[0]["tags"])
 
                 self.assertTrue(db.delete_link("https://example.com/1"))
@@ -59,7 +75,9 @@ class TestImplementationBatchDbFeatures(unittest.TestCase):
             payload = default_config()
             payload["app_settings"]["blocked_publishers"] = ["Alpha.com", "alpha.com"]
             payload["app_settings"]["preferred_publishers"] = ["Beta.com"]
-            payload["saved_searches"] = {"AI": {"keyword": "AI", "tag_filter": "Important"}}
+            payload["saved_searches"] = {
+                "AI": {"keyword": "AI", "tag_filter": "Important"}
+            }
             payload["tab_refresh_policies"] = {"AI": "30", "경제": "off"}
             save_config_file_atomic(str(cfg_path), payload)
 
@@ -121,7 +139,9 @@ class _WriteFailDb:
 class TestImplementationBatchUiSafety(unittest.TestCase):
     def test_article_open_allows_only_http_schemes(self):
         tab = _DummyActionTab()
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=True) as open_url:
+        with mock.patch(
+            "ui.news_tab.QDesktopServices.openUrl", return_value=True
+        ) as open_url:
             self.assertFalse(
                 NewsTab._open_article_url(
                     cast(Any, tab),
@@ -175,7 +195,9 @@ class TestImplementationBatchUiSafety(unittest.TestCase):
         tab.db = _WriteFailDb()
         target = {"link": "https://example.com/1", "is_read": 0}
 
-        ok = NewsTab._set_read_state(cast(Any, tab), target, True, failure_message="failed")
+        ok = NewsTab._set_read_state(
+            cast(Any, tab), target, True, failure_message="failed"
+        )
 
         self.assertFalse(ok)
         self.assertEqual(target["is_read"], 0)
@@ -284,14 +306,20 @@ class TestImplementationBatchStability(unittest.TestCase):
 
         worker.run()
 
-        self.assertEqual([item["link"] for item in db.items], [
-            "https://news.naver.com/article/1",
-            "https://example.com/naver-copy",
-        ])
-        self.assertEqual([item["publisher"] for item in db.items], [
-            "publisher.com",
-            "origin.example.com",
-        ])
+        self.assertEqual(
+            [item["link"] for item in db.items],
+            [
+                "https://news.naver.com/article/1",
+                "https://example.com/naver-copy",
+            ],
+        )
+        self.assertEqual(
+            [item["publisher"] for item in db.items],
+            [
+                "publisher.com",
+                "origin.example.com",
+            ],
+        )
         self.assertEqual(results[0]["filtered"], 1)
 
     def test_pending_restore_rename_prevents_repeat_when_delete_fails(self):
@@ -302,11 +330,19 @@ class TestImplementationBatchStability(unittest.TestCase):
             backup_name = "backup_1"
             (backup_dir / backup_name).mkdir(parents=True)
             pending.write_text(
-                json.dumps({"backup_name": backup_name, "backup_dir": str(backup_dir), "restore_db": True}),
+                json.dumps(
+                    {
+                        "backup_name": backup_name,
+                        "backup_dir": str(backup_dir),
+                        "restore_db": True,
+                    }
+                ),
                 encoding="utf-8",
             )
 
-            with mock.patch.object(backup_module, "_apply_restore_from_backup", return_value=True):
+            with mock.patch.object(
+                backup_module, "_apply_restore_from_backup", return_value=True
+            ):
                 with mock.patch("core.backup.os.remove", side_effect=OSError("locked")):
                     ok = apply_pending_restore_if_any(
                         pending_file=str(pending),
@@ -346,7 +382,13 @@ class TestImplementationBatchStability(unittest.TestCase):
         db = _Db()
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaises(JobCancelledError):
-                export_scope_to_csv(_Context(), db, DBQueryScope(keyword="AI"), str(Path(td) / "x.csv"), "AI")
+                export_scope_to_csv(
+                    _Context(),
+                    db,
+                    DBQueryScope(keyword="AI"),
+                    str(Path(td) / "x.csv"),
+                    "AI",
+                )
 
         self.assertTrue(db.iterator.closed)
 

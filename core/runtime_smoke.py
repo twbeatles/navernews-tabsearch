@@ -29,7 +29,9 @@ def run_smoke(data_dir: str) -> int:
     sys.excepthook = record_failure
     window = None
     try:
-        window = MainApp(runtime_paths=get_runtime_paths(data_dir=data_dir), smoke_mode=True)
+        window = MainApp(
+            runtime_paths=get_runtime_paths(data_dir=data_dir), smoke_mode=True
+        )
         window.show()
 
         def verify_and_close():

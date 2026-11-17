@@ -1,4 +1,3 @@
-
 from ui.main_window_io_support.import_stage_support.merge_helpers import (
     _ImportStageMergeHelpersMixin,
 )

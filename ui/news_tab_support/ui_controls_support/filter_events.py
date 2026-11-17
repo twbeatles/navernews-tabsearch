@@ -54,7 +54,11 @@ class _NewsTabFilterEventControlsMixin:
         self.filter_timer.stop()
         with QSignalBlocker(self.inp_filter):
             self.inp_filter.clear()
-        for checkbox in (self.chk_unread, self.chk_hide_dup, self.chk_preferred_publishers):
+        for checkbox in (
+            self.chk_unread,
+            self.chk_hide_dup,
+            self.chk_preferred_publishers,
+        ):
             with QSignalBlocker(checkbox):
                 checkbox.setChecked(False)
         with QSignalBlocker(self.combo_tag_filter):

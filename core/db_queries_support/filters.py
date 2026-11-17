@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -18,7 +17,12 @@ class _DatabaseQueryFilterMixin:
         return f"COALESCE({alias}.is_deleted, 0) = 0"
 
     def _escape_like(self: DatabaseManager, value: str) -> str:
-        return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return (
+            str(value or "")
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
 
     def _like_contains(self: DatabaseManager, value: str) -> str:
         return f"%{self._escape_like(value)}%"
@@ -27,7 +31,9 @@ class _DatabaseQueryFilterMixin:
         raw = str(filter_txt or "").strip()
         if not raw:
             return []
-        return [token.strip() for token in RE_FTS_ACCEL_TOKEN.findall(raw) if token.strip()]
+        return [
+            token.strip() for token in RE_FTS_ACCEL_TOKEN.findall(raw) if token.strip()
+        ]
 
     def _fts_match_expression(self: DatabaseManager, filter_txt: str) -> str:
         # Keep the FTS schema/backfill path available for future ranking or
@@ -45,11 +51,17 @@ class _DatabaseQueryFilterMixin:
         raw = str(filter_txt or "").strip()
         if not raw:
             return ""
-        tokens = [] if any(char in raw for char in ("%","_","\\")) else self._filter_tokens(raw)
+        tokens = (
+            []
+            if any(char in raw for char in ("%", "_", "\\"))
+            else self._filter_tokens(raw)
+        )
         if len(tokens) >= 2:
             clauses: List[str] = []
             for token in tokens:
-                clauses.append("(n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')")
+                clauses.append(
+                    "(n.title LIKE ? ESCAPE '\\' OR n.description LIKE ? ESCAPE '\\')"
+                )
                 wildcard = self._like_contains(token)
                 params.extend([wildcard, wildcard])
             return " AND " + " AND ".join(clauses)
@@ -73,7 +85,9 @@ class _DatabaseQueryFilterMixin:
         params.append(keyword)
         return clause
 
-    def _normalize_publisher_match_values(self: DatabaseManager, values: Optional[List[str]]) -> List[str]:
+    def _normalize_publisher_match_values(
+        self: DatabaseManager, values: Optional[List[str]]
+    ) -> List[str]:
         normalized: List[str] = []
         seen = set()
         for item in values or []:
@@ -93,7 +107,9 @@ class _DatabaseQueryFilterMixin:
         match_clauses: List[str] = []
         for value in values:
             if "." in value:
-                match_clauses.append(f"({publisher_expr} = ? OR {publisher_expr} LIKE ? ESCAPE '\\')")
+                match_clauses.append(
+                    f"({publisher_expr} = ? OR {publisher_expr} LIKE ? ESCAPE '\\')"
+                )
                 params.extend([value, f"%.{self._escape_like(value)}"])
             else:
                 match_clauses.append(f"{publisher_expr} = ?")
@@ -116,12 +132,16 @@ class _DatabaseQueryFilterMixin:
         blocked = self._normalize_publisher_match_values(blocked_publishers)
         preferred = self._normalize_publisher_match_values(preferred_publishers)
         if blocked:
-            match_clause = self._append_publisher_match_clause(params, publisher_expr, blocked)
+            match_clause = self._append_publisher_match_clause(
+                params, publisher_expr, blocked
+            )
             if match_clause:
                 clauses.append(f"NOT {match_clause}")
         if only_preferred_publishers:
             if preferred:
-                match_clause = self._append_publisher_match_clause(params, publisher_expr, preferred)
+                match_clause = self._append_publisher_match_clause(
+                    params, publisher_expr, preferred
+                )
                 clauses.append(match_clause if match_clause else "1 = 0")
             else:
                 clauses.append("1 = 0")

@@ -20,4 +20,3 @@ class TestVersionHistoryGuard(unittest.TestCase):
             version_section_pattern,
             "버전 변경 시 update_history 동시 갱신 필요: 현재 VERSION 섹션이 없습니다.",
         )
-

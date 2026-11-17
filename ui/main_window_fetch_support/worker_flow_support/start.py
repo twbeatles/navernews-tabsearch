@@ -72,7 +72,9 @@ class _FetchWorkerStartMixin:
         if self.is_maintenance_mode_active():
             action = "더 불러오기" if is_more else "새로고침"
             msg = self._maintenance_block_message(action)
-            logger.info("Fetch blocked during maintenance: kw=%s, action=%s", keyword, action)
+            logger.info(
+                "Fetch blocked during maintenance: kw=%s, action=%s", keyword, action
+            )
             self._status_bar().showMessage(msg, 3000)
             if is_sequential:
                 self._advance_sequential_if_awaiting(keyword)
@@ -85,7 +87,9 @@ class _FetchWorkerStartMixin:
             if is_sequential:
                 self._advance_sequential_if_awaiting(keyword)
             else:
-                self.show_warning_toast("탭 검색어에 일반 키워드가 없습니다. 탭 이름을 확인해주세요.")
+                self.show_warning_toast(
+                    "탭 검색어에 일반 키워드가 없습니다. 탭 이름을 확인해주세요."
+                )
             return
 
         db_keyword, _ = parse_tab_query(keyword)
@@ -104,7 +108,11 @@ class _FetchWorkerStartMixin:
         if not valid:
             action = "더 불러오기" if is_more else "새로고침"
             block_msg = f"API 인증 정보가 준비되지 않아 {action}을(를) 실행할 수 없습니다. {msg}"
-            logger.info("Fetch blocked by invalid API credentials: kw=%s, action=%s", keyword, action)
+            logger.info(
+                "Fetch blocked by invalid API credentials: kw=%s, action=%s",
+                keyword,
+                action,
+            )
             self._status_bar().showMessage(block_msg, 3000)
             if is_sequential:
                 self._on_sequential_fetch_done(keyword)
@@ -112,7 +120,9 @@ class _FetchWorkerStartMixin:
                 self.show_warning_toast(block_msg)
             return
 
-        cooldown_msg = self._fetch_cooldown_message("더 불러오기" if is_more else "새로고침")
+        cooldown_msg = self._fetch_cooldown_message(
+            "더 불러오기" if is_more else "새로고침"
+        )
         if cooldown_msg:
             logger.info("Fetch blocked by cooldown: kw=%s", keyword)
             self._status_bar().showMessage(cooldown_msg, 3000)
@@ -135,13 +145,17 @@ class _FetchWorkerStartMixin:
                 if fetch_key not in notified_keys:
                     notified_keys.add(fetch_key)
                     self._fetch_dedupe_notified_keys = notified_keys
-                    message = "같은 조건의 새로고침 요청이 너무 가까워 한 번 건너뛰었습니다."
+                    message = (
+                        "같은 조건의 새로고침 요청이 너무 가까워 한 번 건너뛰었습니다."
+                    )
                     self._status_bar().showMessage(message, 3000)
                     self.show_warning_toast(message)
                 return
             self._last_fetch_request_ts[fetch_key] = now_ts
 
-        fetch_state = self._tab_fetch_state.setdefault(keyword, self._make_tab_fetch_state())
+        fetch_state = self._tab_fetch_state.setdefault(
+            keyword, self._make_tab_fetch_state()
+        )
         start_idx = 1
         if is_more:
             persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
@@ -180,14 +194,21 @@ class _FetchWorkerStartMixin:
         if old_handle:
             is_awaited = getattr(self, "_is_awaited_sequential_keyword", None)
             if not is_sequential and callable(is_awaited) and is_awaited(keyword):
-                logger.warning("Fetch skipped to protect awaited sequential worker: %s", keyword)
+                logger.warning(
+                    "Fetch skipped to protect awaited sequential worker: %s", keyword
+                )
                 self._status_bar().showMessage(
                     f"'{keyword}' 새로고침이 진행 중이라 이번 요청을 건너뛰었습니다.",
                     4000,
                 )
                 return
-            if not self.cleanup_worker(keyword=keyword, request_id=old_handle.request_id, only_if_active=True):
-                logger.warning("Fetch skipped because previous worker is still stopping: %s", keyword)
+            if not self.cleanup_worker(
+                keyword=keyword, request_id=old_handle.request_id, only_if_active=True
+            ):
+                logger.warning(
+                    "Fetch skipped because previous worker is still stopping: %s",
+                    keyword,
+                )
                 if located_tab := self._find_news_tab(keyword):
                     _tab_index, tab_widget = located_tab
                     btn_load = getattr(tab_widget, "btn_load", None)
@@ -252,7 +273,9 @@ class _FetchWorkerStartMixin:
                     finished_relay.deleteLater()
 
         relay = _ApiWorkerSignalRelay(
-            lambda res, rid=request_id: self.on_fetch_done(res, keyword, is_more, is_sequential, rid),
+            lambda res, rid=request_id: self.on_fetch_done(
+                res, keyword, is_more, is_sequential, rid
+            ),
             lambda err, rid=request_id, worker_ref=worker: self.on_fetch_error(
                 err,
                 keyword,
@@ -280,4 +303,6 @@ class _FetchWorkerStartMixin:
         thread.start()
 
     def _validate_api_credentials(self: MainApp):
-        return ValidationUtils.validate_api_credentials(self.client_id, self.client_secret)
+        return ValidationUtils.validate_api_credentials(
+            self.client_id, self.client_secret
+        )

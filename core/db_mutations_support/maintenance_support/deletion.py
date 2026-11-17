@@ -1,4 +1,3 @@
-
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -18,9 +17,7 @@ logger = logging.getLogger(__name__)
 # signal; created_at is the fallback for rows whose delete timestamp was never
 # recorded, so no tombstone can become permanently unreclaimable.
 _TOMBSTONE_AGE_SQL = "COALESCE(NULLIF(delete_updated_at, 0), created_at, 0)"
-_EXPIRED_TOMBSTONE_SQL = (
-    f"COALESCE(is_deleted, 0) = 1 AND {_TOMBSTONE_AGE_SQL} > 0 AND {_TOMBSTONE_AGE_SQL} < ?"
-)
+_EXPIRED_TOMBSTONE_SQL = f"COALESCE(is_deleted, 0) = 1 AND {_TOMBSTONE_AGE_SQL} > 0 AND {_TOMBSTONE_AGE_SQL} < ?"
 
 
 class _NewsDeletionMaintenanceMixin:
@@ -68,7 +65,9 @@ class _NewsDeletionMaintenanceMixin:
                 ).fetchone()[0]
                 or 0
             )
-            batch_query = f"SELECT link FROM news WHERE {where_sql} ORDER BY link LIMIT ?"
+            batch_query = (
+                f"SELECT link FROM news WHERE {where_sql} ORDER BY link LIMIT ?"
+            )
             while True:
                 if callable(cancel_check):
                     cancel_check()
@@ -120,7 +119,9 @@ class _NewsDeletionMaintenanceMixin:
         predicate also requires ``age > 0``, a cutoff of 0.0 matches nothing and
         tombstones are kept forever.
         """
-        days = self.TOMBSTONE_RETENTION_DAYS if retention_days is None else retention_days
+        days = (
+            self.TOMBSTONE_RETENTION_DAYS if retention_days is None else retention_days
+        )
         safe_days = max(0, int(days or 0))
         if safe_days <= 0:
             return 0.0
@@ -174,7 +175,11 @@ class _NewsDeletionMaintenanceMixin:
             ") OR "
             f"({_EXPIRED_TOMBSTONE_SQL})"
             ")",
-            [cutoff, cutoff, self._tombstone_cutoff_timestamp(tombstone_retention_days)],
+            [
+                cutoff,
+                cutoff,
+                self._tombstone_cutoff_timestamp(tombstone_retention_days),
+            ],
             chunk_size=chunk_size,
             progress_callback=progress_callback,
             cancel_check=cancel_check,

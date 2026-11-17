@@ -14,6 +14,8 @@ def _validate_sidecar_policy(db_backup: str) -> str:
     if shm_exists and not wal_exists:
         return "데이터베이스 백업 sidecar 정책이 일관되지 않습니다. (-shm만 존재)"
     return ""
+
+
 def _validate_config_backup_payload(cfg_backup: str) -> str:
     try:
         with open(cfg_backup, "r", encoding="utf-8") as f:
@@ -23,6 +25,8 @@ def _validate_config_backup_payload(cfg_backup: str) -> str:
     except Exception as e:
         return f"설정 백업 파일이 손상되었습니다. ({e})"
     return ""
+
+
 def _validate_sqlite_backup(db_backup: str) -> str:
     conn = None
     temp_dir = None
@@ -54,6 +58,8 @@ def _validate_sqlite_backup(db_backup: str) -> str:
                 _rmtree_force(temp_dir)
             except Exception:
                 pass
+
+
 def verify_backup_payload(
     backup_path: str,
     config_file: str,

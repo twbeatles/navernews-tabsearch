@@ -327,7 +327,9 @@ class TestShutdownStateMarker(unittest.TestCase):
 
             used.clear()
             DatabaseManager(self.db_path, max_connections=2).close()
-            self.assertEqual(used, [False], "a crash should escalate to integrity_check")
+            self.assertEqual(
+                used, [False], "a crash should escalate to integrity_check"
+            )
         finally:
             DatabaseManager._check_integrity = original
 
@@ -375,9 +377,13 @@ class TestTombstoneReclamation(_DatabaseTestCase):
         self.db.delete_all_news_chunked(tombstone_retention_days=90)
         remaining = self._remaining()
         self.assertEqual(
-            remaining["tombstones"], 1, "the fresh tombstone must survive for cloud sync"
+            remaining["tombstones"],
+            1,
+            "the fresh tombstone must survive for cloud sync",
         )
-        self.assertEqual(remaining["total"], 1, "only the fresh tombstone should remain")
+        self.assertEqual(
+            remaining["total"], 1, "only the fresh tombstone should remain"
+        )
 
     def test_retention_boundary(self):
         self._seed()
@@ -419,7 +425,9 @@ class TestStorageMetrics(_DatabaseTestCase):
 
     def test_metrics_report_articles_tombstones_and_scopes(self):
         self.db.upsert_news_detailed(
-            [_item(f"https://a/{i}", f"t{i}") for i in range(3)], "kwA", query_key="kwa|"
+            [_item(f"https://a/{i}", f"t{i}") for i in range(3)],
+            "kwA",
+            query_key="kwa|",
         )
         self.db.upsert_news_detailed(
             [_item("https://a/0", "t0")], "kwB", query_key="kwb|"

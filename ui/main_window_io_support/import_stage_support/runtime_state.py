@@ -96,40 +96,60 @@ class _ImportStageRuntimeStateMixin:
             {
                 str(fetch_key): max(1, min(1000, int(start_idx)))
                 for fetch_key, start_idx in pagination_state.items()
-                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+                if isinstance(fetch_key, str)
+                and fetch_key.strip()
+                and isinstance(start_idx, int)
+                and start_idx > 0
             }
             if pagination_state is not None
             else {
                 str(fetch_key): max(1, min(1000, int(start_idx)))
                 for fetch_key, start_idx in self._fetch_cursor_by_key.items()
-                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(start_idx, int) and start_idx > 0
+                if isinstance(fetch_key, str)
+                and fetch_key.strip()
+                and isinstance(start_idx, int)
+                and start_idx > 0
             }
         )
         pagination_totals_payload = (
             {
                 str(fetch_key): int(total)
                 for fetch_key, total in pagination_totals.items()
-                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
+                if isinstance(fetch_key, str)
+                and fetch_key.strip()
+                and isinstance(total, int)
+                and total >= 0
             }
             if pagination_totals is not None
             else {
                 str(fetch_key): int(total)
                 for fetch_key, total in self._fetch_total_by_key.items()
-                if isinstance(fetch_key, str) and fetch_key.strip() and isinstance(total, int) and total >= 0
+                if isinstance(fetch_key, str)
+                and fetch_key.strip()
+                and isinstance(total, int)
+                and total >= 0
             }
         )
         blocked_publishers, preferred_publishers = normalize_publisher_filter_lists(
-            app_settings_overrides.get("blocked_publishers", getattr(self, "blocked_publishers", [])),
-            app_settings_overrides.get("preferred_publishers", getattr(self, "preferred_publishers", [])),
+            app_settings_overrides.get(
+                "blocked_publishers", getattr(self, "blocked_publishers", [])
+            ),
+            app_settings_overrides.get(
+                "preferred_publishers", getattr(self, "preferred_publishers", [])
+            ),
         )
         return {
             "app_settings": {
                 "client_id": str(app_settings_overrides.get("client_id", client_id)),
                 "client_secret": str(
-                    app_settings_overrides.get("client_secret", secret_payload.get("client_secret", ""))
+                    app_settings_overrides.get(
+                        "client_secret", secret_payload.get("client_secret", "")
+                    )
                 ),
                 "client_secret_enc": str(
-                    app_settings_overrides.get("client_secret_enc", secret_payload.get("client_secret_enc", ""))
+                    app_settings_overrides.get(
+                        "client_secret_enc", secret_payload.get("client_secret_enc", "")
+                    )
                 ),
                 "client_secret_storage": str(
                     app_settings_overrides.get(
@@ -137,9 +157,13 @@ class _ImportStageRuntimeStateMixin:
                         secret_payload.get("client_secret_storage", "plain"),
                     )
                 ),
-                "theme_index": int(app_settings_overrides.get("theme_index", self.theme_idx)),
+                "theme_index": int(
+                    app_settings_overrides.get("theme_index", self.theme_idx)
+                ),
                 "refresh_interval_index": int(
-                    app_settings_overrides.get("refresh_interval_index", self.interval_idx)
+                    app_settings_overrides.get(
+                        "refresh_interval_index", self.interval_idx
+                    )
                 ),
                 "auto_backup_minutes": int(
                     app_settings_overrides.get(
@@ -148,24 +172,40 @@ class _ImportStageRuntimeStateMixin:
                     )
                 ),
                 "notification_enabled": bool(
-                    app_settings_overrides.get("notification_enabled", self.notification_enabled)
+                    app_settings_overrides.get(
+                        "notification_enabled", self.notification_enabled
+                    )
                 ),
-                "alert_keywords": list(app_settings_overrides.get("alert_keywords", self.alert_keywords)),
-                "sound_enabled": bool(app_settings_overrides.get("sound_enabled", self.sound_enabled)),
+                "alert_keywords": list(
+                    app_settings_overrides.get("alert_keywords", self.alert_keywords)
+                ),
+                "sound_enabled": bool(
+                    app_settings_overrides.get("sound_enabled", self.sound_enabled)
+                ),
                 "minimize_to_tray": bool(
-                    app_settings_overrides.get("minimize_to_tray", self.minimize_to_tray)
+                    app_settings_overrides.get(
+                        "minimize_to_tray", self.minimize_to_tray
+                    )
                 ),
-                "close_to_tray": bool(app_settings_overrides.get("close_to_tray", self.close_to_tray)),
+                "close_to_tray": bool(
+                    app_settings_overrides.get("close_to_tray", self.close_to_tray)
+                ),
                 "start_minimized": bool(
                     app_settings_overrides.get("start_minimized", self.start_minimized)
                 ),
                 "auto_start_enabled": bool(
-                    app_settings_overrides.get("auto_start_enabled", self.auto_start_enabled)
+                    app_settings_overrides.get(
+                        "auto_start_enabled", self.auto_start_enabled
+                    )
                 ),
                 "notify_on_refresh": bool(
-                    app_settings_overrides.get("notify_on_refresh", self.notify_on_refresh)
+                    app_settings_overrides.get(
+                        "notify_on_refresh", self.notify_on_refresh
+                    )
                 ),
-                "api_timeout": int(app_settings_overrides.get("api_timeout", self.api_timeout)),
+                "api_timeout": int(
+                    app_settings_overrides.get("api_timeout", self.api_timeout)
+                ),
                 "blocked_publishers": blocked_publishers,
                 "preferred_publishers": preferred_publishers,
                 "cloud_sync_enabled": bool(
@@ -208,14 +248,20 @@ class _ImportStageRuntimeStateMixin:
             "pagination_state": pagination_state_payload,
             "pagination_totals": pagination_totals_payload,
             "saved_searches": dict(
-                saved_searches if saved_searches is not None else getattr(self, "saved_searches", {})
+                saved_searches
+                if saved_searches is not None
+                else getattr(self, "saved_searches", {})
             ),
             "tab_refresh_policies": tab_refresh_policies_payload,
             "automation_rules": normalize_automation_rules(
-                automation_rules if automation_rules is not None else getattr(self, "automation_rules", [])
+                automation_rules
+                if automation_rules is not None
+                else getattr(self, "automation_rules", [])
             ),
             "publisher_aliases": normalize_publisher_aliases(
-                publisher_aliases if publisher_aliases is not None else getattr(self, "publisher_aliases", {})
+                publisher_aliases
+                if publisher_aliases is not None
+                else getattr(self, "publisher_aliases", {})
             ),
         }
 
@@ -238,8 +284,12 @@ class _ImportStageRuntimeStateMixin:
             "preferred_publishers": list(getattr(self, "preferred_publishers", [])),
             "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
             "cloud_sync_dir": str(getattr(self, "cloud_sync_dir", "") or ""),
-            "cloud_sync_interval_minutes": int(getattr(self, "cloud_sync_interval_minutes", 30) or 30),
-            "tombstone_retention_days": int(getattr(self, "tombstone_retention_days", 90) or 0),
+            "cloud_sync_interval_minutes": int(
+                getattr(self, "cloud_sync_interval_minutes", 30) or 30
+            ),
+            "tombstone_retention_days": int(
+                getattr(self, "tombstone_retention_days", 90) or 0
+            ),
             "saved_searches": dict(getattr(self, "saved_searches", {})),
             "tab_refresh_policies": dict(getattr(self, "tab_refresh_policies", {})),
             "automation_rules": list(getattr(self, "automation_rules", [])),
@@ -255,14 +305,21 @@ class _ImportStageRuntimeStateMixin:
 
     def _remove_imported_tab_for_rollback(self: MainApp, keyword: str) -> None:
         locate_tab = getattr(self, "_find_news_tab", None)
-        located_tab = locate_tab(str(keyword or "").strip()) if callable(locate_tab) else None
+        located_tab = (
+            locate_tab(str(keyword or "").strip()) if callable(locate_tab) else None
+        )
         if located_tab is None:
             tabs_list = getattr(self, "_tabs", None)
             if isinstance(tabs_list, list):
                 setattr(  # noqa: B010 -- paired with getattr _tabs sentinel above; _tabs intentionally undeclared (pyright-checked)
                     self,
                     "_tabs",
-                    [tab for tab in tabs_list if str(getattr(tab, "keyword", "")) != str(keyword or "").strip()],
+                    [
+                        tab
+                        for tab in tabs_list
+                        if str(getattr(tab, "keyword", ""))
+                        != str(keyword or "").strip()
+                    ],
                 )
             return
         index, widget = located_tab
@@ -309,18 +366,28 @@ class _ImportStageRuntimeStateMixin:
         self.start_minimized = bool(runtime_snapshot["start_minimized"])
         self.auto_start_enabled = bool(runtime_snapshot["auto_start_enabled"])
         self.notify_on_refresh = bool(runtime_snapshot["notify_on_refresh"])
-        self.auto_backup_minutes = int(runtime_snapshot.get("auto_backup_minutes", 60) or 0)
+        self.auto_backup_minutes = int(
+            runtime_snapshot.get("auto_backup_minutes", 60) or 0
+        )
         self.api_timeout = int(runtime_snapshot["api_timeout"])
         self.blocked_publishers = list(runtime_snapshot["blocked_publishers"])
         self.preferred_publishers = list(runtime_snapshot["preferred_publishers"])
         self.cloud_sync_enabled = bool(runtime_snapshot.get("cloud_sync_enabled", True))
         self.cloud_sync_dir = str(runtime_snapshot.get("cloud_sync_dir", "") or "")
-        self.cloud_sync_interval_minutes = int(runtime_snapshot.get("cloud_sync_interval_minutes", 30) or 30)
-        self.tombstone_retention_days = int(runtime_snapshot.get("tombstone_retention_days", 90) or 0)
+        self.cloud_sync_interval_minutes = int(
+            runtime_snapshot.get("cloud_sync_interval_minutes", 30) or 30
+        )
+        self.tombstone_retention_days = int(
+            runtime_snapshot.get("tombstone_retention_days", 90) or 0
+        )
         self.saved_searches = dict(runtime_snapshot["saved_searches"])
         self.tab_refresh_policies = dict(runtime_snapshot["tab_refresh_policies"])
-        self.automation_rules = normalize_automation_rules(runtime_snapshot.get("automation_rules", []))
-        self.publisher_aliases = normalize_publisher_aliases(runtime_snapshot.get("publisher_aliases", {}))
+        self.automation_rules = normalize_automation_rules(
+            runtime_snapshot.get("automation_rules", [])
+        )
+        self.publisher_aliases = normalize_publisher_aliases(
+            runtime_snapshot.get("publisher_aliases", {})
+        )
         self.search_history = list(runtime_snapshot["search_history"])
         self._fetch_cursor_by_key = dict(runtime_snapshot["fetch_cursor_by_key"])
         self._fetch_total_by_key = dict(runtime_snapshot["fetch_total_by_key"])
@@ -334,9 +401,17 @@ class _ImportStageRuntimeStateMixin:
         )
         self.keyword_group_manager.groups = dict(runtime_snapshot["keyword_groups"])
         self.keyword_group_manager.last_error = ""
-        self.setStyleSheet(self._active_app_stylesheet() if hasattr(self, "_active_app_stylesheet") else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT))
+        self.setStyleSheet(
+            self._active_app_stylesheet()
+            if hasattr(self, "_active_app_stylesheet")
+            else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+        )
         for _index, widget in self._iter_news_tabs():
-            widget.theme = self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx
+            widget.theme = (
+                self._effective_theme_idx()
+                if hasattr(self, "_effective_theme_idx")
+                else self.theme_idx
+            )
             widget.render_html()
         self.apply_refresh_interval()
         if hasattr(self, "apply_auto_backup_interval"):
@@ -362,19 +437,35 @@ class _ImportStageRuntimeStateMixin:
         self.start_minimized = normalized_settings["start_minimized"]
         self.auto_start_enabled = normalized_settings["auto_start_enabled"]
         self.notify_on_refresh = normalized_settings["notify_on_refresh"]
-        self.auto_backup_minutes = int(normalized_settings.get("auto_backup_minutes", 60) or 0)
+        self.auto_backup_minutes = int(
+            normalized_settings.get("auto_backup_minutes", 60) or 0
+        )
         self.api_timeout = normalized_settings["api_timeout"]
-        self.cloud_sync_enabled = bool(normalized_settings.get("cloud_sync_enabled", True))
-        self.cloud_sync_interval_minutes = int(normalized_settings.get("cloud_sync_interval_minutes", 30) or 30)
-        self.tombstone_retention_days = int(normalized_settings.get("tombstone_retention_days", 90) or 0)
-        self.blocked_publishers, self.preferred_publishers = normalize_publisher_filter_lists(
-            normalized_settings["blocked_publishers"],
-            normalized_settings["preferred_publishers"],
+        self.cloud_sync_enabled = bool(
+            normalized_settings.get("cloud_sync_enabled", True)
+        )
+        self.cloud_sync_interval_minutes = int(
+            normalized_settings.get("cloud_sync_interval_minutes", 30) or 30
+        )
+        self.tombstone_retention_days = int(
+            normalized_settings.get("tombstone_retention_days", 90) or 0
+        )
+        self.blocked_publishers, self.preferred_publishers = (
+            normalize_publisher_filter_lists(
+                normalized_settings["blocked_publishers"],
+                normalized_settings["preferred_publishers"],
+            )
         )
         self.saved_searches = dict(stage["staged_config"].get("saved_searches", {}))
-        self.tab_refresh_policies = dict(stage["staged_config"].get("tab_refresh_policies", {}))
-        self.automation_rules = normalize_automation_rules(stage["staged_config"].get("automation_rules", []))
-        self.publisher_aliases = normalize_publisher_aliases(stage["staged_config"].get("publisher_aliases", {}))
+        self.tab_refresh_policies = dict(
+            stage["staged_config"].get("tab_refresh_policies", {})
+        )
+        self.automation_rules = normalize_automation_rules(
+            stage["staged_config"].get("automation_rules", [])
+        )
+        self.publisher_aliases = normalize_publisher_aliases(
+            stage["staged_config"].get("publisher_aliases", {})
+        )
         self.search_history = list(stage["merged_search_history"])
         self._fetch_cursor_by_key = dict(stage["merged_pagination_state"])
         self._fetch_total_by_key = dict(stage["merged_pagination_totals"])
@@ -386,9 +477,17 @@ class _ImportStageRuntimeStateMixin:
                 imported_geometry["width"],
                 imported_geometry["height"],
             )
-        self.setStyleSheet(self._active_app_stylesheet() if hasattr(self, "_active_app_stylesheet") else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT))
+        self.setStyleSheet(
+            self._active_app_stylesheet()
+            if hasattr(self, "_active_app_stylesheet")
+            else (AppStyle.DARK if self.theme_idx == 1 else AppStyle.LIGHT)
+        )
         for _index, widget in self._iter_news_tabs():
-            widget.theme = self._effective_theme_idx() if hasattr(self, "_effective_theme_idx") else self.theme_idx
+            widget.theme = (
+                self._effective_theme_idx()
+                if hasattr(self, "_effective_theme_idx")
+                else self.theme_idx
+            )
             widget.render_html()
         added_keywords = stage.setdefault("applied_new_keywords", [])
         added_keywords.clear()
@@ -410,7 +509,9 @@ class _ImportStageRuntimeStateMixin:
             tuple(getattr(self, "preferred_publishers", [])),
         )
         if current_visibility != previous_visibility:
-            reload_visibility = getattr(self, "_reload_tabs_for_visibility_filters", None)
+            reload_visibility = getattr(
+                self, "_reload_tabs_for_visibility_filters", None
+            )
             if callable(reload_visibility):
                 reload_visibility()
             else:

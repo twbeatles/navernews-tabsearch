@@ -9,4 +9,3 @@ class TestStartMinimizedGuard(unittest.TestCase):
         self.assertFalse(should_start_minimized(True, False))
         self.assertFalse(should_start_minimized(False, True))
         self.assertFalse(should_start_minimized(False, False))
-

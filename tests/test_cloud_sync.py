@@ -119,7 +119,9 @@ class TestCloudSync(unittest.TestCase):
                 self.assertEqual(selection["paths"], [])
                 self.assertEqual(len(selection["errors"]), 1)
                 self.assertFalse(bad_zip.exists())
-                invalid_files = list((sync_dir / ".invalid").glob("news_scraper_sync_bad.zip.*.invalid"))
+                invalid_files = list(
+                    (sync_dir / ".invalid").glob("news_scraper_sync_bad.zip.*.invalid")
+                )
                 self.assertEqual(len(invalid_files), 1)
 
                 second = select_cloud_snapshots_for_import(
@@ -136,7 +138,9 @@ class TestCloudSync(unittest.TestCase):
             root = Path(td)
             bad_zip = root / "news_scraper_sync_huge_manifest.zip"
             with zipfile.ZipFile(bad_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("manifest.json", "{" + '"x":"' + ("a" * (1024 * 1024 + 1)) + '"}')
+                zf.writestr(
+                    "manifest.json", "{" + '"x":"' + ("a" * (1024 * 1024 + 1)) + '"}'
+                )
             with self.assertRaises(CloudSyncError):
                 read_snapshot_manifest(str(bad_zip))
             quarantined = quarantine_invalid_snapshot(str(bad_zip), "oversized")
@@ -185,8 +189,12 @@ class TestCloudSync(unittest.TestCase):
             source = self._db(root / "source.db")
             target = self._db(root / "target.db")
             try:
-                source.upsert_news([_item(1), _item(2, "Shared")], "AI", query_key="ai|")
-                target.upsert_news([_item(2, "Shared"), _item(3)], "ECON", query_key="econ|")
+                source.upsert_news(
+                    [_item(1), _item(2, "Shared")], "AI", query_key="ai|"
+                )
+                target.upsert_news(
+                    [_item(2, "Shared"), _item(3)], "ECON", query_key="econ|"
+                )
 
                 source.update_status("https://example.com/2", "is_read", 1)
                 source.update_status("https://example.com/2", "is_bookmarked", 0)
@@ -233,11 +241,21 @@ class TestCloudSync(unittest.TestCase):
                 self.assertTrue(result["merged"])
                 self.assertEqual(result["news_added"], 1)
                 ai_rows = target.fetch_news("AI", query_key="ai|")
-                self.assertEqual({row["link"] for row in ai_rows}, {"https://example.com/1", "https://example.com/2"})
+                self.assertEqual(
+                    {row["link"] for row in ai_rows},
+                    {"https://example.com/1", "https://example.com/2"},
+                )
                 econ_rows = target.fetch_news("ECON", query_key="econ|")
-                self.assertEqual({row["link"] for row in econ_rows}, {"https://example.com/2", "https://example.com/3"})
+                self.assertEqual(
+                    {row["link"] for row in econ_rows},
+                    {"https://example.com/2", "https://example.com/3"},
+                )
 
-                shared = next(row for row in target.fetch_news("AI", query_key="ai|") if row["link"].endswith("/2"))
+                shared = next(
+                    row
+                    for row in target.fetch_news("AI", query_key="ai|")
+                    if row["link"].endswith("/2")
+                )
                 self.assertEqual(int(shared["is_read"]), 1)
                 self.assertEqual(int(shared["is_bookmarked"]), 1)
                 self.assertEqual(shared["notes"], "target note")
@@ -306,7 +324,10 @@ class TestCloudSync(unittest.TestCase):
                     local_machine_id="machine-b",
                 )
                 self.assertEqual(restored["restored"], 1)
-                self.assertEqual([row["link"] for row in target.fetch_news("AI", query_key="ai|")], ["https://example.com/7"])
+                self.assertEqual(
+                    [row["link"] for row in target.fetch_news("AI", query_key="ai|")],
+                    ["https://example.com/7"],
+                )
             finally:
                 source.close()
                 older_active.close()
@@ -361,7 +382,9 @@ class TestCloudSync(unittest.TestCase):
                 )
                 with mock.patch(
                     "core.cloud_sync_support.import_flow.preview_cloud_snapshot_import",
-                    side_effect=DatabaseWriteError("preview_cloud_snapshot", "database is locked"),
+                    side_effect=DatabaseWriteError(
+                        "preview_cloud_snapshot", "database is locked"
+                    ),
                 ):
                     result = preview_cloud_snapshots_for_import(
                         db_manager=target,
@@ -393,9 +416,13 @@ class TestCloudSync(unittest.TestCase):
                 entries = list_quarantined_snapshots(str(sync_dir))
                 self.assertEqual(len(entries), 1)
                 self.assertEqual(entries[0]["reason"], "manual test")
-                validation = revalidate_quarantined_snapshot(str(sync_dir), Path(quarantined).name)
+                validation = revalidate_quarantined_snapshot(
+                    str(sync_dir), Path(quarantined).name
+                )
                 self.assertTrue(validation["valid"])
-                restored = restore_quarantined_snapshot(str(sync_dir), Path(quarantined).name)
+                restored = restore_quarantined_snapshot(
+                    str(sync_dir), Path(quarantined).name
+                )
                 self.assertEqual(Path(restored).name, Path(snapshot.path).name)
                 self.assertTrue(Path(restored).exists())
                 self.assertEqual(list_quarantined_snapshots(str(sync_dir)), [])
@@ -419,7 +446,9 @@ class TestCloudSync(unittest.TestCase):
                 target.close()
 
     def test_cloud_sync_folder_cannot_overlap_runtime_data(self):
-        runtime_paths = get_runtime_paths(data_dir=r"C:\Users\tester\AppData\Local\NaverNewsScraperPro")
+        runtime_paths = get_runtime_paths(
+            data_dir=r"C:\Users\tester\AppData\Local\NaverNewsScraperPro"
+        )
         self.assertTrue(
             cloud_sync_path_conflicts_with_runtime(
                 r"C:\Users\tester\AppData\Local",

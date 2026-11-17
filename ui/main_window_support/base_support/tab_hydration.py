@@ -92,8 +92,12 @@ class _MainWindowTabHydrationMixin:
             return True
         return False
 
-    def _cancel_active_tab_hydration(self, *, requeue: bool = True, wait_ms: int = 250) -> bool:
-        active_keyword = str(getattr(self, "_hydration_inflight_keyword", "") or "").strip()
+    def _cancel_active_tab_hydration(
+        self, *, requeue: bool = True, wait_ms: int = 250
+    ) -> bool:
+        active_keyword = str(
+            getattr(self, "_hydration_inflight_keyword", "") or ""
+        ).strip()
         if not active_keyword:
             return True
         located_tab = self._find_news_tab(active_keyword)
@@ -112,7 +116,11 @@ class _MainWindowTabHydrationMixin:
             return
 
         current_tab = self._current_news_tab()
-        if current_tab is not None and not current_tab.is_bookmark_tab and current_tab.needs_initial_hydration():
+        if (
+            current_tab is not None
+            and not current_tab.is_bookmark_tab
+            and current_tab.needs_initial_hydration()
+        ):
             self._remove_tab_hydration(current_tab.keyword)
             if self._start_tab_hydration(current_tab):
                 return
@@ -161,7 +169,9 @@ class _MainWindowTabHydrationMixin:
         if not current_tab.needs_initial_hydration():
             self._schedule_tab_hydration(0)
             return
-        active_keyword = str(getattr(self, "_hydration_inflight_keyword", "") or "").strip()
+        active_keyword = str(
+            getattr(self, "_hydration_inflight_keyword", "") or ""
+        ).strip()
         if active_keyword and active_keyword != current_tab.keyword:
             self._cancel_active_tab_hydration(requeue=True, wait_ms=200)
         self._enqueue_tab_hydration(current_tab.keyword, prioritize=True)
@@ -195,12 +205,24 @@ class _MainWindowTabHydrationMixin:
             )
             if changed or deleted:
                 continue
-            if is_bookmarked is True and tab.is_bookmark_tab and tab not in tabs_to_reload:
+            if (
+                is_bookmarked is True
+                and tab.is_bookmark_tab
+                and tab not in tabs_to_reload
+            ):
                 tabs_to_reload.append(tab)
-            if is_read is False and tab.chk_unread.isChecked() and tab not in tabs_to_reload:
+            if (
+                is_read is False
+                and tab.chk_unread.isChecked()
+                and tab not in tabs_to_reload
+            ):
                 tabs_to_reload.append(tab)
             current_tag_filter = getattr(tab, "_current_tag_filter", lambda: "")()
-            if tags is not None and str(current_tag_filter or "").strip() and tab not in tabs_to_reload:
+            if (
+                tags is not None
+                and str(current_tag_filter or "").strip()
+                and tab not in tabs_to_reload
+            ):
                 tabs_to_reload.append(tab)
             if tags is not None:
                 refresh_tags = getattr(tab, "_refresh_tag_filter_options", None)
@@ -211,7 +233,9 @@ class _MainWindowTabHydrationMixin:
             try:
                 tab.load_data_from_db()
             except Exception as exc:
-                logger.warning("External tab sync reload failed (%s): %s", tab.keyword, exc)
+                logger.warning(
+                    "External tab sync reload failed (%s): %s", tab.keyword, exc
+                )
 
         self._schedule_badge_refresh(delay_ms=0)
         self.update_tray_tooltip()

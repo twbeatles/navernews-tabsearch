@@ -34,7 +34,9 @@ class _MainWindowActionShellMixin:
 
     def show_keyword_groups(self):
         """키워드 그룹 관리 다이얼로그 표시"""
-        current_tabs = [tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)]
+        current_tabs = [
+            tab.keyword for _index, tab in self._iter_news_tabs(start_index=1)
+        ]
 
         dialog = KeywordGroupDialog(self.keyword_group_manager, current_tabs, self)
         dialog.exec()
@@ -93,7 +95,9 @@ class _MainWindowActionShellMixin:
                     refresh_tags()
                 tab.load_data_from_db()
             except Exception as exc:
-                logger.warning("Visibility filter reload failed (%s): %s", tab.keyword, exc)
+                logger.warning(
+                    "Visibility filter reload failed (%s): %s", tab.keyword, exc
+                )
         self._schedule_badge_refresh(delay_ms=0)
 
     def add_blocked_publisher(self, publisher: str):
@@ -101,7 +105,9 @@ class _MainWindowActionShellMixin:
             list(getattr(self, "blocked_publishers", [])) + [publisher],
             getattr(self, "preferred_publishers", []),
         )
-        if publishers == getattr(self, "blocked_publishers", []) and preferred_publishers == getattr(
+        if publishers == getattr(
+            self, "blocked_publishers", []
+        ) and preferred_publishers == getattr(
             self,
             "preferred_publishers",
             [],
@@ -120,7 +126,9 @@ class _MainWindowActionShellMixin:
             list(getattr(self, "preferred_publishers", [])) + [publisher],
             preferred_wins=True,
         )
-        if publishers == getattr(self, "preferred_publishers", []) and blocked_publishers == getattr(
+        if publishers == getattr(
+            self, "preferred_publishers", []
+        ) and blocked_publishers == getattr(
             self,
             "blocked_publishers",
             [],

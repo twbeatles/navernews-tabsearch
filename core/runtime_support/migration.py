@@ -138,7 +138,10 @@ def _migrate_legacy_database(src_db_path: str, dst_db_path: str) -> bool:
         )
         _cleanup_db_target_set(dst_db_path)
     elif backup_error:
-        logger.warning("Legacy DB backup migration failed, using raw copy fallback: %s", backup_error)
+        logger.warning(
+            "Legacy DB backup migration failed, using raw copy fallback: %s",
+            backup_error,
+        )
 
     try:
         _copy_db_set(src_db_path, dst_db_path)
@@ -161,7 +164,9 @@ def _migrate_legacy_database(src_db_path: str, dst_db_path: str) -> bool:
     return False
 
 
-def _merge_backup_directories(source_backup_dir: str, destination_backup_dir: str) -> bool:
+def _merge_backup_directories(
+    source_backup_dir: str, destination_backup_dir: str
+) -> bool:
     if not os.path.isdir(source_backup_dir):
         return False
 
@@ -178,11 +183,15 @@ def _merge_backup_directories(source_backup_dir: str, destination_backup_dir: st
             shutil.copytree(source_entry, destination_entry)
             copied_any = True
         except OSError as exc:
-            logger.warning("Legacy backup directory merge skipped for %s: %s", source_entry, exc)
+            logger.warning(
+                "Legacy backup directory merge skipped for %s: %s", source_entry, exc
+            )
     return copied_any
 
 
-def _migrate_pending_restore_file(src_path: str, dst_path: str, runtime_paths: RuntimePaths) -> bool:
+def _migrate_pending_restore_file(
+    src_path: str, dst_path: str, runtime_paths: RuntimePaths
+) -> bool:
     if not os.path.exists(src_path) or os.path.exists(dst_path):
         return False
 
@@ -195,7 +204,10 @@ def _migrate_pending_restore_file(src_path: str, dst_path: str, runtime_paths: R
         _write_json_atomic(dst_path, payload)
         return True
     except Exception as exc:
-        logger.warning("Legacy pending restore payload could not be rebased; copying raw file instead: %s", exc)
+        logger.warning(
+            "Legacy pending restore payload could not be rebased; copying raw file instead: %s",
+            exc,
+        )
         try:
             return _copy_path_if_missing(src_path, dst_path)
         except OSError:
@@ -209,7 +221,9 @@ def migrate_legacy_runtime_files(
     runtime_paths: Optional[RuntimePaths] = None,
 ) -> list[str]:
     source_dir = os.path.abspath(legacy_dir or get_app_dir())
-    resolved_runtime_paths = runtime_paths or get_runtime_paths(app_dir=source_dir, data_dir=data_dir)
+    resolved_runtime_paths = runtime_paths or get_runtime_paths(
+        app_dir=source_dir, data_dir=data_dir
+    )
     target_dir = resolved_runtime_paths.data_dir
     if source_dir == target_dir:
         return []

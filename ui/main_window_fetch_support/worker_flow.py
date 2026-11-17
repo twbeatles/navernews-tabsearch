@@ -1,4 +1,3 @@
-
 """Compatibility facade for MainApp fetch worker flow mixins."""
 
 import time

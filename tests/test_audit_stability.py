@@ -1,4 +1,5 @@
 """Audit boundaries: real startup/shutdown, volume swaps and bounded export."""
+
 import errno
 import hashlib
 import json
@@ -53,7 +54,11 @@ def test_cross_directory_update_renames_only_inside_target_volume(tmp_path):
     install, data = tmp_path / "install", tmp_path / "data"
     install.mkdir()
     data.mkdir()
-    target, staged, backup = install / "app.exe", data / "new.exe", install / "app.v1.bak"
+    target, staged, backup = (
+        install / "app.exe",
+        data / "new.exe",
+        install / "app.v1.bak",
+    )
     target.write_bytes(b"old")
     staged.write_bytes(b"new")
     real_replace = os.replace
@@ -63,28 +68,45 @@ def test_cross_directory_update_renames_only_inside_target_volume(tmp_path):
             raise OSError(errno.EXDEV, "different volumes")
         real_replace(src, dst)
 
-    with mock.patch.object(update_installer.os, "replace", side_effect=same_volume_only), \
-         mock.patch.object(update_installer.subprocess, "run", return_value=mock.Mock(returncode=0)), \
-         mock.patch.object(update_installer.subprocess, "Popen"):
+    with (
+        mock.patch.object(update_installer.os, "replace", side_effect=same_volume_only),
+        mock.patch.object(
+            update_installer.subprocess, "run", return_value=mock.Mock(returncode=0)
+        ),
+        mock.patch.object(update_installer.subprocess, "Popen"),
+    ):
         update_installer.apply_staged_update(
-            target=target, staged=staged, backup=backup,
-            expected_sha256=hashlib.sha256(b"new").hexdigest(), expected_size=3)
+            target=target,
+            staged=staged,
+            backup=backup,
+            expected_sha256=hashlib.sha256(b"new").hexdigest(),
+            expected_size=3,
+        )
     assert target.read_bytes() == b"new"
     assert backup.read_bytes() == b"old"
     assert not list(install.glob(".update-*.exe"))
 
 
-@pytest.mark.parametrize("failure", [PermissionError("read-only"), OSError(errno.ENOSPC, "full")])
+@pytest.mark.parametrize(
+    "failure", [PermissionError("read-only"), OSError(errno.ENOSPC, "full")]
+)
 def test_preflight_failure_does_not_touch_install_or_start_helper(tmp_path, failure):
     target, staged = tmp_path / "app.exe", tmp_path / "new.exe"
     target.write_bytes(b"old")
     staged.write_bytes(b"new")
-    with mock.patch.object(update_installer.os, "fsync", side_effect=failure), \
-         mock.patch.object(update_installer.subprocess, "Popen") as launch:
+    with (
+        mock.patch.object(update_installer.os, "fsync", side_effect=failure),
+        mock.patch.object(update_installer.subprocess, "Popen") as launch,
+    ):
         with pytest.raises(OSError):
             update_installer.launch_update_helper(
-                target=target, staged=staged, version="1", size=3,
-                sha256=hashlib.sha256(b"new").hexdigest(), result_file=tmp_path / "result.json")
+                target=target,
+                staged=staged,
+                version="1",
+                size=3,
+                sha256=hashlib.sha256(b"new").hexdigest(),
+                result_file=tmp_path / "result.json",
+            )
         launch.assert_not_called()
     assert target.read_bytes() == b"old"
     assert staged.read_bytes() == b"new"
@@ -92,7 +114,9 @@ def test_preflight_failure_does_not_touch_install_or_start_helper(tmp_path, fail
 
 
 def test_helper_records_rollback_before_restarting_previous_app(tmp_path):
-    target, staged, backup = (tmp_path / name for name in ("app.exe", "new.exe", "app.v1.bak"))
+    target, staged, backup = (
+        tmp_path / name for name in ("app.exe", "new.exe", "app.v1.bak")
+    )
     result = tmp_path / "result.json"
     target.write_bytes(b"old")
     staged.write_bytes(b"new")
@@ -101,12 +125,32 @@ def test_helper_records_rollback_before_restarting_previous_app(tmp_path):
         assert json.loads(result.read_text(encoding="utf-8"))["status"] == "rolled_back"
         assert target.read_bytes() == b"old"
 
-    args = ["--apply-update", "--target", str(target), "--staged", str(staged),
-            "--backup", str(backup), "--parent-pid", "1", "--expected-sha256",
-            hashlib.sha256(b"new").hexdigest(), "--expected-size", "3", "--result-file", str(result)]
-    with mock.patch.object(update_installer, "_wait_for_parent"), \
-         mock.patch.object(update_installer.subprocess, "run", return_value=mock.Mock(returncode=1)), \
-         mock.patch.object(update_installer.subprocess, "Popen", side_effect=restarted) as launch:
+    args = [
+        "--apply-update",
+        "--target",
+        str(target),
+        "--staged",
+        str(staged),
+        "--backup",
+        str(backup),
+        "--parent-pid",
+        "1",
+        "--expected-sha256",
+        hashlib.sha256(b"new").hexdigest(),
+        "--expected-size",
+        "3",
+        "--result-file",
+        str(result),
+    ]
+    with (
+        mock.patch.object(update_installer, "_wait_for_parent"),
+        mock.patch.object(
+            update_installer.subprocess, "run", return_value=mock.Mock(returncode=1)
+        ),
+        mock.patch.object(
+            update_installer.subprocess, "Popen", side_effect=restarted
+        ) as launch,
+    ):
         assert update_installer.handle_update_helper_args(args) == 1
         launch.assert_called_once()
 
@@ -116,11 +160,17 @@ def test_smoke_ignores_inherited_runtime_directory(tmp_path):
     sentinel.mkdir()
     (sentinel / "news_scraper_config.json").write_bytes(b"do not read or change")
     env = dict(os.environ, NEWS_SCRAPER_DATA_DIR=str(sentinel))
-    result = subprocess.run([sys.executable, "news_scraper_pro.py", "--smoke"],
-                            env=env, capture_output=True, timeout=30)
+    result = subprocess.run(
+        [sys.executable, "news_scraper_pro.py", "--smoke"],
+        env=env,
+        capture_output=True,
+        timeout=30,
+    )
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert [p.name for p in sentinel.iterdir()] == ["news_scraper_config.json"]
-    assert (sentinel / "news_scraper_config.json").read_bytes() == b"do not read or change"
+    assert (
+        sentinel / "news_scraper_config.json"
+    ).read_bytes() == b"do not read or change"
 
 
 def test_smoke_detects_main_window_initialization_failure(tmp_path):
@@ -131,8 +181,12 @@ import os
 with patch('ui.main_window.MainApp.init_ui', side_effect=RuntimeError('bad release')):
     run_smoke(os.environ['NEWS_SCRAPER_DATA_DIR'])
 """
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, timeout=30,
-                            env=dict(os.environ, NEWS_SCRAPER_DATA_DIR=str(tmp_path)))
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        timeout=30,
+        env=dict(os.environ, NEWS_SCRAPER_DATA_DIR=str(tmp_path)),
+    )
     assert result.returncode != 0
     assert b"bad release" in result.stderr
 
@@ -141,8 +195,11 @@ class GeneratedDB:
     def iter_news_snapshot_batches(self, scope, chunk_size=100):
         def rows():
             for offset in range(0, 2000, chunk_size):
-                yield [{"link": str(i), "description": str(i) + "x" * 4096}
-                       for i in range(offset, min(offset + chunk_size, 2000))]
+                yield [
+                    {"link": str(i), "description": str(i) + "x" * 4096}
+                    for i in range(offset, min(offset + chunk_size, 2000))
+                ]
+
         return 2000, rows()
 
 
@@ -150,8 +207,14 @@ def test_json_export_memory_is_bounded_by_batches(tmp_path):
     output = tmp_path / "news.json"
     tracemalloc.start()
     try:
-        result = export_scope_to_json(ImmediateExportContext(), GeneratedDB(), DBQueryScope(keyword="x"),
-                                      str(output), "x", chunk_size=50)
+        result = export_scope_to_json(
+            ImmediateExportContext(),
+            GeneratedDB(),
+            DBQueryScope(keyword="x"),
+            str(output),
+            "x",
+            chunk_size=50,
+        )
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
@@ -174,6 +237,7 @@ def test_cancelled_json_export_closes_snapshot_and_preserves_file(tmp_path):
                     yield [{"link": "2"}]
                 finally:
                     closed.append(True)
+
             return 2, rows()
 
     class Context(ImmediateExportContext):
@@ -182,7 +246,9 @@ def test_cancelled_json_export_closes_snapshot_and_preserves_file(tmp_path):
                 raise RuntimeError("cancelled")
 
     with pytest.raises(RuntimeError, match="cancelled"):
-        export_scope_to_json(Context(), DB(), DBQueryScope(keyword="x"), str(output), "x", chunk_size=1)
+        export_scope_to_json(
+            Context(), DB(), DBQueryScope(keyword="x"), str(output), "x", chunk_size=1
+        )
     assert closed == [True]
     assert output.read_text(encoding="utf-8") == "original"
     assert not list(tmp_path.glob(".export_*.tmp"))
@@ -195,10 +261,13 @@ def test_manual_duplicate_repair_preserves_article_state(tmp_path):
 
     from core.database import DatabaseManager
     from ui.settings_dialog import SettingsDialog
+
     paths = SimpleNamespace(db_file=str(tmp_path / "news.db"))
     db = DatabaseManager(paths.db_file)
     try:
-        db.upsert_news([{"link": "L1", "title": "one"}, {"link": "L2", "title": "two"}], "A")
+        db.upsert_news(
+            [{"link": "L1", "title": "one"}, {"link": "L2", "title": "two"}], "A"
+        )
         db.update_status("L1", "is_bookmarked", 1)
         db.save_note("L1", "keep note")
         with db.connection() as conn:
@@ -206,8 +275,13 @@ def test_manual_duplicate_repair_preserves_article_state(tmp_path):
                 conn.execute("UPDATE news_keywords SET is_duplicate=1")
     finally:
         db.close()
-    dialog = SimpleNamespace(_is_closing=False, _runtime_paths=lambda: paths, _start_data_task=mock.Mock())
-    with mock.patch("ui._settings_dialog_tasks.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
+    dialog = SimpleNamespace(
+        _is_closing=False, _runtime_paths=lambda: paths, _start_data_task=mock.Mock()
+    )
+    with mock.patch(
+        "ui._settings_dialog_tasks.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
         SettingsDialog.repair_duplicate_flags(cast(Any, dialog))
     job, done, operation = dialog._start_data_task.call_args.args
     assert operation == "repair_duplicates"
@@ -228,7 +302,7 @@ def test_manual_duplicate_repair_preserves_article_state(tmp_path):
 
 @pytest.mark.parametrize("mode", ["export", "import", "full"])
 def test_closing_during_real_cloud_io_waits_and_reopens_cleanly(tmp_path, mode):
-    code = r'''
+    code = r"""
 import os, sqlite3, threading
 from pathlib import Path
 from unittest.mock import patch
@@ -286,8 +360,16 @@ with sqlite3.connect(db.db_file) as conn:
 for snapshot_path in sync.glob('*.zip'):
     read_snapshot_manifest(str(snapshot_path))
 assert not list(sync.glob('*.tmp'))
-'''
-    result = subprocess.run([sys.executable, "-c", code], timeout=25, capture_output=True,
-                            env=dict(os.environ, AUDIT_TEST_ROOT=str(tmp_path), AUDIT_TEST_MODE=mode,
-                                     NEWS_SCRAPER_DATA_DIR=str(tmp_path / "local")))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        timeout=25,
+        capture_output=True,
+        env=dict(
+            os.environ,
+            AUDIT_TEST_ROOT=str(tmp_path),
+            AUDIT_TEST_MODE=mode,
+            NEWS_SCRAPER_DATA_DIR=str(tmp_path / "local"),
+        ),
+    )
     assert result.returncode == 0, result.stderr.decode(errors="replace")

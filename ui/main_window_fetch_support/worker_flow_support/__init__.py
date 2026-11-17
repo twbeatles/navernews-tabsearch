@@ -1,4 +1,3 @@
-
 from ui.main_window_fetch_support.worker_flow_support.completion import (
     _FetchWorkerCompletionMixin,
 )

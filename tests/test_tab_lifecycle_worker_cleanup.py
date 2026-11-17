@@ -130,7 +130,9 @@ class _DummyTabsMain(_MainWindowTabsMixin, _FetchWorkerCompletionMixin):
 
     def _status_bar(self):
         bar = mock.Mock()
-        bar.showMessage = lambda message, _timeout=0: self.status_messages.append(str(message))
+        bar.showMessage = lambda message, _timeout=0: self.status_messages.append(
+            str(message)
+        )
         return bar
 
     def show_warning_toast(self, message):
@@ -155,7 +157,9 @@ class _DummyTabsMain(_MainWindowTabsMixin, _FetchWorkerCompletionMixin):
 
 
 class TestTabLifecycleWorkerCleanup(unittest.TestCase):
-    def _register_running_worker(self, main: _DummyTabsMain, *, wait_result: bool = True) -> int:
+    def _register_running_worker(
+        self, main: _DummyTabsMain, *, wait_result: bool = True
+    ) -> int:
         request_id = 11
         handle = WorkerHandle(
             request_id=request_id,
@@ -182,13 +186,17 @@ class TestTabLifecycleWorkerCleanup(unittest.TestCase):
         self.assertNotIn("AI", main._tab_fetch_state)
         self.assertEqual(main._news_tab.cleanup_calls, 1)
         self.assertEqual(main.save_config_calls, 1)
-        self.assertTrue(any("백그라운드 새로고침" in msg for msg in main.warning_toasts))
+        self.assertTrue(
+            any("백그라운드 새로고침" in msg for msg in main.warning_toasts)
+        )
 
     def test_ensure_tab_worker_stopped_uses_force_detach_after_timeout(self):
         main = _DummyTabsMain()
         self._register_running_worker(main, wait_result=False)
 
-        self.assertTrue(main._ensure_tab_worker_stopped("AI", 11, "탭 닫기", wait_ms=10))
+        self.assertTrue(
+            main._ensure_tab_worker_stopped("AI", 11, "탭 닫기", wait_ms=10)
+        )
         self.assertIsNone(main._worker_registry.get_active_request_id("AI"))
 
 

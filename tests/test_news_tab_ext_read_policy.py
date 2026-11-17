@@ -96,7 +96,9 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         tab = _DummyNewsTab()
         target = {"link": "https://example.com/news-1", "is_read": 0}
 
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=True) as open_mock:
+        with mock.patch(
+            "ui.news_tab.QDesktopServices.openUrl", return_value=True
+        ) as open_mock:
             NewsTab._open_external_link_and_mark_read(cast(Any, tab), target)
 
         open_mock.assert_called_once()
@@ -110,7 +112,9 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
         tab = _DummyNewsTab()
         target = {"link": "https://example.com/news-2", "is_read": 1}
 
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=True) as open_mock:
+        with mock.patch(
+            "ui.news_tab.QDesktopServices.openUrl", return_value=True
+        ) as open_mock:
             NewsTab._open_external_link_and_mark_read(cast(Any, tab), target)
 
         open_mock.assert_called_once()
@@ -132,9 +136,15 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
 
     def test_open_action_does_not_mutate_ui_when_db_update_fails(self):
         tab = _DummyNewsTab(update_result=False)
-        tab.target = {"link": "https://example.com/news-open", "is_read": 0, "is_bookmarked": 0}
+        tab.target = {
+            "link": "https://example.com/news-open",
+            "is_read": 0,
+            "is_bookmarked": 0,
+        }
 
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=True) as open_mock:
+        with mock.patch(
+            "ui.news_tab.QDesktopServices.openUrl", return_value=True
+        ) as open_mock:
             NewsTab.on_link_clicked(cast(Any, tab), QUrl("app://open/hash"))
 
         open_mock.assert_called_once()
@@ -146,9 +156,15 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
 
     def test_open_action_does_not_mark_as_read_when_link_open_fails(self):
         tab = _DummyNewsTab(update_result=True)
-        tab.target = {"link": "https://example.com/news-open-fail", "is_read": 0, "is_bookmarked": 0}
+        tab.target = {
+            "link": "https://example.com/news-open-fail",
+            "is_read": 0,
+            "is_bookmarked": 0,
+        }
 
-        with mock.patch("ui.news_tab.QDesktopServices.openUrl", return_value=False) as open_mock:
+        with mock.patch(
+            "ui.news_tab.QDesktopServices.openUrl", return_value=False
+        ) as open_mock:
             NewsTab.on_link_clicked(cast(Any, tab), QUrl("app://open/hash"))
 
         open_mock.assert_called_once()
@@ -161,7 +177,11 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
 
     def test_unread_action_does_not_mutate_ui_when_db_update_fails(self):
         tab = _DummyNewsTab(update_result=False)
-        tab.target = {"link": "https://example.com/news-unread", "is_read": 1, "is_bookmarked": 0}
+        tab.target = {
+            "link": "https://example.com/news-unread",
+            "is_read": 1,
+            "is_bookmarked": 0,
+        }
 
         NewsTab.on_link_clicked(cast(Any, tab), QUrl("app://unread/hash"))
 
@@ -174,9 +194,9 @@ class TestNewsTabExtReadPolicy(unittest.TestCase):
 
     def test_ext_paths_use_shared_helper(self):
         link_block = inspect.getsource(NewsTab.on_link_clicked)
-        self.assertIn("elif action == \"ext\":", link_block)
+        self.assertIn('elif action == "ext":', link_block)
         self.assertIn("self._open_external_link_and_mark_read(target)", link_block)
 
         browser_block = inspect.getsource(NewsTab.on_browser_action)
-        self.assertIn("if action == \"ext\":", browser_block)
+        self.assertIn('if action == "ext":', browser_block)
         self.assertIn("self._open_external_link_and_mark_read(target)", browser_block)

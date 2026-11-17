@@ -49,7 +49,9 @@ class _NewsTabArticleActionsMixin:
         link = target.get("link", "")
         if not link:
             return False
-        if _NewsTabArticleActionsMixin._should_block_local_db_action(self, "read-state update"):
+        if _NewsTabArticleActionsMixin._should_block_local_db_action(
+            self, "read-state update"
+        ):
             return False
 
         was_read = bool(target.get("is_read", 0))
@@ -94,7 +96,9 @@ class _NewsTabArticleActionsMixin:
         link = str(target.get("link", "") or "").strip()
         if not link:
             return False
-        if _NewsTabArticleActionsMixin._should_block_local_db_action(self, "bookmark update"):
+        if _NewsTabArticleActionsMixin._should_block_local_db_action(
+            self, "bookmark update"
+        ):
             return False
 
         new_value = 1 if bool(new_bookmarked) else 0
@@ -188,7 +192,9 @@ class _NewsTabArticleActionsMixin:
         try:
             current_note = self.db.get_note(link)
         except Exception:
-            self._emit_local_action_failure("메모를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+            self._emit_local_action_failure(
+                "메모를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+            )
             return False
         dialog = NoteDialog(current_note, self)
         if not dialog.exec():
@@ -218,15 +224,21 @@ class _NewsTabArticleActionsMixin:
         tags = normalize_tags(text)
         try:
             if not self.db.set_tags(link, tags):
-                self._emit_local_action_failure("태그를 저장하지 못했습니다. 기사가 이미 삭제되었을 수 있습니다.")
+                self._emit_local_action_failure(
+                    "태그를 저장하지 못했습니다. 기사가 이미 삭제되었을 수 있습니다."
+                )
                 return False
         except DatabaseWriteError as exc:
             logger.warning("Tag save failed for %s: %s", link, exc)
-            self._emit_local_action_failure("태그를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.")
+            self._emit_local_action_failure(
+                "태그를 저장하지 못했습니다. 잠시 후 다시 시도해주세요."
+            )
             return False
         except Exception:
             logger.exception("Unexpected tag save failure for %s", link)
-            self._emit_local_action_failure("태그를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.")
+            self._emit_local_action_failure(
+                "태그를 저장하지 못했습니다. 잠시 후 다시 시도해주세요."
+            )
             return False
         target["tags"] = ",".join(tags)
         _NewsTabArticleActionsMixin._invalidate_local_render_cache(self, target)
@@ -245,15 +257,21 @@ class _NewsTabArticleActionsMixin:
             refresh_known_tags()
         return True
 
-    def _add_publisher_filter_for_target(self, target: Dict[str, Any], *, preferred: bool) -> bool:
+    def _add_publisher_filter_for_target(
+        self, target: Dict[str, Any], *, preferred: bool
+    ) -> bool:
         publisher = str(target.get("publisher", "") or "").strip()
         if not publisher:
-            self._emit_local_action_failure("출처 정보가 없어 필터에 추가할 수 없습니다.")
+            self._emit_local_action_failure(
+                "출처 정보가 없어 필터에 추가할 수 없습니다."
+            )
             return False
         parent = self._main_window()
         if parent is None:
             return False
-        method_name = "add_preferred_publisher" if preferred else "add_blocked_publisher"
+        method_name = (
+            "add_preferred_publisher" if preferred else "add_blocked_publisher"
+        )
         method = getattr(parent, method_name, None)
         if not callable(method):
             return False
@@ -264,7 +282,9 @@ class _NewsTabArticleActionsMixin:
         link = str(target.get("link", "") or "").strip()
         if not link:
             return False
-        if _NewsTabArticleActionsMixin._should_block_local_db_action(self, "delete article"):
+        if _NewsTabArticleActionsMixin._should_block_local_db_action(
+            self, "delete article"
+        ):
             return False
 
         reply = QMessageBox.question(

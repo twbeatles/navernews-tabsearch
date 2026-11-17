@@ -41,7 +41,9 @@ class _NewsTabSavedSearchControlsMixin:
             return
         current = str(combo.currentText() or "").strip()
         parent = self._main_window()
-        saved_searches = getattr(parent, "saved_searches", {}) if parent is not None else {}
+        saved_searches = (
+            getattr(parent, "saved_searches", {}) if parent is not None else {}
+        )
         with QSignalBlocker(combo):
             combo.clear()
             combo.addItem("저장된 검색 없음")
@@ -71,7 +73,9 @@ class _NewsTabSavedSearchControlsMixin:
         if parent is None:
             return
         default_name = self.keyword
-        text, ok = QInputDialog.getText(self, "검색 저장", "저장 이름:", text=default_name)
+        text, ok = QInputDialog.getText(
+            self, "검색 저장", "저장 이름:", text=default_name
+        )
         if not ok:
             return
         name = str(text or "").strip()
@@ -107,7 +111,9 @@ class _NewsTabSavedSearchControlsMixin:
     def _apply_saved_search_payload(self, payload: dict):
         with QSignalBlocker(self.inp_filter):
             self.inp_filter.setText(str(payload.get("filter_txt", "") or ""))
-        sort_idx = self.combo_sort.findText(str(payload.get("sort_mode", "최신순") or "최신순"))
+        sort_idx = self.combo_sort.findText(
+            str(payload.get("sort_mode", "최신순") or "최신순")
+        )
         if sort_idx >= 0:
             with QSignalBlocker(self.combo_sort):
                 self.combo_sort.setCurrentIndex(sort_idx)
@@ -116,7 +122,9 @@ class _NewsTabSavedSearchControlsMixin:
         with QSignalBlocker(self.chk_hide_dup):
             self.chk_hide_dup.setChecked(bool(payload.get("hide_duplicates", False)))
         with QSignalBlocker(self.chk_preferred_publishers):
-            self.chk_preferred_publishers.setChecked(bool(payload.get("only_preferred_publishers", False)))
+            self.chk_preferred_publishers.setChecked(
+                bool(payload.get("only_preferred_publishers", False))
+            )
         tag_filter = str(payload.get("tag_filter", "") or "").strip()
         with QSignalBlocker(self.combo_tag_filter):
             idx = self.combo_tag_filter.findText(tag_filter) if tag_filter else 0
@@ -131,7 +139,9 @@ class _NewsTabSavedSearchControlsMixin:
             self.btn_date_toggle.setChecked(date_active)
         self.date_container.setVisible(date_active)
         if str(payload.get("start_date", "") or ""):
-            parsed_start = QDate.fromString(str(payload.get("start_date")), "yyyy-MM-dd")
+            parsed_start = QDate.fromString(
+                str(payload.get("start_date")), "yyyy-MM-dd"
+            )
             if parsed_start.isValid():
                 self.date_start.setDate(parsed_start)
         if str(payload.get("end_date", "") or ""):
@@ -145,7 +155,7 @@ class _NewsTabSavedSearchControlsMixin:
         self._date_filter_active = date_active
         self._refresh_date_filter_controls()
         # 복원된 고급 필터가 활성화되면 접힌 영역을 펼쳐 가시성을 확보
-        if (self.chk_preferred_publishers.isChecked() or bool(tag_filter) or date_active):
+        if self.chk_preferred_publishers.isChecked() or bool(tag_filter) or date_active:
             btn_advanced = getattr(self, "btn_advanced", None)
             if btn_advanced is not None and not btn_advanced.isChecked():
                 btn_advanced.setChecked(True)

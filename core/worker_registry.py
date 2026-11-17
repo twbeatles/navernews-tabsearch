@@ -46,7 +46,9 @@ class WorkerRegistry:
         handle = self._handles_by_request_id.pop(request_id, None)
         if not handle:
             return None
-        active_request_id = self._active_request_id_by_tab_keyword.get(handle.tab_keyword)
+        active_request_id = self._active_request_id_by_tab_keyword.get(
+            handle.tab_keyword
+        )
         if active_request_id == request_id:
             self._active_request_id_by_tab_keyword.pop(handle.tab_keyword, None)
         return handle

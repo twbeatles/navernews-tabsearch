@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -33,8 +32,12 @@ class _CloudSyncMergeRowsMixin:
         title_hash = self._source_expr(source_news_columns, s, "title_hash", "''")
         is_duplicate = self._source_expr(source_news_columns, s, "is_duplicate", "0")
         is_deleted = self._source_expr(source_news_columns, s, "is_deleted", "0")
-        delete_updated_at = self._source_expr(source_news_columns, s, "delete_updated_at", "0")
-        delete_machine_id = self._source_expr(source_news_columns, s, "delete_machine_id", "''")
+        delete_updated_at = self._source_expr(
+            source_news_columns, s, "delete_updated_at", "0"
+        )
+        delete_machine_id = self._source_expr(
+            source_news_columns, s, "delete_machine_id", "''"
+        )
         delete_reason = self._source_expr(source_news_columns, s, "delete_reason", "''")
 
         if "read_updated_at" in source_news_columns:
@@ -155,7 +158,9 @@ class _CloudSyncMergeRowsMixin:
         link = self._source_expr(source_keyword_columns, nk, "link", "''")
         keyword = self._source_expr(source_keyword_columns, nk, "keyword", "''")
         query_key = self._source_expr(source_keyword_columns, nk, "query_key", "''")
-        is_duplicate = self._source_expr(source_keyword_columns, nk, "is_duplicate", "0")
+        is_duplicate = self._source_expr(
+            source_keyword_columns, nk, "is_duplicate", "0"
+        )
         conn.execute(
             f"""
             INSERT INTO news_keywords (link, keyword, query_key, is_duplicate)

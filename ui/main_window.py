@@ -67,7 +67,8 @@ class AutoBackup(CoreAutoBackup):
             config_file=config_file or resolved_runtime_paths.config_file,
             db_file=db_file or resolved_runtime_paths.db_file,
             app_version=VERSION,
-            pending_restore_file=pending_restore_file or resolved_runtime_paths.pending_restore_file,
+            pending_restore_file=pending_restore_file
+            or resolved_runtime_paths.pending_restore_file,
         )
 
 
@@ -102,7 +103,9 @@ class MainApp(
 ):
     """메인 애플리케이션 윈도우 - 안정성 개선 버전"""
 
-    def __init__(self, runtime_paths: Optional[RuntimePaths] = None, *, smoke_mode: bool = False):
+    def __init__(
+        self, runtime_paths: Optional[RuntimePaths] = None, *, smoke_mode: bool = False
+    ):
         super().__init__()
         self.runtime_paths = runtime_paths or RUNTIME_PATHS
         os.makedirs(self.runtime_paths.data_dir, exist_ok=True)
@@ -209,7 +212,9 @@ class MainApp(
             self._auto_backup_timer = QTimer(self)
             self._auto_backup_timer.timeout.connect(self._run_auto_backup_once)
             self._cloud_sync_timer = QTimer(self)
-            self._cloud_sync_timer.timeout.connect(lambda: self._run_cloud_sync_once(manual=False, mode="full"))
+            self._cloud_sync_timer.timeout.connect(
+                lambda: self._run_cloud_sync_once(manual=False, mode="full")
+            )
 
             self.set_application_icon()
 
@@ -256,7 +261,9 @@ class MainApp(
 
             self.setup_system_tray()
 
-            start_minimized_requested = "--minimized" in sys.argv or self.config.get("start_minimized", False)
+            start_minimized_requested = "--minimized" in sys.argv or self.config.get(
+                "start_minimized", False
+            )
             tray_available = bool(getattr(self, "tray", None))
             if should_start_minimized(start_minimized_requested, tray_available):
                 QTimer.singleShot(100, self.hide)
@@ -271,7 +278,9 @@ class MainApp(
                 )
                 QTimer.singleShot(
                     200,
-                    lambda: self.show_warning_toast("트레이 미지원 환경에서는 최소화 시작을 사용할 수 없습니다."),
+                    lambda: self.show_warning_toast(
+                        "트레이 미지원 환경에서는 최소화 시작을 사용할 수 없습니다."
+                    ),
                 )
 
             logger.info("MainApp 초기화 완료")
@@ -279,7 +288,11 @@ class MainApp(
             logger.critical("MainApp 초기화 중 치명적 오류: %s", exc)
             traceback.print_exc()
             if not smoke_mode:
-                QMessageBox.critical(None, "초기화 오류", f"프로그램 초기화 중 오류가 발생했습니다:\n{exc}")
+                QMessageBox.critical(
+                    None,
+                    "초기화 오류",
+                    f"프로그램 초기화 중 오류가 발생했습니다:\n{exc}",
+                )
             raise
 
 

@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -137,7 +136,11 @@ class _DatabaseInitSchemaMixin:
             self._backfill_missing_title_hashes(conn)
             self._backfill_missing_pubdate_ts(conn)
 
-            self._set_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, self._get_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "0"))
+            self._set_app_meta(
+                conn,
+                self.FTS_BACKFILL_DONE_KEY,
+                self._get_app_meta(conn, self.FTS_BACKFILL_DONE_KEY, "0"),
+            )
             self._set_app_meta(
                 conn,
                 self.FTS_BACKFILL_CURSOR_KEY,
@@ -149,7 +152,9 @@ class _DatabaseInitSchemaMixin:
             # news_keywords row. They only produce new results when the schema
             # actually changed, so they run once per repair revision instead of
             # on every launch.
-            stored_revision = self._get_app_meta(conn, self.SCHEMA_REPAIR_REVISION_KEY, "")
+            stored_revision = self._get_app_meta(
+                conn, self.SCHEMA_REPAIR_REVISION_KEY, ""
+            )
             schema_changed = bool(news_keywords_changed or columns_added)
             if stored_revision != self.SCHEMA_REPAIR_REVISION or schema_changed:
                 logger.info(

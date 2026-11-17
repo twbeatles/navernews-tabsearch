@@ -65,7 +65,10 @@ def _build_storage_group(stats: Dict[str, int], theme_idx: int):
     tombstones = int(stats.get("storage_tombstones", 0) or 0)
     unused_scopes = stats.get("storage_unused_scopes", None)
     items = [
-        ("데이터베이스 크기:", _format_bytes(int(stats.get("storage_db_bytes", 0) or 0))),
+        (
+            "데이터베이스 크기:",
+            _format_bytes(int(stats.get("storage_db_bytes", 0) or 0)),
+        ),
         ("보관 기사:", f"{int(stats.get('storage_articles', 0) or 0):,}개"),
         ("삭제 기록:", f"{tombstones:,}개"),
         ("검색 범위 행:", f"{int(stats.get('storage_memberships', 0) or 0):,}개"),
@@ -113,7 +116,9 @@ def _open_tab_query_keys(owner) -> List[str]:
 
 
 class _MainWindowAnalysisMixin:
-    def _cleanup_analysis_worker(self: MainApp, worker: Optional[Any], wait_ms: int = 600) -> bool:
+    def _cleanup_analysis_worker(
+        self: MainApp, worker: Optional[Any], wait_ms: int = 600
+    ) -> bool:
         if worker is None:
             return True
         try:
@@ -173,7 +178,9 @@ class _MainWindowAnalysisMixin:
         db = self._require_db()
         iterator = None
         try:
-            total_count, iterator = db.iter_news_snapshot_batches(scope, chunk_size=chunk_size)
+            total_count, iterator = db.iter_news_snapshot_batches(
+                scope, chunk_size=chunk_size
+            )
             rows: List[Dict[str, Any]] = []
             loaded = 0
             for batch in iterator:
@@ -201,7 +208,9 @@ class _MainWindowAnalysisMixin:
     ) -> List[Dict[str, Any]]:
         scope = self._current_query_scope()
         if scope is not None:
-            return self._scope_items_for_scope(scope, context=context, chunk_size=chunk_size)
+            return self._scope_items_for_scope(
+                scope, context=context, chunk_size=chunk_size
+            )
         current_tab = self._current_news_tab()
         if current_tab is None:
             return []
@@ -247,7 +256,9 @@ class _MainWindowAnalysisMixin:
         mutations: List[Dict[str, Any]] = []
         actions_by_link: Dict[str, Any] = {}
         for item in items:
-            actions = evaluate_automation_rules(item, normalized_rules, publisher_aliases=aliases)
+            actions = evaluate_automation_rules(
+                item, normalized_rules, publisher_aliases=aliases
+            )
             if not actions.has_actions:
                 continue
             result["matched"] += 1
@@ -315,9 +326,11 @@ class _MainWindowAnalysisMixin:
         scope = self._current_query_scope()
         dialog = TagManagerDialog(
             self._require_db(),
-            scope_items_provider=lambda context=None, scope=scope: self._scope_items_for_scope(
-                scope,
-                context=context,
+            scope_items_provider=lambda context=None, scope=scope: (
+                self._scope_items_for_scope(
+                    scope,
+                    context=context,
+                )
             ),
             refresh_callback=lambda: self._after_bulk_data_change("tag_manager"),
             parent=self,
@@ -341,7 +354,9 @@ class _MainWindowAnalysisMixin:
         scope = self._current_query_scope()
         dialog = AutomationRulesDialog(
             getattr(self, "automation_rules", []),
-            lambda context=None, scope=scope: self._scope_items_for_scope(scope, context=context),
+            lambda context=None, scope=scope: self._scope_items_for_scope(
+                scope, context=context
+            ),
             self._apply_automation_rules_to_items,
             self._save_automation_rules,
             refresh_callback=lambda: self._after_bulk_data_change("automation_rules"),
@@ -411,7 +426,9 @@ class _MainWindowAnalysisMixin:
                 lbl = QLabel(label)
                 lbl.setStyleSheet("font-weight: bold;")
                 val = QLabel(value)
-                val.setStyleSheet("color: #007AFF;" if self.theme_idx == 0 else "color: #0A84FF;")
+                val.setStyleSheet(
+                    "color: #007AFF;" if self.theme_idx == 0 else "color: #0A84FF;"
+                )
                 grid.addWidget(lbl, i, 0, Qt.AlignmentFlag.AlignRight)
                 grid.addWidget(val, i, 1, Qt.AlignmentFlag.AlignLeft)
             group.setLayout(grid)
@@ -452,14 +469,20 @@ class _MainWindowAnalysisMixin:
         except Exception as exc:
             logger.warning("Scope cleanup preview failed: %s", exc)
             QMessageBox.warning(
-                dialog, "사용하지 않는 범위 정리", f"미리보기를 불러오지 못했습니다.\n\n{exc}"
+                dialog,
+                "사용하지 않는 범위 정리",
+                f"미리보기를 불러오지 못했습니다.\n\n{exc}",
             )
             return
         if not preview.dead_scopes:
-            QMessageBox.information(dialog, "사용하지 않는 범위 정리", "사용하지 않는 검색 범위가 없습니다.")
+            QMessageBox.information(
+                dialog, "사용하지 않는 범위 정리", "사용하지 않는 검색 범위가 없습니다."
+            )
             return
         shown = preview.dead_scopes[:20]
-        lines = "\n".join(f"• {scope.keyword_label} — {scope.membership_count:,}개" for scope in shown)
+        lines = "\n".join(
+            f"• {scope.keyword_label} — {scope.membership_count:,}개" for scope in shown
+        )
         if len(preview.dead_scopes) > len(shown):
             lines += f"\n… 외 {len(preview.dead_scopes) - len(shown)}개 범위"
         confirm = QMessageBox.question(
@@ -484,7 +507,9 @@ class _MainWindowAnalysisMixin:
             logger.warning("Scope cleanup failed: %s", exc)
             self.end_database_maintenance()
             QMessageBox.warning(
-                dialog, "사용하지 않는 범위 정리", f"정리 중 오류가 발생했습니다.\n\n{exc}"
+                dialog,
+                "사용하지 않는 범위 정리",
+                f"정리 중 오류가 발생했습니다.\n\n{exc}",
             )
             return
         self.end_database_maintenance()
@@ -638,7 +663,9 @@ class _MainWindowAnalysisMixin:
                 state["stats_loaded"] = True
             state["stats_widgets"] = []
             if stats["total"] > 0:
-                read_percent = ((stats["total"] - stats["unread"]) / stats["total"]) * 100
+                read_percent = (
+                    (stats["total"] - stats["unread"]) / stats["total"]
+                ) * 100
             else:
                 read_percent = 0
 
@@ -658,7 +685,9 @@ class _MainWindowAnalysisMixin:
                 lbl = QLabel(label)
                 lbl.setStyleSheet("font-weight: bold;")
                 val = QLabel(value)
-                val.setStyleSheet("color: #007AFF;" if self.theme_idx == 0 else "color: #0A84FF;")
+                val.setStyleSheet(
+                    "color: #007AFF;" if self.theme_idx == 0 else "color: #0A84FF;"
+                )
                 grid.addWidget(lbl, i, 0, Qt.AlignmentFlag.AlignRight)
                 grid.addWidget(val, i, 1, Qt.AlignmentFlag.AlignLeft)
             group.setLayout(grid)
@@ -675,7 +704,9 @@ class _MainWindowAnalysisMixin:
                 )
                 if not self._open_tab_query_keys():
                     btn_scope_cleanup.setEnabled(False)
-                    btn_scope_cleanup.setToolTip("열려 있는 키워드 탭이 없어 정리할 수 없습니다")
+                    btn_scope_cleanup.setToolTip(
+                        "열려 있는 키워드 탭이 없어 정리할 수 없습니다"
+                    )
                 else:
                     btn_scope_cleanup.clicked.connect(
                         lambda: self._run_scope_cleanup(dialog, reload_stats)
@@ -683,7 +714,9 @@ class _MainWindowAnalysisMixin:
                 stats_layout.insertWidget(2, btn_scope_cleanup)
                 state["stats_widgets"].append(btn_scope_cleanup)
 
-        def render_publishers(publishers: List[tuple[str, int]], request_id: int) -> None:
+        def render_publishers(
+            publishers: List[tuple[str, int]], request_id: int
+        ) -> None:
             if not dialog.isVisible() or request_id != state["publisher_request_id"]:
                 return
             result_list.clear()
@@ -703,7 +736,9 @@ class _MainWindowAnalysisMixin:
             else:
                 tag_list.addItem("태그 데이터가 없습니다.")
 
-        def render_simulation(publishers: List[tuple[str, int]], request_id: int) -> None:
+        def render_simulation(
+            publishers: List[tuple[str, int]], request_id: int
+        ) -> None:
             if not dialog.isVisible() or request_id != state["sim_request_id"]:
                 return
             sim_result_list.clear()
@@ -723,7 +758,11 @@ class _MainWindowAnalysisMixin:
             preferred_publishers: Optional[List[str]] = None,
             only_preferred_publishers: bool = False,
         ) -> List[tuple[str, int]]:
-            blocked = getattr(self, "blocked_publishers", []) if blocked_publishers is None else blocked_publishers
+            blocked = (
+                getattr(self, "blocked_publishers", [])
+                if blocked_publishers is None
+                else blocked_publishers
+            )
             preferred = (
                 getattr(self, "preferred_publishers", [])
                 if preferred_publishers is None
@@ -778,16 +817,22 @@ class _MainWindowAnalysisMixin:
             result_list.addItem("불러오는 중...")
             self._cleanup_analysis_worker(state["publisher_worker"])
             tab_query = tab_combo.currentData()
-            worker = InterruptibleReadWorker(self._require_db(), load_publishers, tab_query, parent=dialog)
+            worker = InterruptibleReadWorker(
+                self._require_db(), load_publishers, tab_query, parent=dialog
+            )
             state["publisher_worker"] = worker
-            worker.finished.connect(lambda publishers, rid=request_id: render_publishers(publishers, rid))
+            worker.finished.connect(
+                lambda publishers, rid=request_id: render_publishers(publishers, rid)
+            )
             worker.error.connect(
                 lambda error_msg, rid=request_id: (
                     rid == state["publisher_request_id"]
                     and dialog.isVisible()
                     and (
                         result_list.clear(),
-                        result_list.addItem("언론사 분석 데이터를 불러오지 못했습니다."),
+                        result_list.addItem(
+                            "언론사 분석 데이터를 불러오지 못했습니다."
+                        ),
                         QMessageBox.warning(
                             dialog,
                             "분석 오류",
@@ -796,9 +841,21 @@ class _MainWindowAnalysisMixin:
                     )
                 )
             )
-            worker.finished.connect(lambda *_args, worker_ref=worker: clear_worker_state("publisher_worker", worker_ref))
-            worker.error.connect(lambda *_args, worker_ref=worker: clear_worker_state("publisher_worker", worker_ref))
-            worker.cancelled.connect(lambda *_args, worker_ref=worker: clear_worker_state("publisher_worker", worker_ref))
+            worker.finished.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "publisher_worker", worker_ref
+                )
+            )
+            worker.error.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "publisher_worker", worker_ref
+                )
+            )
+            worker.cancelled.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "publisher_worker", worker_ref
+                )
+            )
             worker.start()
 
         def update_tags() -> None:
@@ -807,7 +864,9 @@ class _MainWindowAnalysisMixin:
             tag_list.clear()
             tag_list.addItem("불러오는 중...")
             self._cleanup_analysis_worker(state["tag_worker"])
-            worker = InterruptibleReadWorker(self._require_db(), load_tags, parent=dialog)
+            worker = InterruptibleReadWorker(
+                self._require_db(), load_tags, parent=dialog
+            )
             state["tag_worker"] = worker
             worker.finished.connect(lambda tags, rid=request_id: render_tags(tags, rid))
             worker.error.connect(
@@ -825,9 +884,21 @@ class _MainWindowAnalysisMixin:
                     )
                 )
             )
-            worker.finished.connect(lambda *_args, worker_ref=worker: clear_worker_state("tag_worker", worker_ref))
-            worker.error.connect(lambda *_args, worker_ref=worker: clear_worker_state("tag_worker", worker_ref))
-            worker.cancelled.connect(lambda *_args, worker_ref=worker: clear_worker_state("tag_worker", worker_ref))
+            worker.finished.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "tag_worker", worker_ref
+                )
+            )
+            worker.error.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "tag_worker", worker_ref
+                )
+            )
+            worker.cancelled.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "tag_worker", worker_ref
+                )
+            )
             worker.start()
 
         def update_simulation() -> None:
@@ -850,14 +921,18 @@ class _MainWindowAnalysisMixin:
                 parent=dialog,
             )
             state["sim_worker"] = worker
-            worker.finished.connect(lambda publishers, rid=request_id: render_simulation(publishers, rid))
+            worker.finished.connect(
+                lambda publishers, rid=request_id: render_simulation(publishers, rid)
+            )
             worker.error.connect(
                 lambda error_msg, rid=request_id: (
                     rid == state["sim_request_id"]
                     and dialog.isVisible()
                     and (
                         sim_result_list.clear(),
-                        sim_result_list.addItem("시뮬레이션 데이터를 불러오지 못했습니다."),
+                        sim_result_list.addItem(
+                            "시뮬레이션 데이터를 불러오지 못했습니다."
+                        ),
                         QMessageBox.warning(
                             dialog,
                             "분석 오류",
@@ -866,28 +941,56 @@ class _MainWindowAnalysisMixin:
                     )
                 )
             )
-            worker.finished.connect(lambda *_args, worker_ref=worker: clear_worker_state("sim_worker", worker_ref))
-            worker.error.connect(lambda *_args, worker_ref=worker: clear_worker_state("sim_worker", worker_ref))
-            worker.cancelled.connect(lambda *_args, worker_ref=worker: clear_worker_state("sim_worker", worker_ref))
+            worker.finished.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "sim_worker", worker_ref
+                )
+            )
+            worker.error.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "sim_worker", worker_ref
+                )
+            )
+            worker.cancelled.connect(
+                lambda *_args, worker_ref=worker: clear_worker_state(
+                    "sim_worker", worker_ref
+                )
+            )
             worker.start()
 
         def reload_stats() -> None:
             state["scope_keep_keys"] = self._open_tab_query_keys()
             self._cleanup_analysis_worker(state.get("stats_worker"))
-            stats_worker = InterruptibleReadWorker(self._require_db(), load_stats, parent=dialog)
+            stats_worker = InterruptibleReadWorker(
+                self._require_db(), load_stats, parent=dialog
+            )
             state["stats_worker"] = stats_worker
             stats_worker.finished.connect(render_stats)
             stats_worker.error.connect(
-                lambda error_msg: dialog.isVisible()
-                and QMessageBox.warning(
-                    dialog,
-                    "분석 오류",
-                    f"통계 및 분석 정보를 불러오지 못했습니다.\n\n{error_msg}",
+                lambda error_msg: (
+                    dialog.isVisible()
+                    and QMessageBox.warning(
+                        dialog,
+                        "분석 오류",
+                        f"통계 및 분석 정보를 불러오지 못했습니다.\n\n{error_msg}",
+                    )
                 )
             )
-            stats_worker.finished.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
-            stats_worker.error.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
-            stats_worker.cancelled.connect(lambda *_args, worker_ref=stats_worker: clear_worker_state("stats_worker", worker_ref))
+            stats_worker.finished.connect(
+                lambda *_args, worker_ref=stats_worker: clear_worker_state(
+                    "stats_worker", worker_ref
+                )
+            )
+            stats_worker.error.connect(
+                lambda *_args, worker_ref=stats_worker: clear_worker_state(
+                    "stats_worker", worker_ref
+                )
+            )
+            stats_worker.cancelled.connect(
+                lambda *_args, worker_ref=stats_worker: clear_worker_state(
+                    "stats_worker", worker_ref
+                )
+            )
             stats_worker.start()
 
         reload_stats()

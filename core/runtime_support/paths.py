@@ -61,12 +61,16 @@ def get_data_dir(
         return resolved_app_dir
 
     if resolved_platform == "win32":
-        base_dir = str(env_map.get("LOCALAPPDATA", "") or env_map.get("APPDATA", "")).strip()
+        base_dir = str(
+            env_map.get("LOCALAPPDATA", "") or env_map.get("APPDATA", "")
+        ).strip()
         if base_dir:
             return os.path.join(base_dir, APP_DATA_NAME)
 
     if resolved_platform == "darwin":
-        return os.path.join(os.path.expanduser("~/Library/Application Support"), APP_DATA_NAME)
+        return os.path.join(
+            os.path.expanduser("~/Library/Application Support"), APP_DATA_NAME
+        )
 
     xdg_data_home = str(env_map.get("XDG_DATA_HOME", "") or "").strip()
     if xdg_data_home:
@@ -85,7 +89,8 @@ def get_runtime_paths(
     resolved_data_dir = os.path.abspath(
         os.path.expanduser(
             os.path.expandvars(
-                data_dir or get_data_dir(env=env, platform=platform, app_dir=resolved_app_dir)
+                data_dir
+                or get_data_dir(env=env, platform=platform, app_dir=resolved_app_dir)
             )
         )
     )

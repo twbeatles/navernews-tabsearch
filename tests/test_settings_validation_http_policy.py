@@ -21,7 +21,9 @@ class _DummySpinBox:
 
 
 class _DummyResponse:
-    def __init__(self, status_code: int, payload: dict[str, Any] | None = None, text: str = ""):
+    def __init__(
+        self, status_code: int, payload: dict[str, Any] | None = None, text: str = ""
+    ):
         self.status_code = status_code
         self._payload = payload or {}
         self.text = text
@@ -31,7 +33,12 @@ class _DummyResponse:
 
 
 class _DummySession:
-    def __init__(self, response: _DummyResponse | None = None, *, raises: BaseException | None = None):
+    def __init__(
+        self,
+        response: _DummyResponse | None = None,
+        *,
+        raises: BaseException | None = None,
+    ):
         self.response = response or _DummyResponse(200)
         self.raises = raises
         self.calls: list[dict[str, Any]] = []
@@ -66,12 +73,18 @@ class _ValidationDialog:
         return self._parent
 
     def _current_api_timeout(self):
-        return cast(Any, _SettingsDialogTasksMixin)._current_api_timeout(cast(Any, self))
+        return cast(Any, _SettingsDialogTasksMixin)._current_api_timeout(
+            cast(Any, self)
+        )
 
     def _create_validation_session(self):
-        return cast(Any, _SettingsDialogTasksMixin)._create_validation_session(cast(Any, self))
+        return cast(Any, _SettingsDialogTasksMixin)._create_validation_session(
+            cast(Any, self)
+        )
 
-    def _run_api_validation_request(self, client_id: str, client_secret: str, *, timeout: int):
+    def _run_api_validation_request(
+        self, client_id: str, client_secret: str, *, timeout: int
+    ):
         return cast(Any, _SettingsDialogTasksMixin)._run_api_validation_request(
             cast(Any, self),
             client_id,

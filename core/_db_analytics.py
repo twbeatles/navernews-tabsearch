@@ -31,25 +31,32 @@ class _DatabaseAnalyticsMixin:
             append_visibility = getattr(self, "_append_visibility_filter_clause", None)
             visibility_clause = ""
             if callable(append_visibility):
-                visibility_clause = cast(str, append_visibility(
-                    visibility_params,
-                    blocked_publishers=blocked_publishers,
-                ))
+                visibility_clause = cast(
+                    str,
+                    append_visibility(
+                        visibility_params,
+                        blocked_publishers=blocked_publishers,
+                    ),
+                )
             stats = {}
             stats["total"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE COALESCE(n.is_deleted, 0) = 0"
+                + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["unread"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE n.is_read = 0 AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE n.is_read = 0 AND COALESCE(n.is_deleted, 0) = 0"
+                + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["bookmarked"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1 AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE n.is_bookmarked = 1 AND COALESCE(n.is_deleted, 0) = 0"
+                + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["with_notes"] = active_conn.execute(
-                "SELECT COUNT(*) FROM news n WHERE n.notes IS NOT NULL AND n.notes != '' AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
+                "SELECT COUNT(*) FROM news n WHERE n.notes IS NOT NULL AND n.notes != '' AND COALESCE(n.is_deleted, 0) = 0"
+                + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             stats["with_tags"] = active_conn.execute(
@@ -61,7 +68,8 @@ class _DatabaseAnalyticsMixin:
             stats["duplicates"] = active_conn.execute(
                 "SELECT COUNT(DISTINCT nk.link) FROM news_keywords nk "
                 "JOIN news n ON n.link = nk.link "
-                "WHERE nk.is_duplicate = 1 AND COALESCE(n.is_deleted, 0) = 0" + visibility_clause,
+                "WHERE nk.is_duplicate = 1 AND COALESCE(n.is_deleted, 0) = 0"
+                + visibility_clause,
                 visibility_params,
             ).fetchone()[0]
             return stats
@@ -174,13 +182,16 @@ class _DatabaseAnalyticsMixin:
 
             append_visibility = getattr(self, "_append_visibility_filter_clause", None)
             if callable(append_visibility):
-                query += cast(str, append_visibility(
-                    params,
-                    blocked_publishers=blocked_publishers,
-                    preferred_publishers=preferred_publishers,
-                    only_preferred_publishers=only_preferred_publishers,
-                    tag_filter=tag_filter,
-                ))
+                query += cast(
+                    str,
+                    append_visibility(
+                        params,
+                        blocked_publishers=blocked_publishers,
+                        preferred_publishers=preferred_publishers,
+                        only_preferred_publishers=only_preferred_publishers,
+                        tag_filter=tag_filter,
+                    ),
+                )
 
             query += """
                 GROUP BY n.publisher
@@ -224,12 +235,15 @@ class _DatabaseAnalyticsMixin:
             )
             append_visibility = getattr(self, "_append_visibility_filter_clause", None)
             if callable(append_visibility):
-                query += cast(str, append_visibility(
-                    params,
-                    blocked_publishers=blocked_publishers,
-                    preferred_publishers=preferred_publishers,
-                    only_preferred_publishers=only_preferred_publishers,
-                ))
+                query += cast(
+                    str,
+                    append_visibility(
+                        params,
+                        blocked_publishers=blocked_publishers,
+                        preferred_publishers=preferred_publishers,
+                        only_preferred_publishers=only_preferred_publishers,
+                    ),
+                )
             query += " GROUP BY nt.tag ORDER BY count DESC, nt.tag ASC LIMIT ?"
             params.append(max(1, int(limit or 20)))
             cursor = active_conn.execute(query, params)

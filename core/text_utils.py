@@ -12,16 +12,17 @@ from core.logging_setup import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
-RE_HTML_TAGS = re.compile(r'<[^>]+>')
-RE_WHITESPACE = re.compile(r'\s+')
-RE_BOLD_TAGS = re.compile(r'</?b>')
+RE_HTML_TAGS = re.compile(r"<[^>]+>")
+RE_WHITESPACE = re.compile(r"\s+")
+RE_BOLD_TAGS = re.compile(r"</?b>")
 
 DATE_FORMATS = (
-    '%Y-%m-%dT%H:%M:%S',
-    '%Y-%m-%d %H:%M:%S',
-    '%Y-%m-%d',
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d",
 )
-DATE_OUTPUT_FORMAT = '%Y.%m.%d %H:%M'
+DATE_OUTPUT_FORMAT = "%Y.%m.%d %H:%M"
+
 
 @contextmanager
 def perf_timer(scope: str, meta: str = ""):
@@ -49,9 +50,9 @@ def parse_date_string(date_str: str) -> str:
                 return dt.strftime(DATE_OUTPUT_FORMAT)
             except (ValueError, TypeError):
                 continue
-    
+
     # 추가: 한국어 날짜 형식 등 기타 포맷 시도 (필요시 확장)
-    
+
     return date_str  # 파싱 실패 시 원본 반환
 
 
@@ -75,24 +76,23 @@ def parse_date_to_ts(date_str: str) -> float:
 @lru_cache(maxsize=64)
 def get_highlight_pattern(keyword: str) -> re.Pattern:
     """하이라이트 패턴 캐시 반환 (LRU 캐시 사용)"""
-    return re.compile(f'({re.escape(keyword)})', re.IGNORECASE)
+    return re.compile(f"({re.escape(keyword)})", re.IGNORECASE)
 
 
 class TextUtils:
     """텍스트 처리 유틸리티"""
-    
+
     @staticmethod
     def highlight_text(text: str, keyword: str) -> str:
         """텍스트에서 키워드 하이라이팅 (캐시된 패턴 사용)"""
         if not keyword:
             return html.escape(text)
-        
+
         escaped_text = html.escape(text)
         escaped_keyword = html.escape(keyword)
-        
+
         # 캐시된 패턴 사용 (성능 최적화)
         pattern = get_highlight_pattern(escaped_keyword)
         highlighted = pattern.sub(r"<span class='highlight'>\1</span>", escaped_text)
-        
-        return highlighted
 
+        return highlighted

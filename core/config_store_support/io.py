@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -113,11 +112,14 @@ def save_primary_config_file(path: str, config: AppConfig) -> None:
             if isinstance(loaded, dict):
                 _write_text_atomic(backup_path, current_text)
             else:
-                logger.warning("기존 설정 파일이 JSON object가 아니어서 backup 회전을 건너뜁니다.")
+                logger.warning(
+                    "기존 설정 파일이 JSON object가 아니어서 backup 회전을 건너뜁니다."
+                )
         except Exception as e:
             logger.warning("기존 설정 backup 회전 생략: %s", e)
 
     save_config_file_atomic(path, config)
+
 
 __all__ = [
     "load_config_file",

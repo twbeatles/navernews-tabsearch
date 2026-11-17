@@ -1,4 +1,3 @@
-
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -26,9 +25,15 @@ class _NewsArticleStateMixin:
     ) -> Dict[str, Any]:
         """Atomically import bookmark/note values for one existing article."""
         if not isinstance(link, str) or not link.strip():
-            return {"status": "missing", "bookmark_changed": False, "note_changed": False}
+            return {
+                "status": "missing",
+                "bookmark_changed": False,
+                "note_changed": False,
+            }
         normalized_note = normalize_note(note) if note is not None else None
-        normalized_bookmark = 1 if int(bookmark or 0) else 0 if bookmark is not None else None
+        normalized_bookmark = (
+            1 if int(bookmark or 0) else 0 if bookmark is not None else None
+        )
         conn = self.get_connection()
         try:
             with conn:
@@ -37,9 +42,19 @@ class _NewsArticleStateMixin:
                     (link,),
                 ).fetchone()
                 if current is None:
-                    return {"status": "missing", "bookmark_changed": False, "note_changed": False}
-                bookmark_changed = normalized_bookmark is not None and int(current[0] or 0) != normalized_bookmark
-                note_changed = normalized_note is not None and str(current[1] or "") != normalized_note
+                    return {
+                        "status": "missing",
+                        "bookmark_changed": False,
+                        "note_changed": False,
+                    }
+                bookmark_changed = (
+                    normalized_bookmark is not None
+                    and int(current[0] or 0) != normalized_bookmark
+                )
+                note_changed = (
+                    normalized_note is not None
+                    and str(current[1] or "") != normalized_note
+                )
                 now = datetime.now().timestamp()
                 if bookmark_changed:
                     conn.execute(
@@ -52,7 +67,9 @@ class _NewsArticleStateMixin:
                         (normalized_note, now, link),
                     )
             return {
-                "status": "updated" if bookmark_changed or note_changed else "unchanged",
+                "status": "updated"
+                if bookmark_changed or note_changed
+                else "unchanged",
                 "bookmark_changed": bookmark_changed,
                 "note_changed": note_changed,
             }
@@ -105,7 +122,9 @@ class _NewsArticleStateMixin:
                         (value, datetime.now().timestamp(), link),
                     )
                 else:
-                    cursor = conn.execute(f"UPDATE news SET {field} = ? WHERE link = ?", (value, link))
+                    cursor = conn.execute(
+                        f"UPDATE news SET {field} = ? WHERE link = ?", (value, link)
+                    )
             return int(cursor.rowcount or 0) > 0
         except sqlite3.Error as e:
             logger.error("DB update failed: %s", e)
@@ -142,7 +161,12 @@ class _NewsArticleStateMixin:
                         delete_reason = ?
                     WHERE link = ? AND COALESCE(is_deleted, 0) = 0
                     """,
-                    (datetime.now().timestamp(), get_machine_identity(), "manual", link),
+                    (
+                        datetime.now().timestamp(),
+                        get_machine_identity(),
+                        "manual",
+                        link,
+                    ),
                 )
                 changed = int(cursor.rowcount or 0)
                 if changed <= 0:
@@ -185,7 +209,12 @@ class _NewsArticleStateMixin:
                         delete_reason = ?
                     WHERE link = ? AND COALESCE(is_deleted, 0) != 0
                     """,
-                    (datetime.now().timestamp(), get_machine_identity(), "restore", link),
+                    (
+                        datetime.now().timestamp(),
+                        get_machine_identity(),
+                        "restore",
+                        link,
+                    ),
                 )
                 changed = int(cursor.rowcount or 0)
                 if changed <= 0:
@@ -201,7 +230,9 @@ class _NewsArticleStateMixin:
     def get_note(self: DatabaseManager, link: str) -> str:
         conn = self.get_connection()
         try:
-            result = conn.execute("SELECT notes FROM news WHERE link = ?", (link,)).fetchone()
+            result = conn.execute(
+                "SELECT notes FROM news WHERE link = ?", (link,)
+            ).fetchone()
             return str(result[0]) if result and result[0] else ""
         except sqlite3.Error as e:
             logger.error("get_note failed: %s", e)

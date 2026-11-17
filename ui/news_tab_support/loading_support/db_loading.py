@@ -33,7 +33,9 @@ class _NewsTabDbLoadingMixin:
             return
         if self._should_block_db_action("tab DB reload", notify=False):
             return
-        with perf_timer("ui.load_data_from_db", f"kw={self.keyword}|append={int(append)}"):
+        with perf_timer(
+            "ui.load_data_from_db", f"kw={self.keyword}|append={int(append)}"
+        ):
             if self.worker and self.worker.isRunning():
                 old_worker = self.worker
                 previous_request_id = self._load_request_id
@@ -74,7 +76,9 @@ class _NewsTabDbLoadingMixin:
             self.btn_load.setEnabled(False)
 
             scope = self._build_query_scope()
-            self._request_scope_signatures[current_request_id] = self._scope_signature(scope)
+            self._request_scope_signatures[current_request_id] = self._scope_signature(
+                scope
+            )
             offset = self._loaded_offset if append else 0
             self.worker = DBWorker(
                 self.db,
@@ -85,14 +89,20 @@ class _NewsTabDbLoadingMixin:
                 known_total_count=self._total_filtered_count if append else None,
             )
             self.worker.finished.connect(
-                lambda data, total_count, rid=current_request_id, worker_ref=self.worker: self._handle_db_worker_loaded(
-                    data,
-                    total_count,
-                    request_id=rid,
-                    unread_count=getattr(worker_ref, "last_unread_count", None),
+                lambda data, total_count, rid=current_request_id, worker_ref=self.worker: (
+                    self._handle_db_worker_loaded(
+                        data,
+                        total_count,
+                        request_id=rid,
+                        unread_count=getattr(worker_ref, "last_unread_count", None),
+                    )
                 )
             )
-            self.worker.error.connect(lambda err_msg, rid=current_request_id: self._handle_db_worker_error(err_msg, rid))
+            self.worker.error.connect(
+                lambda err_msg, rid=current_request_id: self._handle_db_worker_error(
+                    err_msg, rid
+                )
+            )
             self.worker.start()
 
     def _handle_db_worker_callback_failure(
@@ -142,7 +152,9 @@ class _NewsTabDbLoadingMixin:
         except Exception as exc:
             self._handle_db_worker_callback_failure("loaded", exc, request_id)
 
-    def _handle_db_worker_error(self, err_msg, request_id: Optional[int] = None) -> None:
+    def _handle_db_worker_error(
+        self, err_msg, request_id: Optional[int] = None
+    ) -> None:
         try:
             self.on_data_error(err_msg, request_id)
         except Exception as exc:
@@ -156,8 +168,14 @@ class _NewsTabDbLoadingMixin:
         unread_count: Optional[int] = None,
     ):
         """데이터 로드 완료 시 호출"""
-        if request_id is not None and self._finalize_cancelled_initial_request(request_id):
-            logger.info("PERF|ui.on_data_loaded.cancelled|0.00ms|kw=%s|rid=%s", self.keyword, request_id)
+        if request_id is not None and self._finalize_cancelled_initial_request(
+            request_id
+        ):
+            logger.info(
+                "PERF|ui.on_data_loaded.cancelled|0.00ms|kw=%s|rid=%s",
+                self.keyword,
+                request_id,
+            )
             return
         if getattr(self, "_is_closing", False):
             if request_id is not None:
@@ -166,7 +184,11 @@ class _NewsTabDbLoadingMixin:
             return
         if request_id is not None and request_id != self._load_request_id:
             self._request_scope_signatures.pop(request_id, None)
-            logger.info("PERF|ui.on_data_loaded.stale|0.00ms|kw=%s|rid=%s", self.keyword, request_id)
+            logger.info(
+                "PERF|ui.on_data_loaded.stale|0.00ms|kw=%s|rid=%s",
+                self.keyword,
+                request_id,
+            )
             return
 
         with perf_timer("ui.on_data_loaded", f"kw={self.keyword}|rows={len(data)}"):
@@ -213,7 +235,10 @@ class _NewsTabDbLoadingMixin:
                 self._initial_load_completed = True
                 self._initial_load_inflight = False
 
-            if self.total_api_count <= 0 and self._total_filtered_count > self.total_api_count:
+            if (
+                self.total_api_count <= 0
+                and self._total_filtered_count > self.total_api_count
+            ):
                 self.total_api_count = self._total_filtered_count
 
             restore_scroll = None
@@ -228,7 +253,9 @@ class _NewsTabDbLoadingMixin:
             parent = self._main_window()
             if parent is not None:
                 if not self.is_bookmark_tab:
-                    update_badge_cache = getattr(parent, "update_badge_cache_from_tab_load", None)
+                    update_badge_cache = getattr(
+                        parent, "update_badge_cache_from_tab_load", None
+                    )
                     if callable(update_badge_cache):
                         update_badge_cache(self.keyword, self._unread_count_cache)
                 parent.sync_tab_load_more_state(self.keyword)
@@ -239,8 +266,14 @@ class _NewsTabDbLoadingMixin:
 
     def on_data_error(self, err_msg, request_id: Optional[int] = None):
         """데이터 로드 오류 시 호출"""
-        if request_id is not None and self._finalize_cancelled_initial_request(request_id):
-            logger.info("PERF|ui.on_data_error.cancelled|0.00ms|kw=%s|rid=%s", self.keyword, request_id)
+        if request_id is not None and self._finalize_cancelled_initial_request(
+            request_id
+        ):
+            logger.info(
+                "PERF|ui.on_data_error.cancelled|0.00ms|kw=%s|rid=%s",
+                self.keyword,
+                request_id,
+            )
             return
         if getattr(self, "_is_closing", False):
             if request_id is not None:
@@ -269,7 +302,9 @@ class _NewsTabDbLoadingMixin:
 
     def apply_filter(self):
         """필터 변경 시 DB 기반으로 첫 페이지부터 다시 조회한다."""
-        with perf_timer("ui.apply_filter", f"kw={self.keyword}|rows={len(self.news_data_cache)}"):
+        with perf_timer(
+            "ui.apply_filter", f"kw={self.keyword}|rows={len(self.news_data_cache)}"
+        ):
             filter_txt = self._current_filter_text()
             if filter_txt:
                 self.inp_filter.setObjectName("FilterActive")
@@ -278,7 +313,10 @@ class _NewsTabDbLoadingMixin:
             self.inp_filter.setStyle(self.inp_filter.style())
 
             current_scope_signature = self._scope_signature(self._build_query_scope())
-            if current_scope_signature == self._last_loaded_scope_signature and self._loaded_offset <= self.PAGE_SIZE:
+            if (
+                current_scope_signature == self._last_loaded_scope_signature
+                and self._loaded_offset <= self.PAGE_SIZE
+            ):
                 self.update_status_label()
                 return
 

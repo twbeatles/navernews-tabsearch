@@ -20,16 +20,21 @@ from core.logging_setup import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class KeywordGroupDialog(QDialog):
     """키워드 그룹 관리 다이얼로그"""
 
-    def __init__(self, group_manager: KeywordGroupManager, current_tabs: List[str], parent=None):
+    def __init__(
+        self, group_manager: KeywordGroupManager, current_tabs: List[str], parent=None
+    ):
         super().__init__(parent)
         self.setWindowTitle("키워드 그룹 관리")
         self.resize(600, 500)
         self.group_manager = group_manager
         self.current_tabs = current_tabs
-        self.edit_groups = self.group_manager._normalize_groups(dict(self.group_manager.groups))
+        self.edit_groups = self.group_manager._normalize_groups(
+            dict(self.group_manager.groups)
+        )
 
         self.setup_ui()
         self.load_groups()
@@ -38,7 +43,9 @@ class KeywordGroupDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # 설명
-        info = QLabel("키워드를 그룹(폴더)으로 정리하여 관리할 수 있습니다. 변경 내용은 저장 시에만 반영됩니다.")
+        info = QLabel(
+            "키워드를 그룹(폴더)으로 정리하여 관리할 수 있습니다. 변경 내용은 저장 시에만 반영됩니다."
+        )
         info.setObjectName("Hint")
         layout.addWidget(info)
 
@@ -97,7 +104,8 @@ class KeywordGroupDialog(QDialog):
         layout.addLayout(main_layout)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -135,7 +143,9 @@ class KeywordGroupDialog(QDialog):
             self.group_list.addItem(f"📁 {group} ({count})")
 
         if groups:
-            target_index = groups.index(selected_group) if selected_group in groups else 0
+            target_index = (
+                groups.index(selected_group) if selected_group in groups else 0
+            )
             self.group_list.setCurrentRow(target_index)
 
         self.update_keyword_lists()
@@ -182,9 +192,10 @@ class KeywordGroupDialog(QDialog):
             return
 
         reply = QMessageBox.question(
-            self, "그룹 삭제",
+            self,
+            "그룹 삭제",
             f"'{group_name}' 그룹을 삭제하시겠습니까?\n(그룹 내 키워드는 미분류로 이동됩니다)",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.edit_groups.pop(group_name, None)

@@ -1,4 +1,3 @@
-
 """Compatibility facade for NewsTab UI control mixins."""
 
 from ui.news_tab_support.ui_controls_support import (

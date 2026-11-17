@@ -69,7 +69,11 @@ class _NewsTabDateFilterControlsMixin:
             f"border: 1px solid {date_border};"
             "}"
         )
-        if hasattr(self, "date_start") and hasattr(self, "date_end") and hasattr(self, "lbl_tilde"):
+        if (
+            hasattr(self, "date_start")
+            and hasattr(self, "date_end")
+            and hasattr(self, "lbl_tilde")
+        ):
             self.date_start.setStyleSheet(date_edit_style)
             self.date_end.setStyleSheet(date_edit_style)
             self.lbl_tilde.setStyleSheet(f"color: {tilde_text};")
@@ -77,7 +81,9 @@ class _NewsTabDateFilterControlsMixin:
     def _refresh_date_filter_controls(self):
         active = bool(self._date_filter_active)
         self.btn_date_toggle.setText("기간 적용 중" if active else "기간")
-        interactive = self.btn_date_toggle.isChecked() and not self._maintenance_mode_active
+        interactive = (
+            self.btn_date_toggle.isChecked() and not self._maintenance_mode_active
+        )
         self.btn_apply_date.setEnabled(interactive)
         self.btn_clear_date.setEnabled(active and not self._maintenance_mode_active)
         self.date_start.setEnabled(interactive)

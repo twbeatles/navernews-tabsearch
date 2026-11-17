@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import os
@@ -37,7 +36,9 @@ def _is_relative_to(child: str, parent: str) -> bool:
         return False
 
 
-def cloud_sync_path_conflicts_with_runtime(sync_dir: str, runtime_paths: RuntimePaths) -> bool:
+def cloud_sync_path_conflicts_with_runtime(
+    sync_dir: str, runtime_paths: RuntimePaths
+) -> bool:
     resolved_sync_dir = resolve_cloud_sync_dir(sync_dir, allow_empty=True)
     if not resolved_sync_dir:
         return False
@@ -60,9 +61,10 @@ def resolve_cloud_sync_dir(sync_dir: str, *, allow_empty: bool = False) -> str:
 
 
 def runtime_storage_is_probably_cloud(runtime_paths: RuntimePaths) -> bool:
-    return is_probable_cloud_storage_path(runtime_paths.data_dir) or is_probable_cloud_storage_path(
-        runtime_paths.db_file
-    )
+    return is_probable_cloud_storage_path(
+        runtime_paths.data_dir
+    ) or is_probable_cloud_storage_path(runtime_paths.db_file)
+
 
 __all__ = [
     "_path_parts",

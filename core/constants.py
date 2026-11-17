@@ -55,7 +55,9 @@ UPDATE_PUBLIC_KEY_B64 = os.environ.get(
 # that an FTS MATCH prefilter cannot drop Korean compound-word results. Running
 # the backfill worker therefore costs CPU, disk and database size for no search
 # benefit, so it is off unless explicitly enabled.
-FTS_BACKFILL_ENABLED = os.environ.get("NEWS_SCRAPER_ENABLE_FTS_BACKFILL", "").strip().lower() in {
+FTS_BACKFILL_ENABLED = os.environ.get(
+    "NEWS_SCRAPER_ENABLE_FTS_BACKFILL", ""
+).strip().lower() in {
     "1",
     "true",
     "yes",

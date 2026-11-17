@@ -10,7 +10,9 @@ from core.backup import apply_pending_restore_if_any
 
 
 class TestPendingRestoreStrictPolicy(unittest.TestCase):
-    def test_apply_pending_restore_falls_back_to_runtime_backup_dir_when_payload_path_is_stale(self):
+    def test_apply_pending_restore_falls_back_to_runtime_backup_dir_when_payload_path_is_stale(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             cfg = root / "config.json"
@@ -172,7 +174,9 @@ class TestPendingRestoreStrictPolicy(unittest.TestCase):
 
             self.assertFalse(ok)
             self.assertTrue(pending.exists())
-            self.assertEqual(json.loads(cfg.read_text(encoding="utf-8"))["app_settings"]["x"], 1)
+            self.assertEqual(
+                json.loads(cfg.read_text(encoding="utf-8"))["app_settings"]["x"], 1
+            )
 
     def test_archive_failure_does_not_apply_pending_restore(self):
         with tempfile.TemporaryDirectory() as td:
@@ -196,7 +200,9 @@ class TestPendingRestoreStrictPolicy(unittest.TestCase):
             )
 
             with mock.patch("core.backup.os.replace", side_effect=OSError("locked")):
-                with mock.patch.object(backup_module, "_apply_restore_from_backup", return_value=True) as apply_mock:
+                with mock.patch.object(
+                    backup_module, "_apply_restore_from_backup", return_value=True
+                ) as apply_mock:
                     ok = apply_pending_restore_if_any(
                         pending_file=str(pending),
                         config_file=str(cfg),
@@ -264,7 +270,9 @@ class TestPendingRestoreStrictPolicy(unittest.TestCase):
                     raise OSError("simulated db apply failure")
                 original_atomic_copy(src_path, dst_path)
 
-            with mock.patch.object(backup_module, "_atomic_copy_replace", side_effect=fail_on_second_copy):
+            with mock.patch.object(
+                backup_module, "_atomic_copy_replace", side_effect=fail_on_second_copy
+            ):
                 ok = apply_pending_restore_if_any(
                     pending_file=str(pending),
                     config_file=str(cfg),

@@ -135,10 +135,14 @@ class _FakeEvent:
 
 class _DummyCloseMain:
     def _cleanup_open_tabs_for_shutdown(self):
-        return cast(Any, _MainWindowTrayMixin)._cleanup_open_tabs_for_shutdown(cast(Any, self))
+        return cast(Any, _MainWindowTrayMixin)._cleanup_open_tabs_for_shutdown(
+            cast(Any, self)
+        )
 
     def _perform_real_close(self, event):
-        return cast(Any, _MainWindowTrayMixin)._perform_real_close(cast(Any, self), event)
+        return cast(Any, _MainWindowTrayMixin)._perform_real_close(
+            cast(Any, self), event
+        )
 
     def __init__(self):
         self.call_log: list[str] = []
@@ -158,7 +162,9 @@ class _DummyCloseMain:
             yield index, tab
 
     def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False):
-        self.call_log.append(f"cleanup_worker:{keyword}:{request_id}:{int(bool(only_if_active))}")
+        self.call_log.append(
+            f"cleanup_worker:{keyword}:{request_id}:{int(bool(only_if_active))}"
+        )
         return True
 
     def save_config(self):
@@ -207,7 +213,9 @@ class _CallbackFailureTab:
         raise RuntimeError("render failed")
 
     def _handle_db_worker_callback_failure(self, phase, exc, request_id):
-        return NewsTab._handle_db_worker_callback_failure(cast(Any, self), phase, exc, request_id)
+        return NewsTab._handle_db_worker_callback_failure(
+            cast(Any, self), phase, exc, request_id
+        )
 
 
 class TestShutdownCleanup(unittest.TestCase):
@@ -245,7 +253,9 @@ class TestShutdownCleanup(unittest.TestCase):
         self.assertIn("save_config", dummy.call_log)
         self.assertIn("db.close", dummy.call_log)
         self.assertIn("app.quit", dummy.call_log)
-        self.assertLess(dummy.call_log.index("tab.cleanup:AI"), dummy.call_log.index("db.close"))
+        self.assertLess(
+            dummy.call_log.index("tab.cleanup:AI"), dummy.call_log.index("db.close")
+        )
 
     def test_news_tab_cleanup_is_idempotent_and_detaches_workers(self):
         with mock.patch.object(NewsTab, "load_data_from_db", autospec=True):

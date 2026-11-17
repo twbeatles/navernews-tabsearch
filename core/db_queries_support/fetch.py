@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -61,8 +60,7 @@ class _DatabaseFetchQueriesMixin:
                 fts_match = self._fts_match_expression(filter_txt)
 
                 if only_bookmark:
-                    query = (
-                        """
+                    query = """
                         SELECT
                             n.link,
                             n.title,
@@ -91,7 +89,6 @@ class _DatabaseFetchQueriesMixin:
                         WHERE n.is_bookmarked = 1
                           AND COALESCE(n.is_deleted, 0) = 0
                         """
-                    )
                 else:
                     query = (
                         """
@@ -169,7 +166,9 @@ class _DatabaseFetchQueriesMixin:
 
                 if end_date:
                     try:
-                        e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                        e_ts = (
+                            datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                        ).timestamp()
                         query += " AND n.pubDate_ts < ?"
                         params.append(e_ts)
                     except ValueError:
@@ -238,9 +237,7 @@ class _DatabaseFetchQueriesMixin:
 
         if fts_match:
             query += (
-                " AND n.rowid IN ("
-                "SELECT rowid FROM news_fts WHERE news_fts MATCH ?"
-                ")"
+                " AND n.rowid IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)"
             )
             params.append(fts_match)
 
@@ -284,7 +281,9 @@ class _DatabaseFetchQueriesMixin:
 
         if end_date:
             try:
-                e_ts = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                e_ts = (
+                    datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                ).timestamp()
                 query += " AND n.pubDate_ts < ?"
                 params.append(e_ts)
             except ValueError:

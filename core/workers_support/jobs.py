@@ -9,12 +9,13 @@ from PySide6.QtCore import QThread, Signal
 
 logger = logging.getLogger(__name__)
 
-class ReadConnectionProtocol(Protocol):
-    def execute(self, sql: str) -> Any:
-        ...
 
-    def close(self) -> None:
-        ...
+class ReadConnectionProtocol(Protocol):
+    def execute(self, sql: str) -> Any: ...
+
+    def close(self) -> None: ...
+
+
 @contextmanager
 def perf_timer(scope: str, meta: str = ""):
     started = time.perf_counter()
@@ -23,6 +24,8 @@ def perf_timer(scope: str, meta: str = ""):
     finally:
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         logger.info(f"PERF|{scope}|{elapsed_ms:.2f}ms|{meta}")
+
+
 class AsyncJobWorker(QThread):
     """단발성 비동기 작업 수행 워커"""
 
@@ -56,8 +59,12 @@ class AsyncJobWorker(QThread):
         self.requestInterruption()
         self.quit()
         self.wait(100)
+
+
 class JobCancelledError(Exception):
     """Raised when a long-running worker is cancelled cooperatively."""
+
+
 class LongTaskContext:
     """Cancellation/progress helper passed to repetitive background jobs."""
 
@@ -92,6 +99,8 @@ class LongTaskContext:
             progress_payload.update(payload)
             self.remember(payload)
         self._worker.progress.emit(progress_payload)
+
+
 class IterativeJobWorker(QThread):
     """Cancel-aware worker for repetitive or chunked background tasks."""
 
@@ -130,6 +139,8 @@ class IterativeJobWorker(QThread):
         self.requestInterruption()
         self.quit()
         self.wait(100)
+
+
 class InterruptibleReadWorker(QThread):
     """Dedicated read worker backed by an interruptible SQLite connection."""
 
@@ -155,7 +166,9 @@ class InterruptibleReadWorker(QThread):
             open_read_connection = getattr(self.db, "open_read_connection", None)
             conn: Optional[ReadConnectionProtocol]
             if callable(open_read_connection):
-                conn = cast(Optional[ReadConnectionProtocol], open_read_connection(timeout=1.5))
+                conn = cast(
+                    Optional[ReadConnectionProtocol], open_read_connection(timeout=1.5)
+                )
             else:
                 conn = None
             self._conn = conn
@@ -187,7 +200,9 @@ class InterruptibleReadWorker(QThread):
             self._conn = None
             if conn is not None:
                 try:
-                    close_read_connection = getattr(self.db, "close_read_connection", None)
+                    close_read_connection = getattr(
+                        self.db, "close_read_connection", None
+                    )
                     if callable(close_read_connection):
                         close_read_connection(conn)
                     else:

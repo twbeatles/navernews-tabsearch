@@ -1,4 +1,3 @@
-
 from core.db_schema_support.backfill import _NewsBackfillSchemaMixin
 from core.db_schema_support.connection import _DatabaseConnectionSchemaMixin
 from core.db_schema_support.init import _DatabaseInitSchemaMixin

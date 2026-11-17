@@ -19,6 +19,7 @@ from core.workers import retain_worker_until_finished
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class _BackupDialogUISetupMixin:
     def setup_ui(self):
         layout = QVBoxLayout(self)

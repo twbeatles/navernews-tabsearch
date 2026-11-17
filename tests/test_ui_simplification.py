@@ -62,7 +62,12 @@ class TestArticleCard(_TabTestCase):
         self.assertIn("app://open/", html)
         self.assertIn("app://bm/", html)
         self.assertIn("app://share/", html)
-        for hidden_action in ("app://ext/", "app://tag/", "app://unread/", "app://note/"):
+        for hidden_action in (
+            "app://ext/",
+            "app://tag/",
+            "app://unread/",
+            "app://note/",
+        ):
             self.assertNotIn(hidden_action, html)
 
     def test_tab_keyword_is_not_repeated_as_a_badge(self):
@@ -74,7 +79,9 @@ class TestArticleCard(_TabTestCase):
 
     def test_note_link_and_user_tags_stay_visible(self):
         tab = self._make_tab()
-        html = tab._render_single_item(_item(notes="확인 필요", tags="중요, 정책", is_duplicate=1), "")
+        html = tab._render_single_item(
+            _item(notes="확인 필요", tags="중요, 정책", is_duplicate=1), ""
+        )
 
         self.assertIn("app://note/", html)
         self.assertIn("#중요", html)
@@ -84,7 +91,9 @@ class TestArticleCard(_TabTestCase):
     def test_read_and_bookmarked_items_are_marked_without_unsupported_css(self):
         tab = self._make_tab()
         unread = tab._render_single_item(_item(link="https://example.com/u"), "")
-        read = tab._render_single_item(_item(link="https://example.com/r", is_read=1, is_bookmarked=1), "")
+        read = tab._render_single_item(
+            _item(link="https://example.com/r", is_read=1, is_bookmarked=1), ""
+        )
 
         self.assertIn('class="title-link"', unread)
         self.assertIn('class="title-link-read"', read)
@@ -95,14 +104,25 @@ class TestArticleCard(_TabTestCase):
 
     def test_every_link_action_is_still_handled(self):
         handler_src = inspect.getsource(NewsTab.on_link_clicked)
-        for action in ("open", "bm", "share", "unread", "note", "tag", "ext", "load_more"):
+        for action in (
+            "open",
+            "bm",
+            "share",
+            "unread",
+            "note",
+            "tag",
+            "ext",
+            "load_more",
+        ):
             self.assertIn(f'"{action}"', handler_src)
 
 
 class TestTabStatusAndFilters(_TabTestCase):
     def _seed(self, tab: NewsTab, count: int, unread: int):
         rows = [
-            tab._prepare_item(_item(link=f"https://example.com/{i}", is_read=0 if i < unread else 1))
+            tab._prepare_item(
+                _item(link=f"https://example.com/{i}", is_read=0 if i < unread else 1)
+            )
             for i in range(count)
         ]
         tab.news_data_cache = rows
@@ -117,7 +137,9 @@ class TestTabStatusAndFilters(_TabTestCase):
 
         tab.update_status_label()
 
-        self.assertEqual(tab.lbl_status.text(), "기사 3개 · 안 읽음 2 · 10:32:00 업데이트")
+        self.assertEqual(
+            tab.lbl_status.text(), "기사 3개 · 안 읽음 2 · 10:32:00 업데이트"
+        )
 
     def test_status_reports_matches_when_filtered(self):
         tab = self._make_tab()
@@ -156,7 +178,9 @@ class TestTabStatusAndFilters(_TabTestCase):
             tab._apply_date_filter()
         self.assertTrue(tab._has_active_filters())
 
-        with mock.patch.object(NewsTab, "load_data_from_db", autospec=True) as load_mock:
+        with mock.patch.object(
+            NewsTab, "load_data_from_db", autospec=True
+        ) as load_mock:
             tab._reset_filters()
 
         self.assertFalse(tab._has_active_filters())
@@ -183,10 +207,14 @@ class TestTabStatusAndFilters(_TabTestCase):
 
 class TestToolbarAndMaintenance(unittest.TestCase):
     def test_tab_titles_drop_the_decorative_icon(self):
-        dummy = type("Dummy", (), {"_tab_icon_for_keyword": MainApp._tab_icon_for_keyword})()
+        dummy = type(
+            "Dummy", (), {"_tab_icon_for_keyword": MainApp._tab_icon_for_keyword}
+        )()
         format_title = cast(Any, MainApp._format_tab_title)
 
-        self.assertEqual(format_title(dummy, "AI -광고", unread_count=3), "AI -광고 (3)")
+        self.assertEqual(
+            format_title(dummy, "AI -광고", unread_count=3), "AI -광고 (3)"
+        )
         self.assertEqual(format_title(dummy, "AI"), "AI")
         self.assertTrue(format_title(dummy, "-광고").startswith("🚫"))
 
@@ -204,12 +232,14 @@ class TestToolbarAndMaintenance(unittest.TestCase):
         set_tip(dummy, 1, "삼성전자 반도체 투자 전망 -광고", 1234)
         set_tip(dummy, 2, "환율")
 
-        self.assertEqual(dummy.tabs.tips[1], "삼성전자 반도체 투자 전망 -광고 / 안 읽은 기사 1,234개")
+        self.assertEqual(
+            dummy.tabs.tips[1], "삼성전자 반도체 투자 전망 -광고 / 안 읽은 기사 1,234개"
+        )
         self.assertEqual(dummy.tabs.tips[2], "환율")
 
     def test_tab_bar_keeps_roomy_padding_and_separates_tabs(self):
         for sheet in (AppStyle.LIGHT, AppStyle.DARK):
-            tab_rule = sheet[sheet.index("QTabBar::tab {"):]
+            tab_rule = sheet[sheet.index("QTabBar::tab {") :]
             tab_rule = tab_rule[: tab_rule.index("}")]
             self.assertIn("padding: 12px 20px;", tab_rule)
             self.assertIn("margin-right: 4px;", tab_rule)
@@ -241,20 +271,45 @@ class TestSettingsLayout(unittest.TestCase):
 
     def test_get_data_contract_is_unchanged(self):
         module = ast.parse(Path("ui/settings_dialog.py").read_text(encoding="utf-8"))
-        cls = next(n for n in module.body if isinstance(n, ast.ClassDef) and n.name == "SettingsDialog")
-        get_data = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "get_data")
-        return_dict = next(n.value for n in ast.walk(get_data) if isinstance(n, ast.Return))
+        cls = next(
+            n
+            for n in module.body
+            if isinstance(n, ast.ClassDef) and n.name == "SettingsDialog"
+        )
+        get_data = next(
+            n
+            for n in cls.body
+            if isinstance(n, ast.FunctionDef) and n.name == "get_data"
+        )
+        return_dict = next(
+            n.value for n in ast.walk(get_data) if isinstance(n, ast.Return)
+        )
         assert isinstance(return_dict, ast.Dict)
         keys = {k.value for k in return_dict.keys if isinstance(k, ast.Constant)}
 
         self.assertEqual(
             keys,
             {
-                "id", "secret", "interval", "theme", "auto_backup_minutes", "notification_enabled",
-                "alert_keywords", "sound_enabled", "minimize_to_tray", "close_to_tray",
-                "auto_start_enabled", "start_minimized", "notify_on_refresh", "api_timeout",
-                "blocked_publishers", "preferred_publishers", "cloud_sync_enabled", "cloud_sync_dir",
-                "cloud_sync_interval_minutes", "tombstone_retention_days",
+                "id",
+                "secret",
+                "interval",
+                "theme",
+                "auto_backup_minutes",
+                "notification_enabled",
+                "alert_keywords",
+                "sound_enabled",
+                "minimize_to_tray",
+                "close_to_tray",
+                "auto_start_enabled",
+                "start_minimized",
+                "notify_on_refresh",
+                "api_timeout",
+                "blocked_publishers",
+                "preferred_publishers",
+                "cloud_sync_enabled",
+                "cloud_sync_dir",
+                "cloud_sync_interval_minutes",
+                "tombstone_retention_days",
             },
         )
 
@@ -285,7 +340,10 @@ class TestStyleSheet(unittest.TestCase):
             self.assertNotIn("#666", path.read_text(encoding="utf-8"), str(path))
 
     def test_themed_stylesheet_adds_glyphs_that_exist_on_disk(self):
-        for palette, base in ((LIGHT_PALETTE, AppStyle.LIGHT), (DARK_PALETTE, AppStyle.DARK)):
+        for palette, base in (
+            (LIGHT_PALETTE, AppStyle.LIGHT),
+            (DARK_PALETTE, AppStyle.DARK),
+        ):
             glyphs = glyph_qss(palette)
             self.assertIn("QComboBox::down-arrow", glyphs)
             self.assertEqual(AppStyle.for_theme(palette.name == "dark"), base + glyphs)

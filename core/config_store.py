@@ -65,15 +65,20 @@ def _call_with_facade_secret_hooks(func, *args, **kwargs):
 
 
 def encode_client_secret_for_storage(client_secret: str) -> Dict[str, str]:
-    return _call_with_facade_secret_hooks(_impl.encode_client_secret_for_storage, client_secret)
+    return _call_with_facade_secret_hooks(
+        _impl.encode_client_secret_for_storage, client_secret
+    )
 
 
 def resolve_client_secret_for_runtime(settings: Mapping[str, Any]) -> Tuple[str, bool]:
-    return _call_with_facade_secret_hooks(_impl.resolve_client_secret_for_runtime, settings)
+    return _call_with_facade_secret_hooks(
+        _impl.resolve_client_secret_for_runtime, settings
+    )
 
 
 def load_config_file(path: str) -> AppConfig:
     return _call_with_facade_secret_hooks(_impl.load_config_file, path)
+
 
 __all__ = [
     "AppConfig",

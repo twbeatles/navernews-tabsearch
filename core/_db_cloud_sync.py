@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false
 """Compatibility facade for DatabaseManager cloud-sync mixins."""
 

@@ -9,4 +9,4 @@ warnings.warn(
 )
 
 
-__all__ = ['Colors', 'UIConstants', 'ToastType', 'AppStyle']
+__all__ = ["Colors", "UIConstants", "ToastType", "AppStyle"]

@@ -20,4 +20,3 @@ class TestQueryParserSearchPolicy(unittest.TestCase):
         db_keyword, excludes = parse_tab_query("인공지능 AI -광고 -코인")
         self.assertEqual(db_keyword, "인공지능")
         self.assertEqual(excludes, ["광고", "코인"])
-

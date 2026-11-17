@@ -21,11 +21,16 @@ logger = logging.getLogger(__name__)
 EXPORT_CHUNK_SIZE = 500
 _SPREADSHEET_FORMULA_PREFIX = re.compile(r"^[\s\x00-\x1f]*[=+\-@]")
 
+
 def _dialogs_for(target: Any):
     return get_dialog_adapter(target)
+
+
 def _spreadsheet_safe_csv_cell(value: Any) -> str:
     text = str(value or "")
     return "'" + text if _SPREADSHEET_FORMULA_PREFIX.match(text) else text
+
+
 def _export_row(item: Dict[str, Any]) -> List[str]:
     return [
         _spreadsheet_safe_csv_cell(item.get("title", "")),
@@ -39,6 +44,8 @@ def _export_row(item: Dict[str, Any]) -> List[str]:
         "중복" if item.get("is_duplicate", 0) else "",
         _spreadsheet_safe_csv_cell(item.get("tags", "")),
     ]
+
+
 def _markdown_escape(value: Any) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     return text.replace("|", "\\|")
@@ -50,7 +57,12 @@ def _markdown_link_text(value: Any) -> str:
     An article title containing brackets would otherwise terminate the label
     early and break the rendered link.
     """
-    return _markdown_escape(value).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+    return (
+        _markdown_escape(value)
+        .replace("\\", "\\\\")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+    )
 
 
 def _markdown_link_target(value: Any) -> str:
@@ -61,10 +73,16 @@ def _markdown_link_target(value: Any) -> str:
     # Angle brackets are the Markdown-sanctioned way to quote a URL containing
     # parentheses; strip any that are already present so they cannot escape.
     return "<" + url.replace("<", "%3C").replace(">", "%3E") + ">"
-def _export_item_markdown(item: Dict[str, Any], aliases: Optional[Dict[str, str]] = None) -> str:
+
+
+def _export_item_markdown(
+    item: Dict[str, Any], aliases: Optional[Dict[str, str]] = None
+) -> str:
     title = str(item.get("title", "") or "(제목 없음)").strip()
     link = str(item.get("link", "") or "").strip()
-    publisher = canonical_publisher(item.get("publisher", ""), aliases or {}) or str(item.get("publisher", "") or "")
+    publisher = canonical_publisher(item.get("publisher", ""), aliases or {}) or str(
+        item.get("publisher", "") or ""
+    )
     date = str(item.get("pubDate", "") or "").strip()
     tags = str(item.get("tags", "") or "").strip()
     notes = str(item.get("notes", "") or "").strip()
@@ -92,6 +110,8 @@ def _export_item_markdown(item: Dict[str, Any], aliases: Optional[Dict[str, str]
     if notes:
         lines.extend(["", f"> 메모: {_markdown_escape(notes)}"])
     return "\n".join(lines).strip()
+
+
 def export_items_to_csv(
     items: List[Dict[str, Any]],
     output_path: str,
@@ -105,7 +125,20 @@ def export_items_to_csv(
     try:
         with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복", "태그"])
+            writer.writerow(
+                [
+                    "제목",
+                    "링크",
+                    "날짜",
+                    "출처",
+                    "요약",
+                    "읽음",
+                    "북마크",
+                    "메모",
+                    "중복",
+                    "태그",
+                ]
+            )
             for item in items:
                 writer.writerow(_export_row(item))
                 written += 1
@@ -120,6 +153,8 @@ def export_items_to_csv(
             except OSError:
                 pass
         raise
+
+
 def export_items_to_markdown(
     items: List[Dict[str, Any]],
     output_path: str,
@@ -143,7 +178,12 @@ def export_items_to_markdown(
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, output_path)
-        return {"count": written, "path": output_path, "keyword": keyword, "format": "markdown"}
+        return {
+            "count": written,
+            "path": output_path,
+            "keyword": keyword,
+            "format": "markdown",
+        }
     except Exception:
         if os.path.exists(tmp_path):
             try:
@@ -151,6 +191,8 @@ def export_items_to_markdown(
             except OSError:
                 pass
         raise
+
+
 def export_items_to_json(
     items: List[Dict[str, Any]],
     output_path: str,
@@ -171,7 +213,12 @@ def export_items_to_json(
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, output_path)
-        return {"count": len(items), "path": output_path, "keyword": keyword, "format": "json"}
+        return {
+            "count": len(items),
+            "path": output_path,
+            "keyword": keyword,
+            "format": "json",
+        }
     except Exception:
         if os.path.exists(tmp_path):
             try:
@@ -179,6 +226,8 @@ def export_items_to_json(
             except OSError:
                 pass
         raise
+
+
 def export_scope_to_csv(
     context,
     db_manager,
@@ -196,7 +245,12 @@ def export_scope_to_csv(
         total_count = int(db_manager.count_news(**scope.count_kwargs()))
         batch_iter = None
     try:
-        context.report(current=0, total=total_count, message="내보내기 준비 중...", payload={"stage": "count"})
+        context.report(
+            current=0,
+            total=total_count,
+            message="내보내기 준비 중...",
+            payload={"stage": "count"},
+        )
         context.check_cancelled()
 
         if total_count <= 0:
@@ -215,9 +269,23 @@ def export_scope_to_csv(
     try:
         with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            writer.writerow(["제목", "링크", "날짜", "출처", "요약", "읽음", "북마크", "메모", "중복", "태그"])
+            writer.writerow(
+                [
+                    "제목",
+                    "링크",
+                    "날짜",
+                    "출처",
+                    "요약",
+                    "읽음",
+                    "북마크",
+                    "메모",
+                    "중복",
+                    "태그",
+                ]
+            )
 
             if batch_iter is None:
+
                 def _fallback_iter():
                     offset = 0
                     while written < total_count:
@@ -264,6 +332,8 @@ def export_scope_to_csv(
             except OSError:
                 pass
         raise
+
+
 def export_scope_to_markdown(
     context,
     db_manager,
@@ -283,7 +353,12 @@ def export_scope_to_markdown(
         total_count = int(db_manager.count_news(**scope.count_kwargs()))
         batch_iter = None
     try:
-        context.report(current=0, total=total_count, message="Markdown 준비 중...", payload={"stage": "count"})
+        context.report(
+            current=0,
+            total=total_count,
+            message="Markdown 준비 중...",
+            payload={"stage": "count"},
+        )
         context.check_cancelled()
         if total_count <= 0:
             raise ValueError("내보낼 뉴스가 없습니다.")
@@ -305,6 +380,7 @@ def export_scope_to_markdown(
             f.write(f"- 항목 수: {total_count}\n\n")
 
             if batch_iter is None:
+
                 def _fallback_iter():
                     offset = 0
                     while written < total_count:
@@ -339,7 +415,12 @@ def export_scope_to_markdown(
                 )
 
         os.replace(tmp_path, output_path)
-        return {"count": written, "path": output_path, "keyword": keyword, "format": "markdown"}
+        return {
+            "count": written,
+            "path": output_path,
+            "keyword": keyword,
+            "format": "markdown",
+        }
     except Exception:
         close_batch_iter = getattr(batch_iter, "close", None)
         if callable(close_batch_iter):
@@ -350,6 +431,8 @@ def export_scope_to_markdown(
             except OSError:
                 pass
         raise
+
+
 def export_scope_to_json(
     context,
     db_manager,
@@ -367,7 +450,12 @@ def export_scope_to_json(
         total_count = int(db_manager.count_news(**scope.count_kwargs()))
         batch_iter = None
     try:
-        context.report(current=0, total=total_count, message="JSON 준비 중...", payload={"stage": "count"})
+        context.report(
+            current=0,
+            total=total_count,
+            message="JSON 준비 중...",
+            payload={"stage": "count"},
+        )
         context.check_cancelled()
         if total_count <= 0:
             raise ValueError("내보낼 뉴스가 없습니다.")
@@ -385,6 +473,7 @@ def export_scope_to_json(
         os.makedirs(directory, exist_ok=True)
         fd, tmp_path = tempfile.mkstemp(prefix=".export_", suffix=".tmp", dir=directory)
         if batch_iter is None:
+
             def _fallback_iter():
                 offset = 0
                 while written < total_count:
@@ -414,7 +503,7 @@ def export_scope_to_json(
                 for item in rows:
                     context.check_cancelled()
                     if written:
-                        f.write(',\n')
+                        f.write(",\n")
                     json.dump(item, f, ensure_ascii=False)
                     written += 1
                 f.flush()
@@ -424,12 +513,17 @@ def export_scope_to_json(
                     message=f"JSON 내보내는 중... ({written}/{total_count})",
                     payload={"stage": "write", "written": written, "path": output_path},
                 )
-            f.write('\n], "count": ' + str(written) + '}\n')
+            f.write('\n], "count": ' + str(written) + "}\n")
             f.flush()
             os.fsync(f.fileno())
         context.check_cancelled()
         os.replace(tmp_path, output_path)
-        return {"count": written, "path": output_path, "keyword": keyword, "format": "json"}
+        return {
+            "count": written,
+            "path": output_path,
+            "keyword": keyword,
+            "format": "json",
+        }
     except Exception:
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -443,9 +537,13 @@ def export_scope_to_json(
         close_batch_iter = getattr(batch_iter, "close", None)
         if callable(close_batch_iter):
             close_batch_iter()
+
+
 def _csv_truthy(value: Any) -> bool:
     text = str(value or "").strip().lower()
     return text in {"1", "true", "yes", "y", "on", "북마크", "bookmarked", "bookmark"}
+
+
 def import_bookmarks_notes_from_csv(
     context,
     db,
@@ -460,6 +558,7 @@ def import_bookmarks_notes_from_csv(
     truncated_notes = 0
     last_row = 1
     safe_chunk_size = max(1, int(chunk_size or 200))
+
     def result_payload() -> Dict[str, int]:
         return {
             "processed": processed,
@@ -470,6 +569,7 @@ def import_bookmarks_notes_from_csv(
             "truncated_notes": truncated_notes,
             "last_row": last_row,
         }
+
     with open(input_path, "r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         if not reader.fieldnames:
@@ -478,7 +578,9 @@ def import_bookmarks_notes_from_csv(
             context.check_cancelled()
             processed += 1
             last_row = int(reader.line_num or processed + 1)
-            link = str(row.get("링크") or row.get("link") or row.get("Link") or "").strip()
+            link = str(
+                row.get("링크") or row.get("link") or row.get("Link") or ""
+            ).strip()
             if not link:
                 missing_rows += 1
             else:
@@ -486,7 +588,9 @@ def import_bookmarks_notes_from_csv(
                     bookmark = None
                     note = None
                     if any(key in row for key in ("북마크", "bookmark", "Bookmark")):
-                        bookmark_value = row.get("북마크", row.get("bookmark", row.get("Bookmark", "")))
+                        bookmark_value = row.get(
+                            "북마크", row.get("bookmark", row.get("Bookmark", ""))
+                        )
                         bookmark = 1 if _csv_truthy(bookmark_value) else 0
                     if any(key in row for key in ("메모", "notes", "Notes")):
                         note, note_truncated = truncate_note(
@@ -494,7 +598,9 @@ def import_bookmarks_notes_from_csv(
                         )
                         if note_truncated:
                             truncated_notes += 1
-                    mutation = db.import_article_state(link, bookmark=bookmark, note=note)
+                    mutation = db.import_article_state(
+                        link, bookmark=bookmark, note=note
+                    )
                     status = str(mutation.get("status", "failed") or "failed")
                     if status == "updated":
                         updated_rows += 1
@@ -517,5 +623,10 @@ def import_bookmarks_notes_from_csv(
                     message=f"CSV 가져오는 중... ({processed}행 처리)",
                     payload=result_payload(),
                 )
-    context.report(current=processed, total=processed, message="CSV 가져오기 완료", payload=result_payload())
+    context.report(
+        current=processed,
+        total=processed,
+        message="CSV 가져오기 완료",
+        payload=result_payload(),
+    )
     return result_payload()

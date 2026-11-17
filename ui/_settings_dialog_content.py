@@ -31,7 +31,9 @@ if TYPE_CHECKING:
 
 
 class _SettingsDialogContentMixin:
-    def _build_settings_page(self: SettingsDialog, groups: list[QGroupBox]) -> QScrollArea:
+    def _build_settings_page(
+        self: SettingsDialog, groups: list[QGroupBox]
+    ) -> QScrollArea:
         """설정 그룹 묶음을 스크롤 가능한 한 페이지로 만든다."""
         scroll_area = QScrollArea()
         scroll_area.setObjectName("SettingsScroll")
@@ -51,10 +53,14 @@ class _SettingsDialogContentMixin:
         return scroll_area
 
     def _build_general_page(self: SettingsDialog) -> QScrollArea:
-        return self._build_settings_page([self._build_api_group(), self._build_general_group()])
+        return self._build_settings_page(
+            [self._build_api_group(), self._build_general_group()]
+        )
 
     def _build_alerts_page(self: SettingsDialog) -> QScrollArea:
-        return self._build_settings_page([self._build_notification_group(), self._build_tray_group()])
+        return self._build_settings_page(
+            [self._build_notification_group(), self._build_tray_group()]
+        )
 
     def _build_data_page(self: SettingsDialog) -> QScrollArea:
         return self._build_settings_page(
@@ -66,7 +72,9 @@ class _SettingsDialogContentMixin:
             ]
         )
 
-    def _build_doc_browser(self: SettingsDialog, html_text: str, *, open_external: bool) -> QTextBrowser:
+    def _build_doc_browser(
+        self: SettingsDialog, html_text: str, *, open_external: bool
+    ) -> QTextBrowser:
         browser = QTextBrowser()
         browser.setObjectName("DocBrowser")
         browser.setOpenExternalLinks(open_external)
@@ -131,9 +139,13 @@ class _SettingsDialogContentMixin:
         form = QGridLayout()
 
         self.cb_time = NoScrollComboBox()
-        self.cb_time.addItems(["10분", "30분", "1시간", "2시간", "6시간", "자동 새로고침 안함"])
+        self.cb_time.addItems(
+            ["10분", "30분", "1시간", "2시간", "6시간", "자동 새로고침 안함"]
+        )
         idx = self.config.get("interval", 2)
-        self.cb_time.setCurrentIndex(idx if isinstance(idx, int) and 0 <= idx <= 5 else 2)
+        self.cb_time.setCurrentIndex(
+            idx if isinstance(idx, int) and 0 <= idx <= 5 else 2
+        )
 
         self.cb_theme = NoScrollComboBox()
         self.cb_theme.addItems(["라이트", "다크", "시스템 설정 따름"])
@@ -174,7 +186,9 @@ class _SettingsDialogContentMixin:
         self.txt_preferred_publishers = QLineEdit(
             ", ".join(str(item) for item in self.config.get("preferred_publishers", []))
         )
-        self.txt_preferred_publishers.setPlaceholderText("예: yna.co.kr, news.naver.com")
+        self.txt_preferred_publishers.setPlaceholderText(
+            "예: yna.co.kr, news.naver.com"
+        )
 
         form.addWidget(QLabel("자동 새로고침:"), 0, 0)
         form.addWidget(self.cb_time, 0, 1)
@@ -200,14 +214,18 @@ class _SettingsDialogContentMixin:
         self.chk_minimize_to_tray.setChecked(self.config.get("minimize_to_tray", True))
         layout.addWidget(self.chk_minimize_to_tray)
 
-        self.chk_close_to_tray = QCheckBox("닫기(X)를 눌러도 종료하지 않고 트레이로 보내기")
+        self.chk_close_to_tray = QCheckBox(
+            "닫기(X)를 눌러도 종료하지 않고 트레이로 보내기"
+        )
         self.chk_close_to_tray.setChecked(self.config.get("close_to_tray", True))
         layout.addWidget(self.chk_close_to_tray)
 
         self.chk_auto_start = QCheckBox("Windows 시작 시 자동 실행")
         if StartupManager.is_available():
             desired_minimized = bool(self.config.get("start_minimized", False))
-            startup_status = StartupManager.get_startup_status(start_minimized=desired_minimized)
+            startup_status = StartupManager.get_startup_status(
+                start_minimized=desired_minimized
+            )
             self.chk_auto_start.setChecked(
                 bool(startup_status.get("has_registry_value"))
                 or bool(self.config.get("auto_start_enabled", False))
@@ -235,10 +253,18 @@ class _SettingsDialogContentMixin:
         self.btn_repair_auto_start.clicked.connect(self.repair_startup_registration)
         layout.addWidget(self.btn_repair_auto_start)
 
-        layout.addWidget(self._hint_label("트레이에 있는 동안에도 설정한 간격으로 뉴스를 계속 가져옵니다."))
+        layout.addWidget(
+            self._hint_label(
+                "트레이에 있는 동안에도 설정한 간격으로 뉴스를 계속 가져옵니다."
+            )
+        )
 
-        self.chk_auto_start.toggled.connect(lambda _checked: self.refresh_startup_status())
-        self.chk_start_minimized.toggled.connect(lambda _checked: self.refresh_startup_status())
+        self.chk_auto_start.toggled.connect(
+            lambda _checked: self.refresh_startup_status()
+        )
+        self.chk_start_minimized.toggled.connect(
+            lambda _checked: self.refresh_startup_status()
+        )
         self.refresh_startup_status()
 
         group.setLayout(layout)
@@ -291,7 +317,9 @@ class _SettingsDialogContentMixin:
         retention_layout.addStretch()
         layout.addLayout(retention_layout)
         layout.addWidget(
-            self._hint_label("삭제한 기사가 다른 PC에서 되살아나지 않도록 남겨 두는 기록의 보존 기간입니다.")
+            self._hint_label(
+                "삭제한 기사가 다른 PC에서 되살아나지 않도록 남겨 두는 기록의 보존 기간입니다."
+            )
         )
 
         group.setLayout(layout)
@@ -336,11 +364,15 @@ class _SettingsDialogContentMixin:
         cloud_group = QGroupBox("클라우드 동기화")
         cloud_layout = QVBoxLayout()
         self.chk_cloud_sync_enabled = QCheckBox("주기적으로 동기화")
-        self.chk_cloud_sync_enabled.setChecked(bool(self.config.get("cloud_sync_enabled", True)))
+        self.chk_cloud_sync_enabled.setChecked(
+            bool(self.config.get("cloud_sync_enabled", True))
+        )
         cloud_layout.addWidget(self.chk_cloud_sync_enabled)
 
         cloud_dir_layout = QHBoxLayout()
-        self.txt_cloud_sync_dir = QLineEdit(str(self.config.get("cloud_sync_dir", "") or ""))
+        self.txt_cloud_sync_dir = QLineEdit(
+            str(self.config.get("cloud_sync_dir", "") or "")
+        )
         self.txt_cloud_sync_dir.setPlaceholderText("OneDrive/Google Drive 스냅샷 폴더")
         btn_cloud_browse = QPushButton("폴더 선택")
         btn_cloud_browse.clicked.connect(self.choose_cloud_sync_folder)
@@ -355,7 +387,9 @@ class _SettingsDialogContentMixin:
             self.cb_cloud_sync_interval.addItem(f"{minutes}분", minutes)
         current_interval = int(self.config.get("cloud_sync_interval_minutes", 30) or 30)
         interval_index = self.cb_cloud_sync_interval.findData(current_interval)
-        self.cb_cloud_sync_interval.setCurrentIndex(interval_index if interval_index >= 0 else 1)
+        self.cb_cloud_sync_interval.setCurrentIndex(
+            interval_index if interval_index >= 0 else 1
+        )
         cloud_actions.addWidget(self.cb_cloud_sync_interval)
         cloud_actions.addStretch()
         btn_cloud_export = QPushButton("지금 내보내기")
@@ -369,7 +403,9 @@ class _SettingsDialogContentMixin:
         cloud_actions.addWidget(btn_cloud_quarantine)
         cloud_layout.addLayout(cloud_actions)
 
-        self.lbl_cloud_sync_status = self._hint_label(str(self.config.get("cloud_sync_last_status", "") or ""))
+        self.lbl_cloud_sync_status = self._hint_label(
+            str(self.config.get("cloud_sync_last_status", "") or "")
+        )
         cloud_layout.addWidget(self.lbl_cloud_sync_status)
         cloud_group.setLayout(cloud_layout)
         return cloud_group
@@ -383,7 +419,9 @@ class _SettingsDialogContentMixin:
         layout.addWidget(self.chk_notification)
 
         self.chk_notify_on_refresh = QCheckBox("자동 새로고침이 끝나면 알림 표시")
-        self.chk_notify_on_refresh.setChecked(self.config.get("notify_on_refresh", False))
+        self.chk_notify_on_refresh.setChecked(
+            self.config.get("notify_on_refresh", False)
+        )
         layout.addWidget(self.chk_notify_on_refresh)
 
         sound_layout = QHBoxLayout()
@@ -399,11 +437,15 @@ class _SettingsDialogContentMixin:
         layout.addWidget(QLabel("알림 키워드"))
         self.txt_alert_keywords = QLineEdit()
         current_keywords = self.config.get("alert_keywords", [])
-        self.txt_alert_keywords.setText(", ".join(current_keywords) if current_keywords else "")
+        self.txt_alert_keywords.setText(
+            ", ".join(current_keywords) if current_keywords else ""
+        )
         self.txt_alert_keywords.setPlaceholderText("예: 긴급, 속보, 단독")
         layout.addWidget(self.txt_alert_keywords)
         layout.addWidget(
-            self._hint_label("쉼표로 구분해 최대 10개. 제목이나 내용에 이 단어가 있으면 따로 알려 줍니다.")
+            self._hint_label(
+                "쉼표로 구분해 최대 10개. 제목이나 내용에 이 단어가 있으면 따로 알려 줍니다."
+            )
         )
 
         group.setLayout(layout)

@@ -1,4 +1,3 @@
-
 from ui.news_tab_support.actions_support.article_state import (
     _NewsTabArticleActionsMixin,
 )

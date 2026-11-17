@@ -10,9 +10,12 @@ from core.logging_setup import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class _BackupDialogListingMixin:
     @staticmethod
-    def format_backup_timestamp(timestamp: str, created_at: Optional[str] = None) -> str:
+    def format_backup_timestamp(
+        timestamp: str, created_at: Optional[str] = None
+    ) -> str:
         raw_timestamp = str(timestamp or "").strip()
         for fmt in ("%Y%m%d_%H%M%S_%f", "%Y%m%d_%H%M%S"):
             try:
@@ -42,7 +45,9 @@ class _BackupDialogListingMixin:
             include_db = "DB 포함" if resolved_include_db else "설정만"
         else:
             include_db = "자동 판별"
-        trigger_label = "자동" if str(backup.get("trigger", "manual")).lower() == "auto" else "수동"
+        trigger_label = (
+            "자동" if str(backup.get("trigger", "manual")).lower() == "auto" else "수동"
+        )
         date_str = self.format_backup_timestamp(
             str(timestamp),
             created_at=str(backup.get("created_at", "")),
@@ -50,7 +55,9 @@ class _BackupDialogListingMixin:
 
         is_corrupt = bool(backup.get("is_corrupt", False))
         is_restorable = bool(backup.get("is_restorable", not is_corrupt))
-        verification_state = str(backup.get("verification_state", "pending") or "pending").lower()
+        verification_state = str(
+            backup.get("verification_state", "pending") or "pending"
+        ).lower()
         restore_error = str(backup.get("restore_error", "") or "")
         verification_error = str(backup.get("verification_error", "") or "")
 
@@ -64,7 +71,9 @@ class _BackupDialogListingMixin:
             return f"[검증 전] {date_str} (v{version}) {include_db} {trigger_label}"
 
         if not is_restorable:
-            item_text = f"[복원 불가] {date_str} (v{version}) {include_db} {trigger_label}"
+            item_text = (
+                f"[복원 불가] {date_str} (v{version}) {include_db} {trigger_label}"
+            )
             if restore_error:
                 item_text += f" - {restore_error}"
             return item_text
@@ -79,15 +88,21 @@ class _BackupDialogListingMixin:
             "path": str(backup.get("path", "") or ""),
             "timestamp": str(backup.get("timestamp", "") or ""),
             "app_version": str(backup.get("app_version", "") or ""),
-            "include_db": backup.get("include_db") if isinstance(backup.get("include_db"), bool) else None,
-            "resolved_include_db": bool(backup.get("resolved_include_db", backup.get("include_db", False))),
+            "include_db": backup.get("include_db")
+            if isinstance(backup.get("include_db"), bool)
+            else None,
+            "resolved_include_db": bool(
+                backup.get("resolved_include_db", backup.get("include_db", False))
+            ),
             "trigger": str(backup.get("trigger", "manual")).lower(),
             "created_at": str(backup.get("created_at", "") or ""),
             "is_corrupt": is_corrupt,
             "error": str(backup.get("error", "") or ""),
             "is_restorable": bool(backup.get("is_restorable", not is_corrupt)),
             "restore_error": str(backup.get("restore_error", "") or ""),
-            "verification_state": str(backup.get("verification_state", "pending") or "pending"),
+            "verification_state": str(
+                backup.get("verification_state", "pending") or "pending"
+            ),
             "verification_error": str(backup.get("verification_error", "") or ""),
             "last_verified_at": str(backup.get("last_verified_at", "") or ""),
         }
@@ -106,7 +121,10 @@ class _BackupDialogListingMixin:
             if item is None:
                 continue
             meta = item.data(Qt.ItemDataRole.UserRole)
-            if isinstance(meta, dict) and str(meta.get("backup_name", "")).strip() == str(backup_name).strip():
+            if (
+                isinstance(meta, dict)
+                and str(meta.get("backup_name", "")).strip() == str(backup_name).strip()
+            ):
                 return item
         return None
 
@@ -140,4 +158,6 @@ class _BackupDialogListingMixin:
         if hasattr(self, "btn_cancel_verify"):
             self.btn_cancel_verify.setEnabled(False)
         if hasattr(self, "lbl_verify_status"):
-            self.lbl_verify_status.setText("백업 목록을 불러왔습니다. 필요 시 '백업 검증'을 실행하세요.")
+            self.lbl_verify_status.setText(
+                "백업 목록을 불러왔습니다. 필요 시 '백업 검증'을 실행하세요."
+            )

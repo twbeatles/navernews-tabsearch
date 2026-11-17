@@ -112,8 +112,12 @@ class TestDbQueries(unittest.TestCase):
     def test_get_unread_counts_by_query_keys_matches_single_queries(self):
         q1 = build_fetch_key("AI finance", [])
         q2 = build_fetch_key("AI robotics", [])
-        self.mgr.upsert_news([self._make_item(140, "2026-01-10T09:00:00")], "AI", query_key=q1)
-        self.mgr.upsert_news([self._make_item(141, "2026-01-11T09:00:00")], "AI", query_key=q2)
+        self.mgr.upsert_news(
+            [self._make_item(140, "2026-01-10T09:00:00")], "AI", query_key=q1
+        )
+        self.mgr.upsert_news(
+            [self._make_item(141, "2026-01-11T09:00:00")], "AI", query_key=q2
+        )
 
         self.mgr.update_status("https://example.com/141", "is_read", 1)
 
@@ -151,10 +155,16 @@ class TestDbQueries(unittest.TestCase):
         sql_filtered = self.mgr.fetch_news("AI", exclude_words=["ad", "coin"])
 
         expected = [
-            row for row in all_rows
-            if not any(ex in row.get("title", "") or ex in row.get("description", "") for ex in ["ad", "coin"])
+            row
+            for row in all_rows
+            if not any(
+                ex in row.get("title", "") or ex in row.get("description", "")
+                for ex in ["ad", "coin"]
+            )
         ]
-        self.assertEqual([r["link"] for r in sql_filtered], [r["link"] for r in expected])
+        self.assertEqual(
+            [r["link"] for r in sql_filtered], [r["link"] for r in expected]
+        )
 
     def test_count_news_supports_only_unread_with_exclude_words(self):
         items = [
@@ -210,10 +220,15 @@ class TestDbQueries(unittest.TestCase):
         summary = self.mgr.count_news_states("AI", query_key=q1, exclude_words=["coin"])
 
         self.assertIsInstance(summary, app.NewsCountSummary)
-        self.assertEqual(summary.total_count, self.mgr.count_news("AI", query_key=q1, exclude_words=["coin"]))
+        self.assertEqual(
+            summary.total_count,
+            self.mgr.count_news("AI", query_key=q1, exclude_words=["coin"]),
+        )
         self.assertEqual(
             summary.unread_count,
-            self.mgr.count_news("AI", query_key=q1, exclude_words=["coin"], only_unread=True),
+            self.mgr.count_news(
+                "AI", query_key=q1, exclude_words=["coin"], only_unread=True
+            ),
         )
 
     def test_init_db_creates_idx_nk_keyword_dup_idempotently(self):
@@ -240,7 +255,9 @@ class TestDbQueries(unittest.TestCase):
 
         self.assertEqual(self.mgr.count_news("AI"), 0)
 
-    def test_upsert_news_detailed_reports_new_links_and_duplicate_memberships_once(self):
+    def test_upsert_news_detailed_reports_new_links_and_duplicate_memberships_once(
+        self,
+    ):
         q1 = build_fetch_key("AI", [])
         self.mgr.upsert_news(
             [
@@ -299,8 +316,13 @@ class TestDbQueries(unittest.TestCase):
             ("https://example.com/new-dup", "https://example.com/new-unique"),
         )
         rows = {row["link"]: row for row in self.mgr.fetch_news("AI", query_key=q1)}
-        self.assertEqual(rows["https://example.com/new-unique"]["title"], "Final unique title")
-        self.assertEqual(rows["https://example.com/new-unique"]["description"], "last duplicate batch value wins")
+        self.assertEqual(
+            rows["https://example.com/new-unique"]["title"], "Final unique title"
+        )
+        self.assertEqual(
+            rows["https://example.com/new-unique"]["description"],
+            "last duplicate batch value wins",
+        )
 
     def test_repeated_identical_upsert_does_not_recalculate_duplicates(self):
         q1 = build_fetch_key("AI", [])
@@ -313,7 +335,9 @@ class TestDbQueries(unittest.TestCase):
         }
         self.mgr.upsert_news([item], "AI", query_key=q1)
 
-        with mock.patch.object(self.mgr, "_recalculate_duplicate_flags_for_query_key_hashes") as recalc:
+        with mock.patch.object(
+            self.mgr, "_recalculate_duplicate_flags_for_query_key_hashes"
+        ) as recalc:
             result = self.mgr.upsert_news_detailed([dict(item)], "AI", query_key=q1)
 
         self.assertEqual(result, app.NewsUpsertResult(0, 0, ()))
@@ -463,7 +487,9 @@ class TestDbQueries(unittest.TestCase):
         conn = self.mgr.get_connection()
         try:
             with conn:
-                conn.execute("UPDATE news_keywords SET is_duplicate=0 WHERE keyword='AI'")
+                conn.execute(
+                    "UPDATE news_keywords SET is_duplicate=0 WHERE keyword='AI'"
+                )
         finally:
             self.mgr.return_connection(conn)
 
@@ -523,8 +549,12 @@ class TestDbQueries(unittest.TestCase):
     def test_mark_query_as_read_is_limited_to_query_key_membership(self):
         q1 = build_fetch_key("AI finance", [])
         q2 = build_fetch_key("AI robotics", [])
-        self.mgr.upsert_news([self._make_item(201, "2026-01-01T09:00:00")], "AI", query_key=q1)
-        self.mgr.upsert_news([self._make_item(202, "2026-01-02T09:00:00")], "AI", query_key=q2)
+        self.mgr.upsert_news(
+            [self._make_item(201, "2026-01-01T09:00:00")], "AI", query_key=q1
+        )
+        self.mgr.upsert_news(
+            [self._make_item(202, "2026-01-02T09:00:00")], "AI", query_key=q2
+        )
 
         updated = self.mgr.mark_query_as_read("AI", query_key=q1)
         self.assertEqual(updated, 1)
@@ -614,9 +644,13 @@ class TestDbQueries(unittest.TestCase):
         self.mgr.upsert_news(items, "AI", query_key=q1)
 
         visible = self.mgr.fetch_news("AI", query_key=q1, filter_txt="launch AI")
-        self.assertEqual([row["link"] for row in visible], ["https://example.com/multi-1"])
+        self.assertEqual(
+            [row["link"] for row in visible], ["https://example.com/multi-1"]
+        )
 
-        updated = self.mgr.mark_query_as_read("AI", query_key=q1, filter_txt="launch AI")
+        updated = self.mgr.mark_query_as_read(
+            "AI", query_key=q1, filter_txt="launch AI"
+        )
         self.assertEqual(updated, 1)
         rows = self.mgr.fetch_news("AI", query_key=q1)
         read_by_link = {row["link"]: int(row["is_read"]) for row in rows}
@@ -624,7 +658,9 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(read_by_link["https://example.com/multi-2"], 0)
         self.assertEqual(read_by_link["https://example.com/multi-3"], 0)
 
-        self.assertTrue(self.mgr.update_status("https://example.com/multi-1", "is_read", 0))
+        self.assertTrue(
+            self.mgr.update_status("https://example.com/multi-1", "is_read", 0)
+        )
         updated_chunked = self.mgr.mark_query_as_read_chunked(
             "AI",
             query_key=q1,
@@ -651,7 +687,9 @@ class TestDbQueries(unittest.TestCase):
             },
         ]
         self.mgr.upsert_news(items, "AI")
-        self.assertTrue(self.mgr.update_status("https://example.com/bookmark-1", "is_bookmarked", 1))
+        self.assertTrue(
+            self.mgr.update_status("https://example.com/bookmark-1", "is_bookmarked", 1)
+        )
 
         updated = self.mgr.mark_query_as_read(
             "AI",
@@ -806,7 +844,9 @@ class TestDbQueries(unittest.TestCase):
             ],
             "AI",
         )
-        self.assertTrue(self.mgr.update_status("https://example.com/all-1", "is_bookmarked", 1))
+        self.assertTrue(
+            self.mgr.update_status("https://example.com/all-1", "is_bookmarked", 1)
+        )
 
         deleted = self.mgr.delete_all_news()
         self.assertEqual(deleted, 1)
@@ -855,7 +895,9 @@ class TestDbQueries(unittest.TestCase):
         ]
         self.mgr.upsert_news(items, "AI", query_key=q1)
 
-        updated = self.mgr.mark_query_as_read_chunked("AI", exclude_words=["ad"], query_key=q1, chunk_size=1)
+        updated = self.mgr.mark_query_as_read_chunked(
+            "AI", exclude_words=["ad"], query_key=q1, chunk_size=1
+        )
         self.assertEqual(updated, 1)
 
         rows = self.mgr.fetch_news("AI", query_key=q1)
@@ -994,7 +1036,9 @@ class TestDbQueries(unittest.TestCase):
         self.assertEqual(len(stored), MAX_NOTE_LENGTH)
         self.assertEqual(stored, "x" * MAX_NOTE_LENGTH)
 
-    def test_explicit_delete_is_soft_hidden_and_restorable_but_cleanup_is_hard_delete(self):
+    def test_explicit_delete_is_soft_hidden_and_restorable_but_cleanup_is_hard_delete(
+        self,
+    ):
         same_title = "soft-delete duplicate"
         self.mgr.upsert_news(
             [
@@ -1018,11 +1062,15 @@ class TestDbQueries(unittest.TestCase):
 
         self.assertTrue(self.mgr.delete_link("https://example.com/soft-1"))
         visible = self.mgr.fetch_news("AI")
-        self.assertEqual([row["link"] for row in visible], ["https://example.com/soft-2"])
+        self.assertEqual(
+            [row["link"] for row in visible], ["https://example.com/soft-2"]
+        )
         self.assertEqual(int(visible[0]["is_duplicate"]), 0)
         self.assertEqual(self.mgr.count_archive(), 1)
         with_deleted = self.mgr.search_archive(include_deleted=True, limit=10)
-        deleted_rows = [row for row in with_deleted if row["link"] == "https://example.com/soft-1"]
+        deleted_rows = [
+            row for row in with_deleted if row["link"] == "https://example.com/soft-1"
+        ]
         self.assertEqual(len(deleted_rows), 1)
         self.assertEqual(int(deleted_rows[0]["is_deleted"]), 1)
 
@@ -1043,7 +1091,10 @@ class TestDbQueries(unittest.TestCase):
         )
         self.assertEqual(self.mgr.delete_old_news(365), 1)
         self.assertFalse(
-            any(row["link"] == "https://example.com/hard-old" for row in self.mgr.search_archive(include_deleted=True, limit=20))
+            any(
+                row["link"] == "https://example.com/hard-old"
+                for row in self.mgr.search_archive(include_deleted=True, limit=20)
+            )
         )
 
     def test_like_filters_treat_percent_underscore_and_backslash_as_literals(self):
@@ -1079,20 +1130,37 @@ class TestDbQueries(unittest.TestCase):
             },
         ]
         self.mgr.upsert_news(rows, "AI", query_key=q1)
-        self.assertTrue(self.mgr.save_note("https://example.com/literal-1", r"memo 10_% \ done"))
-        self.assertTrue(self.mgr.save_note("https://example.com/literal-2", "memo 100x done"))
+        self.assertTrue(
+            self.mgr.save_note("https://example.com/literal-1", r"memo 10_% \ done")
+        )
+        self.assertTrue(
+            self.mgr.save_note("https://example.com/literal-2", "memo 100x done")
+        )
 
-        filtered = self.mgr.fetch_news("AI", query_key=q1, filter_txt=r"100%_match \ path")
-        self.assertEqual([row["link"] for row in filtered], ["https://example.com/literal-1"])
+        filtered = self.mgr.fetch_news(
+            "AI", query_key=q1, filter_txt=r"100%_match \ path"
+        )
+        self.assertEqual(
+            [row["link"] for row in filtered], ["https://example.com/literal-1"]
+        )
         excluded = self.mgr.fetch_news("AI", query_key=q1, exclude_words=["100%_match"])
-        self.assertNotIn("https://example.com/literal-1", {row["link"] for row in excluded})
-        self.assertIn("https://example.com/literal-2", {row["link"] for row in excluded})
+        self.assertNotIn(
+            "https://example.com/literal-1", {row["link"] for row in excluded}
+        )
+        self.assertIn(
+            "https://example.com/literal-2", {row["link"] for row in excluded}
+        )
         notes = self.mgr.search_archive(notes_txt=r"10_% \ done")
-        self.assertEqual([row["link"] for row in notes], ["https://example.com/literal-1"])
+        self.assertEqual(
+            [row["link"] for row in notes], ["https://example.com/literal-1"]
+        )
 
         updated = self.mgr.mark_query_as_read("AI", query_key=q1, filter_txt="code_%")
         self.assertEqual(updated, 1)
-        states = {row["link"]: int(row["is_read"]) for row in self.mgr.fetch_news("AI", query_key=q1)}
+        states = {
+            row["link"]: int(row["is_read"])
+            for row in self.mgr.fetch_news("AI", query_key=q1)
+        }
         self.assertEqual(states["https://example.com/literal-3"], 1)
         self.assertEqual(states["https://example.com/literal-4"], 0)
 
@@ -1161,7 +1229,9 @@ class TestDbSchemaMigration(unittest.TestCase):
                 try:
                     columns = {
                         row[1]: row
-                        for row in conn.execute("PRAGMA table_info(news_keywords)").fetchall()
+                        for row in conn.execute(
+                            "PRAGMA table_info(news_keywords)"
+                        ).fetchall()
                     }
                     self.assertIn("query_key", columns)
                     self.assertEqual(int(columns["link"][5]), 1)
@@ -1175,7 +1245,9 @@ class TestDbSchemaMigration(unittest.TestCase):
 
                     indexes = {
                         row[1]
-                        for row in conn.execute("PRAGMA index_list(news_keywords)").fetchall()
+                        for row in conn.execute(
+                            "PRAGMA index_list(news_keywords)"
+                        ).fetchall()
                     }
                     self.assertIn("idx_nk_query_key_keyword", indexes)
                     self.assertIn("idx_nk_query_key_keyword_dup", indexes)
@@ -1189,4 +1261,3 @@ class TestDbSchemaMigration(unittest.TestCase):
                     conn.close()
             finally:
                 mgr.close()
-

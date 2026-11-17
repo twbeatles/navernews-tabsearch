@@ -10,27 +10,28 @@ from ui.styles_support import Typography
 
 class ToastQueue:
     """토스트 메시지 큐 관리 - 유형별 스타일 지원"""
+
     def __init__(self, parent: QWidget):
         self.parent = parent
         self.queue: Deque[Tuple[str, ToastType]] = deque()
         self.current_toast: Optional["ToastMessage"] = None
         self.y_offset = 100
-        
+
     def add(self, message: str, toast_type: ToastType = ToastType.INFO):
         """토스트 메시지 추가"""
         self.queue.append((message, toast_type))
         if self.current_toast is None:
             self._show_next()
-    
+
     def _show_next(self):
         """다음 토스트 표시"""
         if not self.queue:
             self.current_toast = None
             return
-        
+
         message, toast_type = self.queue.popleft()
         self.current_toast = ToastMessage(self.parent, message, self, toast_type)
-        
+
     def on_toast_finished(self):
         """토스트 종료 시 호출"""
         self.current_toast = None
@@ -39,7 +40,7 @@ class ToastQueue:
 
 class ToastMessage(QLabel):
     """화면에 잠시 나타났다 사라지는 알림 메시지 - 유형별 스타일 지원"""
-    
+
     # 유형별 스타일 정의 - 현대화된 디자인
     STYLES = {
         ToastType.INFO: """
@@ -67,7 +68,7 @@ class ToastMessage(QLabel):
             border: 1px solid rgba(255, 255, 255, 0.2);
         """,
     }
-    
+
     # 유형별 아이콘
     ICONS = {
         ToastType.INFO: "ℹ️",
@@ -75,23 +76,29 @@ class ToastMessage(QLabel):
         ToastType.WARNING: "⚠️",
         ToastType.ERROR: "✗",
     }
-    
-    def __init__(self, parent: QWidget, message: str, queue: ToastQueue, toast_type: ToastType = ToastType.INFO):
+
+    def __init__(
+        self,
+        parent: QWidget,
+        message: str,
+        queue: ToastQueue,
+        toast_type: ToastType = ToastType.INFO,
+    ):
         # 아이콘 추가 (SUCCESS 메시지에는 이미 ✓가 있을 수 있으므로 조건부)
         display_message = message
         if toast_type == ToastType.ERROR and not message.startswith("✗"):
             display_message = f"✗ {message}"
         elif toast_type == ToastType.WARNING and not message.startswith("⚠"):
             display_message = f"⚠️ {message}"
-            
+
         super().__init__(display_message, parent)
         self.queue = queue
         self.toast_type = toast_type
-        
+
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.SubWindow)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        
+
         # 유형별 스타일 적용
         base_style = self.STYLES.get(toast_type, self.STYLES[ToastType.INFO])
         self.setStyleSheet(f"""
@@ -104,26 +111,26 @@ class ToastMessage(QLabel):
         """)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.adjustSize()
-        
+
         self.update_position()
-        
+
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
-        
+
         self.anim_in = QPropertyAnimation(self.opacity_effect, b"opacity", self)
         self.anim_in.setDuration(UIConstants.ANIMATION_DURATION)
         self.anim_in.setStartValue(0.0)
         self.anim_in.setEndValue(1.0)
         self.anim_in.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.anim_in.start()
-        
+
         self.show()
-        
+
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.fade_out)
         self.timer.start(UIConstants.TOAST_DURATION)
-    
+
     def update_position(self):
         """부모 크기 변경에 대응하는 위치 업데이트"""
         parent = self.parentWidget()
@@ -131,7 +138,7 @@ class ToastMessage(QLabel):
             p_rect = parent.rect()
             self.move(
                 p_rect.center().x() - self.width() // 2,
-                p_rect.bottom() - self.queue.y_offset
+                p_rect.bottom() - self.queue.y_offset,
             )
 
     def fade_out(self):
@@ -143,22 +150,22 @@ class ToastMessage(QLabel):
         self.anim_out.setEasingCurve(QEasingCurve.Type.InCubic)
         self.anim_out.finished.connect(self.on_finished)
         self.anim_out.start()
-    
+
     def on_finished(self):
         """애니메이션 종료 후 정리 - 메모리 누수 방지 개선"""
         try:
             # 타이머 정리
-            if hasattr(self, 'timer') and self.timer and self.timer.isActive():
+            if hasattr(self, "timer") and self.timer and self.timer.isActive():
                 self.timer.stop()
             # 애니메이션 정리
-            if hasattr(self, 'anim_out'):
+            if hasattr(self, "anim_out"):
                 self.anim_out.stop()
                 self.anim_out.deleteLater()
-            if hasattr(self, 'anim_in'):
+            if hasattr(self, "anim_in"):
                 self.anim_in.stop()
                 self.anim_in.deleteLater()
             # opacity_effect 정리
-            if hasattr(self, 'opacity_effect') and self.opacity_effect:
+            if hasattr(self, "opacity_effect") and self.opacity_effect:
                 self.opacity_effect.deleteLater()
         except RuntimeError:
             pass  # 이미 삭제된 경우

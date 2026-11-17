@@ -31,8 +31,12 @@ class _FetchWorkerCompletionMixin:
         """Handle a successful fetch result."""
         try:
             if not self._is_active_worker_request(keyword, request_id):
-                logger.info("stale on_fetch_done ignored: kw=%s, rid=%s", keyword, request_id)
-                advance_if_awaiting = getattr(self, "_advance_sequential_if_awaiting", None)
+                logger.info(
+                    "stale on_fetch_done ignored: kw=%s, rid=%s", keyword, request_id
+                )
+                advance_if_awaiting = getattr(
+                    self, "_advance_sequential_if_awaiting", None
+                )
                 if is_sequential and callable(advance_if_awaiting):
                     advance_if_awaiting(keyword)
                 return
@@ -65,13 +69,17 @@ class _FetchWorkerCompletionMixin:
             if new_items:
                 for item in new_items:
                     item.setdefault("keyword", keyword)
-                    item.setdefault("db_keyword", parse_tab_query(keyword)[0] or search_keyword)
+                    item.setdefault(
+                        "db_keyword", parse_tab_query(keyword)[0] or search_keyword
+                    )
                 apply_rules = getattr(self, "_apply_automation_rules_to_items", None)
                 if callable(apply_rules):
                     try:
                         applied = apply_rules(new_items, dry_run=False)
                         if int(applied.get("matched", 0) or 0) > 0:
-                            logger.info("Automation rules applied to new items: %s", applied)
+                            logger.info(
+                                "Automation rules applied to new items: %s", applied
+                            )
                         suppressed_links = {
                             str(link)
                             for link in (applied.get("suppressed_links", []) or [])
@@ -85,7 +93,9 @@ class _FetchWorkerCompletionMixin:
                             ]
                     except Exception as exc:
                         logger.warning("Automation rule application failed: %s", exc)
-                        applied = dict(getattr(self, "_last_automation_rule_result", {}) or {})
+                        applied = dict(
+                            getattr(self, "_last_automation_rule_result", {}) or {}
+                        )
                         suppressed_links = {
                             str(link)
                             for link in (applied.get("suppressed_links", []) or [])
@@ -114,7 +124,9 @@ class _FetchWorkerCompletionMixin:
                         keyword,
                         self._make_tab_fetch_state(),
                     ).last_api_start_index
-                self._apply_load_more_button_state(tab_widget, total, last_api_start_index)
+                self._apply_load_more_button_state(
+                    tab_widget, total, last_api_start_index
+                )
                 tab_widget.load_data_from_db()
 
                 if not is_more:
@@ -127,7 +139,9 @@ class _FetchWorkerCompletionMixin:
                         )
                     )
 
-            notification_new_count = len(notifiable_new_items) if new_items else new_count
+            notification_new_count = (
+                len(notifiable_new_items) if new_items else new_count
+            )
 
             if not is_sequential:
                 self.progress.setVisible(False)
@@ -160,7 +174,9 @@ class _FetchWorkerCompletionMixin:
                 self._on_sequential_fetch_done(keyword)
 
             if not is_more:
-                last_by_keyword = dict(getattr(self, "_last_auto_refresh_by_keyword", {}) or {})
+                last_by_keyword = dict(
+                    getattr(self, "_last_auto_refresh_by_keyword", {}) or {}
+                )
                 last_by_keyword[keyword] = time.time()
                 self._last_auto_refresh_by_keyword = last_by_keyword
 
@@ -189,7 +205,9 @@ class _FetchWorkerCompletionMixin:
     ):
         """Handle a failed fetch."""
         if not self._is_active_worker_request(keyword, request_id):
-            logger.info("stale on_fetch_error ignored: kw=%s, rid=%s", keyword, request_id)
+            logger.info(
+                "stale on_fetch_error ignored: kw=%s, rid=%s", keyword, request_id
+            )
             advance_if_awaiting = getattr(self, "_advance_sequential_if_awaiting", None)
             if is_sequential and callable(advance_if_awaiting):
                 advance_if_awaiting(keyword)
@@ -204,7 +222,9 @@ class _FetchWorkerCompletionMixin:
             self._request_start_index.pop(request_id, None)
 
         normalized_error_meta: Dict[str, Any] = dict(error_meta or {})
-        cooldown_seconds = max(0, int(normalized_error_meta.get("cooldown_seconds", 0) or 0))
+        cooldown_seconds = max(
+            0, int(normalized_error_meta.get("cooldown_seconds", 0) or 0)
+        )
         if cooldown_seconds > 0:
             self._set_fetch_cooldown(
                 cooldown_seconds,
@@ -259,8 +279,17 @@ class _FetchWorkerCompletionMixin:
         if error_kind:
             is_network_error = error_kind in {"network_error", "timeout"}
         else:
-            network_error_keywords = ["네트워크", "timeout", "연결", "connection", "Timeout", "Network"]
-            is_network_error = any(token in error_msg for token in network_error_keywords)
+            network_error_keywords = [
+                "네트워크",
+                "timeout",
+                "연결",
+                "connection",
+                "Timeout",
+                "Network",
+            ]
+            is_network_error = any(
+                token in error_msg for token in network_error_keywords
+            )
         if is_network_error:
             self._network_error_count += 1
             logger.warning(
@@ -365,7 +394,11 @@ class _FetchWorkerCompletionMixin:
             if not handle:
                 return True
 
-            if only_if_active and keyword and not self._worker_registry.is_active(keyword, request_id):
+            if (
+                only_if_active
+                and keyword
+                and not self._worker_registry.is_active(keyword, request_id)
+            ):
                 return True
 
             worker = handle.worker
@@ -401,7 +434,9 @@ class _FetchWorkerCompletionMixin:
                 pass
 
             if not finished:
-                timeout_count = int(getattr(self, "_worker_cleanup_timeout_count", 0) or 0) + 1
+                timeout_count = (
+                    int(getattr(self, "_worker_cleanup_timeout_count", 0) or 0) + 1
+                )
                 self._worker_cleanup_timeout_count = timeout_count
                 logger.warning(
                     "Worker cleanup timed out: %s (rid=%s, count=%s, force=%s)",
@@ -413,7 +448,9 @@ class _FetchWorkerCompletionMixin:
                 self._maybe_warn_worker_cleanup_diag(timeout_count)
                 retain_qthread_until_finished(thread, worker)
                 if force:
-                    self._detach_worker_handle(handle, request_id, reason="cleanup timeout")
+                    self._detach_worker_handle(
+                        handle, request_id, reason="cleanup timeout"
+                    )
                     return True
                 return False
 
@@ -427,9 +464,13 @@ class _FetchWorkerCompletionMixin:
                 thread.deleteLater()
             except (AttributeError, RuntimeError):
                 pass
-            logger.info("Worker cleaned up: %s (rid=%s)", handle.tab_keyword, request_id)
+            logger.info(
+                "Worker cleaned up: %s (rid=%s)", handle.tab_keyword, request_id
+            )
             self._schedule_tab_hydration(25)
             return finished
         except Exception as e:
-            logger.error("cleanup_worker failed (keyword=%s, rid=%s): %s", keyword, request_id, e)
+            logger.error(
+                "cleanup_worker failed (keyword=%s, rid=%s): %s", keyword, request_id, e
+            )
             return False

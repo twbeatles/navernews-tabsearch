@@ -14,7 +14,9 @@ from ui.main_window import MainApp
 
 
 class _DummyHistoryMain:
-    _canonical_fetch_key_for_keyword = _MainWindowTabsMixin._canonical_fetch_key_for_keyword
+    _canonical_fetch_key_for_keyword = (
+        _MainWindowTabsMixin._canonical_fetch_key_for_keyword
+    )
     _history_identity_for_keyword = _MainWindowTabsMixin._history_identity_for_keyword
     _remember_search_history = _MainWindowTabsMixin._remember_search_history
     _merge_search_history = _MainWindowSettingsIOMixin._merge_search_history
@@ -39,7 +41,9 @@ class _FakeOpenTab:
 class _DummyAddMain:
     add_news_tab = _MainWindowTabsMixin.add_news_tab
     _normalize_tab_keyword = _MainWindowTabsMixin._normalize_tab_keyword
-    _canonical_fetch_key_for_keyword = _MainWindowTabsMixin._canonical_fetch_key_for_keyword
+    _canonical_fetch_key_for_keyword = (
+        _MainWindowTabsMixin._canonical_fetch_key_for_keyword
+    )
     _find_news_tab_by_fetch_key = _MainWindowTabsMixin._find_news_tab_by_fetch_key
 
     def __init__(self):
@@ -61,7 +65,9 @@ class _DummyExportTab:
         self.news_data_cache = list(news_items)
         self.filtered_data_cache = list(visible_items)
         self._all_filtered_items = (
-            list(all_filtered_items) if all_filtered_items is not None else list(visible_items)
+            list(all_filtered_items)
+            if all_filtered_items is not None
+            else list(visible_items)
         )
 
     def get_all_filtered_items(self):
@@ -129,7 +135,9 @@ class _DummyExportMain:
             chunk_size=1,
         )
         self.show_success_toast(f"총 {result['count']}개 항목을 저장했습니다.")
-        self._dialog_adapter.information(self, "완료", f"파일이 저장되었습니다:\n{result['path']}")
+        self._dialog_adapter.information(
+            self, "완료", f"파일이 저장되었습니다:\n{result['path']}"
+        )
 
 
 class _DummyCheck:
@@ -141,7 +149,14 @@ class _DummyCheck:
 
 
 class _FakeSyncTab:
-    def __init__(self, keyword, *, is_bookmark_tab=False, unread_checked=False, change_result=False):
+    def __init__(
+        self,
+        keyword,
+        *,
+        is_bookmark_tab=False,
+        unread_checked=False,
+        change_result=False,
+    ):
         self.keyword = keyword
         self.is_bookmark_tab = is_bookmark_tab
         self.chk_unread = _DummyCheck(unread_checked)
@@ -241,7 +256,10 @@ class TestCanonicalTabDedupe(unittest.TestCase):
     def test_add_news_tab_focuses_existing_canonical_tab(self):
         dummy = _DummyAddMain()
 
-        with mock.patch("ui._main_window_tabs.NewsTab", side_effect=AssertionError("should not create tab")):
+        with mock.patch(
+            "ui._main_window_tabs.NewsTab",
+            side_effect=AssertionError("should not create tab"),
+        ):
             dummy.add_news_tab("FOO   BAR")
 
         self.assertEqual(dummy.tabs.current_index, 1)
@@ -360,7 +378,9 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
             }
         ]
         dialogs = _FakeDialogAdapter()
-        dummy = _DummyExportMain(_DummyExportTab("AI", all_items, []), dialog_adapter=dialogs)
+        dummy = _DummyExportMain(
+            _DummyExportTab("AI", all_items, []), dialog_adapter=dialogs
+        )
 
         dummy.export_data()
 
@@ -381,7 +401,9 @@ class TestVisibleOnlyCsvExport(unittest.TestCase):
             "is_duplicate": 0,
         }
         dialogs = _FakeDialogAdapter(save_result=("", ""))
-        dummy = _DummyExportMain(_DummyExportTab("AI:/bad*name?", [item], [item]), dialog_adapter=dialogs)
+        dummy = _DummyExportMain(
+            _DummyExportTab("AI:/bad*name?", [item], [item]), dialog_adapter=dialogs
+        )
 
         dummy.export_data()
 
@@ -400,7 +422,9 @@ class TestLinkStateSync(unittest.TestCase):
         unread_tab = _FakeSyncTab("AI -광고", unread_checked=True)
         dummy = _DummySyncMain([source_tab, bookmark_tab, unread_tab])
 
-        with mock.patch.object(QTimer, "singleShot", side_effect=lambda _ms, callback: callback()):
+        with mock.patch.object(
+            QTimer, "singleShot", side_effect=lambda _ms, callback: callback()
+        ):
             dummy.sync_link_state_across_tabs(
                 source_tab,
                 "https://example.com/news",

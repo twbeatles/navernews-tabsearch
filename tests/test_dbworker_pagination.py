@@ -62,12 +62,19 @@ class TestDbWorkerPagination(unittest.TestCase):
         )
 
         finished_payloads = []
-        worker.finished.connect(lambda data, total_count: finished_payloads.append((data, total_count)))
+        worker.finished.connect(
+            lambda data, total_count: finished_payloads.append((data, total_count))
+        )
         worker.run()
 
         self.assertEqual(
             [call[0] for call in db.calls],
-            ["open_read_connection", "count_news_states", "fetch_news", "close_read_connection"],
+            [
+                "open_read_connection",
+                "count_news_states",
+                "fetch_news",
+                "close_read_connection",
+            ],
         )
 
         count_kwargs = db.calls[1][1]
@@ -77,7 +84,9 @@ class TestDbWorkerPagination(unittest.TestCase):
         self.assertEqual(count_kwargs["hide_duplicates"], True)
         self.assertEqual(count_kwargs["start_date"], "2026-01-01")
         self.assertEqual(count_kwargs["end_date"], "2026-01-31")
-        self.assertEqual(count_kwargs["query_key"], build_fetch_key("AI finance", ["coin"]))
+        self.assertEqual(
+            count_kwargs["query_key"], build_fetch_key("AI finance", ["coin"])
+        )
         self.assertIn("conn", count_kwargs)
         self.assertEqual(fetch_kwargs["limit"], 50)
         self.assertEqual(fetch_kwargs["offset"], 100)
@@ -100,12 +109,19 @@ class TestDbWorkerPagination(unittest.TestCase):
         )
 
         finished_payloads = []
-        worker.finished.connect(lambda data, total_count: finished_payloads.append((data, total_count)))
+        worker.finished.connect(
+            lambda data, total_count: finished_payloads.append((data, total_count))
+        )
         worker.run()
 
         self.assertEqual(
             [call[0] for call in db.calls],
-            ["open_read_connection", "count_news", "fetch_news", "close_read_connection"],
+            [
+                "open_read_connection",
+                "count_news",
+                "fetch_news",
+                "close_read_connection",
+            ],
         )
         self.assertEqual(db.calls[1][1]["only_unread"], True)
         self.assertEqual(db.calls[2][1]["offset"], 50)

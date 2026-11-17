@@ -8,6 +8,7 @@ from core.workers_support.query_scope import DBQueryScope
 
 logger = logging.getLogger(__name__)
 
+
 class DBWorker(QThread):
     """DB 조회 전용 워커 스레드(UI 블로킹 방지)"""
 
@@ -66,7 +67,10 @@ class DBWorker(QThread):
                 if conn is not None:
                     conn.execute("BEGIN")
 
-                if not self.scope.only_bookmark and not str(self.scope.keyword or "").strip():
+                if (
+                    not self.scope.only_bookmark
+                    and not str(self.scope.keyword or "").strip()
+                ):
                     self.finished.emit([], 0)
                     return
 
@@ -79,20 +83,26 @@ class DBWorker(QThread):
                         total_count = int(getattr(summary, "total_count", 0) or 0)
                         unread_count = int(getattr(summary, "unread_count", 0) or 0)
                     else:
-                        total_count = self.db.count_news(conn=conn, **self.scope.count_kwargs())
+                        total_count = self.db.count_news(
+                            conn=conn, **self.scope.count_kwargs()
+                        )
                         if count_kwargs.get("only_unread", False):
                             unread_count = total_count
                         else:
                             unread_count_kwargs = dict(count_kwargs)
                             unread_count_kwargs["only_unread"] = True
-                            unread_count = self.db.count_news(conn=conn, **unread_count_kwargs)
+                            unread_count = self.db.count_news(
+                                conn=conn, **unread_count_kwargs
+                            )
                 else:
                     if count_kwargs.get("only_unread", False):
                         unread_count = total_count
                     else:
                         unread_count_kwargs = dict(count_kwargs)
                         unread_count_kwargs["only_unread"] = True
-                        unread_count = self.db.count_news(conn=conn, **unread_count_kwargs)
+                        unread_count = self.db.count_news(
+                            conn=conn, **unread_count_kwargs
+                        )
                 self.last_unread_count = int(unread_count or 0)
 
                 if self._is_cancelled:
@@ -118,7 +128,9 @@ class DBWorker(QThread):
         finally:
             if self._conn is not None:
                 try:
-                    close_read_connection = getattr(self.db, "close_read_connection", None)
+                    close_read_connection = getattr(
+                        self.db, "close_read_connection", None
+                    )
                     if callable(close_read_connection):
                         close_read_connection(self._conn)
                 except Exception:

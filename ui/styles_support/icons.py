@@ -33,7 +33,9 @@ _GLYPH_STROKES = {
 }
 
 
-def _draw_glyph(path: str, glyph: str, color: str, width: float, canvas_w: int = _GLYPH_PX) -> None:
+def _draw_glyph(
+    path: str, glyph: str, color: str, width: float, canvas_w: int = _GLYPH_PX
+) -> None:
     image = QImage(canvas_w, _GLYPH_PX, QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
@@ -80,16 +82,16 @@ def glyph_qss(p: Palette) -> str:
 
     qss = f"""
         QComboBox::drop-down {{ border: none; width: 24px; }}
-        QComboBox::down-arrow {{ image: url({urls['chevron']}); width: 12px; height: 12px; }}
+        QComboBox::down-arrow {{ image: url({urls["chevron"]}); width: 12px; height: 12px; }}
         QTabBar::close-button {{
-            image: url({urls['close']});
+            image: url({urls["close"]});
             subcontrol-position: right;
             width: 24px;
             height: 14px;
             margin: 2px;
         }}
-        QTabBar::close-button:hover {{ image: url({urls['close_hover']}); }}
-        QCheckBox::indicator:checked {{ image: url({urls['check']}); }}
+        QTabBar::close-button:hover {{ image: url({urls["close_hover"]}); }}
+        QCheckBox::indicator:checked {{ image: url({urls["check"]}); }}
     """
     _qss_cache[p.name] = qss
     return qss

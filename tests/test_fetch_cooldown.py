@@ -22,7 +22,9 @@ class _DummyStatusBar:
 
 
 class _DummyFetchMain:
-    def fetch_news(self, keyword: str, is_more: bool = False, is_sequential: bool = False):
+    def fetch_news(
+        self, keyword: str, is_more: bool = False, is_sequential: bool = False
+    ):
         return cast(Any, _MainWindowFetchMixin).fetch_news(
             cast(Any, self),
             keyword,
@@ -31,35 +33,58 @@ class _DummyFetchMain:
         )
 
     def _fetch_cooldown_message(self, action_label: str) -> str:
-        return cast(Any, _MainWindowFetchMixin)._fetch_cooldown_message(cast(Any, self), action_label)
+        return cast(Any, _MainWindowFetchMixin)._fetch_cooldown_message(
+            cast(Any, self), action_label
+        )
 
     def _current_fetch_cooldown_seconds(self) -> int:
-        return cast(Any, _MainWindowFetchMixin)._current_fetch_cooldown_seconds(cast(Any, self))
+        return cast(Any, _MainWindowFetchMixin)._current_fetch_cooldown_seconds(
+            cast(Any, self)
+        )
 
     def _set_fetch_cooldown(self, seconds: int, *, reason: str) -> None:
-        cast(Any, _MainWindowFetchMixin)._set_fetch_cooldown(cast(Any, self), seconds, reason=reason)
+        cast(Any, _MainWindowFetchMixin)._set_fetch_cooldown(
+            cast(Any, self), seconds, reason=reason
+        )
 
     def _auto_refresh_keywords_due(self, keywords):
-        return cast(Any, _MainWindowFetchMixin)._auto_refresh_keywords_due(cast(Any, self), keywords)
+        return cast(Any, _MainWindowFetchMixin)._auto_refresh_keywords_due(
+            cast(Any, self), keywords
+        )
 
     def _prepare_refresh_keywords(self, keywords):
-        return cast(Any, _MainWindowFetchMixin)._prepare_refresh_keywords(cast(Any, self), keywords)
+        return cast(Any, _MainWindowFetchMixin)._prepare_refresh_keywords(
+            cast(Any, self), keywords
+        )
 
     def _global_refresh_interval_minutes(self):
-        return cast(Any, _MainWindowFetchMixin)._global_refresh_interval_minutes(cast(Any, self))
+        return cast(Any, _MainWindowFetchMixin)._global_refresh_interval_minutes(
+            cast(Any, self)
+        )
 
     def _tab_refresh_interval_minutes(self, keyword):
-        return cast(Any, _MainWindowFetchMixin)._tab_refresh_interval_minutes(cast(Any, self), keyword)
+        return cast(Any, _MainWindowFetchMixin)._tab_refresh_interval_minutes(
+            cast(Any, self), keyword
+        )
 
     def _detach_worker_handle(self, *args, **kwargs):
-        return cast(Any, _FetchWorkerCompletionMixin)._detach_worker_handle(self, *args, **kwargs)
+        return cast(Any, _FetchWorkerCompletionMixin)._detach_worker_handle(
+            self, *args, **kwargs
+        )
 
     def _maybe_warn_worker_cleanup_diag(self, timeout_count, *, threshold=5):
         return cast(Any, _FetchWorkerCompletionMixin)._maybe_warn_worker_cleanup_diag(
             self, timeout_count, threshold=threshold
         )
 
-    def cleanup_worker(self, keyword=None, request_id=None, only_if_active=False, wait_ms=1000, force=False):
+    def cleanup_worker(
+        self,
+        keyword=None,
+        request_id=None,
+        only_if_active=False,
+        wait_ms=1000,
+        force=False,
+    ):
         return cast(Any, _FetchWorkerCompletionMixin).cleanup_worker(
             self,
             keyword=keyword,
@@ -69,7 +94,14 @@ class _DummyFetchMain:
             force=force,
         )
 
-    def on_fetch_error(self, error_msg: str, keyword: str, is_sequential: bool = False, request_id=None, error_meta=None):
+    def on_fetch_error(
+        self,
+        error_msg: str,
+        keyword: str,
+        is_sequential: bool = False,
+        request_id=None,
+        error_meta=None,
+    ):
         return cast(Any, _MainWindowFetchMixin).on_fetch_error(
             cast(Any, self),
             error_msg,
@@ -237,7 +269,9 @@ class _DummyFetchState:
 
 
 class _DummyFetchDoneMain(_DummyFetchMain):
-    def on_fetch_done(self, result, keyword, is_more, is_sequential=False, request_id=None):
+    def on_fetch_done(
+        self, result, keyword, is_more, is_sequential=False, request_id=None
+    ):
         return cast(Any, _MainWindowFetchMixin).on_fetch_done(
             cast(Any, self),
             result,
@@ -248,9 +282,13 @@ class _DummyFetchDoneMain(_DummyFetchMain):
         )
 
     def _finish_sequential_refresh(self):
-        return cast(Any, _MainWindowFetchMixin)._finish_sequential_refresh(cast(Any, self))
+        return cast(Any, _MainWindowFetchMixin)._finish_sequential_refresh(
+            cast(Any, self)
+        )
 
-    def _build_fetch_summary_message(self, keyword, *, new_count, dup_count, filtered_count=0):
+    def _build_fetch_summary_message(
+        self, keyword, *, new_count, dup_count, filtered_count=0
+    ):
         return cast(Any, _MainWindowFetchMixin)._build_fetch_summary_message(
             cast(Any, self),
             keyword,
@@ -316,7 +354,11 @@ class _DummyFetchDoneMain(_DummyFetchMain):
     def check_alert_keywords(self, items):
         items_list = list(items)
         self.alert_inputs.append(items_list)
-        return [(item, "alert") for item in items_list if "alert" in item.get("title", "").lower()]
+        return [
+            (item, "alert")
+            for item in items_list
+            if "alert" in item.get("title", "").lower()
+        ]
 
     def _on_sequential_fetch_done(self, keyword):
         self._sequential_refresh_done_keywords.append(keyword)
@@ -339,7 +381,10 @@ class TestFetchCooldown(unittest.TestCase):
         dummy = _DummyFetchMain()
         dummy._set_fetch_cooldown(12, reason="rate_limit")
 
-        with mock.patch("ui.main_window_fetch_support.worker_flow.ApiWorker", side_effect=AssertionError("worker should not start")):
+        with mock.patch(
+            "ui.main_window_fetch_support.worker_flow.ApiWorker",
+            side_effect=AssertionError("worker should not start"),
+        ):
             dummy.fetch_news("AI launch", is_more=False, is_sequential=False)
 
         self.assertTrue(dummy.warning_messages)
@@ -351,7 +396,10 @@ class TestFetchCooldown(unittest.TestCase):
         dummy.client_id = ""
         dummy.client_secret = ""
 
-        with mock.patch("ui.main_window_fetch_support.worker_flow.ApiWorker", side_effect=AssertionError("worker should not start")):
+        with mock.patch(
+            "ui.main_window_fetch_support.worker_flow.ApiWorker",
+            side_effect=AssertionError("worker should not start"),
+        ):
             dummy.fetch_news("AI launch", is_more=False, is_sequential=False)
 
         self.assertTrue(dummy.warning_messages)
@@ -378,7 +426,9 @@ class TestFetchCooldown(unittest.TestCase):
     def test_db_fetch_error_does_not_emit_success_notifications(self):
         dummy = _DummyFetchMain()
 
-        with mock.patch("ui.main_window_fetch_support.worker_flow.QMessageBox.critical") as critical_mock:
+        with mock.patch(
+            "ui.main_window_fetch_support.worker_flow.QMessageBox.critical"
+        ) as critical_mock:
             dummy.on_fetch_error(
                 "데이터베이스 저장 실패: upsert_news failed: disk full",
                 "AI launch",
@@ -533,7 +583,9 @@ class TestFetchCooldown(unittest.TestCase):
         dummy._worker_registry.register(handle)
         dummy._request_start_index[9] = 1
 
-        self.assertTrue(dummy.cleanup_worker(keyword="AI", request_id=9, wait_ms=10, force=True))
+        self.assertTrue(
+            dummy.cleanup_worker(keyword="AI", request_id=9, wait_ms=10, force=True)
+        )
 
         self.assertIsNone(dummy._worker_registry.get_by_request_id(9))
         self.assertNotIn(9, dummy._request_start_index)
@@ -556,7 +608,10 @@ class TestFetchCooldown(unittest.TestCase):
         )
         dummy._worker_registry.register(handle)
 
-        with mock.patch("ui.main_window_fetch_support.worker_flow.ApiWorker", side_effect=AssertionError("new worker should not start")):
+        with mock.patch(
+            "ui.main_window_fetch_support.worker_flow.ApiWorker",
+            side_effect=AssertionError("new worker should not start"),
+        ):
             dummy.fetch_news("AI launch")
 
         self.assertIsNotNone(dummy._worker_registry.get_active_handle("AI launch"))
@@ -582,14 +637,30 @@ class TestFetchCooldown(unittest.TestCase):
 
         dummy.on_fetch_done(result, "AI launch", is_more=False, is_sequential=False)
 
-        self.assertEqual(dummy._tab.lbl_status.text, "✅ 'AI launch' 업데이트 완료 (1건 새 링크, 1건 중복)")
-        self.assertEqual(dummy.toasts, ["✅ 'AI launch' 업데이트 완료 (1건 새 링크, 1건 중복)"])
-        self.assertEqual(dummy.desktop_notifications[0], ("📰 AI launch", "1건의 새 뉴스가 있습니다."))
-        self.assertEqual(dummy.tray_notifications[0], ("📰 AI launch", "1건의 새 뉴스가 도착했습니다."))
+        self.assertEqual(
+            dummy._tab.lbl_status.text,
+            "✅ 'AI launch' 업데이트 완료 (1건 새 링크, 1건 중복)",
+        )
+        self.assertEqual(
+            dummy.toasts, ["✅ 'AI launch' 업데이트 완료 (1건 새 링크, 1건 중복)"]
+        )
+        self.assertEqual(
+            dummy.desktop_notifications[0],
+            ("📰 AI launch", "1건의 새 뉴스가 있습니다."),
+        )
+        self.assertEqual(
+            dummy.tray_notifications[0],
+            ("📰 AI launch", "1건의 새 뉴스가 도착했습니다."),
+        )
         self.assertEqual(dummy.alert_inputs, [[result["new_items"][0]]])
-        self.assertEqual(dummy.desktop_notifications[1], ("🔔 알림 키워드: alert", "alert duplicate item"))
+        self.assertEqual(
+            dummy.desktop_notifications[1],
+            ("🔔 알림 키워드: alert", "alert duplicate item"),
+        )
 
-    def test_sequential_fetch_emits_immediate_notifications_and_accumulates_new_count(self):
+    def test_sequential_fetch_emits_immediate_notifications_and_accumulates_new_count(
+        self,
+    ):
         dummy = _DummyFetchDoneMain()
         result = {
             "new_items": [
@@ -613,8 +684,14 @@ class TestFetchCooldown(unittest.TestCase):
         self.assertEqual(dummy._sequential_new_count, 1)
         self.assertEqual(dummy._sequential_added_count, 0)
         self.assertEqual(dummy._sequential_dup_count, 1)
-        self.assertEqual(dummy.desktop_notifications[0], ("📰 AI launch", "1건의 새 뉴스가 있습니다."))
-        self.assertEqual(dummy.tray_notifications[0], ("📰 AI launch", "1건의 새 뉴스가 도착했습니다."))
+        self.assertEqual(
+            dummy.desktop_notifications[0],
+            ("📰 AI launch", "1건의 새 뉴스가 있습니다."),
+        )
+        self.assertEqual(
+            dummy.tray_notifications[0],
+            ("📰 AI launch", "1건의 새 뉴스가 도착했습니다."),
+        )
         self.assertEqual(dummy.alert_inputs, [[result["new_items"][0]]])
 
     def test_auto_refresh_due_timestamp_updates_only_after_success(self):
@@ -622,14 +699,20 @@ class TestFetchCooldown(unittest.TestCase):
         old_ts = 1000.0
         dummy._last_auto_refresh_by_keyword = {"AI launch": old_ts}
 
-        with mock.patch("ui.main_window_fetch_support.worker_flow.time.time", return_value=old_ts + 601):
+        with mock.patch(
+            "ui.main_window_fetch_support.worker_flow.time.time",
+            return_value=old_ts + 601,
+        ):
             due = dummy._auto_refresh_keywords_due(["AI launch"])
 
         self.assertEqual(due, ["AI launch"])
         self.assertEqual(dummy._last_auto_refresh_by_keyword["AI launch"], old_ts)
 
         dummy._sequential_refresh_is_auto = True
-        with mock.patch("ui.main_window_fetch_support.worker_flow.time.time", return_value=old_ts + 602):
+        with mock.patch(
+            "ui.main_window_fetch_support.worker_flow.time.time",
+            return_value=old_ts + 602,
+        ):
             dummy.on_fetch_done(
                 {
                     "new_items": [],
@@ -655,9 +738,17 @@ class TestFetchCooldown(unittest.TestCase):
         dummy._finish_sequential_refresh()
 
         self.assertFalse(dummy._sequential_refresh_active)
-        self.assertEqual(dummy.toasts[-1], "총 1개 탭 새로고침 완료 (2건 새 링크, 1건 중복)")
-        self.assertEqual(dummy.status_bar.messages[-1], "총 1개 탭 새로고침 완료 (2건 새 링크, 1건 중복)")
-        self.assertEqual(dummy.desktop_notifications[-1], ("뉴스 자동 새로고침 완료", "2건의 새 기사가 업데이트되었습니다."))
+        self.assertEqual(
+            dummy.toasts[-1], "총 1개 탭 새로고침 완료 (2건 새 링크, 1건 중복)"
+        )
+        self.assertEqual(
+            dummy.status_bar.messages[-1],
+            "총 1개 탭 새로고침 완료 (2건 새 링크, 1건 중복)",
+        )
+        self.assertEqual(
+            dummy.desktop_notifications[-1],
+            ("뉴스 자동 새로고침 완료", "2건의 새 기사가 업데이트되었습니다."),
+        )
         self.assertEqual(dummy.apply_refresh_calls, 1)
         self.assertEqual(dummy._fts_resume_delays, [250])
         self.assertIn(50, dummy.hydration_delays)

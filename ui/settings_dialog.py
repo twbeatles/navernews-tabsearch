@@ -78,12 +78,15 @@ class SettingsDialog(
 
         if not StartupManager.is_available():
             self._startup_status = None
-            self.lbl_auto_start_status.setText("자동 시작 상태: Windows 환경에서만 지원됩니다.")
+            self.lbl_auto_start_status.setText(
+                "자동 시작 상태: Windows 환경에서만 지원됩니다."
+            )
             self.btn_repair_auto_start.setEnabled(False)
             return
 
         desired_minimized = bool(
-            hasattr(self, "chk_start_minimized") and self.chk_start_minimized.isChecked()
+            hasattr(self, "chk_start_minimized")
+            and self.chk_start_minimized.isChecked()
         )
         status = StartupManager.get_startup_status(start_minimized=desired_minimized)
         self._startup_status = status
@@ -110,7 +113,9 @@ class SettingsDialog(
             if status.get("actual_target") and not status.get("target_exists"):
                 reasons.append("대상 경로 없음")
             reason_text = ", ".join(reasons) if reasons else "상태 불일치"
-            self.lbl_auto_start_status.setText(f"자동 시작 상태: 수리 필요 ({reason_text})")
+            self.lbl_auto_start_status.setText(
+                f"자동 시작 상태: 수리 필요 ({reason_text})"
+            )
             self.btn_repair_auto_start.setEnabled(True)
             return
 
@@ -119,20 +124,31 @@ class SettingsDialog(
 
     def repair_startup_registration(self):
         if not StartupManager.is_available():
-            QMessageBox.warning(self, "자동 시작", "Windows 환경에서만 자동 시작 수리를 지원합니다.")
+            QMessageBox.warning(
+                self, "자동 시작", "Windows 환경에서만 자동 시작 수리를 지원합니다."
+            )
             return
 
         if not hasattr(self, "chk_auto_start") or not self.chk_auto_start.isChecked():
-            QMessageBox.information(self, "자동 시작", "먼저 '윈도우 시작 시 자동 실행'을 켜주세요.")
+            QMessageBox.information(
+                self, "자동 시작", "먼저 '윈도우 시작 시 자동 실행'을 켜주세요."
+            )
             return
 
         desired_minimized = bool(
-            hasattr(self, "chk_start_minimized") and self.chk_start_minimized.isChecked()
+            hasattr(self, "chk_start_minimized")
+            and self.chk_start_minimized.isChecked()
         )
         if StartupManager.enable_startup(desired_minimized):
-            QMessageBox.information(self, "자동 시작", "자동 시작 등록을 현재 설정 기준으로 다시 작성했습니다.")
+            QMessageBox.information(
+                self,
+                "자동 시작",
+                "자동 시작 등록을 현재 설정 기준으로 다시 작성했습니다.",
+            )
         else:
-            QMessageBox.warning(self, "자동 시작", "자동 시작 등록 수리에 실패했습니다.")
+            QMessageBox.warning(
+                self, "자동 시작", "자동 시작 등록 수리에 실패했습니다."
+            )
         self.refresh_startup_status()
 
     def setup_ui(self):
@@ -147,7 +163,9 @@ class SettingsDialog(
             self.tab_widget.addTab(self._build_data_page(), "데이터")
         self.tab_widget.addTab(self._build_help_tab(), "도움말")
         self.tab_widget.addTab(self._build_shortcuts_tab(), "단축키")
-        self.tab_widget.setCurrentIndex(min(self._initial_tab, max(0, self.tab_widget.count() - 1)))
+        self.tab_widget.setCurrentIndex(
+            min(self._initial_tab, max(0, self.tab_widget.count() - 1))
+        )
         layout.addWidget(self.tab_widget)
 
         if self._help_mode:
@@ -155,7 +173,8 @@ class SettingsDialog(
             buttons.rejected.connect(self.reject)
         else:
             buttons = QDialogButtonBox(
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+                QDialogButtonBox.StandardButton.Ok
+                | QDialogButtonBox.StandardButton.Cancel
             )
             buttons.accepted.connect(self.accept_with_validation)
             buttons.rejected.connect(self.reject)
@@ -167,7 +186,9 @@ class SettingsDialog(
         client_secret = self.txt_sec.text().strip()
 
         if client_id or client_secret:
-            valid, msg = ValidationUtils.validate_api_credentials(client_id, client_secret)
+            valid, msg = ValidationUtils.validate_api_credentials(
+                client_id, client_secret
+            )
             if not valid:
                 reply = QMessageBox.question(
                     self,
@@ -185,19 +206,27 @@ class SettingsDialog(
         self._is_closing = True
         self._shutdown_worker(self._api_validate_worker, wait_ms=400)
         data_worker = self._data_task_worker
-        parent = self._typed_parent() if self._maintenance_active_for_data_task else None
+        parent = (
+            self._typed_parent() if self._maintenance_active_for_data_task else None
+        )
         maintenance_release_connected = False
         if parent is not None and data_worker is not None:
             try:
                 settled = getattr(data_worker, "settled", None)
                 if settled is not None:
-                    settled.connect(lambda *_args, parent_ref=parent: parent_ref.end_database_maintenance())
+                    settled.connect(
+                        lambda *_args, parent_ref=parent: (
+                            parent_ref.end_database_maintenance()
+                        )
+                    )
                     maintenance_release_connected = True
             except Exception:
                 pass
         data_worker_stopped = self._shutdown_worker(data_worker, wait_ms=2000)
         if self._maintenance_active_for_data_task:
-            if parent is not None and (data_worker_stopped or not maintenance_release_connected):
+            if parent is not None and (
+                data_worker_stopped or not maintenance_release_connected
+            ):
                 try:
                     parent.end_database_maintenance()
                 except Exception:
@@ -213,7 +242,9 @@ class SettingsDialog(
         keywords_text = self.txt_alert_keywords.text().strip()
         alert_keywords = []
         if keywords_text:
-            alert_keywords = [kw.strip() for kw in keywords_text.split(",") if kw.strip()][:10]
+            alert_keywords = [
+                kw.strip() for kw in keywords_text.split(",") if kw.strip()
+            ][:10]
 
         blocked_publishers, preferred_publishers = normalize_publisher_filter_lists(
             self.txt_blocked_publishers.text(),
@@ -239,6 +270,10 @@ class SettingsDialog(
             "preferred_publishers": preferred_publishers,
             "cloud_sync_enabled": self.chk_cloud_sync_enabled.isChecked(),
             "cloud_sync_dir": self.txt_cloud_sync_dir.text().strip(),
-            "cloud_sync_interval_minutes": int(self.cb_cloud_sync_interval.currentData() or 30),
-            "tombstone_retention_days": int(self.cb_tombstone_retention.currentData() or 0),
+            "cloud_sync_interval_minutes": int(
+                self.cb_cloud_sync_interval.currentData() or 30
+            ),
+            "tombstone_retention_days": int(
+                self.cb_tombstone_retention.currentData() or 0
+            ),
         }

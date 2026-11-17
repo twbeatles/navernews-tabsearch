@@ -52,7 +52,10 @@ class _AutoBackupMetadataMixin:
             return False
         backup_path = str(
             backup_entry.get("path")
-            or os.path.join(self.backup_dir, str(backup_entry.get("name") or backup_entry.get("backup_name") or ""))
+            or os.path.join(
+                self.backup_dir,
+                str(backup_entry.get("name") or backup_entry.get("backup_name") or ""),
+            )
         )
         if not backup_path:
             return False
@@ -66,7 +69,9 @@ class _AutoBackupMetadataMixin:
     ) -> Dict[str, Any]:
         return {
             "include_db": bool(include_db),
-            "verification_state": str(verification.get("verification_state", "failed") or "failed"),
+            "verification_state": str(
+                verification.get("verification_state", "failed") or "failed"
+            ),
             "verification_error": str(
                 verification.get("verification_error", "")
                 or verification.get("restore_error", "")
@@ -89,17 +94,27 @@ class _AutoBackupMetadataMixin:
     ) -> Dict[str, Any]:
         persisted = dict(verification)
         backup_name = str(
-            persisted.get("name") or persisted.get("backup_name") or backup_entry.get("name") or backup_entry.get("backup_name") or ""
+            persisted.get("name")
+            or persisted.get("backup_name")
+            or backup_entry.get("name")
+            or backup_entry.get("backup_name")
+            or ""
         ).strip()
         backup_path = str(
-            persisted.get("path") or backup_entry.get("path") or os.path.join(self.backup_dir, backup_name)
+            persisted.get("path")
+            or backup_entry.get("path")
+            or os.path.join(self.backup_dir, backup_name)
         )
         resolved_include_db = (
             bool(include_db)
             if include_db is not None
-            else self._resolve_backup_include_db({**backup_entry, **persisted}, fallback_to_files=True)
+            else self._resolve_backup_include_db(
+                {**backup_entry, **persisted}, fallback_to_files=True
+            )
         )
-        metadata = self._verification_metadata_from_result(persisted, include_db=resolved_include_db)
+        metadata = self._verification_metadata_from_result(
+            persisted, include_db=resolved_include_db
+        )
         persisted["name"] = backup_name
         persisted["backup_name"] = backup_name
         persisted["path"] = backup_path
@@ -111,20 +126,16 @@ class _AutoBackupMetadataMixin:
         except Exception:
             info = {}
         info["timestamp"] = str(
-            info.get("timestamp")
-            or persisted.get("timestamp")
-            or ""
+            info.get("timestamp") or persisted.get("timestamp") or ""
         )
         info["app_version"] = str(
-            info.get("app_version")
-            or persisted.get("app_version")
-            or self.app_version
+            info.get("app_version") or persisted.get("app_version") or self.app_version
         )
-        info["trigger"] = str(info.get("trigger") or persisted.get("trigger") or "manual")
+        info["trigger"] = str(
+            info.get("trigger") or persisted.get("trigger") or "manual"
+        )
         info["created_at"] = str(
-            info.get("created_at")
-            or persisted.get("created_at")
-            or ""
+            info.get("created_at") or persisted.get("created_at") or ""
         )
         info.update(metadata)
         self._write_backup_info(backup_path, info)
@@ -141,5 +152,8 @@ class _AutoBackupMetadataMixin:
         if not os.path.exists(self.config_file):
             return False, "설정 파일이 없어 복원 가능한 백업을 만들 수 없습니다."
         if include_db and not os.path.exists(self.db_file):
-            return False, "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다."
+            return (
+                False,
+                "데이터베이스 파일이 없어 '데이터베이스 포함' 백업을 만들 수 없습니다.",
+            )
         return True, ""

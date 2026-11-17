@@ -13,7 +13,9 @@ def test_live_naver_api_hub_search_contract():
     client_id = os.environ.get("NAVER_API_HUB_CLIENT_ID", "").strip()
     client_secret = os.environ.get("NAVER_API_HUB_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
-        pytest.fail("NAVER_API_HUB_CLIENT_ID and NAVER_API_HUB_CLIENT_SECRET are required")
+        pytest.fail(
+            "NAVER_API_HUB_CLIENT_ID and NAVER_API_HUB_CLIENT_SECRET are required"
+        )
     response = requests.get(
         NAVER_NEWS_SEARCH_URL,
         headers=naver_auth_headers(client_id, client_secret),

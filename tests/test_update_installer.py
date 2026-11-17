@@ -17,7 +17,9 @@ def _sha256(data: bytes) -> str:
 def test_update_result_is_consumed_once(tmp_path: Path):
     result_path = tmp_path / "last-update-result.json"
 
-    update_installer.write_update_result(result_path, {"status": "rolled_back", "error": "smoke failed"})
+    update_installer.write_update_result(
+        result_path, {"status": "rolled_back", "error": "smoke failed"}
+    )
 
     assert update_installer.consume_update_result(result_path) == {
         "status": "rolled_back",
@@ -33,7 +35,9 @@ def test_apply_staged_update_rolls_back_when_smoke_fails(tmp_path: Path):
     target.write_bytes(b"old")
     staged.write_bytes(b"new")
 
-    with mock.patch("core.update_installer.subprocess.run", return_value=mock.Mock(returncode=1)):
+    with mock.patch(
+        "core.update_installer.subprocess.run", return_value=mock.Mock(returncode=1)
+    ):
         with pytest.raises(RuntimeError, match="복구"):
             update_installer.apply_staged_update(
                 target=target,
@@ -53,9 +57,13 @@ def test_apply_staged_update_restarts_verified_executable(tmp_path: Path):
     target.write_bytes(b"old")
     staged.write_bytes(b"new")
 
-    with mock.patch("core.update_installer.subprocess.run", return_value=mock.Mock(returncode=0)) as smoke:
+    with mock.patch(
+        "core.update_installer.subprocess.run", return_value=mock.Mock(returncode=0)
+    ) as smoke:
         with mock.patch("core.update_installer.subprocess.Popen") as restart:
-            with mock.patch("core.update_installer._notify_shell_icon_changed") as notify:
+            with mock.patch(
+                "core.update_installer._notify_shell_icon_changed"
+            ) as notify:
                 update_installer.apply_staged_update(
                     target=target,
                     staged=staged,
@@ -68,13 +76,15 @@ def test_apply_staged_update_restarts_verified_executable(tmp_path: Path):
     smoke.assert_called_once()
     assert smoke.call_args.args[0] == [str(target.resolve()), "--smoke"]
     assert smoke.call_args.kwargs.get("capture_output") is True
-    for key in (smoke.call_args.kwargs.get("env") or {}):
+    for key in smoke.call_args.kwargs.get("env") or {}:
         assert not key.upper().startswith(("_MEI", "_MEIPASS", "PYINSTALLER_"))
     restart.assert_called_once()
     notify.assert_called_once_with(target.resolve())
 
 
-def test_cleanup_update_artifacts_removes_only_stale_helper_and_staged_files(tmp_path: Path):
+def test_cleanup_update_artifacts_removes_only_stale_helper_and_staged_files(
+    tmp_path: Path,
+):
     stale_helper = tmp_path / "update-helper-old.exe"
     stale_staged = tmp_path / "update-1-old.exe"
     recent_staged = tmp_path / "update-1-recent.exe"
@@ -101,7 +111,9 @@ def test_update_shutdown_suppresses_late_worker_result():
     dummy._update_shutdown_requested = False
     dummy._update_bridge = _UpdateBridge()
     received: list[object] = []
-    dummy._update_bridge.checked.connect(lambda manifest, *_args: received.append(manifest))
+    dummy._update_bridge.checked.connect(
+        lambda manifest, *_args: received.append(manifest)
+    )
 
     dummy._emit_checked("before-close", None, False)
     dummy.shutdown_update_support()
@@ -171,4 +183,7 @@ def test_fit_dialog_buttons_reserves_text_slack():
     assert len(buttons) == 3
     for button in buttons:
         assert button.minimumWidth() >= button.sizeHint().width() + 28
-        assert QFontMetrics(button.font()).horizontalAdvance(button.text()) <= button.minimumWidth()
+        assert (
+            QFontMetrics(button.font()).horizontalAdvance(button.text())
+            <= button.minimumWidth()
+        )

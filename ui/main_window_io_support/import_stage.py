@@ -1,4 +1,3 @@
-
 """Compatibility facade for MainApp settings import staging mixins."""
 
 from ui.main_window_io_support.import_stage_support import (

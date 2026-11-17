@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
@@ -13,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class _NewsTableSchemaMixin:
-    def _ensure_news_tags_schema(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+    def _ensure_news_tags_schema(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS news_tags (
@@ -25,7 +26,9 @@ class _NewsTableSchemaMixin:
             """
         )
 
-    def _ensure_news_tag_state_schema(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+    def _ensure_news_tag_state_schema(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS news_tag_state (
@@ -46,7 +49,9 @@ class _NewsTableSchemaMixin:
             """
         )
 
-    def _ensure_news_fts_schema(self: DatabaseManager, conn: sqlite3.Connection) -> None:
+    def _ensure_news_fts_schema(
+        self: DatabaseManager, conn: sqlite3.Connection
+    ) -> None:
         legacy_map_exists = conn.execute(
             """
             SELECT 1 FROM sqlite_master
@@ -54,7 +59,11 @@ class _NewsTableSchemaMixin:
             """
         ).fetchone()
         if legacy_map_exists:
-            for trigger_name in ("trg_news_fts_insert", "trg_news_fts_delete", "trg_news_fts_update"):
+            for trigger_name in (
+                "trg_news_fts_insert",
+                "trg_news_fts_delete",
+                "trg_news_fts_update",
+            ):
                 conn.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
             conn.execute("DROP TABLE IF EXISTS news_fts_map")
             conn.execute("DROP TABLE IF EXISTS news_fts")
@@ -106,7 +115,9 @@ class _NewsTableSchemaMixin:
             if not exists:
                 conn.execute(ddl)
 
-    def _set_app_meta(self: DatabaseManager, conn: sqlite3.Connection, key: str, value: str) -> None:
+    def _set_app_meta(
+        self: DatabaseManager, conn: sqlite3.Connection, key: str, value: str
+    ) -> None:
         conn.execute(
             """
             INSERT INTO app_meta(key, value) VALUES (?, ?)
@@ -115,6 +126,10 @@ class _NewsTableSchemaMixin:
             (str(key), str(value)),
         )
 
-    def _get_app_meta(self: DatabaseManager, conn: sqlite3.Connection, key: str, default: str = "") -> str:
-        row = conn.execute("SELECT value FROM app_meta WHERE key = ?", (str(key),)).fetchone()
+    def _get_app_meta(
+        self: DatabaseManager, conn: sqlite3.Connection, key: str, default: str = ""
+    ) -> str:
+        row = conn.execute(
+            "SELECT value FROM app_meta WHERE key = ?", (str(key),)
+        ).fetchone()
         return str(row[0]) if row and row[0] is not None else str(default)

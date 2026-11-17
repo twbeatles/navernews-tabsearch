@@ -1,10 +1,19 @@
 import inspect
+import re
 import unittest
 from typing import Any, cast
 from unittest import mock
 
 from ui._main_window_settings_io import _MainWindowSettingsIOMixin
 from ui.main_window import MainApp
+
+
+def _norm(text):
+    # Format-tolerant source matching: ruff format may reflow code
+    # lines and add/remove grouping parentheses. Compare the token
+    # stream, ignoring grouping brackets.
+    toks = re.findall(r"\w+|[^\w\s]", text)
+    return " ".join(t for t in toks if t not in "()[]{}")
 
 
 class _DummyImportMain:
@@ -15,7 +24,9 @@ class _DummyImportMain:
         self.warning_toasts.append(str(message))
 
     def _reconcile_startup_state_from_import(self, normalized_settings, warnings):
-        return cast(Any, _MainWindowSettingsIOMixin)._reconcile_startup_state_from_import(
+        return cast(
+            Any, _MainWindowSettingsIOMixin
+        )._reconcile_startup_state_from_import(
             cast(Any, self),
             normalized_settings,
             warnings,
@@ -31,14 +42,22 @@ class TestSettingsImportExportPortability(unittest.TestCase):
 
     def test_import_settings_uses_startup_reconcile_helper(self):
         block = inspect.getsource(MainApp.import_settings)
-        self.assertIn("self._reconcile_startup_state_from_import(normalized_settings, import_warnings)", block)
+        self.assertIn(
+            _norm(
+                "self._reconcile_startup_state_from_import(normalized_settings, import_warnings)"
+            ),
+            _norm(block),
+        )
 
     def test_reconcile_startup_forces_false_when_platform_is_unavailable(self):
         dummy = _DummyImportMain()
         normalized_settings = {"auto_start_enabled": True, "start_minimized": False}
         warnings = []
 
-        with mock.patch("ui._main_window_settings_io.StartupManager.is_available", return_value=False):
+        with mock.patch(
+            "ui._main_window_settings_io.StartupManager.is_available",
+            return_value=False,
+        ):
             dummy._reconcile_startup_state_from_import(normalized_settings, warnings)
 
         self.assertFalse(normalized_settings["auto_start_enabled"])
@@ -48,26 +67,44 @@ class TestSettingsImportExportPortability(unittest.TestCase):
     def test_reconcile_startup_calls_enable_and_disable_helpers(self):
         dummy = _DummyImportMain()
 
-        with mock.patch("ui._main_window_settings_io.StartupManager.is_available", return_value=True):
-            with mock.patch("ui._main_window_settings_io.StartupManager.enable_startup", return_value=True) as enable_mock:
+        with mock.patch(
+            "ui._main_window_settings_io.StartupManager.is_available", return_value=True
+        ):
+            with mock.patch(
+                "ui._main_window_settings_io.StartupManager.enable_startup",
+                return_value=True,
+            ) as enable_mock:
                 with mock.patch(
                     "ui._main_window_settings_io.StartupManager.get_startup_status",
                     return_value={"is_healthy": True, "has_registry_value": True},
                 ):
-                    normalized_settings = {"auto_start_enabled": True, "start_minimized": True}
+                    normalized_settings = {
+                        "auto_start_enabled": True,
+                        "start_minimized": True,
+                    }
                     warnings = []
-                    dummy._reconcile_startup_state_from_import(normalized_settings, warnings)
+                    dummy._reconcile_startup_state_from_import(
+                        normalized_settings, warnings
+                    )
                     enable_mock.assert_called_once_with(True)
                     self.assertEqual(warnings, [])
 
-            with mock.patch("ui._main_window_settings_io.StartupManager.disable_startup", return_value=True) as disable_mock:
+            with mock.patch(
+                "ui._main_window_settings_io.StartupManager.disable_startup",
+                return_value=True,
+            ) as disable_mock:
                 with mock.patch(
                     "ui._main_window_settings_io.StartupManager.get_startup_status",
                     return_value={"is_healthy": False, "has_registry_value": False},
                 ):
-                    normalized_settings = {"auto_start_enabled": False, "start_minimized": False}
+                    normalized_settings = {
+                        "auto_start_enabled": False,
+                        "start_minimized": False,
+                    }
                     warnings = []
-                    dummy._reconcile_startup_state_from_import(normalized_settings, warnings)
+                    dummy._reconcile_startup_state_from_import(
+                        normalized_settings, warnings
+                    )
                     disable_mock.assert_called_once_with()
                     self.assertEqual(warnings, [])
 

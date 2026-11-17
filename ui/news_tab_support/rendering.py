@@ -52,7 +52,9 @@ class _NewsTabRenderingMixin:
         is_dark = self.theme == 1
         if self.theme not in self._css_cache_by_theme:
             colors = Colors.get_html_colors(is_dark)
-            self._css_cache_by_theme[self.theme] = AppStyle.HTML_TEMPLATE.format(**colors)
+            self._css_cache_by_theme[self.theme] = AppStyle.HTML_TEMPLATE.format(
+                **colors
+            )
         css = self._css_cache_by_theme[self.theme]
         return f"<html><head><meta charset='utf-8'>{css}</head><body>{body_html}{remaining_html}</body></html>"
 
@@ -76,7 +78,9 @@ class _NewsTabRenderingMixin:
             f"<p class='empty-state' align='center'>{body}</p>"
         )
 
-    def _item_render_cache_key(self, item: Dict[str, Any], filter_word: str) -> Tuple[Any, ...]:
+    def _item_render_cache_key(
+        self, item: Dict[str, Any], filter_word: str
+    ) -> Tuple[Any, ...]:
         return (
             self.theme,
             filter_word,
@@ -96,7 +100,9 @@ class _NewsTabRenderingMixin:
 
     def _flush_render(self):
         self._render_scheduled = False
-        with perf_timer("ui.render_html", f"kw={self.keyword}|rows={len(self.filtered_data_cache)}"):
+        with perf_timer(
+            "ui.render_html", f"kw={self.keyword}|rows={len(self.filtered_data_cache)}"
+        ):
             filter_word = self._current_filter_text()
             render_signature = (
                 self.theme,
@@ -115,7 +121,11 @@ class _NewsTabRenderingMixin:
             if render_signature == self._last_render_signature:
                 self.update_status_label()
                 if restore_scroll > 0:
-                    QTimer.singleShot(0, cast(QObject, self), lambda: self._browser_scroll_bar().setValue(restore_scroll))
+                    QTimer.singleShot(
+                        0,
+                        cast(QObject, self),
+                        lambda: self._browser_scroll_bar().setValue(restore_scroll),
+                    )
                 return
 
             if not self.filtered_data_cache:
@@ -146,13 +156,19 @@ class _NewsTabRenderingMixin:
                 self._render_context_signature = render_context
                 body_html = self._rendered_body_html
 
-            remaining = max(0, self._total_filtered_count - len(self.filtered_data_cache))
+            remaining = max(
+                0, self._total_filtered_count - len(self.filtered_data_cache)
+            )
             footer_html = self._get_load_more_html(remaining) if remaining > 0 else ""
             self.browser.setHtml(self._build_document_html(body_html, footer_html))
             self._last_render_signature = render_signature
 
             if restore_scroll > 0:
-                QTimer.singleShot(0, cast(QObject, self), lambda: self._browser_scroll_bar().setValue(restore_scroll))
+                QTimer.singleShot(
+                    0,
+                    cast(QObject, self),
+                    lambda: self._browser_scroll_bar().setValue(restore_scroll),
+                )
             self.update_status_label()
 
     def _refresh_after_local_change(self, requires_refilter: bool = False):
@@ -167,7 +183,9 @@ class _NewsTabRenderingMixin:
         parent = self._main_window()
         if parent is not None:
             try:
-                update_badge_cache = getattr(parent, "update_badge_cache_from_tab_load", None)
+                update_badge_cache = getattr(
+                    parent, "update_badge_cache_from_tab_load", None
+                )
                 if callable(update_badge_cache) and not self.is_bookmark_tab:
                     update_badge_cache(self.keyword, self._unread_count_cache)
                     return
@@ -176,7 +194,9 @@ class _NewsTabRenderingMixin:
                 pass
 
     def _recount_unread_cache(self):
-        self._unread_count_cache = sum(1 for item in self.news_data_cache if not item.get("is_read", 0))
+        self._unread_count_cache = sum(
+            1 for item in self.news_data_cache if not item.get("is_read", 0)
+        )
 
     def _adjust_unread_cache(self, was_read: bool, now_read: bool):
         if was_read == now_read:
@@ -186,11 +206,17 @@ class _NewsTabRenderingMixin:
         elif (not was_read) and now_read:
             self._unread_count_cache = max(0, self._unread_count_cache - 1)
 
-    def _render_single_item(self, item: Dict[str, Any], filter_word: str, extra_badges_html: str = "") -> str:
+    def _render_single_item(
+        self, item: Dict[str, Any], filter_word: str, extra_badges_html: str = ""
+    ) -> str:
         """단일 뉴스 아이템 HTML 렌더링"""
         link_hash = str(
             item.get("_link_hash")
-            or (hashlib.md5(str(item.get("link", "") or "").encode()).hexdigest() if item.get("link") else "")
+            or (
+                hashlib.md5(str(item.get("link", "") or "").encode()).hexdigest()
+                if item.get("link")
+                else ""
+            )
         )
         item["_link_hash"] = link_hash
         cache_key = self._item_render_cache_key(item, filter_word)
@@ -219,9 +245,7 @@ class _NewsTabRenderingMixin:
         aliases = getattr(self._main_window(), "publisher_aliases", {}) or {}
         display_publisher = canonical_publisher(raw_publisher, aliases) or raw_publisher
         if display_publisher != raw_publisher:
-            publisher_html = (
-                f"<span title='{html.escape(raw_publisher)}'>{html.escape(display_publisher)}</span>"
-            )
+            publisher_html = f"<span title='{html.escape(raw_publisher)}'>{html.escape(display_publisher)}</span>"
         else:
             publisher_html = html.escape(raw_publisher)
 
@@ -237,7 +261,11 @@ class _NewsTabRenderingMixin:
             if tag.strip()
         ]
         if tags:
-            meta_parts.append(" ".join(f"<span class='tag'>#{html.escape(tag)}</span>" for tag in tags))
+            meta_parts.append(
+                " ".join(
+                    f"<span class='tag'>#{html.escape(tag)}</span>" for tag in tags
+                )
+            )
         if item.get("notes") and str(item.get("notes", "")).strip():
             meta_parts.append(f"<a href='app://note/{link_hash}'>메모</a>")
         meta_html = " · ".join(part for part in meta_parts if part)

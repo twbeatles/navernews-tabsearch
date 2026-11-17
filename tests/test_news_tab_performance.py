@@ -54,8 +54,12 @@ class TestNewsTabPerformance(unittest.TestCase):
         return tab
 
     def test_constructor_can_defer_initial_db_load(self):
-        with mock.patch.object(NewsTab, "load_data_from_db", autospec=True) as load_mock:
-            tab = NewsTab("AI", cast(Any, _FakeDb()), theme_mode=0, defer_initial_load=True)
+        with mock.patch.object(
+            NewsTab, "load_data_from_db", autospec=True
+        ) as load_mock:
+            tab = NewsTab(
+                "AI", cast(Any, _FakeDb()), theme_mode=0, defer_initial_load=True
+            )
         self.addCleanup(tab.cleanup)
         self.addCleanup(tab.deleteLater)
 
@@ -87,7 +91,11 @@ class TestNewsTabPerformance(unittest.TestCase):
         self._seed_rows(tab, [first])
 
         with mock.patch.object(tab, "_schedule_render"):
-            self.assertTrue(tab.apply_external_item_state(first["link"], is_read=True, is_bookmarked=True, notes="memo"))
+            self.assertTrue(
+                tab.apply_external_item_state(
+                    first["link"], is_read=True, is_bookmarked=True, notes="memo"
+                )
+            )
 
         target = tab._target_by_link(first["link"])
         self.assertIsNotNone(target)
@@ -139,7 +147,9 @@ class TestNewsTabPerformance(unittest.TestCase):
         self.assertIsNotNone(tab._target_by_link(replacement["link"]))
 
         with mock.patch.object(tab, "load_data_from_db"):
-            self.assertTrue(tab.apply_external_item_state(replacement["link"], deleted=True))
+            self.assertTrue(
+                tab.apply_external_item_state(replacement["link"], deleted=True)
+            )
         self.assertIsNone(tab._target_by_link(replacement["link"]))
 
     def test_render_html_coalesces_multiple_requests_into_single_flush(self):
@@ -235,7 +245,9 @@ class TestNewsTabPerformance(unittest.TestCase):
         self.assertEqual(parent.badge_refresh_requests, [])
         self.assertEqual(parent.load_more_syncs, ["AI -coin"])
 
-    def test_local_badge_change_uses_unread_cache_without_scheduling_count_refresh(self):
+    def test_local_badge_change_uses_unread_cache_without_scheduling_count_refresh(
+        self,
+    ):
         tab = self._make_tab()
         parent = _FakeMainWindow()
         tab._unread_count_cache = 3

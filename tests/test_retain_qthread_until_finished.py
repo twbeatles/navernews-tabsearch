@@ -3,6 +3,7 @@
 PROJECT_AUDIT.md 3.2: cleanup timeout 후 orphan thread가 _DETACHED_WORKERS에
 등록되고 finished 시그널로 해제되는지, running이 아니면 즉시 해제되는지 검증.
 """
+
 from __future__ import annotations
 
 from core.workers_support import lifecycle

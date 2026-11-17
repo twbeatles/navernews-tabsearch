@@ -25,6 +25,7 @@ from core.logging_setup import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
 class NoteDialog(QDialog):
     """메모 편집 다이얼로그"""
 
@@ -44,7 +45,8 @@ class NoteDialog(QDialog):
         layout.addWidget(self.text_edit)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -53,6 +55,8 @@ class NoteDialog(QDialog):
     def get_note(self) -> str:
         """메모 내용 반환"""
         return self.text_edit.toPlainText().strip()
+
+
 class LogViewerDialog(QDialog):
     """애플리케이션 로그 뷰어"""
 
@@ -148,7 +152,7 @@ class LogViewerDialog(QDialog):
             read_size = 50 * 1024  # 50KB
 
             lines = []
-            with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
+            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
                 if file_size > read_size:
                     f.seek(file_size - read_size)
                     # 첫 줄은 잘릴 수 있으므로 버림
@@ -187,9 +191,14 @@ class LogViewerDialog(QDialog):
                 escaped = html.escape(line.rstrip())
                 html_lines.append(f"<span style='color: {color};'>{escaped}</span>")
 
-            html_content = "<pre style='margin: 0;'>" + "<br>".join(html_lines) + "</pre>"
+            html_content = (
+                "<pre style='margin: 0;'>" + "<br>".join(html_lines) + "</pre>"
+            )
             if file_size > read_size:
-                html_content = f"<div style='color: #888; margin-bottom: 10px;'>... 이전 로그 생략됨 (전체 크기: {file_size/1024:.1f}KB) ...</div>" + html_content
+                html_content = (
+                    f"<div style='color: #888; margin-bottom: 10px;'>... 이전 로그 생략됨 (전체 크기: {file_size / 1024:.1f}KB) ...</div>"
+                    + html_content
+                )
 
             self.log_browser.setHtml(html_content)
 
@@ -199,7 +208,9 @@ class LogViewerDialog(QDialog):
                 if scroll_bar is not None:
                     scroll_bar.setValue(scroll_bar.maximum())
 
-            self.lbl_status.setText(f"총 {len(lines)}줄 중 {len(filtered_lines)}줄 표시")
+            self.lbl_status.setText(
+                f"총 {len(lines)}줄 중 {len(filtered_lines)}줄 표시"
+            )
 
         except Exception as e:
             self.log_browser.setPlainText(f"로그 로드 오류: {str(e)}")
@@ -212,12 +223,12 @@ class LogViewerDialog(QDialog):
             "로그 지우기",
             "로그 파일을 지우시겠습니까?\n이 작업은 취소할 수 없습니다.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                with open(LOG_FILE, 'w', encoding='utf-8') as f:
+                with open(LOG_FILE, "w", encoding="utf-8") as f:
                     f.write("")
                 self.load_logs()
                 logger.info("로그 파일 초기화됨")
@@ -229,4 +240,6 @@ class LogViewerDialog(QDialog):
         if os.path.exists(LOG_FILE):
             QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(LOG_FILE)))
         else:
-            QMessageBox.information(self, "알림", "로그 파일이 아직 생성되지 않았습니다.")
+            QMessageBox.information(
+                self, "알림", "로그 파일이 아직 생성되지 않았습니다."
+            )

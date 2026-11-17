@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 class _MainWindowBadgeShellMixin:
     def _set_tab_badge_text(self, tab_index: int, keyword: str, unread_count: int):
-        self.tabs.setTabText(tab_index, self._format_tab_title(keyword, unread_count=unread_count))
+        self.tabs.setTabText(
+            tab_index, self._format_tab_title(keyword, unread_count=unread_count)
+        )
         self._set_tab_tooltip(tab_index, keyword, unread_count)
 
     def _set_tab_tooltip(self, tab_index: int, keyword: str, unread_count: int = 0):
@@ -40,7 +42,11 @@ class _MainWindowBadgeShellMixin:
             badge = " (99+)" if count > 99 else f" ({count})"
         # 모든 탭이 뉴스 탭이므로 정상 탭에는 아이콘을 붙이지 않고, 검색어가
         # 무효한 탭만 표시한다.
-        prefix = "" if has_positive_keyword(normalized_keyword) else f"{self._tab_icon_for_keyword(normalized_keyword)} "
+        prefix = (
+            ""
+            if has_positive_keyword(normalized_keyword)
+            else f"{self._tab_icon_for_keyword(normalized_keyword)} "
+        )
         return f"{prefix}{normalized_keyword}{badge}"
 
     def _schedule_badge_refresh(self, delay_ms: int = 75):
@@ -53,7 +59,9 @@ class _MainWindowBadgeShellMixin:
     def update_all_tab_badges(self):
         """모든 탭의 배지(미읽음 수) 업데이트"""
         if getattr(self, "_badge_refresh_running", False):
-            logger.info("PERF|ui.update_all_tab_badges.skip|0.00ms|reason=already_running")
+            logger.info(
+                "PERF|ui.update_all_tab_badges.skip|0.00ms|reason=already_running"
+            )
             return
 
         if self.is_maintenance_mode_active():
@@ -64,7 +72,9 @@ class _MainWindowBadgeShellMixin:
         try:
             tab_infos: List[Tuple[int, NewsTab]] = []
             for i, widget in self._iter_news_tabs(start_index=1):
-                if not getattr(widget, "db_keyword", "") or not getattr(widget, "query_key", ""):
+                if not getattr(widget, "db_keyword", "") or not getattr(
+                    widget, "query_key", ""
+                ):
                     continue
                 tab_infos.append((i, widget))
 
@@ -120,7 +130,9 @@ class _MainWindowBadgeShellMixin:
         _tab_index, tab_widget = located_tab
         search_keyword, exclude_words = parse_search_query(keyword)
         fetch_key = build_fetch_key(search_keyword, exclude_words)
-        fetch_state = self._tab_fetch_state.setdefault(keyword, self._make_tab_fetch_state())
+        fetch_state = self._tab_fetch_state.setdefault(
+            keyword, self._make_tab_fetch_state()
+        )
         persisted_cursor = int(self._fetch_cursor_by_key.get(fetch_key, 0) or 0)
         if persisted_cursor > fetch_state.last_api_start_index:
             fetch_state.last_api_start_index = persisted_cursor
@@ -137,7 +149,10 @@ class _MainWindowBadgeShellMixin:
     def maybe_show_query_refresh_hint(self, keyword: str):
         """Show a one-time hint when a new query_key scope still needs its first refresh."""
         normalized_keyword = str(keyword or "").strip()
-        if not normalized_keyword or normalized_keyword in self._query_key_migration_hints_shown:
+        if (
+            not normalized_keyword
+            or normalized_keyword in self._query_key_migration_hints_shown
+        ):
             return
 
         search_keyword, exclude_words = parse_search_query(normalized_keyword)
@@ -146,7 +161,10 @@ class _MainWindowBadgeShellMixin:
         legacy_query_key = build_fetch_key(db_keyword, [])
         if not db_keyword or not query_key or query_key == legacy_query_key:
             return
-        if query_key in self._fetch_total_by_key or query_key in self._fetch_cursor_by_key:
+        if (
+            query_key in self._fetch_total_by_key
+            or query_key in self._fetch_cursor_by_key
+        ):
             return
 
         db = self._require_db()
@@ -156,7 +174,11 @@ class _MainWindowBadgeShellMixin:
             if db.get_counts(db_keyword) <= 0:
                 return
         except Exception as exc:
-            logger.warning("Query refresh hint skipped because DB read failed (%s): %s", normalized_keyword, exc)
+            logger.warning(
+                "Query refresh hint skipped because DB read failed (%s): %s",
+                normalized_keyword,
+                exc,
+            )
             return
 
         self._query_key_migration_hints_shown.add(normalized_keyword)

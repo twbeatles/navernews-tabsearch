@@ -1,4 +1,3 @@
-
 # pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
@@ -17,14 +16,18 @@ class _CloudSyncMetadataMixin:
     CLOUD_SYNC_SEEN_META_KEY = "cloud_sync.seen_snapshot_ids"
     CLOUD_SYNC_MAX_SEEN_IDS = 300
 
-    def _table_exists(self: DatabaseManager, conn: sqlite3.Connection, schema: str, table: str) -> bool:
+    def _table_exists(
+        self: DatabaseManager, conn: sqlite3.Connection, schema: str, table: str
+    ) -> bool:
         row = conn.execute(
             f"SELECT 1 FROM {schema}.sqlite_master WHERE type='table' AND name=?",
             (table,),
         ).fetchone()
         return row is not None
 
-    def _table_columns(self: DatabaseManager, conn: sqlite3.Connection, schema: str, table: str) -> Set[str]:
+    def _table_columns(
+        self: DatabaseManager, conn: sqlite3.Connection, schema: str, table: str
+    ) -> Set[str]:
         if not self._table_exists(conn, schema, table):
             return set()
         rows = conn.execute(f"PRAGMA {schema}.table_info({table})").fetchall()
@@ -51,7 +54,9 @@ class _CloudSyncMetadataMixin:
                 return set()
             if not isinstance(payload, list):
                 return set()
-            return {str(item) for item in payload if isinstance(item, str) and item.strip()}
+            return {
+                str(item) for item in payload if isinstance(item, str) and item.strip()
+            }
         except Exception as e:
             logger.warning("Failed to load cloud sync seen snapshots: %s", e)
             return set()
