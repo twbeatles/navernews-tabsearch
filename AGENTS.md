@@ -79,6 +79,8 @@ tests/
 | badge/tray | `ui/main_window_support/ui_shell_support/` |
 | settings import/export | `ui/main_window_io_support/` |
 | cloud sync | `core/cloud_sync_support/`, `core/db_cloud_sync_support/` |
+| 클라우드 병합 공통 정책 | `core/db_cloud_sync_support/policy.py` |
+| 자동 백업 worker·GUI relay·상태 표시 | `ui/main_window_support/auto_backup.py` |
 | 중복 플래그 재계산 | `core/_db_duplicates.py` |
 | tombstone 회수/보존 | `core/db_mutations_support/maintenance_support/deletion.py` |
 | 저장소 지표 | `core/_db_analytics.py` (`get_storage_metrics`) |
@@ -96,6 +98,8 @@ tests/
 
 ## 경로/데이터 정책
 
+- 예약 자동 백업은 DB + 설정을 백그라운드에서 저장합니다. 검증 실패본은 정상 백업 quota에서 제외하며, SQLite snapshot 실패 시 live DB/WAL 파일 복사로 우회하지 않습니다.
+- 클라우드 공통 병합 정책은 `core/db_cloud_sync_support/policy.py`에 둡니다. 빈 태그 상태도 전파하며, 콘텐츠는 `content_updated_at`과 결정적 동률 규칙으로 선택하고 날짜/hash는 선택한 콘텐츠에서 정규화합니다. 동일 내용 재수집은 콘텐츠 갱신 시각을 유지합니다.
 - cloud sync folder는 core API에서 빈 값을 거부하고, 상대 경로는 절대 경로로 resolve한 뒤 사용합니다.
 - CSV/Markdown export 기본 파일명은 `ValidationUtils.safe_filename_component(...)`로 정규화합니다.
 - backup delete/restore/schedule/pending restore는 `core.backup_support.fs._safe_backup_child_dir(...)`를 통해 root containment를 확인합니다.
@@ -139,6 +143,14 @@ python -m pytest tests/test_naver_api_hub.py tests/test_settings_validation_http
 ```bash
 python -m pytest tests/test_audit_remediation_20260920.py -q
 ```
+
+감사 후속 회귀(백업 보존·DB 자동 백업·클라우드 상태/콘텐츠 병합):
+
+```bash
+python -m pytest tests/test_audit_cloud_backup_regressions.py tests/test_auto_backup_runtime.py -q
+```
+
+실제 API 검증은 `.github/workflows/quality.yml`의 수동 실행에서 `run_live_api=true`로 선택합니다. 저장소 secret `NAVER_API_HUB_CLIENT_ID`와 `NAVER_API_HUB_CLIENT_SECRET`이 필요하며 일반 push/PR 검사에서는 실제 API를 호출하지 않습니다.
 
 > PySide6/cryptography가 없는 환경에서는 해당 모듈이 **skip** 되고 요약에 이유가 표시됩니다(collection 중단 아님).
 

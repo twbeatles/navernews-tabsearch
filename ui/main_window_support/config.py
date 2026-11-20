@@ -23,11 +23,12 @@ from core.content_filters import normalize_publisher_filter_lists
 from core.publisher_aliases import normalize_publisher_aliases
 from core.startup import StartupManager
 from core.windows_identity import assign_window_class_icon, resolve_runtime_icon_path
+from ui.main_window_support.auto_backup import _MainWindowAutoBackupMixin
 
 logger = logging.getLogger(__name__)
 
 
-class _MainWindowConfigMixin:
+class _MainWindowConfigMixin(_MainWindowAutoBackupMixin):
     def set_application_icon(self):
         """애플리케이션 아이콘 설정"""
         icon_path = self._resolve_icon_path()
@@ -336,13 +337,6 @@ class _MainWindowConfigMixin:
                 "API Client Secret이 평문으로 저장되어 있습니다. config 파일 보호에 주의하세요."
             )
             self._pending_plain_secret_warning = False
-
-    def _run_auto_backup_once(self) -> None:
-        try:
-            if os.path.exists(self.runtime_paths.config_file):
-                self.auto_backup.create_backup(include_db=False, trigger="auto")
-        except Exception as exc:
-            logger.warning("자동 백업 실행 실패: %s", exc)
 
     def apply_auto_backup_interval(self) -> None:
         timer = getattr(self, "_auto_backup_timer", None)

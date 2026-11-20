@@ -7,6 +7,8 @@ import os
 import sqlite3
 from typing import TYPE_CHECKING, Any, Dict
 
+from core.db_cloud_sync_support.policy import clear_content_functions
+
 if TYPE_CHECKING:
     from core.database import DatabaseManager
 
@@ -174,6 +176,7 @@ class _CloudSyncApplyMixin:
             logger.error("Cloud snapshot DB merge failed: %s", e)
             raise self._new_write_error("merge_cloud_snapshot_db", e) from e
         finally:
+            clear_content_functions(conn)
             if attached:
                 try:
                     conn.execute("DETACH DATABASE cloud_src")

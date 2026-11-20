@@ -327,6 +327,7 @@ class _MainWindowTrayMixin:
                 "_csv_import_worker",
                 "_fts_backfill_worker",
                 "_tray_unread_worker",
+                "_auto_backup_worker",
             )
         ]
         registry = getattr(self, "_worker_registry", None)

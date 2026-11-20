@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_live_api:
+        description: Run credentialed NAVER API HUB smoke
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +22,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+          architecture: x64
           cache: pip
       - name: Install verified dependencies
         run: python -m pip install -r requirements-build.txt
@@ -43,7 +50,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+          architecture: x64
       - name: Install core test dependencies without optional UI or crypto
         run: python -m pip install pytest==9.1.1 requests==2.34.2 charset-normalizer==3.5.2
       - name: Core tests and explicit optional dependency skips
         run: python -m pytest -q -rs
+
+  live-api:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live_api
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          architecture: x64
+      - name: Install verified dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Credentialed API HUB smoke against isolated runtime
+        env:
+          NAVER_API_LIVE_TEST: "1"
+          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
+          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
+        run: python -m pytest tests/test_live_naver_api_e2e.py -q

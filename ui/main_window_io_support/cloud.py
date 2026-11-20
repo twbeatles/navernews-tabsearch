@@ -142,6 +142,7 @@ class _MainWindowCloudSyncMixin:
             "",
             f"대상 스냅샷: {int(totals.get('merge_candidates', 0) or 0):,}개",
             f"새 기사: {int(totals.get('news_added', 0) or 0):,}개",
+            f"기사 내용 수정: {int(totals.get('content_changed', 0) or 0):,}개",
             f"검색범위: {int(totals.get('memberships_added', 0) or 0):,}개",
             (
                 "상태 변경: "
@@ -357,6 +358,12 @@ class _MainWindowCloudSyncMixin:
             status += f", 재시도 예정 {retryable_count}개"
         if pending_unseen:
             status += f", 대기 {pending_unseen}개"
+        content_changed = int(import_totals.get("content_changed", 0) or 0)
+        if content_changed:
+            status += f", 기사 수정 {content_changed:,}개"
+        clock_warnings = sum(bool(item.get("clock_skew_warning")) for item in imported)
+        if clock_warnings:
+            status += f", PC 시계 확인 필요 {clock_warnings}건"
         if errors:
             status += f", 오류 {len(errors)}건"
             logger.warning("Cloud sync import errors:\n- %s", "\n- ".join(errors))
@@ -366,7 +373,10 @@ class _MainWindowCloudSyncMixin:
             self.on_database_maintenance_completed(
                 "cloud_sync", news_added + memberships_added
             )
-        self.show_success_toast(status)
+        if clock_warnings:
+            self.show_warning_toast(status + " — PC의 날짜와 시간을 동기화해 주세요.")
+        else:
+            self.show_success_toast(status)
 
     def _on_cloud_sync_error(self: MainApp, error_msg: str) -> None:
         if bool(getattr(self, "_shutdown_in_progress", False)):

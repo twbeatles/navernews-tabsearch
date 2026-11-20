@@ -93,7 +93,9 @@ def import_cloud_snapshot(
         try:
             snapshot_dt = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
             now_dt = datetime.now(timezone.utc)
-            clock_skew_seconds = abs((now_dt - snapshot_dt).total_seconds())
+            # An old snapshot can simply be delayed/offline; only future dates
+            # provide evidence of clock skew relative to this machine.
+            clock_skew_seconds = max(0.0, (snapshot_dt - now_dt).total_seconds())
             if clock_skew_seconds > MAX_CLOCK_SKEW_SECONDS:
                 clock_skew_warning = True
                 logger.warning(
@@ -171,6 +173,7 @@ def aggregate_cloud_import_preview(
     previews: Sequence[Mapping[str, Any]],
 ) -> Dict[str, int]:
     keys = [
+        "content_changed",
         "news_added",
         "memberships_added",
         "read_changed",

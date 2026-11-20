@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from core.query_parser import build_fetch_key
@@ -218,6 +219,7 @@ class _NewsUpsertMixin:
                                 item["publisher"],
                                 item["pubDate_ts"],
                                 item["title_hash"],
+                                datetime.now().timestamp(),
                             )
                         )
                         scope_insert_data.append(
@@ -232,8 +234,8 @@ class _NewsUpsertMixin:
                     conn.executemany(
                         """
                         INSERT INTO news
-                        (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash, content_updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(link) DO UPDATE SET
                             keyword = CASE
                                 WHEN keyword IS NULL OR keyword = '' THEN excluded.keyword
@@ -243,11 +245,19 @@ class _NewsUpsertMixin:
                             description = excluded.description,
                             pubDate = excluded.pubDate,
                             publisher = excluded.publisher,
-                            pubDate_ts = CASE
-                                WHEN excluded.pubDate_ts > 0 THEN excluded.pubDate_ts
-                                ELSE news.pubDate_ts
-                            END,
-                            title_hash = excluded.title_hash
+                            pubDate_ts = excluded.pubDate_ts,
+                            title_hash = excluded.title_hash,
+                            content_updated_at = CASE
+                                WHEN COALESCE(news.title, '') != COALESCE(excluded.title, '')
+                                  OR COALESCE(news.description, '') != COALESCE(excluded.description, '')
+                                  OR COALESCE(news.pubDate, '') != COALESCE(excluded.pubDate, '')
+                                  OR COALESCE(news.publisher, '') != COALESCE(excluded.publisher, '')
+                                  OR COALESCE(news.title_hash, '') != COALESCE(excluded.title_hash, '')
+                                  OR COALESCE(news.pubDate_ts, 0) != COALESCE(excluded.pubDate_ts, 0)
+                                  OR COALESCE(news.content_updated_at, 0) <= 0
+                                THEN MAX(excluded.content_updated_at, COALESCE(news.content_updated_at, 0) + 0.000001)
+                                ELSE news.content_updated_at
+                            END
                         WHERE
                             (
                                 (news.keyword IS NULL OR news.keyword = '')
@@ -257,10 +267,8 @@ class _NewsUpsertMixin:
                             OR COALESCE(news.description, '') != COALESCE(excluded.description, '')
                             OR COALESCE(news.pubDate, '') != COALESCE(excluded.pubDate, '')
                             OR COALESCE(news.publisher, '') != COALESCE(excluded.publisher, '')
-                            OR (
-                                excluded.pubDate_ts > 0
-                                AND COALESCE(news.pubDate_ts, 0) != COALESCE(excluded.pubDate_ts, 0)
-                            )
+                            OR COALESCE(news.pubDate_ts, 0) != COALESCE(excluded.pubDate_ts, 0)
+                            OR COALESCE(news.content_updated_at, 0) <= 0
                             OR COALESCE(news.title_hash, '') != COALESCE(excluded.title_hash, '')
                         """,
                         news_insert_data,

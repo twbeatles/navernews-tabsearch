@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Optional
 
 from core.backup_support.auto_backup_support.create import _AutoBackupCreateMixin
@@ -26,6 +27,7 @@ class AutoBackup(
     BACKUP_DIR: str = DEFAULT_BACKUP_DIR
     MAX_AUTO_BACKUPS: int = 5
     MAX_MANUAL_BACKUPS: int = 20
+    MAX_FAILED_BACKUPS: int = 5
 
     def __init__(
         self,
@@ -44,6 +46,7 @@ class AutoBackup(
             os.path.dirname(os.path.abspath(config_file)), PENDING_RESTORE_FILENAME
         )
         self.last_create_error = ""
+        self._create_lock = threading.Lock()
         self._ensure_backup_dir()
 
 
