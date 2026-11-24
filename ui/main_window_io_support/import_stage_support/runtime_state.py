@@ -11,6 +11,7 @@ from core.config_store import (
 )
 from core.constants import CONFIG_FILE, RUNTIME_PATHS
 from core.content_filters import normalize_publisher_filter_lists
+from core.naver_api import normalize_api_sort
 from core.publisher_aliases import normalize_publisher_aliases
 from ui.styles import AppStyle
 
@@ -206,6 +207,11 @@ class _ImportStageRuntimeStateMixin:
                 "api_timeout": int(
                     app_settings_overrides.get("api_timeout", self.api_timeout)
                 ),
+                "api_sort": normalize_api_sort(
+                    app_settings_overrides.get(
+                        "api_sort", getattr(self, "api_sort", "date")
+                    )
+                ),
                 "blocked_publishers": blocked_publishers,
                 "preferred_publishers": preferred_publishers,
                 "cloud_sync_enabled": bool(
@@ -280,6 +286,7 @@ class _ImportStageRuntimeStateMixin:
             "notify_on_refresh": self.notify_on_refresh,
             "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
             "api_timeout": self.api_timeout,
+            "api_sort": normalize_api_sort(getattr(self, "api_sort", "date")),
             "blocked_publishers": list(getattr(self, "blocked_publishers", [])),
             "preferred_publishers": list(getattr(self, "preferred_publishers", [])),
             "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
@@ -370,6 +377,7 @@ class _ImportStageRuntimeStateMixin:
             runtime_snapshot.get("auto_backup_minutes", 60) or 0
         )
         self.api_timeout = int(runtime_snapshot["api_timeout"])
+        self.api_sort = normalize_api_sort(runtime_snapshot.get("api_sort", "date"))
         self.blocked_publishers = list(runtime_snapshot["blocked_publishers"])
         self.preferred_publishers = list(runtime_snapshot["preferred_publishers"])
         self.cloud_sync_enabled = bool(runtime_snapshot.get("cloud_sync_enabled", True))
@@ -441,6 +449,7 @@ class _ImportStageRuntimeStateMixin:
             normalized_settings.get("auto_backup_minutes", 60) or 0
         )
         self.api_timeout = normalized_settings["api_timeout"]
+        self.api_sort = normalize_api_sort(normalized_settings.get("api_sort", "date"))
         self.cloud_sync_enabled = bool(
             normalized_settings.get("cloud_sync_enabled", True)
         )

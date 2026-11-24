@@ -1,6 +1,7 @@
 # pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportArgumentType=false
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QUrl
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.naver_api import normalize_api_sort
 from core.notifications import NotificationSound
 from core.startup import StartupManager
 from ui._settings_dialog_tasks import CLEAN_ALL_LABEL, CLEAN_OLD_LABEL
@@ -123,6 +125,9 @@ class _SettingsDialogContentMixin:
         self.btn_validate = QPushButton("키 확인")
         self.btn_validate.clicked.connect(self.validate_api_key)
 
+        self.lbl_quota = QLabel("오늘 API 호출: - / 25,000건")
+        self.lbl_quota.setWordWrap(True)
+
         form.addWidget(QLabel("Client ID:"), 0, 0)
         form.addWidget(self.txt_id, 0, 1, 1, 2)
         form.addWidget(QLabel("Client Secret:"), 1, 0)
@@ -130,9 +135,38 @@ class _SettingsDialogContentMixin:
         form.addWidget(self.chk_show_pw, 2, 1)
         form.addWidget(btn_get_key, 3, 0, 1, 2)
         form.addWidget(self.btn_validate, 3, 2)
+        form.addWidget(self.lbl_quota, 4, 0, 1, 3)
 
         group.setLayout(form)
+        self._refresh_quota_label()
         return group
+
+    def _refresh_quota_label(self: SettingsDialog) -> None:
+        """설정 화면의 일일 호출량 표시를 갱신한다."""
+        label = getattr(self, "lbl_quota", None)
+        if label is None:
+            return
+        tracker = None
+        try:
+            typed_parent = self._typed_parent()
+            tracker = getattr(typed_parent, "_api_quota", None)
+        except Exception:
+            tracker = None
+        if tracker is None:
+            try:
+                from core.api_quota import DailyApiQuotaTracker
+                from core.constants import DATA_DIR
+
+                tracker = DailyApiQuotaTracker(
+                    os.path.join(DATA_DIR, "api_quota.json")
+                )
+            except Exception:
+                label.setText("오늘 API 호출: - / 25,000건")
+                return
+        try:
+            label.setText(tracker.summary_text())
+        except Exception:
+            label.setText("오늘 API 호출: - / 25,000건")
 
     def _build_general_group(self: SettingsDialog) -> QGroupBox:
         group = QGroupBox("일반")
@@ -178,6 +212,12 @@ class _SettingsDialogContentMixin:
             timeout_value = 15
         self.spn_api_timeout.setValue(max(5, min(60, timeout_value)))
 
+        self.cb_api_sort = NoScrollComboBox()
+        self.cb_api_sort.addItem("최신순 (date)", "date")
+        self.cb_api_sort.addItem("정확도순 (sim)", "sim")
+        configured_sort = normalize_api_sort(self.config.get("api_sort", "date"))
+        self.cb_api_sort.setCurrentIndex(1 if configured_sort == "sim" else 0)
+
         self.txt_blocked_publishers = QLineEdit(
             ", ".join(str(item) for item in self.config.get("blocked_publishers", []))
         )
@@ -198,10 +238,12 @@ class _SettingsDialogContentMixin:
         form.addWidget(self.cb_auto_backup, 2, 1)
         form.addWidget(QLabel("API 타임아웃:"), 3, 0)
         form.addWidget(self.spn_api_timeout, 3, 1)
-        form.addWidget(QLabel("차단 출처:"), 4, 0)
-        form.addWidget(self.txt_blocked_publishers, 4, 1)
-        form.addWidget(QLabel("선호 출처:"), 5, 0)
-        form.addWidget(self.txt_preferred_publishers, 5, 1)
+        form.addWidget(QLabel("검색 정렬:"), 4, 0)
+        form.addWidget(self.cb_api_sort, 4, 1)
+        form.addWidget(QLabel("차단 출처:"), 5, 0)
+        form.addWidget(self.txt_blocked_publishers, 5, 1)
+        form.addWidget(QLabel("선호 출처:"), 6, 0)
+        form.addWidget(self.txt_preferred_publishers, 6, 1)
 
         group.setLayout(form)
         return group

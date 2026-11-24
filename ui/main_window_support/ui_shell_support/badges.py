@@ -10,7 +10,7 @@ from core.query_parser import (
     parse_search_query,
     parse_tab_query,
 )
-from core.text_utils import perf_timer
+from core.text_utils import parse_date_string, perf_timer
 from ui.news_tab import NewsTab
 
 logger = logging.getLogger(__name__)
@@ -23,12 +23,34 @@ class _MainWindowBadgeShellMixin:
         )
         self._set_tab_tooltip(tab_index, keyword, unread_count)
 
+    def _lookup_fetch_build_date(self, keyword: str) -> str:
+        """마지막 수집의 네이버 생성 시각(lastBuildDate)을 읽기 좋게 반환한다."""
+        try:
+            search_keyword, exclude_words = parse_search_query(keyword)
+            fetch_key = build_fetch_key(search_keyword, exclude_words)
+            stored = getattr(self, "_fetch_last_build_date_by_key", None)
+            if not isinstance(stored, dict):
+                return ""
+            raw = str(stored.get(fetch_key, "") or "").strip()
+        except Exception:
+            return ""
+        if not raw:
+            return ""
+        try:
+            return str(parse_date_string(raw) or "").strip()
+        except Exception:
+            return raw
+
     def _set_tab_tooltip(self, tab_index: int, keyword: str, unread_count: int = 0):
         """탭 제목이 잘려도 전체 검색어와 안 읽은 수를 알 수 있게 한다."""
         tip = str(keyword or "").strip()
         count = max(0, int(unread_count or 0))
         if tip and count > 0:
             tip = f"{tip} / 안 읽은 기사 {count:,}개"
+        lookup = getattr(self, "_lookup_fetch_build_date", None)
+        build_date = str(lookup(keyword) if callable(lookup) else "") or ""
+        if tip and build_date:
+            tip = f"{tip} · 네이버 생성 {build_date}"
         self.tabs.setTabToolTip(tab_index, tip)
 
     def _tab_icon_for_keyword(self, keyword: str) -> str:

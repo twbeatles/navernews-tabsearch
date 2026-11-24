@@ -15,9 +15,11 @@ from core.database import (
     DatabaseWriteError,
 )
 from core.naver_api import (
+    NAVER_NEWS_SEARCH_FORMAT,
     NAVER_NEWS_SEARCH_URL,
     format_naver_http_error,
     naver_auth_headers,
+    normalize_api_sort,
     parse_naver_api_error,
 )
 from core.protocols import ClosableProtocol, RequestGetProtocol
@@ -79,6 +81,8 @@ class ApiWorker(QObject):
         session: Optional[RequestGetProtocol] = None,
         session_factory: Optional[Callable[[], RequestGetProtocol]] = None,
         display_keyword: Optional[str] = None,
+        sort: str = "date",
+        quota_tracker: Any = None,
     ):
         super().__init__()
         self.cid = client_id
@@ -99,6 +103,8 @@ class ApiWorker(QObject):
         self.timeout = timeout
         self.session = session
         self.session_factory = session_factory
+        self.sort = normalize_api_sort(sort)
+        self.quota_tracker = quota_tracker
         self._is_running = True
         self._lock = threading.Lock()
         self._destroyed = False
@@ -175,6 +181,19 @@ class ApiWorker(QObject):
             time.sleep(1)
         return self.is_running
 
+    def _record_quota_call(self) -> None:
+        tracker = self.quota_tracker
+        if tracker is None:
+            return
+        try:
+            record = getattr(tracker, "record_call", None)
+            if callable(record):
+                record()
+        except Exception:
+            logger.debug(
+                "API quota record failed: %s", self.display_keyword, exc_info=True
+            )
+
     def run(self):
         logger.info(f"ApiWorker 시작: {self.display_keyword}")
 
@@ -232,7 +251,8 @@ class ApiWorker(QObject):
                             "query": self.search_query,
                             "display": 100,
                             "start": self.start,
-                            "sort": "date",
+                            "sort": self.sort,
+                            "format": NAVER_NEWS_SEARCH_FORMAT,
                         }
 
                         with perf_timer(
@@ -246,6 +266,7 @@ class ApiWorker(QObject):
                                 timeout=self.timeout,
                                 allow_redirects=False,
                             )
+                        self._record_quota_call()
                         if not self.is_running:
                             logger.info(
                                 f"ApiWorker cancelled after response: {self.display_keyword}"
@@ -272,7 +293,8 @@ class ApiWorker(QObject):
                             )
                             if cooldown_seconds > MAX_INLINE_RETRY_AFTER_SECONDS:
                                 self._emit_error(
-                                    "API 요청 제한 초과. 잠시 후 다시 시도해주세요.",
+                                    "API 요청 제한 초과. 잠시 후 다시 시도해주세요. "
+                                    "(일일 25,000건 한도 초과 시 자정 이후에 복구됩니다.)",
                                     kind="rate_limit",
                                     status_code=429,
                                     cooldown_seconds=cooldown_seconds,
@@ -290,7 +312,8 @@ class ApiWorker(QObject):
                                     time.sleep(1)
                                 continue
                             self._emit_error(
-                                "API 요청 제한 초과. 잠시 후 다시 시도해주세요.",
+                                "API 요청 제한 초과. 잠시 후 다시 시도해주세요. "
+                                "(일일 25,000건 한도 초과 시 자정 이후에 복구됩니다.)",
                                 kind="rate_limit",
                                 status_code=429,
                                 cooldown_seconds=cooldown_seconds,
@@ -409,6 +432,7 @@ class ApiWorker(QObject):
                                         "title": title,
                                         "description": desc,
                                         "link": final_link,
+                                        "originallink": org_link,
                                         "pubDate": item.get("pubDate", ""),
                                         "publisher": publisher,
                                     }
@@ -568,6 +592,7 @@ class ApiWorker(QObject):
                             "filtered": filtered_count,
                             "added_count": added_count,
                             "dup_count": dup_count,
+                            "lastBuildDate": str(data.get("lastBuildDate", "") or ""),
                         }
 
                         logger.info(
@@ -581,6 +606,8 @@ class ApiWorker(QObject):
                         return
 
                     except requests.Timeout:
+                        # 타임아웃된 요청도 서버에서 처리됐을 수 있어 한도에 포함한다.
+                        self._record_quota_call()
                         logger.warning(
                             f"API 타임아웃: {self.display_keyword} (시도 {attempt + 1})"
                         )

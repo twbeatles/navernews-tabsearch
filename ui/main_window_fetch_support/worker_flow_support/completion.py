@@ -66,6 +66,22 @@ class _FetchWorkerCompletionMixin:
                         self._fetch_cursor_by_key[fetch_key] = int(completed_start_idx)
 
             self._fetch_total_by_key[fetch_key] = total
+            build_date = str(result.get("lastBuildDate", "") or "").strip()
+            if build_date:
+                build_date_store = getattr(
+                    self, "_fetch_last_build_date_by_key", None
+                )
+                if isinstance(build_date_store, dict):
+                    try:
+                        build_date_store[fetch_key] = build_date
+                    except Exception:
+                        logger.debug("lastBuildDate store failed: %s", keyword)
+            maybe_warn_quota = getattr(self, "_maybe_warn_api_quota", None)
+            if callable(maybe_warn_quota):
+                try:
+                    maybe_warn_quota()
+                except Exception:
+                    logger.debug("API quota warn failed: %s", keyword)
             if new_items:
                 for item in new_items:
                     item.setdefault("keyword", keyword)
@@ -300,6 +316,37 @@ class _FetchWorkerCompletionMixin:
         else:
             self._network_error_count = 0
         self._schedule_tab_hydration(50)
+
+    def _maybe_warn_api_quota(self: MainApp) -> None:
+        """일일 호출량 80% 도달 시 1회 경고한다."""
+        tracker = getattr(self, "_api_quota", None)
+        if tracker is None:
+            return
+        try:
+            should_warn = bool(tracker.should_warn())
+        except Exception as exc:
+            logger.debug("API quota warn check failed: %s", exc)
+            return
+        if not should_warn:
+            return
+        try:
+            _date, count, remaining = tracker.usage()
+        except Exception:
+            return
+        message = (
+            f"오늘 API 호출이 {count:,}건에 도달했습니다. "
+            f"(잔여 {remaining:,}건) 자동 새로고침 간격을 확인해주세요."
+        )
+        try:
+            self._status_bar().showMessage(f"⚠ {message}", 8000)
+        except Exception as exc:
+            logger.debug("API quota warn status bar failed: %s", exc)
+        show_warning_toast = getattr(self, "show_warning_toast", None)
+        if callable(show_warning_toast):
+            try:
+                show_warning_toast(message)
+            except Exception as exc:
+                logger.debug("API quota warn toast failed: %s", exc)
 
     def _detach_worker_handle(
         self: MainApp,

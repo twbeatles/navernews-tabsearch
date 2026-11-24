@@ -20,6 +20,7 @@ from core.config_store import (
 )
 from core.constants import ICON_FILE, ICON_PNG
 from core.content_filters import normalize_publisher_filter_lists
+from core.naver_api import normalize_api_sort
 from core.publisher_aliases import normalize_publisher_aliases
 from core.startup import StartupManager
 from core.windows_identity import assign_window_class_icon, resolve_runtime_icon_path
@@ -104,6 +105,7 @@ class _MainWindowConfigMixin(_MainWindowAutoBackupMixin):
             "window_geometry": settings.get("window_geometry"),
             "search_history": loaded_cfg.get("search_history", []),
             "api_timeout": settings.get("api_timeout", 15),
+            "api_sort": normalize_api_sort(settings.get("api_sort", "date")),
             "blocked_publishers": settings.get("blocked_publishers", []),
             "preferred_publishers": settings.get("preferred_publishers", []),
             "cloud_sync_enabled": settings.get("cloud_sync_enabled", True),
@@ -139,6 +141,7 @@ class _MainWindowConfigMixin(_MainWindowAutoBackupMixin):
         self.notify_on_refresh = self.config.get("notify_on_refresh", False)
         self.search_history = self.config.get("search_history", [])
         self.api_timeout = self.config.get("api_timeout", 15)
+        self.api_sort = normalize_api_sort(self.config.get("api_sort", "date"))
         self.cloud_sync_enabled = bool(self.config.get("cloud_sync_enabled", True))
         self.cloud_sync_dir = str(self.config.get("cloud_sync_dir", "") or "")
         self.cloud_sync_interval_minutes = int(
@@ -240,6 +243,7 @@ class _MainWindowConfigMixin(_MainWindowAutoBackupMixin):
                 "auto_start_enabled": self.auto_start_enabled,
                 "notify_on_refresh": self.notify_on_refresh,
                 "api_timeout": self.api_timeout,
+                "api_sort": normalize_api_sort(getattr(self, "api_sort", "date")),
                 "blocked_publishers": blocked_publishers,
                 "preferred_publishers": preferred_publishers,
                 "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),

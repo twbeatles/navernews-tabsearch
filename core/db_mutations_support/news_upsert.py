@@ -104,6 +104,7 @@ class _NewsUpsertMixin:
                         "description": item.get("description", ""),
                         "pubDate": pub_date,
                         "publisher": item.get("publisher", ""),
+                        "originallink": str(item.get("originallink", "") or ""),
                         "pubDate_ts": parse_date_to_ts(pub_date),
                         "title_hash": title_hash,
                     }
@@ -217,6 +218,7 @@ class _NewsUpsertMixin:
                                 item["description"],
                                 item["pubDate"],
                                 item["publisher"],
+                                item["originallink"],
                                 item["pubDate_ts"],
                                 item["title_hash"],
                                 datetime.now().timestamp(),
@@ -234,8 +236,8 @@ class _NewsUpsertMixin:
                     conn.executemany(
                         """
                         INSERT INTO news
-                        (link, keyword, title, description, pubDate, publisher, pubDate_ts, title_hash, content_updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (link, keyword, title, description, pubDate, publisher, originallink, pubDate_ts, title_hash, content_updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(link) DO UPDATE SET
                             keyword = CASE
                                 WHEN keyword IS NULL OR keyword = '' THEN excluded.keyword
@@ -245,6 +247,10 @@ class _NewsUpsertMixin:
                             description = excluded.description,
                             pubDate = excluded.pubDate,
                             publisher = excluded.publisher,
+                            originallink = CASE
+                                WHEN COALESCE(excluded.originallink, '') != '' THEN excluded.originallink
+                                ELSE news.originallink
+                            END,
                             pubDate_ts = excluded.pubDate_ts,
                             title_hash = excluded.title_hash,
                             content_updated_at = CASE
@@ -252,6 +258,7 @@ class _NewsUpsertMixin:
                                   OR COALESCE(news.description, '') != COALESCE(excluded.description, '')
                                   OR COALESCE(news.pubDate, '') != COALESCE(excluded.pubDate, '')
                                   OR COALESCE(news.publisher, '') != COALESCE(excluded.publisher, '')
+                                  OR COALESCE(news.originallink, '') != COALESCE(excluded.originallink, '')
                                   OR COALESCE(news.title_hash, '') != COALESCE(excluded.title_hash, '')
                                   OR COALESCE(news.pubDate_ts, 0) != COALESCE(excluded.pubDate_ts, 0)
                                   OR COALESCE(news.content_updated_at, 0) <= 0
@@ -267,6 +274,8 @@ class _NewsUpsertMixin:
                             OR COALESCE(news.description, '') != COALESCE(excluded.description, '')
                             OR COALESCE(news.pubDate, '') != COALESCE(excluded.pubDate, '')
                             OR COALESCE(news.publisher, '') != COALESCE(excluded.publisher, '')
+                            OR (COALESCE(excluded.originallink, '') != ''
+                                AND COALESCE(news.originallink, '') != COALESCE(excluded.originallink, ''))
                             OR COALESCE(news.pubDate_ts, 0) != COALESCE(excluded.pubDate_ts, 0)
                             OR COALESCE(news.content_updated_at, 0) <= 0
                             OR COALESCE(news.title_hash, '') != COALESCE(excluded.title_hash, '')

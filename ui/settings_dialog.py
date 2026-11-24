@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.content_filters import normalize_publisher_filter_lists
+from core.naver_api import normalize_api_sort
 from core.startup import StartupManager, StartupStatus
 from core.validation import ValidationUtils
 from ui._settings_dialog_content import _SettingsDialogContentMixin
@@ -266,6 +267,7 @@ class SettingsDialog(
             "start_minimized": self.chk_start_minimized.isChecked(),
             "notify_on_refresh": self.chk_notify_on_refresh.isChecked(),
             "api_timeout": int(self.spn_api_timeout.value()),
+            "api_sort": normalize_api_sort(self.cb_api_sort.currentData()),
             "blocked_publishers": blocked_publishers,
             "preferred_publishers": preferred_publishers,
             "cloud_sync_enabled": self.chk_cloud_sync_enabled.isChecked(),

@@ -14,6 +14,7 @@ from core.config_store import (
 from core.constants import VERSION
 from core.content_filters import normalize_publisher_filter_lists
 from core.machine_identity import get_machine_identity
+from core.naver_api import normalize_api_sort
 from core.publisher_aliases import normalize_publisher_aliases
 from core.startup import StartupManager
 from ui.settings_dialog import SettingsDialog
@@ -45,6 +46,7 @@ class _MainWindowSettingsDialogsMixin:
             "notify_on_refresh": self.notify_on_refresh,
             "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
             "api_timeout": self.api_timeout,
+            "api_sort": normalize_api_sort(getattr(self, "api_sort", "date")),
             "blocked_publishers": getattr(self, "blocked_publishers", []),
             "preferred_publishers": getattr(self, "preferred_publishers", []),
             "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
@@ -124,6 +126,7 @@ class _MainWindowSettingsDialogsMixin:
                 "notify_on_refresh": self.notify_on_refresh,
                 "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
                 "api_timeout": self.api_timeout,
+                "api_sort": normalize_api_sort(getattr(self, "api_sort", "date")),
                 "blocked_publishers": getattr(self, "blocked_publishers", []),
                 "preferred_publishers": getattr(self, "preferred_publishers", []),
                 "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
@@ -375,6 +378,7 @@ class _MainWindowSettingsDialogsMixin:
         self.alert_keywords = data.get("alert_keywords", [])
         self.sound_enabled = data.get("sound_enabled", True)
         self.api_timeout = data.get("api_timeout", 15)
+        self.api_sort = normalize_api_sort(data.get("api_sort", "date"))
         self.cloud_sync_enabled = bool(data.get("cloud_sync_enabled", True))
         self.cloud_sync_dir = str(data.get("cloud_sync_dir", "") or "")
         self.cloud_sync_interval_minutes = int(

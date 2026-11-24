@@ -27,6 +27,7 @@ class AppSettings(TypedDict):
     auto_start_enabled: bool
     notify_on_refresh: bool
     api_timeout: int
+    api_sort: str
     blocked_publishers: List[str]
     preferred_publishers: List[str]
     cloud_sync_enabled: bool
@@ -67,6 +68,7 @@ DEFAULT_CONFIG: AppConfig = {
         "auto_start_enabled": False,
         "notify_on_refresh": False,
         "api_timeout": 15,
+        "api_sort": "date",
         "blocked_publishers": [],
         "preferred_publishers": [],
         "cloud_sync_enabled": True,

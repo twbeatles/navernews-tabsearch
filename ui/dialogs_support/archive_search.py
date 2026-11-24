@@ -200,6 +200,29 @@ class ArchiveSearchDialog(QDialog):
             return
         self._reload_after_action()
 
+    def open_origin_selected(self) -> None:
+        row = self._selected_row() or {}
+        link = str(row.get("link", "") or "").strip()
+        origin = _normalized_http_url(str(row.get("originallink", "") or ""))
+        if not origin or origin == link:
+            QMessageBox.information(
+                self, "아카이브 검색", "원문 링크가 없는 기사입니다."
+            )
+            return
+        if not QDesktopServices.openUrl(QUrl(origin)):
+            QMessageBox.warning(
+                self, "아카이브 검색", "브라우저에서 원문 링크를 열지 못했습니다."
+            )
+            return
+        try:
+            self.db.update_status(link, "is_read", 1)
+        except Exception as exc:
+            QMessageBox.warning(
+                self, "아카이브 검색", f"읽음 처리에 실패했습니다.\n\n{exc}"
+            )
+            return
+        self._reload_after_action()
+
     def toggle_bookmark(self) -> None:
         row = self._selected_row()
         link = self._selected_link()
@@ -305,6 +328,7 @@ class ArchiveSearchDialog(QDialog):
         is_deleted = bool(int(row.get("is_deleted", 0) or 0))
         menu = QMenu(self)
         action_open = menu.addAction("열기")
+        action_origin = menu.addAction("원문 열기")
         action_bookmark = menu.addAction("북마크 토글")
         action_read = menu.addAction("읽음/안읽음")
         action_note = menu.addAction("메모 편집")
@@ -313,6 +337,8 @@ class ArchiveSearchDialog(QDialog):
         selected = menu.exec(self.result_list.mapToGlobal(pos))
         if selected == action_open:
             self.open_selected()
+        elif selected == action_origin:
+            self.open_origin_selected()
         elif selected == action_bookmark:
             self.toggle_bookmark()
         elif selected == action_read:

@@ -76,6 +76,31 @@ class TestImportSettingsNormalization(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("settings 형식", warnings[0])
 
+    def test_api_sort_is_normalized_to_date_or_sim(self):
+        fallback = {
+            "theme_index": 0,
+            "refresh_interval_index": 2,
+            "api_timeout": 15,
+        }
+        normalized, warnings = normalize_import_settings(
+            {"api_sort": "sim"}, fallback
+        )
+        self.assertEqual(normalized["api_sort"], "sim")
+
+        normalized, warnings = normalize_import_settings(
+            {"api_sort": "SIM "}, fallback
+        )
+        self.assertEqual(normalized["api_sort"], "sim")
+
+        normalized, warnings = normalize_import_settings(
+            {"api_sort": "relevance"}, fallback
+        )
+        self.assertEqual(normalized["api_sort"], "date")
+        self.assertTrue(any("api_sort" in warning for warning in warnings))
+
+        normalized, _warnings = normalize_import_settings({}, fallback)
+        self.assertEqual(normalized["api_sort"], "date")
+
     def test_alert_keywords_is_limited_to_ten(self):
         fallback = {
             "theme_index": 0,

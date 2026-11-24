@@ -17,6 +17,7 @@ CONTENT_FIELDS = (
     "description",
     "pubDate",
     "publisher",
+    "originallink",
     "pubDate_ts",
     "title_hash",
 )

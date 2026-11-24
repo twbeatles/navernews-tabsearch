@@ -28,6 +28,7 @@ class _DatabaseArchiveQueriesMixin:
                 n.description,
                 n.pubDate,
                 n.publisher,
+                n.originallink,
                 n.is_read,
                 n.is_bookmarked,
                 n.pubDate_ts,

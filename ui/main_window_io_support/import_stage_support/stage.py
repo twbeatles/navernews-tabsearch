@@ -10,6 +10,7 @@ from core.config_store import (
     normalize_loaded_config,
 )
 from core.machine_identity import get_machine_identity
+from core.naver_api import normalize_api_sort
 from core.publisher_aliases import normalize_publisher_aliases
 
 if TYPE_CHECKING:
@@ -56,6 +57,7 @@ class _ImportStageApplyMixin:
             "notify_on_refresh": self.notify_on_refresh,
             "auto_backup_minutes": getattr(self, "auto_backup_minutes", 60),
             "api_timeout": self.api_timeout,
+            "api_sort": normalize_api_sort(getattr(self, "api_sort", "date")),
             "blocked_publishers": getattr(self, "blocked_publishers", []),
             "preferred_publishers": getattr(self, "preferred_publishers", []),
             "cloud_sync_enabled": bool(getattr(self, "cloud_sync_enabled", True)),
@@ -183,6 +185,9 @@ class _ImportStageApplyMixin:
                     "auto_backup_minutes", 60
                 ),
                 "api_timeout": normalized_settings["api_timeout"],
+                "api_sort": normalize_api_sort(
+                    normalized_settings.get("api_sort", "date")
+                ),
                 "blocked_publishers": normalized_settings["blocked_publishers"],
                 "preferred_publishers": normalized_settings["preferred_publishers"],
                 "cloud_sync_enabled": normalized_settings.get(

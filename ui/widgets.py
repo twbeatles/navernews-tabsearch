@@ -86,6 +86,7 @@ class NewsBrowser(QTextBrowser):
         menu = QMenu(self)
 
         act_open = menu.addAction("브라우저로 열기")
+        act_origin = menu.addAction("원문으로 열기")
         act_copy = menu.addAction("제목과 링크 복사")
         menu.addSeparator()
         act_bm = menu.addAction("북마크 / 해제")
@@ -103,6 +104,8 @@ class NewsBrowser(QTextBrowser):
 
         if action == act_open:
             self.emit_action("ext", link_hash)
+        elif action == act_origin:
+            self.emit_action("origin", link_hash)
         elif action == act_copy:
             self.emit_action("share", link_hash)
         elif action == act_bm:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Callable
 from PySide6.QtCore import QObject, QThread, Slot
 from PySide6.QtWidgets import QMessageBox
 
+from core.naver_api import normalize_api_sort
 from core.query_parser import build_fetch_key, parse_search_query, parse_tab_query
 from core.validation import ValidationUtils
 from core.worker_registry import WorkerHandle
@@ -119,6 +120,26 @@ class _FetchWorkerStartMixin:
             else:
                 self.show_warning_toast(block_msg)
             return
+
+        quota_tracker = getattr(self, "_api_quota", None)
+        if quota_tracker is not None:
+            try:
+                quota_exhausted = bool(quota_tracker.is_exhausted)
+            except Exception:
+                quota_exhausted = False
+            if quota_exhausted:
+                action = "더 불러오기" if is_more else "새로고침"
+                quota_msg = (
+                    f"오늘 API 호출 한도(25,000건)를 모두 사용해 {action}을(를) "
+                    "실행할 수 없습니다. 자정 이후에 다시 시도해주세요."
+                )
+                logger.info("Fetch blocked by daily API quota: kw=%s", keyword)
+                self._status_bar().showMessage(quota_msg, 5000)
+                if is_sequential:
+                    self._on_sequential_fetch_done(keyword)
+                else:
+                    self.show_warning_toast(quota_msg)
+                return
 
         cooldown_msg = self._fetch_cooldown_message(
             "더 불러오기" if is_more else "새로고침"
@@ -245,6 +266,8 @@ class _FetchWorkerStartMixin:
             timeout=self.api_timeout,
             session_factory=self._require_http_client_config().create_session,
             display_keyword=keyword,
+            sort=normalize_api_sort(getattr(self, "api_sort", "date")),
+            quota_tracker=getattr(self, "_api_quota", None),
         )
         thread = QThread()
         worker.moveToThread(thread)

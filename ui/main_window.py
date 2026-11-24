@@ -8,6 +8,7 @@ from typing import Dict, Optional
 from PySide6.QtCore import QMutex, QTimer
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 
+from core.api_quota import DailyApiQuotaTracker
 from core.backup import (
     PENDING_RESTORE_FILENAME as CORE_PENDING_RESTORE_FILENAME,
 )
@@ -162,6 +163,10 @@ class MainApp(
             self._tab_fetch_state: Dict[str, TabFetchState] = {}
             self._fetch_cursor_by_key: Dict[str, int] = {}
             self._fetch_total_by_key: Dict[str, int] = {}
+            self._fetch_last_build_date_by_key: Dict[str, str] = {}
+            self._api_quota = DailyApiQuotaTracker(
+                os.path.join(self.runtime_paths.data_dir, "api_quota.json")
+            )
             self._last_auto_refresh_by_keyword: Dict[str, float] = {}
             self._request_start_index: Dict[int, int] = {}
             self._query_key_migration_hints_shown: set[str] = set()

@@ -4,9 +4,11 @@ import unittest
 from core.naver_api import (
     NAVER_API_KEY_HEADER,
     NAVER_API_KEY_ID_HEADER,
+    NAVER_NEWS_SEARCH_FORMAT,
     NAVER_NEWS_SEARCH_URL,
     format_naver_http_error,
     naver_auth_headers,
+    naver_error_hint,
     parse_naver_api_error,
 )
 
@@ -72,6 +74,28 @@ class TestNaverApiHubHelpers(unittest.TestCase):
         self.assertIn("401", text)
         self.assertIn("API HUB", text)
         self.assertIn("Authentication Failed", text)
+
+    def test_search_format_is_json(self):
+        self.assertEqual(NAVER_NEWS_SEARCH_FORMAT, "json")
+
+    def test_error_hint_covers_documented_codes(self):
+        self.assertIn("display", naver_error_hint("SE02"))
+        self.assertIn("1,000", naver_error_hint("SE03"))
+        self.assertIn("sort", naver_error_hint("SE04").lower())
+        self.assertEqual(naver_error_hint("UNKNOWN_CODE"), "")
+
+    def test_format_bad_request_includes_hint(self):
+        text = format_naver_http_error(400, "SE02", "Invalid display value.")
+        self.assertIn("400", text)
+        self.assertIn("SE02", text)
+        self.assertIn("1~100", text)
+        self.assertIn("Invalid display value.", text)
+
+    def test_format_rate_limit_mentions_daily_quota(self):
+        text = format_naver_http_error(429, "", "Too Many Requests")
+        self.assertIn("429", text)
+        self.assertIn("25,000", text)
+        self.assertIn("Too Many Requests", text)
 
 
 if __name__ == "__main__":

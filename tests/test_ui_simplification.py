@@ -237,6 +237,43 @@ class TestToolbarAndMaintenance(unittest.TestCase):
         )
         self.assertEqual(dummy.tabs.tips[2], "환율")
 
+    def test_tab_tooltip_appends_naver_build_date_when_known(self):
+        from core.query_parser import build_fetch_key, parse_search_query
+
+        class _Tabs:
+            def __init__(self):
+                self.tips = {}
+
+            def setTabToolTip(self, index, tip):
+                self.tips[index] = tip
+
+        search, excluded = parse_search_query("삼성전자 -광고")
+        fetch_key = build_fetch_key(search, excluded)
+        dummy = cast(
+            Any,
+            type(
+                "Dummy",
+                (),
+                {
+                    "tabs": _Tabs(),
+                    "_fetch_last_build_date_by_key": {
+                        fetch_key: "Mon, 24 Nov 2026 09:00:00 +0900"
+                    },
+                    "_lookup_fetch_build_date": (
+                        MainApp._lookup_fetch_build_date
+                    ),
+                },
+            )(),
+        )
+        set_tip = cast(Any, MainApp._set_tab_tooltip)
+
+        set_tip(dummy, 1, "삼성전자 -광고", 3)
+
+        self.assertEqual(
+            dummy.tabs.tips[1],
+            "삼성전자 -광고 / 안 읽은 기사 3개 · 네이버 생성 2026.11.24 09:00",
+        )
+
     def test_tab_bar_keeps_roomy_padding_and_separates_tabs(self):
         for sheet in (AppStyle.LIGHT, AppStyle.DARK):
             tab_rule = sheet[sheet.index("QTabBar::tab {") :]
@@ -304,6 +341,7 @@ class TestSettingsLayout(unittest.TestCase):
                 "start_minimized",
                 "notify_on_refresh",
                 "api_timeout",
+                "api_sort",
                 "blocked_publishers",
                 "preferred_publishers",
                 "cloud_sync_enabled",

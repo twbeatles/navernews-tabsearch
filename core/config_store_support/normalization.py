@@ -17,6 +17,7 @@ from core.config_store_support.types import (
     AppConfig,
 )
 from core.content_filters import normalize_publisher_filter_lists
+from core.naver_api import normalize_api_sort
 from core.publisher_aliases import normalize_publisher_aliases
 from core.query_parser import build_fetch_key, has_positive_keyword, parse_search_query
 
@@ -379,6 +380,9 @@ def normalize_import_settings(
         baseline["api_timeout"] = _to_int(
             fallback_settings.get("api_timeout"), baseline["api_timeout"]
         )
+        baseline["api_sort"] = normalize_api_sort(
+            fallback_settings.get("api_sort"), baseline["api_sort"]
+        )
         baseline["blocked_publishers"], baseline["preferred_publishers"] = (
             normalize_publisher_filter_lists(
                 fallback_settings.get(
@@ -421,6 +425,7 @@ def normalize_import_settings(
         "auto_start_enabled": bool(baseline["auto_start_enabled"]),
         "notify_on_refresh": bool(baseline["notify_on_refresh"]),
         "api_timeout": max(5, min(60, int(baseline["api_timeout"]))),
+        "api_sort": normalize_api_sort(baseline["api_sort"]),
         "blocked_publishers": list(baseline["blocked_publishers"]),
         "preferred_publishers": list(baseline["preferred_publishers"]),
         "cloud_sync_enabled": bool(baseline["cloud_sync_enabled"]),
@@ -459,6 +464,13 @@ def normalize_import_settings(
         normalized[field] = coerced
         if changed and field in raw_settings:
             warnings.append(f"{field} 값을 {coerced}(으)로 보정했습니다.")
+
+    if "api_sort" in raw_settings:
+        requested_sort = normalize_api_sort(raw_settings.get("api_sort"))
+        raw_sort_text = str(raw_settings.get("api_sort") or "").strip().lower()
+        if raw_sort_text != requested_sort:
+            warnings.append(f"api_sort 값을 {requested_sort}(으)로 보정했습니다.")
+        normalized["api_sort"] = requested_sort
 
     coerced_backup_minutes, changed_backup_minutes = (
         _coerce_auto_backup_minutes_for_import(

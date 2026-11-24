@@ -34,6 +34,9 @@ class _CloudSyncMergeRowsMixin:
         description = self._source_expr(source_news_columns, s, "description", "''")
         pub_date = self._source_expr(source_news_columns, s, "pubDate", "''")
         publisher = self._source_expr(source_news_columns, s, "publisher", "''")
+        originallink = self._source_expr(
+            source_news_columns, s, "originallink", "''"
+        )
         is_read = self._source_expr(source_news_columns, s, "is_read", "0")
         is_bookmarked = self._source_expr(source_news_columns, s, "is_bookmarked", "0")
         pub_date_ts = "content.pubDate_ts"
@@ -91,6 +94,7 @@ class _CloudSyncMergeRowsMixin:
             f"""
             INSERT INTO news (
                 link, keyword, title, description, pubDate, publisher,
+                originallink,
                 is_read, is_bookmarked, pubDate_ts, created_at, notes,
                 title_hash, is_duplicate,
                 read_updated_at, bookmark_updated_at, notes_updated_at,
@@ -98,6 +102,7 @@ class _CloudSyncMergeRowsMixin:
             )
             SELECT
                 {link}, {keyword}, {title}, {description}, {pub_date}, {publisher},
+                {originallink},
                 {is_read}, {is_bookmarked}, {pub_date_ts}, {created_at}, {notes},
                 {title_hash}, {is_duplicate},
                 {read_updated_at}, {bookmark_updated_at}, {notes_updated_at},

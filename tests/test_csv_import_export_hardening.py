@@ -6,8 +6,10 @@ from pathlib import Path
 from core.database import DatabaseManager, DatabaseWriteError
 from core.workers import JobCancelledError
 from ui.main_window_io_support.exports import (
+    _export_item_markdown,
     _export_row,
     _spreadsheet_safe_csv_cell,
+    export_items_to_csv,
     import_bookmarks_notes_from_csv,
 )
 
@@ -61,6 +63,66 @@ class TestCsvImportExportHardening(unittest.TestCase):
         )
         for index in (0, 1, 2, 3, 4, 7, 9):
             self.assertTrue(row[index].startswith("'"))
+
+    def test_export_row_appends_sanitized_originallink(self):
+        row = _export_row(
+            {
+                "title": "t",
+                "link": "https://n.news.naver.com/article/1",
+                "originallink": "=https://example.com/original/1",
+            }
+        )
+        self.assertEqual(len(row), 11)
+        self.assertTrue(row[10].startswith("'"))
+        plain = _export_row(
+            {
+                "title": "t",
+                "link": "https://n.news.naver.com/article/1",
+                "originallink": "https://example.com/original/1",
+            }
+        )
+        self.assertEqual(plain[10], "https://example.com/original/1")
+        legacy = _export_row({"title": "t", "link": "https://example.com/1"})
+        self.assertEqual(legacy[10], "")
+
+    def test_csv_export_writes_originallink_header_and_cells(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = str(Path(td) / "out.csv")
+            result = export_items_to_csv(
+                [
+                    {
+                        "title": "t",
+                        "link": "https://n.news.naver.com/article/1",
+                        "originallink": "https://example.com/original/1",
+                    }
+                ],
+                path,
+                "AI",
+            )
+            self.assertEqual(result["count"], 1)
+            with open(path, newline="", encoding="utf-8-sig") as handle:
+                rows = list(csv.reader(handle))
+            self.assertEqual(rows[0][-1], "원문링크")
+            self.assertEqual(rows[1][-1], "https://example.com/original/1")
+
+    def test_markdown_export_includes_originallink_line(self):
+        text = _export_item_markdown(
+            {
+                "title": "t",
+                "link": "https://n.news.naver.com/article/1",
+                "originallink": "https://example.com/original/1",
+            }
+        )
+        self.assertIn("- 원문:", text)
+        self.assertIn("https://example.com/original/1", text)
+        same = _export_item_markdown(
+            {
+                "title": "t",
+                "link": "https://example.com/1",
+                "originallink": "https://example.com/1",
+            }
+        )
+        self.assertNotIn("- 원문:", same)
 
     def test_atomic_article_state_import_distinguishes_all_non_error_outcomes(self):
         with tempfile.TemporaryDirectory() as td:

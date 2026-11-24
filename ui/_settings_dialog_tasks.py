@@ -20,8 +20,10 @@ from core.constants import DATA_DIR, RUNTIME_PATHS, RuntimePaths
 from core.database import DatabaseManager
 from core.http_client import HttpClientConfig
 from core.naver_api import (
+    NAVER_NEWS_SEARCH_FORMAT,
     NAVER_NEWS_SEARCH_URL,
     naver_auth_headers,
+    normalize_api_sort,
     parse_naver_api_error,
 )
 from core.validation import ValidationUtils
@@ -68,6 +70,31 @@ class _SettingsDialogTasksMixin:
                 return create_http_session()
         return HttpClientConfig().create_session()
 
+    def _api_sort_value(self: SettingsDialog) -> str:
+        combo = getattr(self, "cb_api_sort", None)
+        current = None
+        if combo is not None:
+            try:
+                current = combo.currentData()
+            except Exception:
+                current = None
+        if current is None:
+            try:
+                current = self.config.get("api_sort", "date")
+            except Exception:
+                current = "date"
+        return normalize_api_sort(current)
+
+    def _record_parent_quota_call(self: SettingsDialog) -> None:
+        try:
+            parent = self._typed_parent()
+            tracker = getattr(parent, "_api_quota", None)
+            record = getattr(tracker, "record_call", None)
+            if callable(record):
+                record()
+        except Exception:
+            logger.debug("validation quota record failed", exc_info=True)
+
     def _run_api_validation_request(
         self: SettingsDialog,
         client_id: str,
@@ -77,14 +104,30 @@ class _SettingsDialogTasksMixin:
     ) -> Dict[str, Any]:
         headers = naver_auth_headers(client_id, client_secret)
         session = self._create_validation_session()
+        sort_resolver = getattr(self, "_api_sort_value", None)
+        try:
+            sort_value = (
+                str(sort_resolver()) if callable(sort_resolver) else "date"
+            )
+        except Exception:
+            sort_value = "date"
+        sort_value = normalize_api_sort(sort_value)
         try:
             response = session.get(
                 NAVER_NEWS_SEARCH_URL,
                 headers=headers,
-                params={"query": "테스트", "display": 1},
+                params={
+                    "query": "테스트",
+                    "display": 1,
+                    "sort": sort_value,
+                    "format": NAVER_NEWS_SEARCH_FORMAT,
+                },
                 timeout=max(5, int(timeout)),
                 allow_redirects=False,
             )
+            quota_recorder = getattr(self, "_record_parent_quota_call", None)
+            if callable(quota_recorder):
+                quota_recorder()
             payload: Dict[str, Any] = {
                 "status_code": int(response.status_code),
                 "error_kind": "",
@@ -285,6 +328,12 @@ class _SettingsDialogTasksMixin:
         self.btn_validate.setEnabled(True)
         self.btn_validate.setText("✓ API 키 검증")
         self._api_validate_worker = None
+        try:
+            refresh_quota = getattr(self, "_refresh_quota_label", None)
+            if callable(refresh_quota):
+                refresh_quota()
+        except Exception:
+            pass
 
     def _selected_tombstone_retention_days(self: SettingsDialog) -> int:
         combo = getattr(self, "cb_tombstone_retention", None)

@@ -26,6 +26,7 @@ class _DatabaseInitSchemaMixin:
                     description TEXT,
                     pubDate TEXT,
                     publisher TEXT,
+                    originallink TEXT,
                     is_read INTEGER DEFAULT 0,
                     is_bookmarked INTEGER DEFAULT 0,
                     pubDate_ts REAL,
@@ -47,6 +48,7 @@ class _DatabaseInitSchemaMixin:
             for col, dtype in [
                 ("pubDate_ts", "REAL"),
                 ("publisher", "TEXT"),
+                ("originallink", "TEXT"),
                 ("is_read", "INTEGER DEFAULT 0"),
                 ("is_bookmarked", "INTEGER DEFAULT 0"),
                 ("created_at", "REAL DEFAULT (strftime('%s', 'now'))"),

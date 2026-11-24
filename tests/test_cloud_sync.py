@@ -264,6 +264,45 @@ class TestCloudSync(unittest.TestCase):
                 source.close()
                 target.close()
 
+    def test_merge_propagates_originallink(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = self._db(root / "source.db")
+            target = self._db(root / "target.db")
+            try:
+                link = "https://n.news.naver.com/article/9"
+                target.upsert_news(
+                    [{**_item(9, "Shared"), "link": link}], "AI", query_key="ai|"
+                )
+                source.upsert_news(
+                    [
+                        {
+                            **_item(9, "Shared"),
+                            "link": link,
+                            "originallink": "https://example.com/original/9",
+                        }
+                    ],
+                    "AI",
+                    query_key="ai|",
+                )
+
+                result = target.merge_cloud_snapshot_db(
+                    source.db_file,
+                    snapshot_id="origin-1",
+                    source_machine_id="machine-a",
+                    local_machine_id="machine-b",
+                )
+
+                self.assertTrue(result["merged"])
+                rows = target.fetch_news("AI", query_key="ai|")
+                shared = next(row for row in rows if row["link"] == link)
+                self.assertEqual(
+                    shared["originallink"], "https://example.com/original/9"
+                )
+            finally:
+                source.close()
+                target.close()
+
     def test_cloud_delete_tombstone_and_restore_are_latest_wins(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

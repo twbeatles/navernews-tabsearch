@@ -43,6 +43,7 @@ def _export_row(item: Dict[str, Any]) -> List[str]:
         _spreadsheet_safe_csv_cell(item.get("notes", "")),
         "중복" if item.get("is_duplicate", 0) else "",
         _spreadsheet_safe_csv_cell(item.get("tags", "")),
+        _spreadsheet_safe_csv_cell(item.get("originallink", "")),
     ]
 
 
@@ -103,6 +104,9 @@ def _export_item_markdown(
         f"- 출처: {_markdown_escape(publisher)}",
         f"- 상태: {_markdown_escape(', '.join(state))}",
     ]
+    originallink = str(item.get("originallink", "") or "").strip()
+    if originallink and originallink != link:
+        lines.append(f"- 원문: {_markdown_link_target(originallink)}")
     if tags:
         lines.append(f"- 태그: {_markdown_escape(tags)}")
     if description:
@@ -137,6 +141,7 @@ def export_items_to_csv(
                     "메모",
                     "중복",
                     "태그",
+                    "원문링크",
                 ]
             )
             for item in items:
@@ -281,6 +286,7 @@ def export_scope_to_csv(
                     "메모",
                     "중복",
                     "태그",
+                    "원문링크",
                 ]
             )
 

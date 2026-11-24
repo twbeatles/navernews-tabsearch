@@ -62,6 +62,32 @@ class _NewsTabLinkOpeningMixin:
             failure_message="읽음 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
         )
 
+    def _origin_link_for(self, target: Dict[str, Any]) -> str:
+        origin = str(target.get("originallink", "") or "").strip()
+        link = str(target.get("link", "") or "").strip()
+        if not origin or origin == link:
+            return ""
+        return origin
+
+    def _open_origin_link_and_mark_read(self, target: Dict[str, Any]):
+        origin = self._origin_link_for(target)
+        if not origin:
+            parent = self._main_window()
+            if parent is not None:
+                parent.show_toast("원문 링크가 없는 기사입니다.")
+            return
+
+        if not self._open_article_url(
+            origin,
+            failure_message="원문을 열지 못했습니다. 링크 또는 브라우저 설정을 확인해주세요.",
+        ):
+            return
+        self._set_read_state(
+            target,
+            True,
+            failure_message="읽음 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+        )
+
     def on_link_clicked(self, url: QUrl):
         """링크 클릭 처리"""
         scheme = url.scheme()
@@ -138,6 +164,9 @@ class _NewsTabLinkOpeningMixin:
 
         if action == "ext":
             self._open_external_link_and_mark_read(target)
+
+        elif action == "origin":
+            self._open_origin_link_and_mark_read(target)
 
         elif action == "share":
             clip = f"{target.get('title', '')}\n{target.get('link', '')}"
